@@ -25,7 +25,7 @@ export function brainPage(): HTMLElement {
       el("p", { cls: "muted", textContent: "Статус: " + p.status }),
       el("ol", {}, ...p.steps.map(s => el("li", { textContent: s.title + " — " + s.status })))));
     content.replaceChildren(
-      section("Режим мышления", el("p", { cls: "muted", textContent: "Режим пока используется только Brain Core; управление ответами модели — следующий этап." }), modes),
+      section("Режим мышления", el("p", { cls: "muted", textContent: "Режим учитывается помощницей при следующем ответе. Создание плана через ИИ требует подтверждения; выполнение действий контролируется отдельно." }), modes),
       section("Планировщик", goal, steps, create, feedback),
       ...plans,
     );
