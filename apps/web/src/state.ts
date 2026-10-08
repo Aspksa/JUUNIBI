@@ -1,6 +1,6 @@
 import { Store, attempt } from "@juunibi/core";
 import { ACCENT_IDS, type AccentId } from "./accents";
-import { api, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
+import { api, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
 
 export type Route = "home" | "memory" | "modules" | "update" | "settings";
 export const ROUTES: Route[] = ["home", "memory", "modules", "update", "settings"];
@@ -8,7 +8,7 @@ export type Theme = "auto" | "light" | "dark";
 
 export interface AppState {
   route: Route; navOpen: boolean;
-  status: Status | null; memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[];
+  status: Status | null; memory: MemoryItem[]; modules: ModuleInfo[];
   approvals: ApprovalItem[];
   update: UpdateStatus | null; updateEvents: UpdateEvent[]; updateError: string;
   theme: Theme; showScenes: boolean;

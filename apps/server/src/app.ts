@@ -6,6 +6,8 @@ import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
 export interface AppDeps {
+  /** Long-term memory is available (and editable by the user) even before an API key is configured. */
+  memory?: import("@juunibi/assistant").Memory;
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
   getAssistant?: () => Assistant | undefined;
   cloudStatus?: () => { configured: boolean; model: string };
@@ -111,6 +113,23 @@ export function createApp(deps: AppDeps): http.Server {
           void deps.updater.start();
           return send(res, 202, { ok: true });
         }
+        const mem = deps.memory ?? a?.memory;
+        if (mem) {
+        if (req.method === "POST" && p === "/api/memory") { // the user explicitly asks to remember something
+          const b = await readJson(req);
+          const text = typeof b.text === "string" ? b.text.trim() : "";
+          if (!text || text.length > 2000) return send(res, 400, { error: "Текст пустой или слишком длинный" });
+          const kind = b.kind === "preference" || b.kind === "lesson" ? b.kind : "fact";
+          return send(res, 200, await mem.add(kind, text, "active"));
+        }
+        if (req.method === "GET" && p === "/api/memory") {
+          const s = url.searchParams.get("status");
+          return send(res, 200, await mem.list(s === "active" || s === "pending" ? s : undefined));
+        }
+        const m = /^\/api\/memory\/([\w-]+)(\/approve)?$/.exec(p);
+        if (m && req.method === "POST" && m[2]) return send(res, 200, { ok: await mem.approve(m[1]!) });
+        if (m && req.method === "DELETE" && !m[2]) return send(res, 200, { ok: await mem.forget(m[1]!) });
+        }
         if (!a) return send(res, 503, { error: deps.configured.hint ?? "Помощник не настроен" });
 
         if (req.method === "GET" && p === "/api/approvals") return send(res, 200, deps.approvals?.list() ?? []);
@@ -156,20 +175,6 @@ export function createApp(deps: AppDeps): http.Server {
           if (typeof b.turnId !== "string") return send(res, 400, { error: "turnId" });
           return send(res, 200, await a.reflect(b.turnId));
         }
-        if (req.method === "POST" && p === "/api/memory") { // the user explicitly asks to remember something
-          const b = await readJson(req);
-          const text = typeof b.text === "string" ? b.text.trim() : "";
-          if (!text || text.length > 2000) return send(res, 400, { error: "Текст пустой или слишком длинный" });
-          const kind = b.kind === "preference" || b.kind === "lesson" ? b.kind : "fact";
-          return send(res, 200, await a.memory.add(kind, text, "active"));
-        }
-        if (req.method === "GET" && p === "/api/memory") {
-          const s = url.searchParams.get("status");
-          return send(res, 200, await a.memory.list(s === "active" || s === "pending" ? s : undefined));
-        }
-        const m = /^\/api\/memory\/([\w-]+)(\/approve)?$/.exec(p);
-        if (m && req.method === "POST" && m[2]) return send(res, 200, { ok: await a.memory.approve(m[1]!) });
-        if (m && req.method === "DELETE" && !m[2]) return send(res, 200, { ok: await a.memory.forget(m[1]!) });
         if (req.method === "GET" && p === "/api/dataset") return send(res, 200, await a.exportDataset(), "application/x-ndjson");
         return send(res, 404, { error: "Не найдено" });
       }

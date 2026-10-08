@@ -72,7 +72,8 @@ kernel.register({
     const avatar = new Avatar(() => openChat());
     document.body.append(avatar.root);
 
-    const openChat = () => {
+    const openChat = (convId?: string) => {
+      if (convId) chats.select(convId);
       app.set({ chatOpen: true, navOpen: false });
       chatWin.root.hidden = false;
       const c = avatar.center();
@@ -109,11 +110,11 @@ kernel.register({
     let pageSig = "";
     const sigFor = (s: AppState): string => {
       switch (s.route) {
-        case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules.length]);
+        case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
         case "memory": return JSON.stringify(s.memory);
         case "modules": return JSON.stringify(s.modules);
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
-        case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.showScenes]);
+        case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length]);
       }
     };
     const renderPage = (s: AppState) => {
@@ -122,9 +123,9 @@ kernel.register({
       const changedRoute = !pageSig.startsWith(s.route + "|");
       pageSig = sig;
       const page =
-        s.route === "home" ? homePage(s, { go, openChat })
+        s.route === "home" ? homePage(s, { go, openChat, chats })
         : s.route === "memory" ? memoryPage(s)
-        : s.route === "modules" ? modulesPage(s)
+        : s.route === "modules" ? modulesPage(s, go)
         : s.route === "update" ? updatePage(s)
         : settingsPage(s, chats);
       const scroll = pageHost.scrollTop;
@@ -142,6 +143,7 @@ kernel.register({
     const onApp = () => { const s = app.get(); renderNav(s); renderPage(s); renderAvatar(); };
     ctx.onStop(app.subscribe(onApp));
     ctx.onStop(ctl.store.subscribe(renderAvatar));
+    ctx.onStop(chats.store.subscribe(() => { if (app.get().route === "home" || app.get().route === "settings") renderPage(app.get()); }));
     app.set({ route: routeFromHash() });
     onApp();
 

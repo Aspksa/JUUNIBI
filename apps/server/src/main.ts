@@ -46,6 +46,21 @@ let cloudConfigured = false;
 let sceneLlm: CloudRuProvider | undefined;
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
+interface ModuleInfo { name: string; title: string; deps: string[]; status: "started" | "pending" | "failed"; note: string }
+/** Real server components with their live state — shown on the Modules page and given to the assistant. */
+function moduleList(): ModuleInfo[] {
+  const sc = scenes.stats();
+  const up = updater.status();
+  return [
+    { name: "memory", title: "Память", deps: [], status: "started", note: "Долгая память помощницы: data/memory.json" },
+    { name: "assistant", title: "Помощница", deps: ["memory"], status: cloudConfigured ? "started" : "pending", note: cloudConfigured ? `Модель ${activeModel ?? MODEL} (Cloud.ru)` : "Нужен ключ Cloud.ru — добавьте его в настройках" },
+    { name: "approvals", title: "Подтверждение действий", deps: ["assistant"], status: "started", note: "Опасные действия выполняются только с вашего разрешения; журнал в data/agent-audit.jsonl" },
+    { name: "scenes", title: "Сцены и реплики", deps: [], status: sc.total > 0 ? "started" : "failed", note: `${sc.total} действий, ${sc.phrases} реплик, использовано ${sc.used}` },
+    { name: "updater", title: "Обновление проекта", deps: [], status: up.phase === "error" ? "failed" : "started", note: up.phase === "error" ? (up.error ?? "Ошибка обновления") : `Источник github.com/Aspksa/JUUNIBI · этап: ${up.phase}` },
+    ...kernel.describe().map((m) => ({ name: m.name, title: m.name, deps: m.deps, status: m.status, note: "" })),
+  ];
+}
+const memory = new Memory(fileStore(path.join(dataDir, "memory.json")));
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
@@ -59,7 +74,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не выдавай художественный образ за реальное сознание или реальные чувства. Не обещай невыполненных действий. Перед публикациями, удалениями и иными существенными действиями проси разрешение.",
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\\n");
-  assistant = new Assistant({ persona, llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => kernel.describe() });
+  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList() });
   activeModel = MODEL;
   cloudConfigured = true;
 }
@@ -101,10 +116,11 @@ const server = createApp({
   getAssistant: () => assistant,
   cloudStatus: () => ({ configured: cloudConfigured, model: MODEL }),
   saveCloud,
+  memory,
   approvals: approvalGate,
   updater,
   scenes,
-  modules: () => kernel.describe(),
+  modules: () => moduleList(),
   staticDir,
   configured: { model: MODEL, hint },
 });
