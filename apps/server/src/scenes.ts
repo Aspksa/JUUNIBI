@@ -55,8 +55,9 @@ export class SceneEngine {
       const unused=all.filter(x=>!this.state.used.includes(x.id));
       const available=category?unused.filter(x=>x.category===category):unused;
       const action=available.length?available[randomInt(available.length)]!:await this.generate();
-      const greetings=this.phrases.filter(x=>x.category==="приветствие"&&!this.state.phrasesUsed.includes(x.id));
-      const phrase=greetings.length?greetings[randomInt(greetings.length)]!:undefined;
+      let remainingPhrases=this.phrases.filter(x=>!this.state.phrasesUsed.includes(x.id));
+      if (!remainingPhrases.length) { this.state.phrasesUsed=[];remainingPhrases=[...this.phrases]; }
+      const phrase=remainingPhrases.length?remainingPhrases[randomInt(remainingPhrases.length)]!:undefined;
       this.state.used.push(action.id);
       if(phrase)this.state.phrasesUsed.push(phrase.id);
       await this.save();
