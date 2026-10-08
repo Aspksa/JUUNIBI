@@ -39,7 +39,9 @@ const ICONS = {
   sun: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M19.8 4.2l-2.1 2.1M6.3 17.7l-2.1 2.1",
   moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z",
   auto: "M12 3a9 9 0 1 0 0 18V3z",
+  palette: "M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h1.5a4 4 0 0 0 4-4c0-4.4-4-8-8.5-8zM7.5 11.5h.01M10 7.5h.01M15 7.5h.01",
 } as const;
+export const ICON_NAMES = Object.keys(ICONS) as IconName[];
 export type IconName = keyof typeof ICONS;
 const FILLED = new Set<IconName>(["stop"]);
 

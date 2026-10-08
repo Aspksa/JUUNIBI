@@ -1,5 +1,6 @@
 import { api } from "../api";
 import { el, short } from "../dom";
+import { segmented } from "../ui";
 import { app, checkUpdate, downloadUpdate, persistPrefs, type AppState } from "../state";
 
 const MODES = [["simple", "Простой"], ["visual", "Визуальный"], ["technical", "Технический"]] as const;
@@ -21,11 +22,7 @@ export function updatePage(s: AppState): HTMLElement {
     b.addEventListener("click", run);
     return b;
   };
-  const modes = el("div", { cls: "segmented", attrs: { role: "radiogroup", "aria-label": "Режим отображения" } }, ...MODES.map(([m, label]) => {
-    const b = el("button", { type: "button", textContent: label, attrs: { role: "radio", "aria-checked": String(s.updateMode === m) } });
-    b.addEventListener("click", () => { app.set({ updateMode: m }); persistPrefs(app.get()); });
-    return b;
-  }));
+  const modes = segmented<AppState["updateMode"]>({ label: "Режим отображения", options: MODES, value: s.updateMode, onChange: (m) => { app.set({ updateMode: m }); persistPrefs(app.get()); } });
 
   const folders = [...new Set(files.map((f) => dirOf(f.path)))].sort();
   const flight = el("div", { cls: "flight-layout" },

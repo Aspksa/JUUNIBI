@@ -1,0 +1,65 @@
+/* ==========================================================================
+   JUUNIBI design tokens — the single source of truth for every visual value.
+   Components and pages may use ONLY these variables (enforced by test/design.test.ts).
+   Themes: light (default), dark (OS preference or [data-theme=dark]).
+   ========================================================================== */
+
+/* ---- theme-independent scales ---- */
+:root{
+  /* spacing (4px base) */
+  --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:20px;--sp-6:24px;--sp-8:32px;--sp-10:40px;--sp-12:48px;
+  /* radius */
+  --r-sm:6px;--r-md:10px;--r-lg:16px;--r-xl:22px;--r-pill:999px;
+  /* type */
+  --font:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,"Noto Sans","Helvetica Neue",Arial,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --fs-xs:.75rem;--fs-sm:.875rem;--fs-md:1rem;--fs-lg:1.125rem;--fs-xl:1.35rem;--fs-2xl:1.7rem;--fs-3xl:1.9rem;
+  --fw-regular:400;--fw-medium:500;--fw-semibold:600;--fw-bold:700;
+  --lh-tight:1.25;--lh-base:1.5;--lh-prose:1.7;
+  --tracking-brand:.14em;
+  /* motion */
+  --dur-1:.12s;--dur-2:.2s;--ease:cubic-bezier(.2,.8,.2,1);
+  /* layering */
+  --z-raised:1;--z-drawer:2;--z-fab:30;--z-scrim:40;--z-nav:50;--z-chat:60;--z-toast:1100;--z-overlay:1200;
+  /* layout & control sizes */
+  --nav-w:260px;--content-max:980px;--chat-max:768px;--chat-side-w:260px;
+  --control-h:40px;--control-h-sm:30px;--icon-btn:36px;--icon-btn-sm:30px;--fab-size:64px;
+  --focus-ring:2px;
+  color-scheme:light dark;
+}
+
+/* ---- light ---- */
+:root{
+  --bg:#ffffff;--surface:#f9f9f9;--surface-2:#f4f4f4;
+  --fg:#0d0d0d;--muted:#5e5e5e;
+  --line:rgba(0,0,0,.1);--hover:rgba(0,0,0,.06);--hover-2:rgba(0,0,0,.1);--scrim:rgba(0,0,0,.5);
+  --accent:#0d0d0d;--accent-fg:#ffffff;
+  --brand:#ad7a12;--brand-fg:#1a1306;--brand-text:#855900;
+  --danger:#c5221f;--danger-fg:#ffffff;
+  --ok:#1e7a34;--warn:#855900;--info:#1d4ed8;
+  --code-bg:#0d0d0d;--code-head:#2f2f2f;--code-fg:#ececec;--code-muted:#b4b4b4;
+  --avatar-from:#2b2417;--avatar-to:#0d0c10;
+  --sh-1:0 1px 2px rgba(0,0,0,.12);--sh-2:0 8px 28px rgba(0,0,0,.25);--sh-3:0 20px 60px -20px rgba(0,0,0,.35);
+}
+
+/* ---- dark ---- */
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;
+  --fg:#ececec;--muted:#a6a6a6;
+  --line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);--scrim:rgba(0,0,0,.6);
+  --accent:#ececec;--accent-fg:#0d0d0d;
+  --brand:#d9a441;--brand-fg:#1a1306;--brand-text:#e3b341;
+  --danger:#f87171;--danger-fg:#1a0505;
+  --ok:#6fcf97;--warn:#e3b341;--info:#7aa2ff;
+  --sh-1:0 1px 2px rgba(0,0,0,.5);--sh-2:0 8px 28px rgba(0,0,0,.6);--sh-3:0 24px 70px -20px rgba(0,0,0,.8);
+}}
+:root[data-theme=dark]{
+  --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;
+  --fg:#ececec;--muted:#a6a6a6;
+  --line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);--scrim:rgba(0,0,0,.6);
+  --accent:#ececec;--accent-fg:#0d0d0d;
+  --brand:#d9a441;--brand-fg:#1a1306;--brand-text:#e3b341;
+  --danger:#f87171;--danger-fg:#1a0505;
+  --ok:#6fcf97;--warn:#e3b341;--info:#7aa2ff;
+  --sh-1:0 1px 2px rgba(0,0,0,.5);--sh-2:0 8px 28px rgba(0,0,0,.6);--sh-3:0 24px 70px -20px rgba(0,0,0,.8);
+}

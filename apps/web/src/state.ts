@@ -1,8 +1,8 @@
 import { Store, attempt } from "@juunibi/core";
 import { api, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
 
-export type Route = "home" | "memory" | "modules" | "update" | "settings";
-export const ROUTES: Route[] = ["home", "memory", "modules", "update", "settings"];
+export type Route = "home" | "memory" | "modules" | "update" | "settings" | "design";
+export const ROUTES: Route[] = ["home", "memory", "modules", "update", "settings", "design"];
 export type Theme = "auto" | "light" | "dark";
 
 export interface AppState {

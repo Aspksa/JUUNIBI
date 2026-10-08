@@ -9,10 +9,14 @@ import { memoryPage } from "./pages/memory";
 import { modulesPage } from "./pages/modules";
 import { animateFlight, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
+import { designPage } from "./pages/design";
 import {
   app, persistPrefs, refreshApprovals, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, routeFromHash,
   type AppState, type Route, type Theme,
 } from "./state";
+import "./design/tokens.css";
+import "./design/base.css";
+import "./design/components.css";
 import "./style.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
@@ -25,6 +29,7 @@ const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "modules", label: "Модули", icon: "modules" },
   { route: "update", label: "Обновление", icon: "update" },
   { route: "settings", label: "Настройки", icon: "settings" },
+  { route: "design", label: "Дизайн-система", icon: "palette" },
 ];
 const THEME_ICON: Record<Theme, IconName> = { auto: "auto", light: "sun", dark: "moon" };
 const THEME_NAME: Record<Theme, string> = { auto: "Тема: как в системе", light: "Тема: светлая", dark: "Тема: тёмная" };
@@ -90,8 +95,8 @@ kernel.register({
       theme.addEventListener("click", () => { app.set((x) => ({ theme: NEXT_THEME[x.theme] })); persistPrefs(app.get()); });
       nav.replaceChildren(
         el("div", { cls: "brand", textContent: "JUUNIBI" }), // reserved slot: put your logo here
-        ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route ? " active" : ""), attrs: n.route === s.route ? { "aria-current": "page" } : {} },
-          icon(n.icon, 18), el("span", { textContent: n.label }), n.route === "update" && newer ? el("i", { cls: "dot", title: "Доступно обновление" }) : null)),
+        ...NAV.flatMap((n) => [...(n.route === "design" ? [el("div", { cls: "nav-sep" })] : []), el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route ? " active" : ""), attrs: n.route === s.route ? { "aria-current": "page" } : {} },
+          icon(n.icon, 18), el("span", { textContent: n.label }), n.route === "update" && newer ? el("i", { cls: "dot", title: "Доступно обновление" }) : null)]),
         el("span", { cls: "grow" }), theme);
       nav.classList.toggle("open", s.navOpen);
       navScrim.classList.toggle("show", s.navOpen);
@@ -107,6 +112,7 @@ kernel.register({
         case "modules": return JSON.stringify(s.modules);
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateMode, s.updateError]);
         case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.showScenes]);
+        case "design": return s.theme;
       }
     };
     const renderPage = (s: AppState) => {
@@ -119,6 +125,7 @@ kernel.register({
         : s.route === "memory" ? memoryPage(s)
         : s.route === "modules" ? modulesPage(s)
         : s.route === "update" ? updatePage(s)
+        : s.route === "design" ? designPage()
         : settingsPage(s, chats);
       const scroll = pageHost.scrollTop;
       pageHost.replaceChildren(page);

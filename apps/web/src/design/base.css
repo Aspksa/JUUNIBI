@@ -1,0 +1,22 @@
+/* Base: reset, typography, focus, utilities. Uses tokens only. */
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:var(--fw-regular) var(--fs-md)/var(--lh-base) var(--font);-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:var(--focus-ring) solid var(--brand);outline-offset:2px}
+h1,h2,h3,h4{line-height:var(--lh-tight);margin:0}
+p{margin:0}
+
+/* utilities */
+.grow{flex:1;min-width:0}
+.muted{color:var(--muted)}
+.row{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center}
+.stack{display:flex;flex-direction:column;gap:var(--sp-3)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.text-xs{font-size:var(--fs-xs)}.text-sm{font-size:var(--fs-sm)}.text-lg{font-size:var(--fs-lg)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}

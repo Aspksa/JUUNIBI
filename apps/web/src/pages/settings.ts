@@ -2,13 +2,14 @@ import { api } from "../api";
 import { el } from "../dom";
 import { app, persistPrefs, refreshStatus, type AppState, type Theme } from "../state";
 import type { Chats } from "../chat/chats";
+import { button, field, input, panel, segmented, switchField } from "../ui";
 
 export function settingsPage(s: AppState, chats: Chats): HTMLElement {
   // --- Cloud.ru
-  const note = el("p", { cls: "muted", attrs: { role: "status" }, textContent: s.status?.assistant ? "Модель подключена." : "Ключ ещё не настроен." });
-  const key = el("input", { type: "password", name: "key", id: "cloud-key", autocomplete: "new-password", placeholder: "Вставьте API-ключ Cloud.ru", required: true, spellcheck: false });
-  const save = el("button", { type: "submit", cls: "btn primary", textContent: "Сохранить и подключить" });
-  const form = el("form", { cls: "form" }, el("label", { htmlFor: "cloud-key", textContent: "API-ключ" }), key, save);
+  const note = el("p", { cls: "muted", attrs: { role: "status" }, textContent: s.status?.assistant ? "Помощник подключён." : "Ключ ещё не настроен." });
+  const key = input({ type: "password", placeholder: "Вставьте API-ключ Cloud.ru", autocomplete: "new-password", required: true, name: "key" });
+  const save = button({ label: "Сохранить и подключить", variant: "primary", type: "submit" });
+  const form = el("form", { cls: "form" }, field({ id: "cloud-key", label: "API-ключ", control: key }), save);
   form.addEventListener("submit", async (e) => {
     e.preventDefault(); save.disabled = true;
     const r = await api.cloudSave(key.value.trim());
@@ -18,28 +19,20 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
   });
 
   // --- appearance
-  const themes: [Theme, string][] = [["auto", "Как в системе"], ["light", "Светлая"], ["dark", "Тёмная"]];
-  const themeRow = el("div", { cls: "segmented", attrs: { role: "radiogroup", "aria-label": "Тема" } }, ...themes.map(([v, label]) => {
-    const b = el("button", { type: "button", textContent: label, attrs: { role: "radio", "aria-checked": String(s.theme === v) } });
-    b.addEventListener("click", () => { app.set({ theme: v }); persistPrefs(app.get()); });
-    return b;
-  }));
-  const scenes = el("input", { type: "checkbox", id: "scenes", checked: s.showScenes });
-  scenes.addEventListener("change", () => { app.set({ showScenes: scenes.checked }); persistPrefs(app.get()); });
+  const themes: readonly (readonly [Theme, string])[] = [["auto", "Как в системе"], ["light", "Светлая"], ["dark", "Тёмная"]];
+  const themeRow = segmented<Theme>({ label: "Тема", options: themes, value: s.theme, onChange: (v) => { app.set({ theme: v }); persistPrefs(app.get()); } });
+  const scenes = switchField({ id: "scenes", label: "Показывать сцены и реплики персонажа над ответами", checked: s.showScenes, onChange: (v) => { app.set({ showScenes: v }); persistPrefs(app.get()); } });
 
   // --- data
-  const wipe = el("button", { type: "button", cls: "btn danger", textContent: "Удалить все чаты" });
-  wipe.addEventListener("click", () => { if (confirm("Удалить всю историю чатов в этом браузере? Это нельзя отменить.")) { chats.clearAll(); wipe.textContent = "Удалено"; } });
-  const exp = el("button", { type: "button", cls: "btn", textContent: "Экспорт чатов (JSON)" });
-  exp.addEventListener("click", () => {
+  const wipe = button({ label: "Удалить все чаты", variant: "danger", onClick: () => { if (confirm("Удалить всю историю чатов в этом браузере? Это нельзя отменить.")) { chats.clearAll(); wipe.textContent = "Удалено"; } } });
+  const exp = button({ label: "Экспорт чатов (JSON)", onClick: () => {
     const blob = new Blob([JSON.stringify(chats.store.get().items, null, 2)], { type: "application/json" });
     const a = el("a", { href: URL.createObjectURL(blob), download: "juunibi-chats.json" });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
+  } });
 
-  const section = (title: string, ...kids: (Node | string)[]) => el("section", { cls: "panel" }, el("h2", { textContent: title }), ...kids);
   return el("div", { cls: "page" }, el("h1", { textContent: "Настройки" }),
-    section("Подключение Cloud.ru", el("p", { cls: "muted", textContent: "Ключ хранится только на локальном сервере (data/cloudru-settings.json), не в браузере и не в GitHub." }), form, note),
-    section("Внешний вид", themeRow, el("label", { cls: "check", htmlFor: "scenes" }, scenes, el("span", { textContent: "Показывать сцены и реплики персонажа над ответами" }))),
-    section("Данные", el("p", { cls: "muted", textContent: "История чатов хранится только в этом браузере." }), el("div", { cls: "row" }, exp, wipe)));
+    panel("Подключение Cloud.ru", el("p", { cls: "muted", textContent: "Ключ хранится только на локальном сервере (data/cloudru-settings.json), не в браузере и не в GitHub." }), form, note),
+    panel("Внешний вид", el("div", { cls: "stack" }, themeRow, scenes)),
+    panel("Данные", el("p", { cls: "muted", textContent: "История чатов хранится только в этом браузере." }), el("div", { cls: "row" }, exp, wipe)));
 }
