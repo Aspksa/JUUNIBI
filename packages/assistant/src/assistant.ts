@@ -79,7 +79,7 @@ export class Assistant {
     this.tools.register({
       name: "search_memory", risk: "read", description: "Поиск по долгой памяти ассистента.",
       parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
-      run: async (a) => (await this.memory.searchHybrid(String(a.query), 8)).map((m) => m.text),
+      run: async (a) => (await this.memory.searchHybrid(String(a.query), 8)).map((m) => ({ id: m.id, text: m.text })),
     });
     this.tools.register({
       name: "propose_memory_revision", risk: "read",
