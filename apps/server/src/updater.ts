@@ -56,12 +56,18 @@ export class ProjectUpdater {
         if (!response.ok) throw new Error("Не удалось скачать " + e.path + ": HTTP " + response.status);
         const chunks: Buffer[] = [];
         let size = 0;
-        for await (const chunk of response.body ?? []) {
-          const b = Buffer.from(chunk); size += b.byteLength;
-          if (size > e.size) throw new Error("Размер файла не совпадает: " + e.path);
-          chunks.push(b); this.state.downloadedBytes += b.byteLength;
-          this.state.percent = total ? Math.min(100, Math.floor(100 * this.state.downloadedBytes / total)) : 100;
-        }
+        if (!response.body) throw new Error("Пустой ответ GitHub: " + e.path);
+        const reader = response.body.getReader();
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const b = Buffer.from(value); size += b.byteLength;
+            if (size > e.size) throw new Error("Размер файла не совпадает: " + e.path);
+            chunks.push(b); this.state.downloadedBytes += b.byteLength;
+            this.state.percent = total ? Math.min(100, Math.floor(100 * this.state.downloadedBytes / total)) : 100;
+          }
+        } finally { reader.releaseLock(); }
         const data = Buffer.concat(chunks);
         if (size !== e.size || gitHash(data) !== e.sha) throw new Error("Ошибка контроля целостности: " + e.path);
         const dest = path.join(staging, e.path);
