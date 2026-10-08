@@ -20,6 +20,8 @@ export interface AppDeps {
 }
 
 const MAX_BODY = 64 * 1024;
+const MAX_CHAT_BODY = 700 * 1024; // chat requests may carry attached text files and long history
+const MAX_CHAT_MESSAGE = 100_000;
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
   ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".ico": "image/x-icon",
@@ -36,7 +38,7 @@ export function originAllowed(origin: string | undefined, host: string | undefin
   try { return new URL(origin).host === host; } catch { return false; }
 }
 
-function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+function readJson(req: http.IncomingMessage, limit = MAX_BODY): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     let size = 0;
     let tooBig = false;
@@ -44,7 +46,7 @@ function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     req.on("data", (c: Buffer) => {
       size += c.length;
       if (tooBig) return; // keep draining so the 413 reply can be delivered
-      if (size > MAX_BODY) { tooBig = true; chunks.length = 0; reject(Object.assign(new Error("Слишком большой запрос"), { status: 413 })); return; }
+      if (size > limit) { tooBig = true; chunks.length = 0; reject(Object.assign(new Error("Слишком большой запрос"), { status: 413 })); return; }
       chunks.push(c);
     });
     req.on("end", () => {
@@ -119,9 +121,9 @@ export function createApp(deps: AppDeps): http.Server {
           return send(res, deps.approvals.decide(approvalMatch[1]!, approvalMatch[2] === "approve") ? 200 : 404, { ok: true });
         }
         if (req.method === "POST" && p === "/api/chat/stream") {
-          const b = await readJson(req);
+          const b = await readJson(req, MAX_CHAT_BODY);
           const msg = typeof b.message === "string" ? b.message.trim() : "";
-          if (!msg || msg.length > 8000) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
+          if (!msg || msg.length > MAX_CHAT_MESSAGE) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
           const session = typeof b.session === "string" ? b.session.slice(0, 64) : "default";
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
           const ctl = new AbortController();
@@ -130,14 +132,14 @@ export function createApp(deps: AppDeps): http.Server {
           const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
           try {
             const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line });
-            line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools });
+            line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools, memory: r.memory });
           } catch (e) { line({ type: "error", message: ctl.signal.aborted ? "Остановлено" : (e as Error).message }); }
           return void res.end();
         }
         if (req.method === "POST" && p === "/api/chat") {
-          const b = await readJson(req);
+          const b = await readJson(req, MAX_CHAT_BODY);
           const msg = typeof b.message === "string" ? b.message.trim() : "";
-          if (!msg || msg.length > 8000) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
+          if (!msg || msg.length > MAX_CHAT_MESSAGE) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
           const session = typeof b.session === "string" ? b.session.slice(0, 64) : "default";
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
@@ -153,6 +155,13 @@ export function createApp(deps: AppDeps): http.Server {
           const b = await readJson(req);
           if (typeof b.turnId !== "string") return send(res, 400, { error: "turnId" });
           return send(res, 200, await a.reflect(b.turnId));
+        }
+        if (req.method === "POST" && p === "/api/memory") { // the user explicitly asks to remember something
+          const b = await readJson(req);
+          const text = typeof b.text === "string" ? b.text.trim() : "";
+          if (!text || text.length > 2000) return send(res, 400, { error: "Текст пустой или слишком длинный" });
+          const kind = b.kind === "preference" || b.kind === "lesson" ? b.kind : "fact";
+          return send(res, 200, await a.memory.add(kind, text, "active"));
         }
         if (req.method === "GET" && p === "/api/memory") {
           const s = url.searchParams.get("status");

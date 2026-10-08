@@ -187,12 +187,39 @@ describe("streaming", () => {
     const a = new Assistant({ llm, log: quiet });
     const events: unknown[] = [];
     const r = await a.ask("что нового?", "s1", undefined, { history: [{ role: "user", content: "привет" }, { role: "assistant", content: "здравствуйте" }], onEvent: (e) => events.push(e) });
-    expect(events).toEqual([{ type: "delta", text: "Смотрю… " }, { type: "tool", name: "list_modules" }, { type: "delta", text: "Готово" }]);
+    expect(events).toEqual([
+      { type: "delta", text: "Смотрю… " },
+      { type: "tool", phase: "start", id: "1", name: "list_modules", args: "{}" },
+      { type: "tool", phase: "end", id: "1", name: "list_modules", status: "ok", ms: expect.any(Number) },
+      { type: "delta", text: "Готово" },
+    ]);
     expect(r.reply).toBe("Готово");
     expect(seen[0]!.map((m) => m.content).slice(1)).toEqual(["привет", "здравствуйте", "что нового?"]);
     // server-side session memory was NOT touched: a later call without history starts clean
     seen.length = 0;
     await a.ask("второй", "s1");
     expect(seen[0]!.filter((m) => m.role !== "system")).toHaveLength(1);
+  });
+});
+
+describe("tool events and history limits", () => {
+  it("reports error and denied statuses", async () => {
+    const llm: LlmProvider = { chat: async (m) => (m.some((x) => x.role === "tool") ? say("ок") : { content: null, toolCalls: [
+      { id: "a", name: "nope", arguments: "{}" }, { id: "b", name: "wipe", arguments: "{}" }] }) };
+    const a = new Assistant({ llm, log: quiet });
+    a.tools.register({ name: "wipe", description: "", risk: "danger", parameters: { type: "object" }, run: () => "x" });
+    const ends: string[] = [];
+    await a.ask("x", "s", undefined, { onEvent: (e) => { if (e.type === "tool" && e.phase === "end") ends.push(e.name + ":" + e.status); } });
+    expect(ends).toEqual(["nope:error", "wipe:denied"]);
+  });
+  it("keeps long client history (file attachments) but caps the total", async () => {
+    const seen: Message[][] = [];
+    const llm: LlmProvider = { chat: async (m) => { seen.push(m); return say("ok"); } };
+    const big = "я".repeat(100_000);
+    await new Assistant({ llm, log: quiet }).ask("q", "s", undefined, { history: [
+      { role: "user", content: big }, { role: "assistant", content: "a" }, { role: "user", content: big }, { role: "assistant", content: "b" }, { role: "user", content: big }, { role: "assistant", content: "c" }] });
+    const total = seen[0]!.filter((m) => m.role !== "system").reduce((n, m) => n + (m.content?.length ?? 0), 0);
+    expect(total).toBeLessThanOrEqual(300_000 + 1);
+    expect(seen[0]!.at(-2)!.content).toBe("c"); // newest history survives
   });
 });
