@@ -80,3 +80,8 @@ form{margin:12px 0 0}
 @media(max-width:650px){.flight-layout{grid-template-columns:1fr}.flight-zone,.flight-center{max-height:180px}}
 
 .update-flight-overlay{position:fixed;z-index:1200;pointer-events:none;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--accent);border-radius:9px;padding:8px 12px;background:var(--card);color:var(--fg);box-shadow:0 9px 28px #0004;font-size:.8rem}
+
+.flight-file.removed{color:var(--danger);border-color:var(--danger);text-decoration:line-through}
+.removals{border:1px solid var(--danger);border-radius:8px;padding:10px 12px;margin:8px 0}
+.removals ul{max-height:160px;overflow:auto;color:var(--danger);font-size:.85rem}
+p.ok{color:#2e7d32}p.bad{color:var(--danger)}

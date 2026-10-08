@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, mkdir, copyFile, writeFile, rm, lstat, rename, appendFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 const BLOCKED = new Set([".git", ".updates", ".env", "data", ".runtime", "node_modules", ".juunibi-version"]);
 const SHA = /^[0-9a-f]{40}$/;
@@ -32,8 +33,20 @@ async function atomicWrite(file, bytes) {
   try { await writeFile(tmp, bytes, { flag: "wx" }); await rename(tmp, file); }
   finally { await rm(tmp, { force: true }).catch(() => {}); }
 }
+/** Post-install smoke test: every installed file matches its manifest hash, JS entry points parse, package.json is valid. */
+export async function defaultHealthCheck(root, files) {
+  for (const f of files) {
+    const bytes = await readFile(path.join(root, f.path));
+    if (gitHash(bytes) !== f.sha) throw new Error("Файл после установки не совпадает с манифестом: " + f.path);
+    if (f.path === "package.json") JSON.parse(bytes.toString("utf8"));
+    if (/^scripts\/[^/]+\.mjs$/.test(f.path)) {
+      const r = spawnSync(process.execPath, ["--check", path.join(root, f.path)], { encoding: "utf8" });
+      if (r.status !== 0) throw new Error("Синтаксическая ошибка после установки: " + f.path + " " + String(r.stderr).slice(0, 300));
+    }
+  }
+}
 /** Staged, hash-verified installer. No arbitrary deletions; user data remains untouched. */
-export async function applyPreparedUpdate(root) {
+export async function applyPreparedUpdate(root, { healthCheck = defaultHealthCheck } = {}) {
   const folder = path.join(root, ".updates");
   const manifestFile = path.join(folder, "ready.json");
   if (!existsSync(manifestFile)) return false;
@@ -41,8 +54,19 @@ export async function applyPreparedUpdate(root) {
   if (!manifest || !SHA.test(manifest.sha) || !Array.isArray(manifest.files) ||
     manifest.files.length > 2500 ||
     !manifest.files.every(f => f && safeUpdatePath(f.path) && SHA.test(f.sha)) ||
-    new Set(manifest.files.map(f => f.path.toLowerCase())).size !== manifest.files.length)
+    new Set(manifest.files.map(f => f.path.toLowerCase())).size !== manifest.files.length ||
+    (manifest.removals !== undefined && (!Array.isArray(manifest.removals) || manifest.removals.length > 2500 ||
+      !manifest.removals.every(p => safeUpdatePath(p) && !manifest.files.some(f => f.path.toLowerCase() === p.toLowerCase())))))
     throw new Error("Повреждён или небезопасен манифест обновления");
+  // Removals are applied ONLY for files the user explicitly confirmed for THIS exact update.
+  let removals = [];
+  if (manifest.removals?.length) {
+    const confirmed = await readFile(path.join(folder, "removals-confirmed.json"), "utf8").then(JSON.parse, () => null);
+    if (confirmed?.sha === manifest.sha && Array.isArray(confirmed.paths)) {
+      const ok = new Set(confirmed.paths);
+      removals = manifest.removals.filter(p => ok.has(p));
+    }
+  }
   const staging = path.join(folder, "staging");
   const backup = path.join(folder, "backups", new Date().toISOString().replace(/[:.]/g, "-") + "-" + randomUUID().slice(0, 8));
   const operationId = "install-" + randomUUID();
@@ -53,6 +77,8 @@ export async function applyPreparedUpdate(root) {
     }) + "\n");
   };
   const changes = [];
+  const installedFile = path.join(folder, "installed.json");
+  const oldInstalled = await readFile(installedFile).catch(() => null);
   const oldVersion = await readFile(path.join(root, ".juunibi-version")).catch(e => e?.code === "ENOENT" ? null : Promise.reject(e));
   try {
     // Verify the ENTIRE package before modifying any installed file.
@@ -83,16 +109,53 @@ export async function applyPreparedUpdate(root) {
       } catch (e) { if (e?.code !== "ENOENT") throw e; }
       changes.push({ name: file.path, existed });
     }
+    const doomed = [];
+    for (const name of removals) {
+      await assertNoLinks(root, name);
+      const dst = path.join(root, name);
+      try {
+        const stat = await lstat(dst);
+        if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("Небезопасный файл для удаления: " + name);
+        const saved = path.join(backup, name);
+        await mkdir(path.dirname(saved), { recursive: true });
+        await copyFile(dst, saved);
+        changes.push({ name, existed: true });
+        doomed.push(name);
+      } catch (e) { if (e?.code !== "ENOENT") throw e; }
+    }
     await event("backup_done", "", "backed_up", { backup_relative_path: path.relative(root, backup) });
     for (const file of prepared) {
       const dst = path.join(root, file.path);
       await assertNoLinks(root, file.path);
       await event("file_install_start", file.path, "installing", { target_relative_path: file.path });
-      await mkdir(path.dirname(dst), { recursive: true });
-      await atomicWrite(dst, file.data);
+      try {
+        await mkdir(path.dirname(dst), { recursive: true });
+        await atomicWrite(dst, file.data);
+      } catch (e) {
+        await event("file_install_failed", file.path, "failed", { target_relative_path: file.path, message: String(e?.message ?? e), error_code: e?.code ?? "EINSTALL" }).catch(() => {});
+        throw e;
+      }
       await event("file_install_done", file.path, "installed", { target_relative_path: file.path });
     }
+    for (const name of doomed) {
+      try { await rm(path.join(root, name)); }
+      catch (e) {
+        await event("file_install_failed", name, "failed", { message: String(e?.message ?? e), error_code: e?.code ?? "EREMOVE", change_type: "removed" }).catch(() => {});
+        throw e;
+      }
+      await event("file_remove_done", name, "removed", { change_type: "removed" });
+    }
+    await event("health_check_started", "", "health_check");
+    try { await healthCheck(root, manifest.files); }
+    catch (e) {
+      await event("health_check_done", "", "failed", { message: String(e?.message ?? e) }).catch(() => {});
+      throw e;
+    }
+    await event("health_check_done", "", "healthy");
     await atomicWrite(path.join(root, ".juunibi-version"), Buffer.from(manifest.sha + "\n"));
+    // Remember what this release installed so a later update can propose removals of files it dropped.
+    await atomicWrite(path.join(folder, "installed.json"), Buffer.from(JSON.stringify({ sha: manifest.sha, paths: manifest.files.map(f => f.path) })));
+    await rm(path.join(folder, "removals-confirmed.json"), { force: true });
     await rm(manifestFile);
     await event("update_completed", "", "completed", { sha: manifest.sha, backup_relative_path: path.relative(root, backup) });
     return true;
@@ -104,7 +167,7 @@ export async function applyPreparedUpdate(root) {
       const dst = path.join(root, name);
       try {
         await assertNoLinks(root, name);
-        if (existed) await atomicWrite(dst, await readFile(path.join(backup, name)));
+        if (existed) { await mkdir(path.dirname(dst), { recursive: true }); await atomicWrite(dst, await readFile(path.join(backup, name))); }
         else await rm(dst, { force: true });
       } catch (e) { failures.push(name + ": " + String(e)); }
     }
@@ -112,6 +175,8 @@ export async function applyPreparedUpdate(root) {
       const marker = path.join(root, ".juunibi-version");
       if (oldVersion === null) await rm(marker, { force: true });
       else await atomicWrite(marker, oldVersion);
+      if (oldInstalled === null) await rm(installedFile, { force: true });
+      else await atomicWrite(installedFile, oldInstalled);
     } catch (e) { failures.push("version marker: " + String(e)); }
     if (failures.length) {
       await event("rollback_failed", "", "failed", { message: failures.join("; ") }).catch(() => {});

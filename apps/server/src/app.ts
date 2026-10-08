@@ -98,6 +98,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
           return send(res, 200, await deps.updater.check());
         }
+        if (req.method === "POST" && p === "/api/update/confirm-removals") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          try { return send(res, 200, await deps.updater.confirmRemovals()); }
+          catch (e) { return send(res, 409, { error: (e as Error).message }); }
+        }
         if (req.method === "POST" && p === "/api/update/download") {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
           if (deps.updater.status().phase === "downloading" || deps.updater.status().phase === "testing") return send(res, 409, { error: "Обновление уже выполняется" });

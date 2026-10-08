@@ -11,8 +11,8 @@ async function fixture() {
   await mkdir(path.join(root, ".updates", "staging"), {recursive:true});
   return root;
 }
-async function ready(root, files, sha = "a".repeat(40)) {
-  await writeFile(path.join(root, ".updates", "ready.json"), JSON.stringify({sha, files:files.map(([name, bytes])=>({path:name, sha:hash(Buffer.from(bytes))}))}));
+async function ready(root, files, sha = "a".repeat(40), removals) {
+  await writeFile(path.join(root, ".updates", "ready.json"), JSON.stringify({sha, files:files.map(([name, bytes])=>({path:name, sha:hash(Buffer.from(bytes))})), ...(removals ? {removals} : {})}));
   for (const [name, bytes] of files) {
     const p=path.join(root, ".updates", "staging",name);
     await mkdir(path.dirname(p),{recursive:true});
@@ -66,5 +66,105 @@ test("refuses protected files without replacing user secrets", async () => {
     await ready(root,[[".env","attacker"]]);
     await assert.rejects(applyPreparedUpdate(root),/манифест/);
     assert.equal(await readFile(path.join(root,".env"),"utf8"),"my-key");
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+const events = async root => (await readFile(path.join(root,".updates","events.jsonl"),"utf8")).trim().split("\n").map(JSON.parse);
+test("health check runs after install and is recorded", async () => {
+  const root=await fixture();
+  try {
+    await ready(root,[["apps/a.txt","x"]]);
+    await applyPreparedUpdate(root);
+    const types=(await events(root)).map(e=>e.type);
+    assert.ok(types.indexOf("file_install_done")<types.indexOf("health_check_started"));
+    assert.ok(types.indexOf("health_check_started")<types.indexOf("health_check_done"));
+    assert.equal((await events(root)).find(e=>e.type==="health_check_done").status,"healthy");
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("failed health check rolls back files and version marker", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps"),{recursive:true});
+    await writeFile(path.join(root,"apps","a.txt"),"old");
+    await writeFile(path.join(root,".juunibi-version"),"oldmarker");
+    await ready(root,[["apps/a.txt","new"],["apps/b.txt","added"]]);
+    await assert.rejects(applyPreparedUpdate(root,{healthCheck:async()=>{throw new Error("не запускается");}}),/не запускается/);
+    assert.equal(await readFile(path.join(root,"apps","a.txt"),"utf8"),"old");
+    await assert.rejects(readFile(path.join(root,"apps","b.txt")));
+    assert.equal(await readFile(path.join(root,".juunibi-version"),"utf8"),"oldmarker");
+    const types=(await events(root)).map(e=>e.type);
+    for (const t of ["health_check_done","update_failed","rollback_started","rollback_done"]) assert.ok(types.includes(t),t);
+    assert.ok(!types.includes("update_completed"));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("default health check catches a broken script", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"scripts"),{recursive:true});
+    await writeFile(path.join(root,"scripts","x.mjs"),"export const ok = 1;");
+    await ready(root,[["scripts/x.mjs","export const = ;"]]);
+    await assert.rejects(applyPreparedUpdate(root),/Синтаксическая ошибка/);
+    assert.equal(await readFile(path.join(root,"scripts","x.mjs"),"utf8"),"export const ok = 1;");
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("removals happen only for files the user confirmed for this exact update", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps"),{recursive:true});
+    await writeFile(path.join(root,"apps","old1.txt"),"1");
+    await writeFile(path.join(root,"apps","old2.txt"),"2");
+    await writeFile(path.join(root,"apps","mine.txt"),"user file, not in removals");
+    // no confirmation -> nothing is deleted
+    await ready(root,[["apps/new.txt","n"]],"a".repeat(40),["apps/old1.txt","apps/old2.txt"]);
+    await applyPreparedUpdate(root);
+    assert.equal(await readFile(path.join(root,"apps","old1.txt"),"utf8"),"1");
+    assert.ok(!(await events(root)).some(e=>e.type==="file_remove_done"));
+    // confirmation for a different sha is ignored; for this sha only old1
+    await ready(root,[["apps/new2.txt","n"]],"b".repeat(40),["apps/old1.txt","apps/old2.txt"]);
+    await writeFile(path.join(root,".updates","removals-confirmed.json"),JSON.stringify({sha:"c".repeat(40),paths:["apps/old1.txt"]}));
+    await applyPreparedUpdate(root);
+    assert.equal(await readFile(path.join(root,"apps","old1.txt"),"utf8"),"1");
+    await ready(root,[["apps/new3.txt","n"]],"d".repeat(40),["apps/old1.txt","apps/old2.txt"]);
+    await writeFile(path.join(root,".updates","removals-confirmed.json"),JSON.stringify({sha:"d".repeat(40),paths:["apps/old1.txt"]}));
+    await applyPreparedUpdate(root);
+    await assert.rejects(readFile(path.join(root,"apps","old1.txt")));
+    assert.equal(await readFile(path.join(root,"apps","old2.txt"),"utf8"),"2");
+    assert.equal(await readFile(path.join(root,"apps","mine.txt"),"utf8"),"user file, not in removals");
+    const removed=(await events(root)).filter(e=>e.type==="file_remove_done");
+    assert.deepEqual(removed.map(e=>e.relative_path),["apps/old1.txt"]);
+    const installed=JSON.parse(await readFile(path.join(root,".updates","installed.json"),"utf8"));
+    assert.equal(installed.sha,"d".repeat(40));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("a confirmed removal is restored when the update rolls back", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps"),{recursive:true});
+    await writeFile(path.join(root,"apps","old.txt"),"keep me");
+    await ready(root,[["apps/new.txt","n"]],"e".repeat(40),["apps/old.txt"]);
+    await writeFile(path.join(root,".updates","removals-confirmed.json"),JSON.stringify({sha:"e".repeat(40),paths:["apps/old.txt"]}));
+    await assert.rejects(applyPreparedUpdate(root,{healthCheck:async()=>{throw new Error("bad");}}));
+    assert.equal(await readFile(path.join(root,"apps","old.txt"),"utf8"),"keep me");
+    await assert.rejects(readFile(path.join(root,"apps","new.txt")));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("rejects unsafe or conflicting removals in the manifest", async () => {
+  for (const bad of [["../x"],[".env"],["apps/new.txt"]]) {
+    const root=await fixture();
+    try {
+      await ready(root,[["apps/new.txt","n"]],"a".repeat(40),bad);
+      await assert.rejects(applyPreparedUpdate(root),/манифест/);
+    } finally {await rm(root,{recursive:true,force:true});}
+  }
+});
+test("unsafe destination aborts without any success event", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps","blocker"),{recursive:true}); // a directory where a file must be written
+    await ready(root,[["apps/blocker","file"]]);
+    await assert.rejects(applyPreparedUpdate(root));
+    const ev=await events(root);
+    assert.ok(!ev.some(e=>e.type==="file_install_done"));
+    assert.ok(!ev.some(e=>e.type==="update_completed"));
   } finally {await rm(root,{recursive:true,force:true});}
 });
