@@ -1,4 +1,5 @@
-import { el, icon, iconButton } from "../dom";
+import { el, icon, iconButton, type IconName } from "../dom";
+import { characterAvatar, greeting } from "./art";
 import { app, decideApproval, persistPrefs, type Route } from "../state";
 import { groupLabel, type Chats, type ChatMsg, type Conversation } from "./chats";
 import { Composer } from "./composer";
@@ -9,13 +10,13 @@ import { isSpeaking, speak, speechSupported, stopSpeaking } from "./voice";
 import { WindowFrame } from "./window";
 
 interface Row { root: HTMLElement; sig: string }
-interface Suggestion { title: string; text?: string; go?: Route }
+interface Suggestion { title: string; sub: string; icon: IconName; text?: string; go?: Route }
 
 const GENERIC: Suggestion[] = [
-  { title: "Что ты умеешь?", text: "Что ты умеешь? Расскажи коротко." },
-  { title: "Покажи модули проекта", text: "Покажи, какие модули есть в проекте JUUNIBI и в каком они состоянии." },
-  { title: "Запомни предпочтение", text: "Запомни: я предпочитаю тёмную тему и краткие ответы." },
-  { title: "Прочитай файл", text: "Я прикреплю файл. Кратко объясни, что в нём." },
+  { title: "Что ты умеешь?", sub: "Коротко о возможностях", icon: "chat", text: "Что ты умеешь? Расскажи коротко." },
+  { title: "Покажи модули проекта", sub: "Состояние и связи", icon: "modules", text: "Покажи, какие модули есть в проекте JUUNIBI и в каком они состоянии." },
+  { title: "Запомни предпочтение", sub: "Пусть я знаю, как вам удобнее", icon: "memory", text: "Запомни: я предпочитаю тёмную тему и краткие ответы." },
+  { title: "Разбери файл", sub: "Прикрепите текст или код", icon: "file", text: "Я прикреплю файл. Кратко объясни, что в нём." },
 ];
 const SHORTCUTS: [string, string][] = [
   ["Enter", "Отправить сообщение"], ["Shift + Enter", "Новая строка"], ["↑ (поле пустое)", "Изменить последнее сообщение"],
@@ -35,6 +36,7 @@ export class ChatView {
   private readonly banner: HTMLElement;
   private readonly approvals: HTMLElement;
   private readonly titleEl: HTMLElement;
+  private sideStatus!: HTMLElement;
   private readonly maxBtn: HTMLButtonElement;
   private readonly sheet: HTMLElement;
   private readonly menu: HTMLElement;
@@ -60,7 +62,10 @@ export class ChatView {
     this.search = el("input", { type: "search", placeholder: "Поиск в чатах", cls: "side-search", attrs: { "aria-label": "Поиск в чатах" } });
     this.search.addEventListener("input", () => this.schedule());
     this.sideList = el("nav", { cls: "side-list", attrs: { "aria-label": "История чатов" } });
-    this.side = el("aside", { cls: "chat-side" }, el("div", { cls: "side-top" }, newBtn, this.search), this.sideList);
+    this.sideStatus = el("span", { cls: "side-foot-status" });
+    const foot = el("div", { cls: "side-foot" }, characterAvatar(34), el("div", { cls: "side-foot-text" }, el("strong", { textContent: "JUUNIBI" }), this.sideStatus),
+      iconButton("settings", "Настройки", () => this.onNavigate("settings")));
+    this.side = el("aside", { cls: "chat-side" }, el("div", { cls: "side-top" }, newBtn, this.search), this.sideList, foot);
 
     // ---- header
     this.titleEl = el("div", { cls: "chat-title" });
@@ -78,6 +83,7 @@ export class ChatView {
     this.thread.addEventListener("scroll", () => {
       const near = this.thread.scrollHeight - this.thread.clientHeight - this.thread.scrollTop < 80;
       this.stick = near; this.toBottom.classList.toggle("show", !near);
+      this.root.classList.toggle("scrolled", this.thread.scrollTop > 6);
     });
     this.toBottom = iconButton("arrowDown", "Вниз", () => { this.stick = true; this.scrollDown(true); }, "to-bottom");
     this.banner = el("div", { cls: "chat-banner", hidden: true });
@@ -214,7 +220,11 @@ export class ChatView {
     this.maxBtn.replaceChildren(icon(s.chatMax ? "minimize" : "maximize", 18));
     this.maxBtn.title = s.chatMax ? "Свернуть окно" : "На весь экран";
     this.maxBtn.setAttribute("aria-label", this.maxBtn.title);
-    this.titleEl.replaceChildren(el("strong", { textContent: "JUUNIBI" }), ...(s.status?.model ? [el("span", { textContent: s.status.model.split("/").pop() ?? "" })] : []));
+    const model = s.status?.model?.split("/").pop() ?? "";
+    this.titleEl.replaceChildren(characterAvatar(34, "head-av"), el("div", { cls: "chat-title-text" }, el("strong", { textContent: "JUUNIBI" }),
+      el("span", { cls: "chat-sub" }, el("i", { cls: "dot " + (configured ? "on" : "off") }), configured ? `на связи${model ? " · " + model : ""}` : s.status ? "нужен ключ Cloud.ru" : "подключение…")));
+    this.sideStatus.textContent = configured ? "На связи" : "Не подключена";
+    this.sideStatus.classList.toggle("off", !configured);
 
     this.banner.hidden = configured || s.status === null;
     if (!this.banner.hidden && !this.banner.firstChild) {
@@ -303,9 +313,9 @@ export class ChatView {
   private suggestions(): Suggestion[] {
     const s = app.get();
     const ctx: Suggestion[] = [];
-    if (s.update?.latest && s.update.localVersion !== "не определена" && s.update.localVersion !== s.update.latest.sha) ctx.push({ title: "Доступно обновление — открыть", go: "update" });
+    if (s.update?.latest && s.update.localVersion !== "не определена" && s.update.localVersion !== s.update.latest.sha) ctx.push({ title: "Доступно обновление", sub: "Открыть раздел обновления", icon: "update", go: "update" });
     const pending = s.memory.filter((m) => m.status === "pending").length;
-    if (pending) ctx.push({ title: `Подтвердить память (${pending})`, go: "memory" });
+    if (pending) ctx.push({ title: `Подтвердить память (${pending})`, sub: "Новые уроки ждут вас", icon: "memory", go: "memory" });
     return [...ctx, ...GENERIC].slice(0, 4);
   }
 
@@ -318,8 +328,9 @@ export class ChatView {
       const sig = JSON.stringify(sug);
       if (!this.empty || sig !== this.emptySig) {
         this.emptySig = sig;
-        this.empty = el("div", { cls: "empty" }, el("h2", { textContent: "Чем могу помочь?" }),
-          el("div", { cls: "suggestions" }, ...sug.map((x) => el("button", { type: "button", cls: "suggest", textContent: x.title, attrs: { ...(x.text ? { "data-text": x.text } : {}), ...(x.go ? { "data-go": x.go } : {}) } }))),
+        this.empty = el("div", { cls: "empty" }, characterAvatar(88, "hero-av"), el("h2", { textContent: greeting() + "!" }), el("p", { cls: "empty-sub", textContent: "Чем могу помочь?" }),
+          el("div", { cls: "suggestions" }, ...sug.map((x) => el("button", { type: "button", cls: "suggest", attrs: { ...(x.text ? { "data-text": x.text } : {}), ...(x.go ? { "data-go": x.go } : {}) } },
+            icon(x.icon, 20), el("span", { cls: "suggest-text" }, el("strong", { textContent: x.title }), el("span", { textContent: x.sub }))))),
           el("p", { cls: "muted hint-line", textContent: "Подсказка: «/» — команды, скрепка — файлы, перетащите файл в окно." }));
         this.inner.replaceChildren(this.empty, this.approvals);
       }
