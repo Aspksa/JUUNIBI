@@ -231,6 +231,32 @@ export class Memory {
     await this.persist();
     return copyEntry(stored);
   }
+  /** Only recognize explicit opposite values of the same named preference, never guess contradictions. */
+  private conflictingPreference(candidate: string): MemoryEntry | undefined {
+    const pairs: readonly (readonly string[])[] = [
+      ["тёмную", "светлую"], ["темную", "светлую"],
+      ["тёмный", "светлый"], ["темный", "светлый"],
+      ["включённые", "выключенные"], ["включенные", "выключенные"],
+    ];
+    const clean = normalize(candidate);
+    const words = clean.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    for (const [left, right] of pairs) {
+      const hasLeft = words.includes(normalize(left!));
+      const hasRight = words.includes(normalize(right!));
+      if (hasLeft === hasRight) continue;
+      const opposite = hasLeft ? normalize(right!) : normalize(left!);
+      const shared = words.filter(w => w !== (hasLeft ? normalize(left!) : normalize(right!)));
+      if (!shared.length) continue;
+      const old = this.entries.find(e => {
+        if (e.kind !== "preference" || e.status !== "active" || e.supersededBy || (e.expiresAt !== undefined && e.expiresAt <= Date.now())) return false;
+        const oldWords = normalize(e.text).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+        return oldWords.includes(opposite) && shared.every(w => oldWords.includes(w)) &&
+          oldWords.filter(w => w !== opposite).every(w => shared.includes(w));
+      });
+      if (old) return old;
+    }
+    return undefined;
+  }
   /** Conservative opt-in-style extraction from direct user statements. Never auto-approves. */
   async suggestFromUserText(input: string): Promise<MemoryEntry[]> {
     if (typeof input !== "string" || input.length > 2000) return [];
@@ -248,6 +274,11 @@ export class Memory {
       const candidate = match?.[1]?.trim();
       if (!candidate || candidate.length < 6 || candidate.length > 300 ||
           /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа)/iu.test(candidate)) return [];
+      const conflict = kind === "preference" ? this.conflictingPreference(candidate) : undefined;
+      if (conflict) {
+        const proposal = await this.proposeRevision(conflict.id, candidate);
+        return proposal ? [proposal] : [];
+      }
       const entry = await this.add(kind, candidate, "pending");
       return entry.status === "pending" ? [entry] : [];
     }
