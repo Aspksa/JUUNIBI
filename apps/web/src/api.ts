@@ -1,5 +1,7 @@
 import { attemptAsync, type Result } from "@juunibi/core";
 
+export interface DialogSummary { id: string; title: string; updatedAt: number }
+export interface DialogTurn { id: string; user: string; reply: string; tools: string[]; rating?: 1 | -1; at: number }
 export interface CloudStatus { configured: boolean; model: string }
 export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
@@ -25,7 +27,9 @@ export const api = {
   decideApproval: (id: string, approve: boolean) => attemptAsync(() => call<{ok:boolean}>(`/api/approvals/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, post({}))),
   status: (): Promise<Result<Status>> => attemptAsync(() => call<Status>("/api/status")),
   modules: () => attemptAsync(() => call<{ name: string; deps: string[]; status: string }[]>("/api/modules")),
-  chat: (message: string) => attemptAsync(() => call<ChatReply>("/api/chat", post({ message }))),
+  dialogs: () => attemptAsync(() => call<DialogSummary[]>("/api/dialogs")),
+  dialogTurns: (session: string) => attemptAsync(() => call<DialogTurn[]>("/api/dialogs/turns?session=" + encodeURIComponent(session))),
+  chat: (message: string, session: string) => attemptAsync(() => call<ChatReply>("/api/chat", post({ message, session }))),
   feedback: (turnId: string, rating: 1 | -1) => attemptAsync(() => call("/api/feedback", post({ turnId, rating }))),
   reflect: (turnId: string) => attemptAsync(() => call<MemoryItem[]>("/api/reflect", post({ turnId }))),
   memory: () => attemptAsync(() => call<MemoryItem[]>("/api/memory")),
