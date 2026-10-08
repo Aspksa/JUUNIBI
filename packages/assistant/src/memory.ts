@@ -231,6 +231,21 @@ export class Memory {
     await this.persist();
     return copyEntry(stored);
   }
+  /** A model may nominate a replacement, but only existing pending entries can be linked. */
+  async linkPendingRevision(pendingId: string, oldId: string): Promise<boolean> {
+    await this.ready;
+    if (pendingId === oldId) return false;
+    const pending = this.entries.find(e => e.id === pendingId && e.status === "pending" && e.kind === "preference");
+    const old = this.entries.find(e => e.id === oldId && e.status === "active" && e.kind === "preference" && !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()));
+    if (!pending || !old || pending.revisesId || this.entries.some(e => e.id !== pendingId && e.status === "pending" && e.revisesId === oldId)) return false;
+    const stop = new Set(["я", "мне", "мой", "моя", "мои", "предпочитаю", "люблю", "нравится", "когда", "чтобы", "всегда", "обычно", "больше", "меньше"]);
+    const topic = (text: string) => new Set(tokens(text).map(meaning).filter(w => !stop.has(w) && w.length > 2));
+    const current = topic(pending.text), previous = topic(old.text);
+    if (![...current].some(word => previous.has(word))) return false;
+    pending.revisesId = oldId;
+    await this.persist();
+    return true;
+  }
   /** Only recognize explicit opposite values of the same named preference, never guess contradictions. */
   private conflictingPreference(candidate: string): MemoryEntry | undefined {
     const pairs: readonly (readonly string[])[] = [
