@@ -1,6 +1,7 @@
 // JUUNIBI launcher: install -> checks (typecheck + tests) -> build -> free port -> serve -> open browser.
 // Usage: node scripts/launch.mjs [--dev] [--no-open] [--skip-checks] [--port N]
 import { spawn, spawnSync } from "node:child_process";
+import { applyPreparedUpdate } from "./apply-update.mjs";
 import { existsSync } from "node:fs";
 import net from "node:net";
 import http from "node:http";
@@ -8,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+await applyPreparedUpdate(root);
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };

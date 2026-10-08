@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
+import type { ProjectUpdater } from "./updater";
 export interface AppDeps {
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
   assistant: Assistant | undefined;
   approvals?: ApprovalGate;
+  updater?: ProjectUpdater;
   modules: () => unknown;
   staticDir?: string;
   configured: { model?: string; hint?: string };
@@ -72,6 +74,17 @@ export function createApp(deps: AppDeps): http.Server {
         const a = deps.assistant;
         if (req.method === "GET" && p === "/api/status") return send(res, 200, { assistant: !!a, ...deps.configured });
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
+        if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
+        if (req.method === "POST" && p === "/api/update/check") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          return send(res, 200, await deps.updater.check());
+        }
+        if (req.method === "POST" && p === "/api/update/download") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          if (deps.updater.status().phase === "downloading" || deps.updater.status().phase === "testing") return send(res, 409, { error: "Обновление уже выполняется" });
+          void deps.updater.start();
+          return send(res, 202, { ok: true });
+        }
         if (!a) return send(res, 503, { error: deps.configured.hint ?? "Помощник не настроен" });
 
         if (req.method === "GET" && p === "/api/approvals") return send(res, 200, deps.approvals?.list() ?? []);

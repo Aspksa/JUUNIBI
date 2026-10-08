@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
 import { Assistant, CloudRuProvider, Memory, assistantPlugin, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
 import { createApp } from "./app";
+import { ProjectUpdater } from "./updater";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -34,6 +35,9 @@ function fileStore(file: string): StorageAdapter {
 const log = new Logger("server", "info");
 const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
+const updater = new ProjectUpdater(root);
+const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
+void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
 const { CLOUDRU_API_KEY: apiKey, CLOUDRU_MODEL: model, CLOUDRU_BASE_URL: baseUrl } = process.env;
 
 let assistant: Assistant | undefined;
@@ -72,12 +76,13 @@ const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist
 const server = createApp({
   assistant,
   approvals: approvalGate,
+  updater,
   modules: () => kernel.describe(),
   staticDir,
   configured: { ...(model ? { model } : {}), ...(hint ? { hint } : {}) },
 });
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
-const shutdown = async () => { approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
+const shutdown = async () => { clearInterval(updateTimer); approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
