@@ -1,17 +1,17 @@
 import { Kernel, Logger, Store, attempt } from "@juunibi/core";
-import { api, type MemoryItem, type Status, type ApprovalItem, type UpdateStatus, type SceneReply } from "./api";
+import { api, type MemoryItem, type Status, type ApprovalItem, type UpdateStatus, type UpdateEvent, type SceneReply } from "./api";
 import "./style.css";
 
 interface Msg { role: "user" | "bot" | "error"; text: string; turnId?: string; rating?: 1 | -1; tools?: string[] }
 interface State {
-  scene: SceneReply | null; msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
+  updateEvents: UpdateEvent[]; updateMode: "simple"|"visual"|"technical"; scene: SceneReply | null; msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
   memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[]; theme: "auto" | "light" | "dark";
 }
 
 const KEY = "juunibi:ui:v2";
 const saved = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<State>);
 const theme0 = saved.ok && (saved.value.theme === "light" || saved.value.theme === "dark") ? saved.value.theme : "auto";
-const store = new Store<State>({ scene: null, msgs: [], busy: false, approvals: [], update: null, updateError: "", status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
+const store = new Store<State>({ updateEvents: [], updateMode: "visual", scene: null, msgs: [], busy: false, approvals: [], update: null, updateError: "", status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
 const kernel = new Kernel(new Logger("web", "info"));
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
@@ -22,6 +22,10 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
   return n;
 };
 
+async function refreshEvents() {
+  const r = await api.updateEvents();
+  if (r.ok && r.value.map(e=>e.event_id).join(",") !== store.get().updateEvents.map(e=>e.event_id).join(",")) store.set({updateEvents:r.value});
+}
 async function refreshUpdate() {
   const r = await api.updateStatus();
   if (r.ok && JSON.stringify(r.value) !== JSON.stringify(store.get().update)) store.set({ update: r.value });
@@ -109,7 +113,7 @@ kernel.register({
     });
     view.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest("button");
-      if (b?.dataset.tab) { const tab = b.dataset.tab as State["tab"]; store.set({ tab }); if (tab === "memory") void refreshMemory(); if (tab === "modules") void refreshModules(); if (tab === "update") void refreshUpdate(); }
+      if (b?.dataset.tab) { const tab = b.dataset.tab as State["tab"]; store.set({ tab }); if (tab === "memory") void refreshMemory(); if (tab === "modules") void refreshModules(); if (tab === "update") { void refreshUpdate(); void refreshEvents(); } }
       else if (b?.id === "theme") store.set((s) => ({ theme: nextTheme[s.theme] }));
     });
 
@@ -117,7 +121,7 @@ kernel.register({
     const poll = setInterval(() => {
       const current = store.get();
       if (current.busy || current.approvals.length) void refreshApprovals();
-      if (current.tab === "update" || current.update?.phase === "downloading" || current.update?.phase === "testing") void refreshUpdate();
+      if (current.tab === "update" || current.update?.phase === "downloading" || current.update?.phase === "testing") {void refreshUpdate();void refreshEvents();}
     }, 2500);
     ctx.onStop(() => clearInterval(poll));
     const render = () => {
@@ -202,6 +206,30 @@ kernel.register({
         body = el("section", { cls: "updater" }, title, el("p", { textContent: "Провайдер: Cloud.ru · Модель: DeepSeek V4 Flash" }), el("p", { textContent: "Ключ хранится на локальном сервере в data/cloudru-settings.json, не в браузере и не в GitHub." }), configForm, note);
       } else if (s.tab === "update") {
         const u = s.update;
+        const events = [...new Map(s.updateEvents.map(e=>[e.event_id,e])).values()];
+        const manifest = [...events].reverse().find(e=>e.type==="manifest_ready");
+        const files = manifest?.files ?? [];
+        const newest = [...events].reverse().find(e=>e.relative_path && (e.type==="file_download_done" || e.type==="file_install_start" || e.type==="file_install_done" || e.type==="file_install_failed"));
+        const installed = new Set(events.filter(e=>e.type==="file_install_done").map(e=>e.relative_path));
+        const downloaded = new Set(events.filter(e=>e.type==="file_download_done").map(e=>e.relative_path));
+        const failed = new Set(events.filter(e=>e.type==="file_install_failed").map(e=>e.relative_path));
+        const modes = el("div",{cls:"update-modes"},...(["simple","visual","technical"] as const).map(mode=>{
+          const b=el("button",{type:"button",textContent:mode==="simple"?"Простой":mode==="visual"?"Визуальный":"Технический"});
+          b.setAttribute("aria-pressed",String(s.updateMode===mode));
+          b.addEventListener("click",()=>store.set({updateMode:mode}));
+          return b;
+        }));
+        const folders = [...new Set(files.map(f=>f.path.split("/").slice(0,-1).join("/") || "Корень"))].sort();
+        const flight = el("div",{cls:"flight-layout"},
+          el("div",{cls:"flight-zone"},el("strong",{textContent:"GitHub · источник"}),...(files.slice(0,65).map(f=>el("div",{cls:"flight-file",textContent:(f.change_type==="added"?"+ ":f.change_type==="modified"?"~ ":"= ")+f.path})))),
+          el("div",{cls:"flight-center"},el("strong",{textContent:"Проверка → загрузка"}),...(newest?[el("div",{cls:"flying-file",textContent:newest.relative_path})]:[el("p",{textContent:"Ожидание реальных событий"})])),
+          el("div",{cls:"flight-zone"},el("strong",{textContent:"Локальные папки"}),...folders.slice(0,65).map(folder=>{
+            const count=files.filter(f=>(f.path.split("/").slice(0,-1).join("/")||"Корень")===folder&&installed.has(f.path)).length;
+            return el("details",{},el("summary",{textContent:"📁 "+folder+" · установлено "+count}),...files.filter(f=>(f.path.split("/").slice(0,-1).join("/")||"Корень")===folder).map(f=>el("div",{cls:"flight-file "+(installed.has(f.path)?"installed":failed.has(f.path)?"failed":downloaded.has(f.path)?"downloaded":""),textContent:(installed.has(f.path)?"✓ ":failed.has(f.path)?"✕ ":downloaded.has(f.path)?"↓ ":"• ")+f.path.split("/").pop()})));
+          }))
+        );
+        const logPanel=el("div",{cls:"update-log"},...events.slice(-100).reverse().map(e=>el("p",{textContent:new Date(e.timestamp).toLocaleTimeString("ru-RU")+" · "+e.type+(e.relative_path?" · "+e.relative_path:"")+(e.message?" · "+e.message:"")})));
+
         const btn = (title: string, action: () => void, disabled = false) => {
           const b = el("button", { type: "button", textContent: title, disabled });
           b.addEventListener("click", action);
@@ -211,6 +239,9 @@ kernel.register({
         progress.setAttribute("aria-label", "Прогресс скачивания");
         body = el("section", { cls: "updater" },
           el("h2", { textContent: "Обновление проекта" }),
+          modes,
+          ...(s.updateMode==="visual"?[flight]:[]),
+          ...(s.updateMode==="technical"?[el("h3",{textContent:"Журнал фактических событий"}),logPanel]:[]),
           el("p", { textContent: "Источник: github.com/Aspksa/JUUNIBI" }),
           el("p", { textContent: "Локальная версия: " + (u?.localVersion ?? "загрузка…") }),
           el("p", { textContent: "Доступная версия: " + (u?.latest?.version ?? "ещё не проверена") }),
@@ -246,7 +277,7 @@ kernel.register({
     ctx.onStop(store.subscribe(() => {
       const next = store.get();
       const updateOnly = previous.update !== next.update &&
-        previous.msgs === next.msgs && previous.busy === next.busy &&
+        previous.updateEvents === next.updateEvents && previous.updateMode === next.updateMode && previous.msgs === next.msgs && previous.busy === next.busy &&
         previous.approvals === next.approvals && previous.updateError === next.updateError &&
         previous.status === next.status && previous.tab === next.tab &&
         previous.memory === next.memory && previous.modules === next.modules && previous.theme === next.theme;
