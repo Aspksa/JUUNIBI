@@ -20,4 +20,17 @@ describe("memory proposal guardrails", () => {
     expect((await assistant.ask("Мне нравится тёмный интерфейс во всех приложениях")).reply).toBe("Хорошо");
     expect(await memory.list("pending")).toEqual([]);
   });
+  it("does not expose mutable relatedIds via list or search", async () => {
+    const memory = new Memory();
+    const a = await memory.add("fact", "лиса любит проекты", "active");
+    const b = await memory.add("fact", "лиса работает в команде", "active");
+    await memory.relate(a.id, b.id);
+    const listed = await memory.list();
+    listed[0]!.relatedIds!.push("forged-id");
+    const searched = await memory.search("лиса");
+    searched[0]!.relatedIds!.push("another-forged-id");
+    const fresh = (await memory.list()).find(x => x.id === a.id)!;
+    expect(fresh.relatedIds).toEqual([b.id]);
+  });
+
 });
