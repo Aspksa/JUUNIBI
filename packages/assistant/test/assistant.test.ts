@@ -87,11 +87,11 @@ describe("Assistant", () => {
     expect(JSON.parse((await a.exportDataset()).split("\n")[0]!).messages[1].content).toBe("Без сахара.");
   });
 
-  it("memory ignores corrupt storage and dedupes", async () => {
-    const mem = new Memory({ load: async () => "{broken", save: async () => {} });
-    await mem.add("fact", "a b", "active");
-    await mem.add("fact", "A B", "active");
-    expect(await mem.list()).toHaveLength(1);
+  it("refuses writes after corrupt memory data is detected", async () => {
+    let writes = 0;
+    const mem = new Memory({ load: async () => "{broken", save: async () => { writes++; } });
+    await expect(mem.add("fact", "a b", "active")).rejects.toThrow(/Память повреждена/);
+    expect(writes).toBe(0);
   });
 
   it("works as a kernel plugin that other modules extend with tools", async () => {
