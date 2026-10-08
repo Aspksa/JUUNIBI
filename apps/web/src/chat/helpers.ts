@@ -126,3 +126,35 @@ export function speechText(md: string, max = 4000): string {
     .replace(/https?:\/\/\S+/g, " ссылка ")
     .replace(/\s+/g, " ").trim().slice(0, max);
 }
+
+// ---------- sidebar & day separators ----------
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+const dayDiff = (ts: number, now: Date) => Math.round((startOfDay(now) - startOfDay(new Date(ts))) / 86_400_000);
+const shortDate = (ts: number) => new Date(ts).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }).replace(/\.$/, "");
+/** Compact "how long ago" for the history list. */
+export function relTime(ts: number, now = new Date()): string {
+  const s = Math.max(0, (now.getTime() - ts) / 1000);
+  if (s < 60) return "сейчас";
+  if (s < 3600) return `${Math.floor(s / 60)} мин`;
+  const d = dayDiff(ts, now);
+  if (d <= 0 && s < 86_400) return `${Math.floor(s / 3600)} ч`;
+  if (d === 1) return "вчера";
+  if (d < 7) return new Date(ts).toLocaleDateString("ru-RU", { weekday: "short" });
+  return shortDate(ts);
+}
+/** Label for the separator between days inside a conversation. */
+export function dayLabel(ts: number, now = new Date()): string {
+  const d = dayDiff(ts, now);
+  if (d <= 0) return "Сегодня";
+  if (d === 1) return "Вчера";
+  const dt = new Date(ts);
+  return dt.toLocaleDateString("ru-RU", { day: "numeric", month: "long", ...(dt.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}) });
+}
+export const sameDay = (a: number, b: number) => startOfDay(new Date(a)) === startOfDay(new Date(b));
+/** One-line preview of a conversation for the sidebar. */
+export function previewOf(messages: { role: string; content: string }[]): string {
+  const last = [...messages].reverse().find((m) => m.role !== "note" && m.content.trim());
+  if (!last) return "";
+  const t = speechText(last.content, 80);
+  return last.role === "user" ? `Вы: ${t}` : t;
+}

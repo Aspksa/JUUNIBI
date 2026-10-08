@@ -1,7 +1,7 @@
 /* JUUNIBI web UI — neutral ChatGPT-style chrome, left menu, floating avatar, popup chat. */
 :root{
   --bg:#fff;--surface:#f9f9f9;--surface-2:#f4f4f4;--fg:#0d0d0d;--muted:#6b6b6b;--line:rgba(0,0,0,.1);--hover:rgba(0,0,0,.06);--hover-2:rgba(0,0,0,.1);
-  --accent:#0d0d0d;--accent-fg:#fff;--danger:#d93025;--ok:#2e7d32;--brand:#c8922a;--shadow:0 20px 60px -20px rgba(0,0,0,.35);
+  --accent:#0d0d0d;--accent-fg:#fff;--danger:#d93025;--ok:#2e7d32;--brand:#ad7a12;--shadow:0 20px 60px -20px rgba(0,0,0,.35);
   --font:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,"Noto Sans","Helvetica Neue",Arial,sans-serif;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
   --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;--fg:#ececec;--muted:#9b9b9b;--line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);
@@ -408,7 +408,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .composer-wrap{padding:0 20px 14px}
 .composer{gap:4px;padding:6px 8px;border:1px solid var(--line);border-radius:26px;background:color-mix(in srgb,var(--surface-2) 94%,transparent);box-shadow:var(--soft);transition:border-color .15s,box-shadow .15s}
 .composer:focus-within{border-color:var(--ring);box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 15%,transparent),var(--soft)}
-.send-btn{background:linear-gradient(145deg,var(--brand),color-mix(in srgb,var(--brand) 60%,#5a3a00));color:#1a1306;box-shadow:0 6px 16px -6px color-mix(in srgb,var(--brand) 80%,transparent);transition:transform .12s,filter .12s}
+.send-btn{background:linear-gradient(145deg,var(--brand),color-mix(in srgb,var(--brand) 60%,#5a3a00));color:var(--brand-fg,#1a1306);box-shadow:0 6px 16px -6px color-mix(in srgb,var(--brand) 80%,transparent);transition:transform .12s,filter .12s}
 .send-btn:hover:not(:disabled){transform:translateY(-1px) scale(1.05);filter:brightness(1.06)}
 .send-btn:active:not(:disabled){transform:scale(.96)}
 .send-btn:disabled{background:var(--hover-2);color:var(--muted);box-shadow:none;opacity:1}
@@ -438,3 +438,62 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .side-item.active .side-actions{background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--surface) 80%,var(--brand) 20%) 38%)}
 .side-open-btn{padding-right:12px}
 @media (max-width:760px){.hint-line{display:none}}
+
+/* =====================================================================
+   Polish 2 — living details: patched streaming, ambience, previews, separators, accents
+   ===================================================================== */
+.slot{display:contents}
+.prose:empty{display:none}
+.prose .enter{animation:block-in .38s var(--ease2) both}
+@keyframes block-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* long code collapses with a fade and an expander */
+.md-code.collapsed pre{max-height:calc(22 * 1.62em + 36px);overflow:hidden}
+.md-code{position:relative}
+.md-code.collapsed::after{content:"";position:absolute;left:0;right:0;bottom:0;height:84px;background:linear-gradient(transparent,var(--code-bg) 78%);pointer-events:none}
+.md-more{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:1;padding:5px 16px;border:1px solid #ffffff26;border-radius:999px;background:#1d1d22;color:#d6d9e0;font-size:.78rem;transition:background .12s,border-color .12s}
+.md-more:hover{background:#26262c;border-color:var(--ring)}
+.md-code:not(.collapsed) .md-more{position:static;transform:none;display:block;margin:0 auto 12px}
+
+/* ambience: slow golden sparks behind the thread, livelier while the assistant writes */
+.thread-wrap{overflow:hidden}
+.thread{position:relative;z-index:1}
+.ambient{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.ambient i{position:absolute;left:var(--x);top:100%;width:var(--s);height:var(--s);border-radius:50%;background:var(--brand);box-shadow:0 0 10px 1px var(--brand);opacity:0;animation:spark var(--d) linear var(--w) infinite}
+@keyframes spark{0%{transform:translate(0,0);opacity:0}12%{opacity:.5}60%{opacity:.28}100%{transform:translate(26px,-86vh);opacity:0}}
+.chat-window.generating .ambient i{filter:brightness(1.5);box-shadow:0 0 14px 2px var(--brand)}
+.chat-window.generating .head-av,.msg.assistant:has(.prose.streaming) .msg-av{animation:avpulse 1.7s ease-in-out infinite}
+@keyframes avpulse{50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--brand) 24%,transparent)}}
+.chat-sub .dot.busy{background:var(--brand);box-shadow:0 0 8px var(--brand);animation:blink 1s ease-in-out infinite}
+.chat-sub .dots{display:inline-flex;gap:2px;margin-left:2px}
+.chat-sub .dots i{width:3px;height:3px;border-radius:50%;background:currentColor;animation:dot 1.2s infinite ease-in-out}
+.chat-sub .dots i:nth-child(2){animation-delay:.15s}.chat-sub .dots i:nth-child(3){animation-delay:.3s}
+
+/* sidebar rows: title + time, preview underneath */
+.side-open-btn{display:flex;flex-direction:column;gap:2px;align-items:stretch;padding-top:8px;padding-bottom:8px;white-space:normal}
+.side-line{display:flex;align-items:baseline;gap:8px;min-width:0}
+.side-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.92rem}
+.side-time{flex:none;font-size:.7rem;color:var(--muted)}
+.side-item:hover .side-time{opacity:0}
+.side-preview{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.78rem;color:var(--muted)}
+.spin.sm{width:10px;height:10px;border-width:1.5px;align-self:center}
+
+/* day separators */
+.day-sep{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:.74rem;letter-spacing:.04em}
+.day-sep::before,.day-sep::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--line))}
+.day-sep::after{background:linear-gradient(270deg,transparent,var(--line))}
+.day-sep span{padding:2px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+
+/* accent swatches */
+.swatches{display:flex;gap:10px}
+.swatch{width:28px;height:28px;padding:0;border:2px solid transparent;border-radius:50%;box-shadow:inset 0 0 0 2px var(--bg);transition:transform .12s}
+.swatch:hover{transform:scale(1.1)}
+.swatch[aria-checked=true]{border-color:var(--fg)}
+
+/* micro-interactions */
+.msg-actions .icon-btn[aria-pressed=true] svg{animation:pop .32s var(--ease2)}
+@keyframes pop{0%{transform:scale(.7)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){
+  .ambient{display:none}
+  .prose .enter,.chat-window.generating .head-av,.msg.assistant:has(.prose.streaming) .msg-av,.msg-actions .icon-btn svg,.chat-sub .dot.busy{animation:none!important}
+}

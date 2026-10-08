@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInline, parseMarkdown } from "../src/markdown";
+import { parseInline, parseMarkdown, planBlocks } from "../src/markdown";
 
 describe("inline", () => {
   it("bold, italic, strike, code", () => {
@@ -64,5 +64,27 @@ describe("blocks", () => {
     const t = Date.now();
     parseMarkdown("*".repeat(5000) + "\n" + "[".repeat(3000) + "\n" + "`".repeat(3000) + "\n" + "_a".repeat(3000));
     expect(Date.now() - t).toBeLessThan(2000);
+  });
+});
+
+describe("planBlocks (incremental streaming)", () => {
+  it("appending text to the tail keeps earlier blocks and replaces only the last", () => {
+    expect(planBlocks(["a", "b", "c1"], ["a", "b", "c12"])).toEqual({ keep: 2, replace: 1, append: 0, remove: 0 });
+  });
+  it("a new block at the end is an append (it animates in)", () => {
+    expect(planBlocks(["a", "b"], ["a", "b", "c"])).toEqual({ keep: 2, replace: 0, append: 1, remove: 0 });
+    expect(planBlocks(["a", "b"], ["a", "b2", "c"])).toEqual({ keep: 1, replace: 1, append: 1, remove: 0 });
+  });
+  it("shrinking removes the tail; identical input is a no-op; empty prev appends everything", () => {
+    expect(planBlocks(["a", "b", "c"], ["a"])).toEqual({ keep: 1, replace: 0, append: 0, remove: 2 });
+    expect(planBlocks(["a", "b"], ["a", "b"])).toEqual({ keep: 2, replace: 0, append: 0, remove: 0 });
+    expect(planBlocks([], ["a", "b"])).toEqual({ keep: 0, replace: 0, append: 2, remove: 0 });
+  });
+  it("replace + remove never overlap with append (counts add up)", () => {
+    for (const [p, n] of [[["a", "x", "y"], ["a", "q"]], [["a"], ["b", "c", "d"]], [[], []]] as [string[], string[]][]) {
+      const r = planBlocks(p, n);
+      expect(r.keep + r.replace + r.append).toBe(n.length);
+      expect(r.keep + r.replace + r.remove).toBe(p.length);
+    }
   });
 });

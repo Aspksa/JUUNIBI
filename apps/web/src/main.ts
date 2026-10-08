@@ -1,4 +1,5 @@
 import { Kernel, Logger } from "@juunibi/core";
+import { applyAccent } from "./accents";
 import { Avatar } from "./avatar";
 import { Chats } from "./chat/chats";
 import { ChatController } from "./chat/controller";
@@ -35,7 +36,13 @@ kernel.register({
   start(ctx) {
     const apply = (t: Theme) => (t === "auto" ? document.documentElement.removeAttribute("data-theme") : (document.documentElement.dataset.theme = t));
     apply(app.get().theme);
-    ctx.onStop(app.select((s) => s.theme, (t) => apply(t)));
+    applyAccent(app.get().accent);
+    const reapply = () => applyAccent(app.get().accent);
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", reapply);
+    ctx.onStop(() => mq.removeEventListener("change", reapply));
+    ctx.onStop(app.select((s) => s.theme, (t) => { apply(t); reapply(); }));
+    ctx.onStop(app.select((s) => s.accent, reapply));
   },
 });
 

@@ -4,7 +4,8 @@ import { app, decideApproval, persistPrefs, type Route } from "../state";
 import { groupLabel, type Chats, type ChatMsg, type Conversation } from "./chats";
 import { Composer } from "./composer";
 import type { ChatController } from "./controller";
-import { COMMANDS, chatToMarkdown, safeFileName, speechText, type Command } from "./helpers";
+import { ACCENTS, swatchColor } from "../accents";
+import { COMMANDS, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
 import { fillMessage, msgSignature } from "./message";
 import { isSpeaking, speak, speechSupported, stopSpeaking } from "./voice";
 import { WindowFrame } from "./window";
@@ -44,6 +45,7 @@ export class ChatView {
   private readonly composer: Composer;
   private readonly frame: WindowFrame;
   private readonly rows = new Map<string, Row>();
+  private readonly seps = new Map<string, HTMLElement>();
   private empty: HTMLElement | null = null;
   private emptySig = "";
   private stick = true;
@@ -98,7 +100,7 @@ export class ChatView {
       onEditLast: () => this.editLast(),
     });
 
-    const main = el("section", { cls: "chat-main" }, head, this.menu, this.banner, el("div", { cls: "thread-wrap" }, this.thread, this.toBottom), this.composer.root, this.sheet, this.drop);
+    const main = el("section", { cls: "chat-main" }, head, this.menu, this.banner, el("div", { cls: "thread-wrap" }, ambient(), this.thread, this.toBottom), this.composer.root, this.sheet, this.drop);
     this.root = el("div", { cls: "chat-window", hidden: true, attrs: { role: "dialog", "aria-label": "Чат с JUUNIBI" } }, this.side, el("div", { cls: "side-scrim" }), main);
     (this.root.querySelector(".side-scrim") as HTMLElement).addEventListener("click", () => this.root.classList.remove("side-open"));
     this.root.addEventListener("click", (e) => {
@@ -123,6 +125,7 @@ export class ChatView {
     chats.store.subscribe(() => this.schedule());
     ctl.store.subscribe(() => this.schedule());
     app.subscribe(() => this.schedule());
+    setInterval(() => { if (!this.root.hidden) { this.sideList.dataset.sig = ""; this.schedule(); } }, 30_000);
     this.schedule();
   }
 
@@ -221,8 +224,13 @@ export class ChatView {
     this.maxBtn.title = s.chatMax ? "Свернуть окно" : "На весь экран";
     this.maxBtn.setAttribute("aria-label", this.maxBtn.title);
     const model = s.status?.model?.split("/").pop() ?? "";
+    const typing = busy && this.ctl.store.get().busyId === conv?.id;
+    const lastMsg = conv?.messages[conv.messages.length - 1];
+    const running = typing ? lastMsg?.steps?.find((st) => st.status === "running") : undefined;
+    const sub = !configured ? (s.status ? "нужен ключ Cloud.ru" : "подключение…") : running ? stepLabel(running.name) : typing ? "печатает" : `на связи${model ? " · " + model : ""}`;
+    this.root.classList.toggle("generating", typing);
     this.titleEl.replaceChildren(characterAvatar(34, "head-av"), el("div", { cls: "chat-title-text" }, el("strong", { textContent: "JUUNIBI" }),
-      el("span", { cls: "chat-sub" }, el("i", { cls: "dot " + (configured ? "on" : "off") }), configured ? `на связи${model ? " · " + model : ""}` : s.status ? "нужен ключ Cloud.ru" : "подключение…")));
+      el("span", { cls: "chat-sub", attrs: { "aria-live": "polite" } }, el("i", { cls: "dot " + (configured ? (typing ? "busy" : "on") : "off") }), sub, typing ? el("span", { cls: "dots", attrs: { "aria-hidden": "true" } }, el("i"), el("i"), el("i")) : null)));
     this.sideStatus.textContent = configured ? "На связи" : "Не подключена";
     this.sideStatus.classList.toggle("off", !configured);
 
@@ -248,12 +256,18 @@ export class ChatView {
         b.addEventListener("click", () => { set(v); persistPrefs(app.get()); this.renderMenu(); });
         return b;
       })));
+    const accent = el("div", { cls: "pop-row" }, el("span", { textContent: "Акцентный цвет" }), el("div", { cls: "swatches", attrs: { role: "radiogroup", "aria-label": "Акцентный цвет" } }, ...ACCENTS.map((a) => {
+      const b = el("button", { type: "button", cls: "swatch", title: a.label, attrs: { role: "radio", "aria-checked": String(s.accent === a.id), "aria-label": a.label } });
+      b.style.background = swatchColor(a);
+      b.addEventListener("click", () => { app.set({ accent: a.id }); persistPrefs(app.get()); this.renderMenu(); });
+      return b;
+    })));
     const reset = el("button", { type: "button", cls: "btn sm", textContent: "Сбросить положение окна" });
     reset.addEventListener("click", () => { this.frame.reset(); this.menu.hidden = true; });
     this.menu.replaceChildren(
       seg("Плотность", [["comfortable", "Свободно"], ["compact", "Компактно"]], s.chatDensity, (v) => app.set({ chatDensity: v })),
       seg("Текст", [["sm", "Мелкий"], ["md", "Обычный"], ["lg", "Крупный"]], s.chatFont, (v) => app.set({ chatFont: v })),
-      reset);
+      accent, reset);
   }
 
   private renderApprovals() {
@@ -277,7 +291,7 @@ export class ChatView {
     const items = this.chats.store.get().items
       .filter((c) => !q || c.title.toLowerCase().includes(q) || c.messages.some((m) => m.content.toLowerCase().includes(q)))
       .sort((a, b) => b.updatedAt - a.updatedAt);
-    const sig = JSON.stringify([items.map((c) => [c.id, c.title, c.updatedAt]), active?.id, this.renamingId, q]);
+    const sig = JSON.stringify([items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length, relTime(c.updatedAt)]), active?.id, this.renamingId, q, this.ctl.store.get().busyId]);
     if (this.sideList.dataset.sig === sig) return;
     this.sideList.dataset.sig = sig;
     if (!items.length) { this.sideList.replaceChildren(el("p", { cls: "side-empty", textContent: q ? "Ничего не найдено" : "Здесь появится история чатов" })); return; }
@@ -302,7 +316,11 @@ export class ChatView {
       queueMicrotask(() => { input.focus(); input.select(); });
       return row;
     }
-    const open = el("button", { type: "button", cls: "side-open-btn", title: c.title, textContent: c.title, attrs: active ? { "aria-current": "true" } : {} });
+    const preview = previewOf(c.messages);
+    const busy = this.ctl.store.get().busyId === c.id;
+    const open = el("button", { type: "button", cls: "side-open-btn", title: c.title, attrs: active ? { "aria-current": "true" } : {} },
+      el("span", { cls: "side-line" }, el("span", { cls: "side-title", textContent: c.title }), busy ? el("i", { cls: "spin sm" }) : el("span", { cls: "side-time", textContent: c.messages.length ? relTime(c.updatedAt) : "" })),
+      preview ? el("span", { cls: "side-preview", textContent: preview }) : null);
     open.addEventListener("click", () => { this.chats.select(c.id); this.stick = true; this.root.classList.remove("side-open"); });
     row.append(open, el("span", { cls: "side-actions" },
       iconButton("edit", "Переименовать", (e) => { e.stopPropagation(); this.renamingId = c.id; this.sideList.dataset.sig = ""; this.schedule(); }, "icon-btn sm"),
@@ -324,6 +342,8 @@ export class ChatView {
     if (!msgs.length) {
       for (const r of this.rows.values()) r.root.remove();
       this.rows.clear();
+      for (const sp of this.seps.values()) sp.remove();
+      this.seps.clear();
       const sug = this.suggestions();
       const sig = JSON.stringify(sug);
       if (!this.empty || sig !== this.emptySig) {
@@ -342,8 +362,20 @@ export class ChatView {
     for (const [id, r] of this.rows) if (!wanted.has(id)) { r.root.remove(); this.rows.delete(id); }
     const lastAssistant = [...msgs].reverse().find((m) => m.role === "assistant");
     const busyId = this.ctl.store.get().busyId;
-    let prev: HTMLElement | null = null;
+    const order: HTMLElement[] = [];
+    const usedSeps = new Set<string>();
+    let prevTs = 0;
     for (const m of msgs) {
+      if (!prevTs || !sameDay(prevTs, m.at)) {
+        const key = String(new Date(m.at).setHours(0, 0, 0, 0));
+        usedSeps.add(key);
+        let sep = this.seps.get(key);
+        if (!sep) { sep = el("div", { cls: "day-sep", attrs: { role: "separator" } }, el("span")); this.seps.set(key, sep); }
+        const label = dayLabel(m.at);
+        if (sep.firstChild!.textContent !== label) sep.firstChild!.textContent = label;
+        order.push(sep);
+      }
+      prevTs = m.at;
       const c = {
         convId: conv!.id, busy, editing: this.editingId === m.id, speaking: this.speakingId === m.id,
         streaming: busy && busyId === conv!.id && m.id === lastAssistant?.id && !m.turnId && !m.error && !m.stopped,
@@ -358,10 +390,29 @@ export class ChatView {
           onSaveEdit: (id, text) => { this.editingId = null; if (text.trim()) void this.ctl.edit(conv!.id, id, text); else this.schedule(); },
           onRemember: (t) => this.remember(conv!.id, t), onSpeak: (mm) => this.speak(mm) });
       }
-      if (row.root.parentElement !== this.inner || row.root.previousElementSibling !== prev) this.inner.insertBefore(row.root, prev ? prev.nextSibling : this.inner.firstChild);
-      prev = row.root;
+      order.push(row.root);
+    }
+    for (const [key, sep] of this.seps) if (!usedSeps.has(key)) { sep.remove(); this.seps.delete(key); }
+    let prev: HTMLElement | null = null;
+    for (const node of order) {
+      if (node.parentElement !== this.inner || node.previousElementSibling !== prev) this.inner.insertBefore(node, prev ? prev.nextSibling : this.inner.firstChild);
+      prev = node;
     }
     this.inner.append(this.approvals); // pending approvals sit at the end of the conversation
     if (this.stick) this.scrollDown();
   }
+}
+
+/** A handful of slow golden sparks drifting upwards behind the conversation (pure CSS; calm by design). */
+function ambient(): HTMLElement {
+  const sparks = Array.from({ length: 14 }, (_, i) => {
+    const r = (n: number) => ((Math.sin(i * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1; // deterministic pseudo-random
+    const sp = el("i");
+    sp.style.setProperty("--x", Math.round(r(1) * 100) + "%");
+    sp.style.setProperty("--s", (2 + Math.round(r(2) * 3)) + "px");
+    sp.style.setProperty("--d", (14 + Math.round(r(3) * 16)) + "s");
+    sp.style.setProperty("--w", (-Math.round(r(4) * 30)) + "s");
+    return sp;
+  });
+  return el("div", { cls: "ambient", attrs: { "aria-hidden": "true" } }, ...sparks);
 }
