@@ -1,4 +1,5 @@
 export * from "./llm";
+export * from "./embeddings";
 export * from "./tools";
 export * from "./memory";
 export * from "./assistant";
