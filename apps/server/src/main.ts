@@ -78,6 +78,16 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\\n");
   assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
+  assistant.tools.register({
+    name: "brain_get_plans", risk: "read", description: "Прочитать планы задач.",
+    parameters: { type: "object", properties: {} },
+    run: () => brain.status().plans,
+  });
+  assistant.tools.register({
+    name: "brain_create_plan", risk: "write", description: "Создать план после разрешения пользователя. Создание плана не исполняет шаги.",
+    parameters: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] },
+    run: (args) => brain.plan(args.goal, args.steps),
+  });
   activeModel = MODEL;
   cloudConfigured = true;
 }
