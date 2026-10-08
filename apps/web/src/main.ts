@@ -24,7 +24,7 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
 
 async function refreshUpdate() {
   const r = await api.updateStatus();
-  if (r.ok) store.set({ update: r.value });
+  if (r.ok && JSON.stringify(r.value) !== JSON.stringify(store.get().update)) store.set({ update: r.value });
 }
 async function checkUpdate() {
   const r = await api.updateCheck();
@@ -112,7 +112,11 @@ kernel.register({
     });
 
     void refreshUpdate();
-    const poll = setInterval(() => { if (store.get().busy || store.get().approvals.length) void refreshApprovals(); void refreshUpdate(); }, 1000);
+    const poll = setInterval(() => {
+      const current = store.get();
+      if (current.busy || current.approvals.length) void refreshApprovals();
+      if (current.tab === "update" || current.update?.phase === "downloading" || current.update?.phase === "testing") void refreshUpdate();
+    }, 2500);
     ctx.onStop(() => clearInterval(poll));
     const render = () => {
       const s = store.get();
@@ -127,10 +131,19 @@ kernel.register({
       }));
       let body: HTMLElement;
       if (s.tab === "chat") {
+        const previousScroll = log.scrollTop;
+        const shouldScroll = log.scrollHeight - log.clientHeight - log.scrollTop < 36;
         log.replaceChildren(
           ...(s.msgs.length ? [] : [el("p", { cls: "empty", textContent: "Спросите что-нибудь или попросите запомнить." })]),
           ...s.msgs.map((m) => {
             const row = el("div", { cls: `msg ${m.role}` }, el("div", { cls: "bubble", textContent: m.text }));
+            const copy = el("button", { type: "button", cls: "ghost copy-message", textContent: "Копировать" });
+            copy.setAttribute("aria-label", "Копировать сообщение");
+            copy.addEventListener("click", async () => {
+              try { await navigator.clipboard.writeText(m.text); copy.textContent = "Скопировано"; }
+              catch { copy.textContent = "Выделите текст и нажмите Ctrl+C"; }
+            });
+            row.append(copy);
             if (m.tools?.length) row.append(el("small", { textContent: `инструменты: ${m.tools.join(", ")}` }));
             if (m.role === "bot" && m.turnId) {
               const mk = (r: 1 | -1, label: string) => {
@@ -147,7 +160,7 @@ kernel.register({
         );
         input.disabled = s.busy || !s.status?.assistant;
         body = el("div", {}, log, form);
-        queueMicrotask(() => (log.scrollTop = log.scrollHeight));
+        queueMicrotask(() => { log.scrollTop = shouldScroll ? log.scrollHeight : previousScroll; });
       } else if (s.tab === "memory") {
         const item = (m: MemoryItem) => {
           const li = el("li", {}, el("span", { cls: "grow", textContent: `${m.status === "pending" ? "⏳ " : ""}${m.text}` }));
@@ -222,7 +235,18 @@ kernel.register({
       });
       view.replaceChildren(head, nav, ...(banner ? [banner] : []), ...(updateAlert ? [updateAlert] : []), ...approvals, el("main", { cls: "card" }, body));
     };
-    ctx.onStop(store.subscribe(render));
+    let previous = store.get();
+    ctx.onStop(store.subscribe(() => {
+      const next = store.get();
+      const updateOnly = previous.update !== next.update &&
+        previous.msgs === next.msgs && previous.busy === next.busy &&
+        previous.approvals === next.approvals && previous.updateError === next.updateError &&
+        previous.status === next.status && previous.tab === next.tab &&
+        previous.memory === next.memory && previous.modules === next.modules && previous.theme === next.theme;
+      previous = next;
+      if (updateOnly && next.tab !== "update") return;
+      render();
+    }));
     render();
     void api.status().then((r) => store.set({ status: r.ok ? r.value : { assistant: false, hint: "Сервер недоступен. Запустите через JUUNIBI.bat." } }));
     ctx.onStop(() => root.replaceChildren());
