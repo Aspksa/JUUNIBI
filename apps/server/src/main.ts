@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
-import { Assistant, CloudRuProvider, Memory, assistantPlugin, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
+import { Assistant, CloudRuProvider, Memory, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
 import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
 
@@ -38,7 +38,29 @@ const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
 const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
 void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
-const { CLOUDRU_API_KEY: apiKey, CLOUDRU_MODEL: model, CLOUDRU_BASE_URL: baseUrl } = process.env;
+const settingsFile = path.join(dataDir, "cloudru-settings.json");
+const MODEL = "DeepSeek-V4-Flash";
+let activeModel: string | undefined;
+let cloudConfigured = false;
+async function configureCloud(apiKey: string, baseUrl?: string) {
+  const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
+  assistant = new Assistant({ llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => kernel.describe() });
+  activeModel = MODEL;
+  cloudConfigured = true;
+}
+async function saveCloud(apiKey: string) {
+  if (!apiKey || apiKey.length > 4096 || /[\r\n]/.test(apiKey)) throw Object.assign(new Error("Некорректный API-ключ"), { status: 400 });
+  await mkdir(dataDir, { recursive: true });
+  const tmp = settingsFile + ".tmp";
+  await writeFile(tmp, JSON.stringify({ apiKey }), { mode: 0o600 });
+  await rename(tmp, settingsFile);
+  await configureCloud(apiKey, process.env.CLOUDRU_BASE_URL);
+}
+try {
+  const stored = JSON.parse(await readFile(settingsFile, "utf8")) as { apiKey?: string };
+  if (stored.apiKey) await configureCloud(stored.apiKey, process.env.CLOUDRU_BASE_URL);
+} catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") log.warn("Настройки Cloud.ru не загружены", (e as Error).message); }
+if (!cloudConfigured && process.env.CLOUDRU_API_KEY) await configureCloud(process.env.CLOUDRU_API_KEY, process.env.CLOUDRU_BASE_URL);
 
 let assistant: Assistant | undefined;
 const approvalGate = new ApprovalGate(async (event) => {
@@ -54,32 +76,21 @@ function auditWrite(event: unknown): Promise<void> {
   });
   return auditQueue;
 }
-let hint: string | undefined;
-if (apiKey && model) {
-  const llm = new CloudRuProvider({ apiKey, model, ...(baseUrl ? { baseUrl } : {}) });
-  kernel.register(
-    assistantPlugin(
-      { llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal) },
-      () => kernel.describe(),
-      (a) => (assistant = a),
-    ),
-  );
-} else {
-  hint = "Скопируйте .env.example в .env и укажите CLOUDRU_API_KEY и CLOUDRU_MODEL, затем перезапустите.";
-  log.warn(hint);
-}
+const hint = "Откройте вкладку «Настройки ИИ» и укажите ключ Cloud.ru.";
 
 await kernel.start();
 
 const port = Number(process.env.PORT ?? 4173);
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
 const server = createApp({
-  assistant,
+  getAssistant: () => assistant,
+  cloudStatus: () => ({ configured: cloudConfigured, model: MODEL }),
+  saveCloud,
   approvals: approvalGate,
   updater,
   modules: () => kernel.describe(),
   staticDir,
-  configured: { ...(model ? { model } : {}), ...(hint ? { hint } : {}) },
+  configured: { model: MODEL, hint },
 });
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
