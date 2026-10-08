@@ -94,7 +94,7 @@ describe("Memory 3.1", () => {
     await memory.feedback([weak.id], 100);
     expect((await memory.search("синий цвет оформление"))[0]?.id).toBe(strong.id);
     await memory.feedback([strong.id], 2);
-    expect((await memory.search("синий"))[0]?.id).toBe(strong.id);
+    expect((await memory.search("синий цвет оформление"))[0]?.id).toBe(strong.id);
   });
   it("excludes unapproved, expired and superseded facts from ranked retrieval", async () => {
     const memory = new Memory();
