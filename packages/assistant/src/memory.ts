@@ -22,9 +22,11 @@ export interface MemoryEntry {
   supersededBy?: string;
   relatedIds?: string[];
   revisesId?: string;
+  /** Repeated user statements strengthen a pending proposal, never approve it. */
+  mentions?: number;
 }
 
-const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/[.!?…]+$/u, "").replace(/\s+/g, " ").trim();
 const tokens = (s: string) => normalize(s).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1);
 const RELATED: readonly (readonly string[])[] = [
   ["помощница", "помощник", "ассистент", "assistant"],
@@ -82,6 +84,7 @@ export class Memory {
         (e.expiresAt === undefined || Number.isFinite(e.expiresAt)) &&
         (e.supersededBy === undefined || typeof e.supersededBy === "string") &&
         (e.revisesId === undefined || typeof e.revisesId === "string") &&
+        (e.mentions === undefined || (Number.isInteger(e.mentions) && e.mentions >= 1 && e.mentions <= 100)) &&
         (e.relatedIds === undefined || (Array.isArray(e.relatedIds) && e.relatedIds.length <= 20 && e.relatedIds.every((id: unknown) => typeof id === "string"))));
     } catch { /* corrupt file: start empty rather than crash */ }
   }
@@ -97,13 +100,17 @@ export class Memory {
     if (!clean) throw new Error("Пустая запись");
     const dup = this.entries.find((e) => normalize(e.text) === normalize(clean));
     if (dup) {
+      if (status === "pending" && dup.status === "pending") {
+        dup.mentions = Math.min(100, (dup.mentions ?? 1) + 1);
+        await this.persist();
+      }
       if (status === "active" && dup.status === "pending") {
         dup.status = "active";
         await this.persist();
       }
       return copyEntry(dup);
     }
-    const entry: MemoryEntry = { id: crypto.randomUUID(), kind, text: clean, status, score: 0, createdAt: Date.now() };
+    const entry: MemoryEntry = { id: crypto.randomUUID(), kind, text: clean, status, score: 0, createdAt: Date.now(), mentions: 1 };
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) {
       const drop = [...this.entries].sort((a, b) => a.score - b.score || a.createdAt - b.createdAt)[0]!;
