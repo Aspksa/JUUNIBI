@@ -135,7 +135,7 @@ export class Assistant {
     const invalid = validateToolArgs(tool.parameters, args);
     if (invalid) return `Ошибка: ${invalid}.`;
     if (tool.risk !== "read") {
-      const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk, signal }) : false;
+      const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk, ...(signal ? { signal } : {}) }) : false;
       this.log.info(`tool ${name} (${tool.risk}) ${ok ? "approved" : "denied"}`);
       if (!ok) return "Отказано: действие не одобрено супервайзером/пользователем.";
     }
