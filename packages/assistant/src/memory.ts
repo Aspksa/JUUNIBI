@@ -17,10 +17,25 @@ export interface MemoryEntry {
   status: "active" | "pending";
   score: number;
   createdAt: number;
+  expiresAt?: number;
+  supersededBy?: string;
+  relatedIds?: string[];
 }
 
-const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\\s+/g, " ").trim();
-const tokens = (s: string) => normalize(s).split(/[^\\p{L}\\p{N}]+/u).filter((w) => w.length > 1);
+const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+const tokens = (s: string) => normalize(s).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1);
+const RELATED: readonly (readonly string[])[] = [
+  ["помощница", "помощник", "ассистент", "assistant"],
+  ["ошибка", "ошибки", "сбой", "сбои", "неполадка"],
+  ["проект", "репозиторий", "repository"],
+  ["настройка", "настройки", "конфигурация"],
+  ["запомни", "память", "воспоминание"],
+];
+const meaning = (word: string): string => {
+  for (const [i, group] of RELATED.entries()) if (group.includes(word)) return "concept:" + i;
+  return word.length >= 5 ? word.slice(0, word.length - 2) : word;
+};
+const concepts = (s: string) => new Set(tokens(s).map(meaning));
 const MAX_ENTRIES = 2000;
 const MAX_TEXT = 500;
 
@@ -103,13 +118,13 @@ export class Memory {
   async search(query: string, k = 5): Promise<MemoryEntry[]> {
     await this.ready;
     if (!Number.isFinite(k) || k <= 0) return [];
-    const q = new Set(tokens(query));
+    const q = concepts(query);
     if (!q.size) return [];
     return this.entries
-      .filter((e) => e.status === "active" && e.score > -3)
-      .map((e) => ({ e, s: [...new Set(tokens(e.text))].filter((t) => q.has(t)).length }))
+      .filter((e) => e.status === "active" && e.score > -3 && !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()))
+      .map((e) => ({ e, s: [...concepts(e.text)].filter((t) => q.has(t)).length }))
       .filter((x) => x.s > 0)
-      .sort((a, b) => b.s + b.e.score * 0.1 - (a.s + a.e.score * 0.1))
+      .sort((a, b) => (b.s + b.e.score * 0.1) - (a.s + a.e.score * 0.1) || b.e.createdAt - a.e.createdAt)
       .slice(0, Math.min(20, Math.floor(k)))
       .map((x) => ({ ...x.e }));
   }
