@@ -91,7 +91,7 @@ try {
 if (!cloudConfigured && process.env.CLOUDRU_API_KEY) await configureCloud(process.env.CLOUDRU_API_KEY, process.env.CLOUDRU_BASE_URL);
 
 
-const hint = "Откройте вкладку «Настройки ИИ» и укажите ключ Cloud.ru.";
+const hint = "Откройте вкладку «Настройки» и укажите ключ Cloud.ru.";
 
 await kernel.start();
 

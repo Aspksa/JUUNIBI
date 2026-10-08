@@ -40,6 +40,45 @@ async function downloadUpdate() {
   if (!r.ok) store.set({ updateError: r.error.message });
   else void refreshUpdate();
 }
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS: Record<string, string> = {
+  chat: "M4 5h16v11H9l-5 4z",
+  memory: "M12 3a6 6 0 0 0-3 11.2V17h6v-2.8A6 6 0 0 0 12 3zM9 20h6",
+  modules: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  update: "M12 4v10m0 0-4-4m4 4 4-4M5 19h14",
+  settings: "M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6",
+  sun: "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M1 12h3M20 12h3",
+  moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z",
+  auto: "M12 3a9 9 0 1 0 0 18V3z",
+};
+function icon(name: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("width", "20"); svg.setAttribute("height", "20");
+  svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round"); svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(SVG, "path");
+  path.setAttribute("d", ICONS[name] ?? ""); svg.append(path);
+  return svg;
+}
+/** Fox crest: ears, face and a fan of twelve tails — the JUUNIBI emblem (original vector, no raster assets). */
+function emblem(size: number): SVGSVGElement {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 100 100"); svg.setAttribute("width", String(size)); svg.setAttribute("height", String(size));
+  svg.setAttribute("role", "img"); svg.setAttribute("aria-label", "Эмблема JUUNIBI");
+  const add = (tag: string, attrs: Record<string, string>) => { const n = document.createElementNS(SVG, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); svg.append(n); };
+  for (let i = 0; i < 12; i++) {
+    const a = (-75 + i * (150 / 11)) * Math.PI / 180;
+    const x = 50 + Math.sin(a) * 44, y = 62 - Math.cos(a) * 46;
+    add("path", { d: `M50 62 Q${50 + Math.sin(a) * 30} ${62 - Math.cos(a) * 14} ${x.toFixed(1)} ${y.toFixed(1)}`, stroke: "var(--accent)", "stroke-width": "3.4", "stroke-linecap": "round", fill: "none", opacity: i % 2 ? "0.55" : "0.9" });
+  }
+  add("path", { d: "M30 58 L33 34 L44 46 Q50 44 56 46 L67 34 L70 58 Q70 78 50 82 Q30 78 30 58 Z", fill: "var(--card)", stroke: "var(--accent)", "stroke-width": "2.6", "stroke-linejoin": "round" });
+  add("path", { d: "M41 62 Q44 60 47 62 M53 62 Q56 60 59 62", stroke: "var(--accent)", "stroke-width": "2.4", "stroke-linecap": "round", fill: "none" });
+  add("path", { d: "M47 70 L50 73 L53 70 Z", fill: "var(--accent)" });
+  return svg;
+}
+const short = (v?: string) => (v && /^[0-9a-f]{40}$/.test(v) ? v.slice(0, 8) : v ?? "…");
+const SUGGESTIONS = ["Что умеешь?", "Покажи модули проекта", "Запомни: я люблю тёмную тему"];
+
 async function refreshMemory() {
   const r = await api.memory();
   if (r.ok) store.set({ memory: r.value });
@@ -96,8 +135,11 @@ kernel.register({
     const view = el("div", { cls: "wrap" });
     root.replaceChildren(view);
     const themeNames = { auto: "Тема: авто", light: "Тема: светлая", dark: "Тема: тёмная" };
+    const themeIcon = { auto: "auto", light: "sun", dark: "moon" } as const;
+    const shortTabs = { chat: "Чат", memory: "Память", modules: "Модули", update: "Обновл.", settings: "ИИ" } as const;
+    const tabIcon = { chat: "chat", memory: "memory", modules: "modules", update: "update", settings: "settings" } as const;
     const nextTheme = { auto: "light", light: "dark", dark: "auto" } as const;
-    const tabs = { chat: "Чат", memory: "Память", modules: "Модули", update: "Обновление проекта", settings: "Настройки ИИ" } as const;
+    const tabs = { chat: "Чат", memory: "Память", modules: "Модули", update: "Обновление", settings: "Настройки" } as const;
 
     const input = el("input", { type: "text", id: "msg", placeholder: "Напишите помощнику…", autocomplete: "off", maxLength: 4000 });
     input.setAttribute("aria-label", "Сообщение");
@@ -127,13 +169,16 @@ kernel.register({
     let lastFlightEvent = "";
     const render = () => {
       const s = store.get();
-      const banner = s.status && !s.status.assistant ? el("p", { cls: "banner", role: "alert", textContent: s.status.hint ?? "Помощник не настроен." }) : null;
-      const head = el("header", {}, el("h1", { textContent: "JUUNIBI" }),
-        el("span", { cls: "model", textContent: s.status?.model ?? "" }),
-        el("button", { id: "theme", type: "button", cls: "ghost", textContent: themeNames[s.theme] }));
-      const nav = el("nav", { cls: "tabs" }, ...(Object.keys(tabs) as (keyof typeof tabs)[]).map((t) => {
-        const b = el("button", { type: "button", textContent: tabs[t] + (t === "update" && s.update?.latest && s.update.localVersion !== s.update.latest.sha ? " ●" : "") });
+      const banner = s.status && !s.status.assistant && (s.tab === "chat" || s.tab === "settings") ? el("p", { cls: "banner", role: "alert", textContent: s.status.hint ?? "Помощник не настроен." }) : null;
+      const themeBtn = el("button", { id: "theme", type: "button", cls: "ghost icon-btn", title: themeNames[s.theme] }, icon(themeIcon[s.theme]));
+      themeBtn.setAttribute("aria-label", themeNames[s.theme]);
+      const head = el("header", { cls: "app-head" }, emblem(36), el("h1", { textContent: "JUUNIBI" }),
+        el("span", { cls: "model", textContent: (s.status?.model ?? "").split("/").pop() ?? "", title: s.status?.model ?? "" }), themeBtn);
+      const nav = el("nav", { cls: "tabs", role: "tablist" }, ...(Object.keys(tabs) as (keyof typeof tabs)[]).map((t) => {
+        const dot = t === "update" && s.update?.latest && s.update.localVersion !== s.update.latest.sha;
+        const b = el("button", { type: "button" }, icon(tabIcon[t]), el("span", { cls: "full", textContent: tabs[t] }), el("span", { cls: "short", textContent: shortTabs[t] }), ...(dot ? [el("i", { cls: "dot", title: "Доступно обновление" })] : []));
         b.dataset.tab = t; b.setAttribute("aria-pressed", String(t === s.tab));
+        if (t === s.tab) b.setAttribute("aria-current", "page");
         return b;
       }));
       let body: HTMLElement;
@@ -141,7 +186,8 @@ kernel.register({
         const previousScroll = log.scrollTop;
         const shouldScroll = log.scrollHeight - log.clientHeight - log.scrollTop < 36;
         log.replaceChildren(
-          ...(s.msgs.length ? [] : [el("p", { cls: "empty", textContent: "Спросите что-нибудь или попросите запомнить." })]),
+          ...(s.msgs.length || s.busy ? [] : [el("div", { cls: "welcome" }, emblem(88), el("h2", { textContent: "Чем помочь, Господин?" }), el("p", { textContent: "Спросите что-нибудь, попросите запомнить или проверить проект." }),
+            el("div", { cls: "chips" }, ...SUGGESTIONS.map((t) => { const c = el("button", { type: "button", textContent: t }); c.addEventListener("click", () => { if (!store.get().busy && store.get().status?.assistant) void send(t); }); return c; })))]),
           ...s.msgs.map((m) => {
             const row = el("div", { cls: `msg ${m.role}` }, el("div", { cls: "bubble", textContent: m.text }));
             const copy = el("button", { type: "button", cls: "ghost copy-message", textContent: "Копировать" });
@@ -252,7 +298,7 @@ kernel.register({
           ...(s.updateMode==="visual"?[flight]:[]),
           ...(s.updateMode==="technical"?[el("h3",{textContent:"Журнал фактических событий"}),logPanel]:[]),
           el("p", { textContent: "Источник: github.com/Aspksa/JUUNIBI" }),
-          el("p", { textContent: "Локальная версия: " + (u?.localVersion ?? "загрузка…") }),
+          el("p", { textContent: "Локальная версия: " + short(u?.localVersion) }),
           el("p", { textContent: "Доступная версия: " + (u?.latest?.version ?? "ещё не проверена") }),
           el("p", { textContent: "Описание: " + (u?.latest?.description ?? "Нажмите «Проверить обновления»") }),
           el("p", { textContent: "Дата публикации: " + (u?.latest?.date ? new Date(u.latest.date).toLocaleString("ru-RU") : "неизвестна") }),
