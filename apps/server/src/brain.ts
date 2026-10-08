@@ -20,6 +20,17 @@ export class BrainCore {
     this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
   }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
+  async load() {
+    const raw = await this.storage?.load();
+    if (!raw) return;
+    const state: unknown = JSON.parse(raw);
+    if (!state || typeof state !== "object" || Array.isArray(state)) throw new Error("Повреждено состояние мозга");
+    const saved = state as { mode?: unknown; plans?: unknown; logs?: unknown };
+    if (!Array.isArray(saved.plans) || !Array.isArray(saved.logs) || saved.plans.length > 30 || saved.logs.length > 200) throw new Error("Неверный формат мозга");
+    this.mode = saved.mode === "agent" || saved.mode === "analysis" || saved.mode === "creative" ? saved.mode : "chat";
+    this.plans = saved.plans as BrainPlan[];
+    this.logs = saved.logs as typeof this.logs;
+  }
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
   }
