@@ -35,4 +35,25 @@ describe("BrainCore", () => {
     expect(b.status().plans[0]?.status).toBe("failed");
   });
 
+  it("persists state and restores plans on restart", async () => {
+    let saved: string | null = null;
+    const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
+    const first = new BrainCore(() => true, store);
+    first.setMode("agent");
+    const plan = first.plan("audit", ["modules"]);
+    await first.flush();
+    const second = new BrainCore(() => true, store);
+    await second.load();
+    expect(second.status().mode).toBe("agent");
+    expect(second.status().plans[0]?.id).toBe(plan.id);
+  });
+  it("executes a safe sequence in order and stops on failures", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("inspect", ["modules", "memory"]);
+    const result = await brain.executeSequence(plan.id, ["list_modules", "search_memory"], () => ["brain"], async q => [q]);
+    expect(result.results).toEqual([["brain"], ["memory"]]);
+    expect(result.plan?.status).toBe("completed");
+    await expect(brain.executeSequence(plan.id, ["list_modules", "search_memory"], () => [], async () => [])).rejects.toThrow();
+  });
+
 });
