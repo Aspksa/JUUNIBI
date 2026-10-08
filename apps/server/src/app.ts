@@ -1,0 +1,122 @@
+import http from "node:http";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import type { Assistant } from "@juunibi/assistant";
+
+export interface AppDeps {
+  /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
+  assistant: Assistant | undefined;
+  modules: () => unknown;
+  staticDir?: string;
+  configured: { model?: string; hint?: string };
+}
+
+const MAX_BODY = 64 * 1024;
+const TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
+  ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".ico": "image/x-icon",
+};
+
+/** Only loopback Host values are accepted: blocks DNS-rebinding against a local server. */
+export function hostAllowed(host: string | undefined): boolean {
+  if (!host) return false;
+  return /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+}
+/** State-changing requests must come from our own origin (CSRF guard). */
+export function originAllowed(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin) return true; // non-browser clients (curl) send none
+  try { return new URL(origin).host === host; } catch { return false; }
+}
+
+function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let tooBig = false;
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (tooBig) return; // keep draining so the 413 reply can be delivered
+      if (size > MAX_BODY) { tooBig = true; chunks.length = 0; reject(Object.assign(new Error("Слишком большой запрос"), { status: 413 })); return; }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      if (tooBig) return;
+      try {
+        const v = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+        if (typeof v !== "object" || v === null || Array.isArray(v)) throw new Error();
+        resolve(v);
+      } catch { reject(Object.assign(new Error("Некорректный JSON"), { status: 400 })); }
+    });
+    req.on("error", reject);
+  });
+}
+
+export function createApp(deps: AppDeps): http.Server {
+  const send = (res: http.ServerResponse, status: number, body: unknown, type = "application/json") => {
+    res.writeHead(status, {
+      "content-type": type, "cache-control": "no-store", "x-content-type-options": "nosniff", connection: "close",
+      "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'",
+    });
+    res.end(typeof body === "string" ? body : JSON.stringify(body));
+  };
+
+  return http.createServer(async (req, res) => {
+    try {
+      if (!hostAllowed(req.headers.host)) return send(res, 403, { error: "Недопустимый Host" });
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const p = url.pathname;
+
+      if (p.startsWith("/api/")) {
+        if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
+        const a = deps.assistant;
+        if (req.method === "GET" && p === "/api/status") return send(res, 200, { assistant: !!a, ...deps.configured });
+        if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
+        if (!a) return send(res, 503, { error: deps.configured.hint ?? "Помощник не настроен" });
+
+        if (req.method === "POST" && p === "/api/chat") {
+          const b = await readJson(req);
+          const msg = typeof b.message === "string" ? b.message.trim() : "";
+          if (!msg || msg.length > 8000) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
+          const session = typeof b.session === "string" ? b.session.slice(0, 64) : "default";
+          const ctl = new AbortController();
+          res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
+          return send(res, 200, await a.ask(msg, session, ctl.signal));
+        }
+        if (req.method === "POST" && p === "/api/feedback") {
+          const b = await readJson(req);
+          if ((b.rating !== 1 && b.rating !== -1) || typeof b.turnId !== "string") return send(res, 400, { error: "turnId и rating (1|-1)" });
+          return send(res, 200, { ok: await a.feedback(b.turnId, b.rating) });
+        }
+        if (req.method === "POST" && p === "/api/reflect") {
+          const b = await readJson(req);
+          if (typeof b.turnId !== "string") return send(res, 400, { error: "turnId" });
+          return send(res, 200, await a.reflect(b.turnId));
+        }
+        if (req.method === "GET" && p === "/api/memory") {
+          const s = url.searchParams.get("status");
+          return send(res, 200, await a.memory.list(s === "active" || s === "pending" ? s : undefined));
+        }
+        const m = /^\/api\/memory\/([\w-]+)(\/approve)?$/.exec(p);
+        if (m && req.method === "POST" && m[2]) return send(res, 200, { ok: await a.memory.approve(m[1]!) });
+        if (m && req.method === "DELETE" && !m[2]) return send(res, 200, { ok: await a.memory.forget(m[1]!) });
+        if (req.method === "GET" && p === "/api/dataset") return send(res, 200, await a.exportDataset(), "application/x-ndjson");
+        return send(res, 404, { error: "Не найдено" });
+      }
+
+      if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Метод не поддерживается" });
+      if (!deps.staticDir) return send(res, 404, { error: "Нет статики" });
+      const root = path.resolve(deps.staticDir);
+      let file = path.resolve(root, "." + decodeURIComponent(p));
+      if (file !== root && !file.startsWith(root + path.sep)) return send(res, 403, { error: "Запрещено" });
+      if (p.endsWith("/")) file = path.join(file, "index.html");
+      let data: Buffer;
+      try { data = await readFile(file); } catch { file = path.join(root, "index.html"); data = await readFile(file); }
+      res.writeHead(200, { "content-type": TYPES[path.extname(file)] ?? "application/octet-stream", "x-content-type-options": "nosniff" });
+      res.end(req.method === "HEAD" ? undefined : data);
+    } catch (e) {
+      const status = (e as { status?: number }).status ?? 500;
+      if (!res.headersSent) send(res, status, { error: status === 500 ? "Внутренняя ошибка: " + (e as Error).message : (e as Error).message });
+      else res.end();
+    }
+  });
+}

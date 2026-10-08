@@ -1,0 +1,136 @@
+import { describe, expect, it, vi } from "vitest";
+import { Kernel, Logger } from "@juunibi/core";
+import { Assistant, CloudRuProvider, LlmError, Memory, ToolRegistry, assistantPlugin, type LlmProvider, type LlmResponse, type Message } from "../src";
+
+const quiet = new Logger("t", "silent");
+function scripted(...rs: LlmResponse[]): LlmProvider & { seen: Message[][] } {
+  const seen: Message[][] = [];
+  return { seen, chat: async (m) => { seen.push(structuredClone(m)); return rs.shift() ?? { content: "конец", toolCalls: [] }; } };
+}
+const say = (content: string): LlmResponse => ({ content, toolCalls: [] });
+const call = (name: string, args: object = {}): LlmResponse => ({ content: null, toolCalls: [{ id: "c1", name, arguments: JSON.stringify(args) }] });
+
+describe("Assistant", () => {
+  it("runs a tool loop and answers", async () => {
+    const llm = scripted(call("list_modules"), say("Модулей: 1"));
+    const a = new Assistant({ llm, log: quiet, describeModules: () => [{ name: "x" }] });
+    const r = await a.ask("что в проекте?");
+    expect(r.reply).toBe("Модулей: 1");
+    expect(r.tools).toEqual(["list_modules"]);
+    expect(llm.seen[1]!.at(-1)!.content).toContain('"x"');
+  });
+
+  it("denies write tools without a supervisor, allows with one", async () => {
+    const run = vi.fn(() => "done");
+    const mk = (approve?: () => boolean) => {
+      const a = new Assistant({ llm: scripted(call("wipe"), say("ok")), log: quiet, ...(approve ? { approve } : {}) });
+      a.tools.register({ name: "wipe", description: "", risk: "danger", parameters: { type: "object" }, run });
+      return a;
+    };
+    await mk().ask("x");
+    expect(run).not.toHaveBeenCalled();
+    await mk(() => true).ask("x");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("survives bad tool calls and tool errors", async () => {
+    const llm = scripted(
+      { content: null, toolCalls: [
+        { id: "1", name: "nope", arguments: "{}" },
+        { id: "2", name: "search_memory", arguments: "not json" },
+        { id: "3", name: "search_memory", arguments: "{}" },
+        { id: "4", name: "boom", arguments: "{}" },
+      ] },
+      say("ок"),
+    );
+    const a = new Assistant({ llm, log: quiet });
+    a.tools.register({ name: "boom", description: "", risk: "read", parameters: { type: "object" }, run: () => { throw new Error("bang"); } });
+    expect((await a.ask("x")).reply).toBe("ок");
+    const results = llm.seen[1]!.filter((m) => m.role === "tool").map((m) => m.content);
+    expect(results[0]).toMatch(/нет/);
+    expect(results[1]).toMatch(/JSON/);
+    expect(results[2]).toMatch(/не хватает/);
+    expect(results[3]).toMatch(/bang/);
+  });
+
+  it("stops after maxSteps", async () => {
+    const llm = scripted(call("list_modules"), call("list_modules"), call("list_modules"));
+    const r = await new Assistant({ llm, log: quiet, maxSteps: 2 }).ask("x");
+    expect(r.reply).toMatch(/шагов/);
+  });
+
+  it("learns only with approval: remember -> pending -> approve -> recalled", async () => {
+    const memory = new Memory();
+    const a = new Assistant({ llm: scripted(call("remember", { text: "Люблю тёмную тему", kind: "preference" }), say("запомнил")), memory, log: quiet });
+    await a.ask("запомни");
+    expect(await memory.search("тёмную тему")).toHaveLength(0);
+    const [p] = await memory.list("pending");
+    await memory.approve(p!.id);
+    const llm = scripted(say("ок"));
+    await new Assistant({ llm, memory, log: quiet }).ask("какую тему я люблю");
+    expect(llm.seen[0]![0]!.content).toContain("Люблю тёмную тему");
+  });
+
+  it("feedback adjusts memory score; reflect proposes pending lessons; dataset keeps thumbs-up only", async () => {
+    const memory = new Memory();
+    const m = await memory.add("fact", "кофе без сахара", "active");
+    const a = new Assistant({ llm: scripted(say("Без сахара."), say('["Пользователь пьёт кофе без сахара"]')), memory, log: quiet });
+    const r = await a.ask("какой кофе");
+    await a.feedback(r.turnId, 1);
+    expect((await memory.list()).find((e) => e.id === m.id)!.score).toBe(1);
+    await a.feedback(r.turnId, -1);
+    expect((await memory.list()).find((e) => e.id === m.id)!.score).toBe(-1);
+    expect(await a.exportDataset()).toBe("");
+    await a.feedback(r.turnId, 1);
+    const lessons = await a.reflect(r.turnId);
+    expect(lessons[0]!.status).toBe("pending");
+    expect(JSON.parse((await a.exportDataset()).split("\n")[0]!).messages[1].content).toBe("Без сахара.");
+  });
+
+  it("memory ignores corrupt storage and dedupes", async () => {
+    const mem = new Memory({ load: async () => "{broken", save: async () => {} });
+    await mem.add("fact", "a b", "active");
+    await mem.add("fact", "A B", "active");
+    expect(await mem.list()).toHaveLength(1);
+  });
+
+  it("works as a kernel plugin that other modules extend with tools", async () => {
+    const k = new Kernel(quiet);
+    let asst: Assistant | undefined;
+    k.register(assistantPlugin({ llm: scripted(call("ping"), say("pong!")) }, () => k.describe(), (a) => (asst = a)));
+    k.register({ name: "pinger", deps: ["assistant"], start: (c) => void c.service<ToolRegistry>("assistant:tools").register({ name: "ping", description: "", risk: "read", parameters: { type: "object" }, run: () => "pong" }) });
+    await k.start();
+    expect((await asst!.ask("ping")).tools).toEqual(["ping"]);
+  });
+});
+
+describe("CloudRuProvider", () => {
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+  const cfg = { apiKey: "SECRET", model: "m", retries: 2 };
+
+  it("sends OpenAI-style request with bearer key and parses tool calls", async () => {
+    const f = vi.fn(async () => ok({ choices: [{ message: { content: null, tool_calls: [{ id: "a", function: { name: "t", arguments: "{}" } }] } }] }));
+    const p = new CloudRuProvider({ ...cfg, fetch: f as never });
+    const r = await p.chat([{ role: "user", content: "hi" }], { tools: [{ name: "t", description: "", parameters: {} }] });
+    expect(r.toolCalls[0]!.name).toBe("t");
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://foundation-models.api.cloud.ru/v1/chat/completions");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer SECRET");
+  });
+
+  it("retries 5xx but not 4xx, and never leaks the key", async () => {
+    const f = vi.fn().mockResolvedValueOnce(new Response("", { status: 503 })).mockResolvedValueOnce(ok({ choices: [{ message: { content: "ok" } }] }));
+    const p = new CloudRuProvider({ ...cfg, fetch: f as never });
+    expect((await p.chat([])).content).toBe("ok");
+    expect(f).toHaveBeenCalledTimes(2);
+    const bad = new CloudRuProvider({ ...cfg, fetch: (async () => new Response("unauthorized", { status: 401 })) as never });
+    const e = await bad.chat([]).catch((x) => x);
+    expect(e).toBeInstanceOf(LlmError);
+    expect(e.message).not.toContain("SECRET");
+  });
+
+  it("rejects missing key/model", () => {
+    expect(() => new CloudRuProvider({ apiKey: "", model: "m" })).toThrow();
+    expect(() => new CloudRuProvider({ apiKey: "k", model: "" })).toThrow();
+  });
+});

@@ -4,11 +4,11 @@
   "version": "0.1.0",
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
-    "build": "npm run build -w @juunibi/core && npm run build -w @juunibi/web",
+    "build": "node scripts/build-server.mjs && npm run build -w @juunibi/web",
     "dev": "npm run dev -w @juunibi/web",
-    "test": "npm test -w @juunibi/core",
+    "test": "npm test --workspaces --if-present",
     "start": "node scripts/launch.mjs",
-    "typecheck": "npm run typecheck -w @juunibi/core && npm run typecheck -w @juunibi/web"
+    "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "engines": { "node": ">=20" }
 }

@@ -25,3 +25,18 @@ input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
 .status{font-size:.85rem;padding:12px 0 0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 @media (prefers-reduced-motion:no-preference){button{transition:background .15s}}
+
+header .model{flex:1;color:var(--muted);font-size:.8rem;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg)}
+.banner{background:var(--card);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:10px 12px;margin:0 0 12px}
+.log{display:flex;flex-direction:column;gap:12px;height:min(55vh,480px);overflow-y:auto;padding-bottom:8px}
+.msg{display:flex;flex-direction:column;gap:2px;max-width:90%}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.bubble{padding:8px 12px;border-radius:12px;background:var(--bg);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
+.msg.user .bubble{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+.msg.error .bubble{border-color:var(--danger);color:var(--danger)}
+.msg small{color:var(--muted)}
+.rate{display:flex;gap:2px}.rate button{min-height:32px;padding:2px 8px}.rate button[aria-pressed=true]{background:var(--line)}
+.grow{flex:1;overflow-wrap:anywhere}
+form{margin:12px 0 0}

@@ -21,3 +21,12 @@ npm run build
 ## Python-лаунчер
 
 `python juunibi.py [--dev] [--no-open] [--skip-checks] [--port N]` — то же самое на Windows/macOS/Linux (Python 3.9+, только стандартная библиотека). Если Node.js 20+ нет, скачивает его в `.runtime` с проверкой SHA-256, дальше запускает `scripts/launch.mjs`.
+
+## Личный помощник
+
+Пакет `packages/assistant` + сервер `apps/server` + чат в `apps/web`.
+
+- **Модель:** Cloud.ru Foundation Models (OpenAI-совместимый API). Скопируйте `.env.example` в `.env`, впишите `CLOUDRU_API_KEY` и `CLOUDRU_MODEL`. Ключ живёт только на сервере (`.env` и `data/` в git не попадают).
+- **Знает проект:** видит список модулей ядра (`kernel.describe()`). Любой модуль даёт ему инструменты: `deps: ["assistant"]` + `ctx.service("assistant:tools").register({...})`.
+- **Контроль:** инструменты с риском `write`/`danger` выполняются только после одобрения хуком `approve` (супервайзер); по умолчанию — отказ.
+- **Обучение:** 👍/👎 в чате меняют вес воспоминаний; после оценки помощник предлагает «уроки», которые попадают в память только после вашего «Принять». Оценённые 👍 диалоги экспортируются в JSONL (`GET /api/dataset`) для дообучения на Cloud.ru. Само дообучение весов автоматически не запускается.

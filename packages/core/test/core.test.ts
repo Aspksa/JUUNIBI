@@ -84,6 +84,13 @@ describe("Kernel", () => {
     expect(ran).toEqual(["ok"]);
     expect(failed).toHaveBeenCalledOnce();
   });
+  it("describes module status", async () => {
+    const k = new Kernel(quiet());
+    k.register({ name: "ok", start() {} }).register({ name: "bad", start() { throw new Error("x"); } });
+    expect(k.describe().map((d) => d.status)).toEqual(["pending", "pending"]);
+    await k.start();
+    expect(k.describe().map((d) => d.status)).toEqual(["started", "failed"]);
+  });
   it("shares services and survives throwing cleanups", async () => {
     const k = new Kernel(quiet());
     let seen = 0;
