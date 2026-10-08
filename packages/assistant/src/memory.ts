@@ -19,7 +19,8 @@ export interface MemoryEntry {
   createdAt: number;
 }
 
-const tokens = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1);
+const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\\s+/g, " ").trim();
+const tokens = (s: string) => normalize(s).split(/[^\\p{L}\\p{N}]+/u).filter((w) => w.length > 1);
 const MAX_ENTRIES = 2000;
 const MAX_TEXT = 500;
 
@@ -51,8 +52,14 @@ export class Memory {
     await this.ready;
     const clean = text.trim().slice(0, MAX_TEXT);
     if (!clean) throw new Error("Пустая запись");
-    const dup = this.entries.find((e) => e.text.toLowerCase() === clean.toLowerCase());
-    if (dup) return dup;
+    const dup = this.entries.find((e) => normalize(e.text) === normalize(clean));
+    if (dup) {
+      if (status === "active" && dup.status === "pending") {
+        dup.status = "active";
+        await this.persist();
+      }
+      return { ...dup };
+    }
     const entry: MemoryEntry = { id: crypto.randomUUID(), kind, text: clean, status, score: 0, createdAt: Date.now() };
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) {
@@ -60,11 +67,11 @@ export class Memory {
       this.entries = this.entries.filter((e) => e !== drop);
     }
     await this.persist();
-    return entry;
+    return { ...entry };
   }
   async list(status?: MemoryEntry["status"]): Promise<MemoryEntry[]> {
     await this.ready;
-    return this.entries.filter((e) => !status || e.status === status);
+    return this.entries.filter((e) => !status || e.status === status).map(e => ({ ...e }));
   }
   async approve(id: string): Promise<boolean> {
     await this.ready;
@@ -91,13 +98,15 @@ export class Memory {
   /** Active entries ranked by word overlap, boosted by past feedback. */
   async search(query: string, k = 5): Promise<MemoryEntry[]> {
     await this.ready;
+    if (!Number.isFinite(k) || k <= 0) return [];
     const q = new Set(tokens(query));
+    if (!q.size) return [];
     return this.entries
       .filter((e) => e.status === "active" && e.score > -3)
-      .map((e) => ({ e, s: tokens(e.text).filter((t) => q.has(t)).length }))
+      .map((e) => ({ e, s: [...new Set(tokens(e.text))].filter((t) => q.has(t)).length }))
       .filter((x) => x.s > 0)
       .sort((a, b) => b.s + b.e.score * 0.1 - (a.s + a.e.score * 0.1))
-      .slice(0, k)
-      .map((x) => x.e);
+      .slice(0, Math.min(20, Math.floor(k)))
+      .map((x) => ({ ...x.e }));
   }
 }
