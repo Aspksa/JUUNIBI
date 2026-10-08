@@ -1,5 +1,6 @@
 import { attemptAsync, type Result } from "@juunibi/core";
 
+export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
 export interface ChatReply { turnId: string; reply: string; tools: string[]; memory: string[] }
 export interface MemoryItem { id: string; kind: string; text: string; status: "active" | "pending"; score: number }
@@ -14,6 +15,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export const api = {
+  updateStatus: () => attemptAsync(() => call<UpdateStatus>("/api/update/status")),
+  updateCheck: () => attemptAsync(() => call<UpdateStatus>("/api/update/check", post({}))),
+  updateDownload: () => attemptAsync(() => call<{ok:boolean}>("/api/update/download", post({}))),
   approvals: () => attemptAsync(() => call<ApprovalItem[]>("/api/approvals")),
   decideApproval: (id: string, approve: boolean) => attemptAsync(() => call<{ok:boolean}>(`/api/approvals/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, post({}))),
   status: (): Promise<Result<Status>> => attemptAsync(() => call<Status>("/api/status")),
