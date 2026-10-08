@@ -2,8 +2,8 @@ import { Store, attempt } from "@juunibi/core";
 import { ACCENT_IDS, type AccentId } from "./accents";
 import { api, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
 
-export type Route = "home" | "memory" | "modules" | "update" | "settings";
-export const ROUTES: Route[] = ["home", "memory", "modules", "update", "settings"];
+export type Route = "home" | "memory" | "modules" | "brain" | "update" | "settings";
+export const ROUTES: Route[] = ["home", "memory", "modules", "brain", "update", "settings"];
 export type Theme = "auto" | "light" | "dark";
 
 export interface AppState {
