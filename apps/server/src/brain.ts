@@ -75,6 +75,23 @@ export class BrainCore {
       throw error;
     }
   }
+  async executeSequence(planId: string, actions: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    if (!Array.isArray(actions) || actions.length !== plan.steps.length ||
+      !actions.every(a => a === "list_modules" || a === "search_memory"))
+      throw Object.assign(new Error("Недопустимые действия"), { status: 400 });
+    if (plan.status !== "planned" || plan.steps.some(s => s.status !== "pending"))
+      throw Object.assign(new Error("План уже запускался"), { status: 409 });
+    const results: unknown[] = [];
+    for (let i = 0; i < actions.length; i++) {
+      const output = await this.executeReadStep(planId, plan.steps[i]!.id, actions[i], readModules, searchMemory);
+      results.push(output.result);
+      await this.flush();
+    }
+    return { plan: this.status().plans.find(p => p.id === planId), results };
+  }
   updateStep(planId: string, stepId: string, status: unknown) {
     if (status !== "active" && status !== "done" && status !== "failed") throw Object.assign(new Error("Недопустимый статус"), { status: 400 });
     const plan = this.plans.find(p => p.id === planId);
