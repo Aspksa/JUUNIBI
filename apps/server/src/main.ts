@@ -38,7 +38,7 @@ const log = new Logger("server", "info");
 const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
-const brain = new BrainCore(() => cloudConfigured);
+const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, "brain.json")));
 const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
 void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
@@ -48,6 +48,7 @@ let cloudConfigured = false;
 let sceneLlm: CloudRuProvider | undefined;
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
+await brain.load();
 interface ModuleInfo { name: string; title: string; deps: string[]; status: "started" | "pending" | "failed"; note: string }
 /** Real server components with their live state — shown on the Modules page and given to the assistant. */
 function moduleList(): ModuleInfo[] {
