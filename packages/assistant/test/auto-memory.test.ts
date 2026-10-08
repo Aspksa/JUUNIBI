@@ -37,4 +37,17 @@ describe("automatic memory proposals", () => {
     await assistant.ask("Делай");
     expect(count).toBe(2);
   });
+  it("uses the same model to propose a fact when explicit pattern matching misses it", async () => {
+    let calls = 0;
+    const llm: LlmProvider = { chat: async () => (++calls === 1
+      ? { content: "Принято", toolCalls: [] }
+      : { content: JSON.stringify({ text: "Мне требуется краткий ответ", kind: "preference" }), toolCalls: [] }) };
+    const memory = new Memory();
+    const assistant = new Assistant({ llm, memory });
+    await assistant.ask("Мне требуется краткий ответ в каждом разговоре");
+    expect(calls).toBe(2);
+    expect((await memory.list("pending")).map(x => x.text)).toEqual(["Мне требуется краткий ответ"]);
+    expect(await memory.search("ответ")).toEqual([]);
+  });
+
 });
