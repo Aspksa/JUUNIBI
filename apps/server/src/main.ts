@@ -8,6 +8,7 @@ import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
+import { durableMemoryStore } from "./durable-memory-store";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -64,7 +65,7 @@ function moduleList(): ModuleInfo[] {
     ...kernel.describe().map((m) => ({ name: m.name, title: m.name, deps: m.deps, status: m.status, note: "" })),
   ];
 }
-const memory = new Memory(fileStore(path.join(dataDir, "memory.json")));
+const memory = new Memory(durableMemoryStore(path.join(dataDir, "memory.json")));
 // Reuse the configured chat credential; embeddings use a separate model, never the chat model.
 const embeddingModel = process.env.CLOUDRU_EMBEDDING_MODEL;
 let assistant: Assistant | undefined;
