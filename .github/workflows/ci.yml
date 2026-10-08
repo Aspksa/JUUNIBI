@@ -5,6 +5,8 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   verify:
     strategy:
@@ -12,17 +14,35 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+      - name: Версии среды
+        run: node --version && npm --version
       - name: Установка зависимостей
+        id: install
         run: npm ci
       - name: Проверка TypeScript
+        id: types
         run: npm run typecheck
       - name: Тесты
+        id: tests
+        if: success() || steps.types.outcome == 'failure'
         run: npm test
       - name: Сборка
+        id: build
+        if: success() || steps.types.outcome == 'failure' || steps.tests.outcome == 'failure'
         run: npm run build
+      - name: Сводка проверок
+        if: always()
+        shell: bash
+        run: |
+          echo "## JUUNIBI · ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Установка: ${{ steps.install.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- TypeScript: ${{ steps.types.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Тесты: ${{ steps.tests.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Сборка: ${{ steps.build.outcome }}" >> "$GITHUB_STEP_SUMMARY"
