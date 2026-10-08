@@ -89,6 +89,24 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     parameters: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] },
     run: (args) => brain.plan(args.goal, args.steps),
   });
+  assistant.tools.register({
+    name: "brain_run_safe_plan",
+    risk: "write",
+    description: "Создать план и автоматически выполнить его разрешённые шаги чтения после одного подтверждения пользователя. Разрешены только list_modules и search_memory.",
+    parameters: { type: "object", properties: {
+      goal: { type: "string" },
+      steps: { type: "array", items: { type: "string" } },
+      actions: { type: "array", items: { type: "string", enum: ["list_modules", "search_memory"] } },
+    }, required: ["goal", "steps", "actions"] },
+    run: async (args) => {
+      if (!Array.isArray(args.steps) || !Array.isArray(args.actions) || args.steps.length !== args.actions.length ||
+        !args.actions.every(a => a === "list_modules" || a === "search_memory")) throw new Error("Недопустимые действия");
+      const plan = brain.plan(args.goal, args.steps);
+      await brain.flush();
+      return brain.executeSequence(plan.id, args.actions, () => moduleList(),
+        async query => (await memory.search(query, 8)).map(item => item.text));
+    },
+  });
   activeModel = MODEL;
   cloudConfigured = true;
 }
