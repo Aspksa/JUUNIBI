@@ -6,6 +6,7 @@ import { Kernel, Logger } from "@juunibi/core";
 import { Assistant, CloudRuProvider, Memory, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
 import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
+import { SceneEngine } from "./scenes";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -42,10 +43,14 @@ const settingsFile = path.join(dataDir, "cloudru-settings.json");
 const MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 let activeModel: string | undefined;
 let cloudConfigured = false;
+let sceneLlm: CloudRuProvider | undefined;
+const scenes = new SceneEngine(root, () => sceneLlm);
+await scenes.init();
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
   const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
+  sceneLlm = llm;
   assistant = new Assistant({ llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => kernel.describe() });
   activeModel = MODEL;
   cloudConfigured = true;
@@ -90,6 +95,7 @@ const server = createApp({
   saveCloud,
   approvals: approvalGate,
   updater,
+  scenes,
   modules: () => kernel.describe(),
   staticDir,
   configured: { model: MODEL, hint },
