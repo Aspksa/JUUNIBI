@@ -5,7 +5,7 @@ export interface Accent { id: AccentId; label: string; light: { brand: string; f
 
 /** `brand` is the accent (rings, glow, markers, send button); `fg` is the text/icon colour ON a brand-coloured surface. Contrast is unit-tested. */
 export const ACCENTS: Accent[] = [
-  { id: "gold", label: "Золото", light: { brand: "#ad7a12", fg: "#1a1306" }, dark: { brand: "#d9a441", fg: "#1a1306" } },
+  { id: "gold", label: "Золото", light: { brand: "#8f6000", fg: "#1a1306" }, dark: { brand: "#d9a441", fg: "#1a1306" } },
   { id: "sakura", label: "Сакура", light: { brand: "#c2457a", fg: "#ffffff" }, dark: { brand: "#f08cb0", fg: "#2a0614" } },
   { id: "jade", label: "Нефрит", light: { brand: "#0b7a5d", fg: "#ffffff" }, dark: { brand: "#4cc9a4", fg: "#04281e" } },
   { id: "violet", label: "Фиалка", light: { brand: "#5b4bdb", fg: "#ffffff" }, dark: { brand: "#a79bff", fg: "#14103a" } },

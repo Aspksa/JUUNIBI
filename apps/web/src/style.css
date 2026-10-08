@@ -1,13 +1,13 @@
 /* JUUNIBI web UI — neutral ChatGPT-style chrome, left menu, floating avatar, popup chat. */
 :root{
-  --bg:#fff;--surface:#f9f9f9;--surface-2:#f4f4f4;--fg:#0d0d0d;--muted:#6b6b6b;--line:rgba(0,0,0,.1);--hover:rgba(0,0,0,.06);--hover-2:rgba(0,0,0,.1);
-  --accent:#0d0d0d;--accent-fg:#fff;--danger:#d93025;--ok:#2e7d32;--brand:#ad7a12;--shadow:0 20px 60px -20px rgba(0,0,0,.35);
+  --bg:#fff;--surface:#f9f9f9;--surface-2:#f4f4f4;--fg:#0d0d0d;--muted:#5a5a5a;--line:rgba(0,0,0,.1);--hover:rgba(0,0,0,.06);--hover-2:rgba(0,0,0,.1);
+  --accent:#0d0d0d;--accent-fg:#fff;--danger:#d93025;--ok:#1b6e2f;--brand:#8f6000;--shadow:0 20px 60px -20px rgba(0,0,0,.35);
   --font:ui-sans-serif,-apple-system,system-ui,"Segoe UI",Roboto,"Noto Sans","Helvetica Neue",Arial,sans-serif;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
-  --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;--fg:#ececec;--muted:#9b9b9b;--line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);
+  --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;--fg:#ececec;--muted:#b0b0b0;--line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);
   --accent:#ececec;--accent-fg:#0d0d0d;--danger:#f87171;--ok:#6fcf97;--brand:#d9a441;--shadow:0 24px 70px -20px rgba(0,0,0,.8)}}
 :root[data-theme=dark]{
-  --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;--fg:#ececec;--muted:#9b9b9b;--line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);
+  --bg:#212121;--surface:#171717;--surface-2:#2f2f2f;--fg:#ececec;--muted:#b0b0b0;--line:rgba(255,255,255,.12);--hover:rgba(255,255,255,.07);--hover-2:rgba(255,255,255,.12);
   --accent:#ececec;--accent-fg:#0d0d0d;--danger:#f87171;--ok:#6fcf97;--brand:#d9a441;--shadow:0 24px 70px -20px rgba(0,0,0,.8)}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -679,8 +679,8 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .mem-card{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);animation:msg-in .3s var(--ease2) both}
 .mem-block.pend .mem-card{background:var(--bg)}
 .mem-kind{align-self:flex-start;padding:2px 10px;border-radius:999px;font-size:.72rem;font-weight:600;letter-spacing:.03em;background:var(--hover-2);color:var(--muted)}
-.mem-kind.preference{background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--brand)}
-.mem-kind.lesson{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.mem-kind.preference{background:color-mix(in srgb,var(--brand) 16%,transparent);color:color-mix(in srgb,var(--brand) 78%,var(--fg))}
+.mem-kind.lesson{background:color-mix(in srgb,var(--ok) 16%,transparent);color:color-mix(in srgb,var(--ok) 80%,var(--fg))}
 .mem-text{margin:0;overflow-wrap:anywhere;line-height:1.55}
 .mem-card footer{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.8rem;min-height:30px}
 .mem-tools{display:flex;gap:8px;align-items:center}
