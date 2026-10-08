@@ -1,0 +1,27 @@
+:root{--bg:#f7f7f9;--fg:#15151a;--muted:#62626d;--card:#fff;--line:#e2e2e8;--accent:#5b4bdb;--accent-fg:#fff;--danger:#c62828;color-scheme:light dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#101014;--fg:#ececf1;--muted:#9a9aa6;--card:#1a1a21;--line:#2c2c36;--accent:#8b7dff;--accent-fg:#101014;--danger:#ef6b6b}}
+:root[data-theme=dark]{--bg:#101014;--fg:#ececf1;--muted:#9a9aa6;--card:#1a1a21;--line:#2c2c36;--accent:#8b7dff;--accent-fg:#101014;--danger:#ef6b6b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0 16px}
+h1{font-size:1.4rem;margin:0;letter-spacing:.04em}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+form{display:flex;gap:8px;margin-bottom:16px}
+input[type=text]{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:inherit;font:inherit}
+button{padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:inherit;font:inherit;cursor:pointer;min-height:44px}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:transparent}
+button.ghost{border-color:transparent;color:var(--muted)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li label{flex:1;overflow-wrap:anywhere}
+li.done label{color:var(--muted);text-decoration:line-through}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
+.filters{display:flex;gap:6px;margin-bottom:8px}
+.filters button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg)}
+.empty,.status{color:var(--muted);text-align:center;padding:16px 0}
+.status{font-size:.85rem;padding:12px 0 0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:no-preference){button{transition:background .15s}}

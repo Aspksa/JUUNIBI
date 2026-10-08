@@ -1,0 +1,13 @@
+{
+  "name": "juunibi",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "build": "npm run build -w @juunibi/core && npm run build -w @juunibi/web",
+    "dev": "npm run dev -w @juunibi/web",
+    "test": "npm test -w @juunibi/core",
+    "typecheck": "npm run typecheck -w @juunibi/core && npm run typecheck -w @juunibi/web"
+  },
+  "engines": { "node": ">=20" }
+}
