@@ -11,10 +11,12 @@ export type UpdatePhase = "idle" | "downloading" | "testing" | "ready" | "error"
 export interface UpdateState {
   phase: UpdatePhase; percent: number; downloadedFiles: number; totalFiles: number;
   downloadedBytes: number; totalBytes: number; message: string; error?: string;
+  /** Files dropped by the new release; deleted only after the user confirms (red in the UI). */
+  pendingRemovals: string[]; removalsConfirmed: boolean;
 }
 interface Entry { path: string; sha: string; size: number; type: string }
 export class ProjectUpdater {
-  private state: UpdateState = { phase: "idle", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Ожидание" };
+  private state: UpdateState = { phase: "idle", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Ожидание", pendingRemovals: [], removalsConfirmed: false };
   private latest: { sha: string; version: string; description: string; date: string } | null = null;
   private busy = false;
   private operationId = randomUUID();
@@ -51,7 +53,8 @@ export class ProjectUpdater {
     await rm(path.join(this.folder(), "ready.json"), {force:true});
     await writeFile(path.join(this.folder(), "events.jsonl"), "");
     await this.emit("update_check_started", "", "checking");
-    this.state = { phase: "downloading", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Подключение к GitHub" };
+    this.state = { phase: "downloading", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Подключение к GitHub", pendingRemovals: [], removalsConfirmed: false };
+    await rm(path.join(this.folder(), "removals-confirmed.json"), { force: true });
     try {
       await this.check();
       const sha = this.latest!.sha;
@@ -67,7 +70,9 @@ export class ProjectUpdater {
         try { const prior = await readFile(path.join(this.root, e.path)); return { path: e.path, change_type: gitHash(prior) === e.sha ? "unchanged" : "modified", size: e.size }; }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; return { path: e.path, change_type: "added", size: e.size }; }
       }));
-      await this.emit("manifest_ready", "", "ready", { files: changes, sha });
+      const removals = await this.findRemovals(entries);
+      this.state.pendingRemovals = removals;
+      await this.emit("manifest_ready", "", "ready", { files: [...changes, ...removals.map(p => ({ path: p, change_type: "removed", size: 0 }))], sha });
       const staging = path.join(this.folder(), "staging");
       await rm(staging, { recursive: true, force: true });
       await mkdir(staging, { recursive: true });
@@ -79,6 +84,7 @@ export class ProjectUpdater {
         if (!response.ok) throw new Error("Не удалось скачать " + e.path + ": HTTP " + response.status);
         const chunks: Buffer[] = [];
         let size = 0;
+        let lastProgress = 0;
         if (!response.body) throw new Error("Пустой ответ GitHub: " + e.path);
         const reader = response.body.getReader();
         try {
@@ -88,6 +94,11 @@ export class ProjectUpdater {
             const b = Buffer.from(value); size += b.byteLength;
             if (size > e.size) throw new Error("Размер файла не совпадает: " + e.path);
             chunks.push(b); this.state.downloadedBytes += b.byteLength;
+            const now = Date.now();
+            if (e.size > 262_144 && now - lastProgress >= 250) {
+              lastProgress = now;
+              await this.emit("file_download_progress", e.path, "downloading", { change_type, bytes_done: size, bytes_total: e.size, target_relative_path: e.path });
+            }
             this.state.percent = total ? Math.min(100, Math.floor(100 * this.state.downloadedBytes / total)) : 100;
           }
         } finally { reader.releaseLock(); }
@@ -107,7 +118,7 @@ export class ProjectUpdater {
       await this.run(staging, "npm", ["run", "typecheck"]);
       await this.run(staging, "npm", ["test"]);
       await this.run(staging, "npm", ["run", "build"]);
-      await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => ({ path: e.path, sha: e.sha })), description: this.latest!.description }));
+      await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => ({ path: e.path, sha: e.sha })), removals, description: this.latest!.description }));
       await this.emit("update_prepared", "", "ready", {sha});
       this.state.phase = "ready";
       this.state.message = "Проверки пройдены. Перезапустите JUUNIBI для установки.";
@@ -118,6 +129,29 @@ export class ProjectUpdater {
       this.state.message = "Не удалось подготовить обновление";
       await rm(path.join(this.folder(), "ready.json"), { force: true });
     } finally { this.busy = false; }
+  }
+  /** Files installed by the previous release that the new tree no longer contains. Only ever files WE installed. */
+  private async findRemovals(entries: Entry[]): Promise<string[]> {
+    let prev: { paths?: unknown } | null = null;
+    try { prev = JSON.parse(await readFile(path.join(this.folder(), "installed.json"), "utf8")); } catch { return []; }
+    if (!prev || !Array.isArray(prev.paths)) return [];
+    const keep = new Set(entries.map(e => e.path.toLowerCase()));
+    const out: string[] = [];
+    for (const p of prev.paths) {
+      if (typeof p !== "string" || !safeRelative(p) || keep.has(p.toLowerCase())) continue;
+      try { await readFile(path.join(this.root, p)); out.push(p); } catch { /* already gone */ }
+    }
+    return out.slice(0, 2500);
+  }
+  /** User approves deleting the listed files for the prepared update. Nothing is deleted before the installer runs. */
+  async confirmRemovals() {
+    if (this.state.phase !== "ready") throw new Error("Нет подготовленного обновления");
+    const ready = JSON.parse(await readFile(path.join(this.folder(), "ready.json"), "utf8"));
+    if (!Array.isArray(ready.removals) || !ready.removals.length) throw new Error("Нечего удалять");
+    await writeFile(path.join(this.folder(), "removals-confirmed.json"), JSON.stringify({ sha: ready.sha, paths: ready.removals }));
+    this.state.removalsConfirmed = true;
+    await this.emit("removals_confirmed", "", "confirmed", { count: ready.removals.length });
+    return this.status();
   }
   private async run(cwd: string, command: string, args: string[]) {
     await new Promise<void>((resolve, reject) => {

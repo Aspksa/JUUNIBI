@@ -3,7 +3,7 @@ import { attemptAsync, type Result } from "@juunibi/core";
 export interface SceneReply { action: {id:string;text:string;category:string;emotion?:string;duration_seconds?:number;animation_cues?:{ears?:string;tails?:number;gaze?:string}}; phrase:null|{id:string;text:string;category:string};stats:{total:number;used:number;remaining:number;phrases:number;generated:number} }
 export interface CloudStatus { configured: boolean; model: string }
 export interface UpdateEvent {event_id:string;type:string;timestamp:string;operation_id:string;relative_path:string;status:string;change_type?:string;bytes_done?:number;bytes_total?:number;target_relative_path?:string;message?:string;files?:{path:string;change_type:string;size:number}[]}
-export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
+export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; pendingRemovals?: string[]; removalsConfirmed?: boolean; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
 export interface ChatReply { turnId: string; reply: string; tools: string[]; memory: string[] }
 export interface MemoryItem { id: string; kind: string; text: string; status: "active" | "pending"; score: number }
@@ -24,6 +24,7 @@ export const api = {
   updateEvents: () => attemptAsync(() => call<UpdateEvent[]>("/api/update/events")),
   updateStatus: () => attemptAsync(() => call<UpdateStatus>("/api/update/status")),
   updateCheck: () => attemptAsync(() => call<UpdateStatus>("/api/update/check", post({}))),
+  updateConfirmRemovals: () => attemptAsync(() => call<UpdateStatus>("/api/update/confirm-removals", post({}))),
   updateDownload: () => attemptAsync(() => call<{ok:boolean}>("/api/update/download", post({}))),
   approvals: () => attemptAsync(() => call<ApprovalItem[]>("/api/approvals")),
   decideApproval: (id: string, approve: boolean) => attemptAsync(() => call<{ok:boolean}>(`/api/approvals/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, post({}))),

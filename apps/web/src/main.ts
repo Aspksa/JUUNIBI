@@ -222,7 +222,7 @@ kernel.register({
         }));
         const folders = [...new Set(files.map(f=>f.path.split("/").slice(0,-1).join("/") || "Корень"))].sort();
         const flight = el("div",{cls:"flight-layout"},
-          el("div",{cls:"flight-zone"},el("strong",{textContent:"GitHub · источник"}),...(files.slice(0,65).map(f=>el("div",{cls:"flight-file",textContent:(f.change_type==="added"?"+ ":f.change_type==="modified"?"~ ":"= ")+f.path})))),
+          el("div",{cls:"flight-zone"},el("strong",{textContent:"GitHub · источник"}),...(files.slice(0,65).map(f=>el("div",{cls:"flight-file"+(f.change_type==="removed"?" removed":""),textContent:(f.change_type==="added"?"+ ":f.change_type==="modified"?"~ ":f.change_type==="removed"?"− ":"= ")+f.path})))),
           el("div",{cls:"flight-center"},el("strong",{textContent:"Проверка → загрузка"}),...(newest?[el("div",{cls:"flying-file",textContent:newest.relative_path})]:[el("p",{textContent:"Ожидание реальных событий"})])),
           el("div",{cls:"flight-zone"},el("strong",{textContent:"Локальные папки"}),...folders.slice(0,65).map(folder=>{
             const count=files.filter(f=>(f.path.split("/").slice(0,-1).join("/")||"Корень")===folder&&installed.has(f.path)).length;
@@ -236,6 +236,14 @@ kernel.register({
           b.addEventListener("click", action);
           return b;
         };
+        const health = [...events].reverse().find(e => e.type === "health_check_done");
+        const removals = u?.pendingRemovals ?? [];
+        const removalBox = u?.phase === "ready" && removals.length
+          ? el("section", { cls: "removals", role: "group" },
+              el("strong", { textContent: `Новая версия больше не содержит ${removals.length} файл(ов). Они будут удалены при установке только после вашего подтверждения (резервная копия создаётся):` }),
+              el("ul", {}, ...removals.slice(0, 50).map((r) => el("li", { textContent: r }))),
+              btn(u.removalsConfirmed ? "Удаление подтверждено" : "Подтвердить удаление", () => void api.updateConfirmRemovals().then((r) => { if (r.ok) store.set({ update: r.value }); }), !!u.removalsConfirmed))
+          : null;
         const progress = el("progress", { max: 100, value: u?.percent ?? 0 });
         progress.setAttribute("aria-label", "Прогресс скачивания");
         body = el("section", { cls: "updater" },
@@ -251,6 +259,8 @@ kernel.register({
           btn("Проверить обновления", () => void checkUpdate(), u?.phase === "downloading" || u?.phase === "testing"),
           btn("Скачать и проверить", () => void downloadUpdate(), !u?.latest || u.localVersion === u.latest.sha || u.phase === "downloading" || u.phase === "testing"),
           progress,
+          ...(removalBox ? [removalBox] : []),
+          ...(health ? [el("p", { cls: health.status === "healthy" ? "ok" : "bad", textContent: "Проверка запуска после установки: " + (health.status === "healthy" ? "пройдена" : "не пройдена" + (health.message ? " — " + health.message : "")) })] : []),
           el("p", { textContent: `${u?.percent ?? 0}% · Файлов: ${u?.downloadedFiles ?? 0} из ${u?.totalFiles ?? 0} · ${((u?.downloadedBytes ?? 0) / 1048576).toFixed(2)} из ${((u?.totalBytes ?? 0) / 1048576).toFixed(2)} МБ` }),
           el("p", { textContent: "Этап: " + (u?.phase === "testing" ? "Тесты и сборка" : u?.phase === "ready" ? "Готово к установке" : u?.phase === "downloading" ? "Скачивание" : u?.phase === "error" ? "Ошибка" : "Ожидание") }),
           el("p", { textContent: u?.error || s.updateError || u?.message || "" }),
