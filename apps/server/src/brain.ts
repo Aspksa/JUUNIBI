@@ -38,6 +38,7 @@ export class BrainCore {
   setMode(value: unknown) {
     if (value !== "chat" && value !== "analysis" && value !== "agent" && value !== "creative") throw Object.assign(new Error("Неизвестный режим мозга"), { status: 400 });
     this.mode = value;
+    this.persist();
     return this.status();
   }
   plan(goal: unknown, tasks: unknown) {
@@ -48,6 +49,7 @@ export class BrainCore {
       steps: tasks.map((title: string) => ({ id: randomUUID(), title: title.trim(), status: "pending" })) };
     this.plans.unshift(item);
     this.plans = this.plans.slice(0, 30);
+    this.persist();
     return item;
   }
   /** Executes an explicitly selected read-only action; never accepts shell commands or arbitrary tool names. */
@@ -66,6 +68,7 @@ export class BrainCore {
       this.updateStep(planId, stepId, "done");
       this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "verified: " + action + ": " + summary });
       this.logs = this.logs.slice(0, 200);
+      this.persist();
       return { plan: this.status().plans.find(p => p.id === planId), result };
     } catch (error) {
       this.updateStep(planId, stepId, "failed");
@@ -85,6 +88,7 @@ export class BrainCore {
     this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: status });
     this.logs = this.logs.slice(0, 200);
     plan.status = plan.steps.some(s => s.status === "failed") ? "failed" : plan.steps.every(s => s.status === "done") ? "completed" : "running";
+    this.persist();
     return plan;
   }
 }
