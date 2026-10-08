@@ -1,3 +1,5 @@
+import { tokenize } from "./highlight";
+
 /** Small, safe Markdown renderer: parser -> AST (pure, tested) -> DOM nodes (never innerHTML). */
 
 export type Inline =
@@ -144,14 +146,20 @@ function inlineNodes(list: Inline[]): Node[] {
 function codeBlock(b: Extract<Block, { t: "code" }>): HTMLElement {
   const wrap = document.createElement("div"); wrap.className = "md-code";
   const head = document.createElement("div"); head.className = "md-code-head";
-  const lang = document.createElement("span"); lang.textContent = b.lang || "код";
+  const dots = document.createElement("span"); dots.className = "md-dots"; dots.setAttribute("aria-hidden", "true"); dots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
+  const lang = document.createElement("span"); lang.className = "md-lang"; lang.textContent = b.lang || "код";
   const copy = document.createElement("button"); copy.type = "button"; copy.className = "md-copy"; copy.textContent = "Копировать";
   copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(b.text); copy.textContent = "Скопировано"; } catch { copy.textContent = "Не удалось"; }
-    setTimeout(() => (copy.textContent = "Копировать"), 1600);
+    try { await navigator.clipboard.writeText(b.text); copy.textContent = "Скопировано ✓"; copy.classList.add("done"); } catch { copy.textContent = "Не удалось"; }
+    setTimeout(() => { copy.textContent = "Копировать"; copy.classList.remove("done"); }, 1600);
   });
-  head.append(lang, copy);
-  const pre = document.createElement("pre"); const code = document.createElement("code"); code.textContent = b.text; pre.append(code);
+  head.append(dots, lang, copy);
+  const pre = document.createElement("pre"); const code = document.createElement("code");
+  for (const t of tokenize(b.text, b.lang)) {
+    if (t.t === "plain") code.append(document.createTextNode(t.v));
+    else { const sp = document.createElement("span"); sp.className = "tok-" + t.t; sp.textContent = t.v; code.append(sp); }
+  }
+  pre.append(code);
   wrap.append(head, pre);
   return wrap;
 }

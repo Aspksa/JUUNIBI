@@ -1,4 +1,5 @@
 import { el, icon, iconButton } from "../dom";
+import { characterAvatar } from "./art";
 import { renderMarkdown } from "../markdown";
 import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
@@ -69,20 +70,22 @@ function stepsBlock(steps: Step[]): HTMLElement {
 }
 
 function fillAssistant(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
-  if (m.scene) root.append(el("div", { cls: "scene" }, el("em", { textContent: m.scene.action }), ...(m.scene.phrase ? [el("p", { textContent: "«" + m.scene.phrase + "»" })] : [])));
-  if (m.steps?.length) root.append(stepsBlock(m.steps));
+  const body = el("div", { cls: "msg-body" });
+  root.append(characterAvatar(32, "msg-av"), body);
+  if (m.scene) body.append(el("div", { cls: "scene" }, el("em", { textContent: m.scene.action }), ...(m.scene.phrase ? [el("p", { textContent: "«" + m.scene.phrase + "»" })] : [])));
+  if (m.steps?.length) body.append(stepsBlock(m.steps));
   const prose = el("div", { cls: "prose" + (c.streaming ? " streaming" : "") });
   if (m.content) prose.append(renderMarkdown(m.content));
   else if (c.streaming && !m.steps?.some((s) => s.status === "running")) prose.append(el("span", { cls: "typing", attrs: { "aria-label": "JUUNIBI печатает" } }, el("i"), el("i"), el("i")));
-  if (prose.childNodes.length) root.append(prose);
-  if (m.stopped) root.append(el("p", { cls: "note", textContent: "Генерация остановлена." }));
+  if (prose.childNodes.length) body.append(prose);
+  if (m.stopped) body.append(el("p", { cls: "note", textContent: "Генерация остановлена." }));
   if (m.error && !m.stopped) {
     const retry = el("button", { type: "button", cls: "btn", textContent: "Повторить" });
     retry.addEventListener("click", () => { void c.ctl.regenerate(c.convId); });
-    root.append(el("div", { cls: "error-box", attrs: { role: "alert" } }, icon("alert", 16), el("span", { textContent: m.error }), c.isLast && !c.busy ? retry : null));
+    body.append(el("div", { cls: "error-box", attrs: { role: "alert" } }, icon("alert", 16), el("span", { textContent: m.error }), c.isLast && !c.busy ? retry : null));
   }
   if (m.memoryUsed?.length) {
-    root.append(el("details", { cls: "mem-used" }, el("summary", {}, icon("memory", 14), el("span", { textContent: `Использована память · ${m.memoryUsed.length}` })),
+    body.append(el("details", { cls: "mem-used" }, el("summary", {}, icon("memory", 14), el("span", { textContent: `Использована память · ${m.memoryUsed.length}` })),
       el("ul", {}, ...m.memoryUsed.map((t) => el("li", { textContent: t })))));
   }
   if (c.streaming) return;
@@ -101,5 +104,5 @@ function fillAssistant(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
     }
   }
   if (c.isLast && !c.busy) actions.append(iconButton("refresh", "Сгенерировать заново", () => void c.ctl.regenerate(c.convId), "icon-btn sm"));
-  if (actions.childElementCount > 1) root.append(actions);
+  if (actions.childElementCount > 1) body.append(actions);
 }
