@@ -21,6 +21,7 @@ export interface MemoryEntry {
   expiresAt?: number;
   supersededBy?: string;
   relatedIds?: string[];
+  revisesId?: string;
 }
 
 const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
@@ -65,6 +66,7 @@ export class Memory {
         Number.isFinite(e.score) && Number.isFinite(e.createdAt) &&
         (e.expiresAt === undefined || Number.isFinite(e.expiresAt)) &&
         (e.supersededBy === undefined || typeof e.supersededBy === "string") &&
+        (e.revisesId === undefined || typeof e.revisesId === "string") &&
         (e.relatedIds === undefined || (Array.isArray(e.relatedIds) && e.relatedIds.length <= 20 && e.relatedIds.every((id: unknown) => typeof id === "string"))));
     } catch { /* corrupt file: start empty rather than crash */ }
   }
@@ -104,6 +106,10 @@ export class Memory {
     const e = this.entries.find((x) => x.id === id);
     if (!e) return false;
     e.status = "active";
+    if (e.revisesId) {
+      const old = this.entries.find(x => x.id === e.revisesId && x.status === "active" && !x.supersededBy);
+      if (old) old.supersededBy = e.id;
+    }
     await this.persist();
     return true;
   }
@@ -185,7 +191,12 @@ export class Memory {
     await this.ready;
     const old = this.entries.find(e => e.id === oldId && e.status === "active" && !e.supersededBy);
     if (!old || !newText.trim() || normalize(old.text) === normalize(newText)) return null;
-    return this.add(old.kind, newText, "pending");
+    const proposal = await this.add(old.kind, newText, "pending");
+    const stored = this.entries.find(e => e.id === proposal.id);
+    if (!stored || stored.status !== "pending") return null;
+    stored.revisesId = oldId;
+    await this.persist();
+    return { ...stored };
   }
   /** Keep context compact and only include confirmed, non-expired records. */
   async context(query: string, maxChars = 1500): Promise<MemoryEntry[]> {
