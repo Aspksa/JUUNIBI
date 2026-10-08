@@ -4,7 +4,7 @@ import "./style.css";
 
 interface Msg { role: "user" | "bot" | "error"; text: string; turnId?: string; rating?: 1 | -1; tools?: string[] }
 interface State {
-  msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update";
+  msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
   memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[]; theme: "auto" | "light" | "dark";
 }
 
@@ -91,7 +91,7 @@ kernel.register({
     root.replaceChildren(view);
     const themeNames = { auto: "Тема: авто", light: "Тема: светлая", dark: "Тема: тёмная" };
     const nextTheme = { auto: "light", light: "dark", dark: "auto" } as const;
-    const tabs = { chat: "Чат", memory: "Память", modules: "Модули", update: "Обновление проекта" } as const;
+    const tabs = { chat: "Чат", memory: "Память", modules: "Модули", update: "Обновление проекта", settings: "Настройки ИИ" } as const;
 
     const input = el("input", { type: "text", id: "msg", placeholder: "Напишите помощнику…", autocomplete: "off", maxLength: 4000 });
     input.setAttribute("aria-label", "Сообщение");
@@ -163,6 +163,23 @@ kernel.register({
           return li;
         };
         body = el("ul", {}, ...(s.memory.length ? s.memory.map(item) : [el("li", { cls: "empty", textContent: "Память пуста. Новые уроки появятся здесь на подтверждение." })]));
+      } else if (s.tab === "settings") {
+        const title = el("h2", { textContent: "Подключение Cloud.ru" });
+        const label = el("label", { textContent: "API-ключ Cloud.ru" });
+        const key = el("input", { type: "password", autocomplete: "new-password", placeholder: "Вставьте API-ключ", required: true });
+        const save = el("button", { type: "submit", cls: "primary", textContent: "Сохранить и подключить" });
+        const note = el("p", { role: "status", textContent: s.status?.assistant ? "Модель подключена" : "Ключ ещё не настроен" });
+        const configForm = el("form", {}, label, key, save);
+        configForm.addEventListener("submit", async e => {
+          e.preventDefault();
+          save.disabled = true;
+          const r = await api.cloudSave(key.value.trim());
+          key.value = "";
+          save.disabled = false;
+          note.textContent = r.ok ? "Ключ сохранён локально. DeepSeek V4 Flash подключена." : r.error.message;
+          if (r.ok) { const status = await api.status(); if (status.ok) store.set({ status: status.value }); }
+        });
+        body = el("section", { cls: "updater" }, title, el("p", { textContent: "Провайдер: Cloud.ru · Модель: DeepSeek V4 Flash" }), el("p", { textContent: "Ключ хранится на локальном сервере в data/cloudru-settings.json, не в браузере и не в GitHub." }), configForm, note);
       } else if (s.tab === "update") {
         const u = s.update;
         const btn = (title: string, action: () => void, disabled = false) => {
