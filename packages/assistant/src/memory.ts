@@ -112,6 +112,7 @@ export class Memory {
     await this.ready;
     const e = this.entries.find((x) => x.id === id);
     if (!e || e.status !== "pending") return false;
+    if (e.revisesId && !this.entries.some(x => x.id === e.revisesId && x.status === "active" && !x.supersededBy)) return false;
     e.status = "active";
     if (e.revisesId) {
       const old = this.entries.find(x => x.id === e.revisesId && x.status === "active" && !x.supersededBy);
@@ -125,6 +126,12 @@ export class Memory {
     const n = this.entries.length;
     this.entries = this.entries.filter((e) => e.id !== id);
     if (this.entries.length === n) return false;
+    for (const entry of this.entries) {
+      if (entry.relatedIds) entry.relatedIds = entry.relatedIds.filter(link => link !== id);
+      if (entry.revisesId === id) delete entry.revisesId;
+      if (entry.supersededBy === id) delete entry.supersededBy;
+    }
+    this.vectors.delete(id);
     await this.persist();
     return true;
   }
@@ -199,7 +206,7 @@ export class Memory {
   /** Explicitly propose a new version; it stays pending until approved. */
   async proposeRevision(oldId: string, newText: string): Promise<MemoryEntry | null> {
     await this.ready;
-    const old = this.entries.find(e => e.id === oldId && e.status === "active" && !e.supersededBy);
+    const old = this.entries.find(e => e.id === oldId && e.status === "active" && !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()));
     if (!old || !newText.trim() || normalize(old.text) === normalize(newText)) return null;
     if (this.entries.some(e => e.status === "pending" && e.revisesId === oldId)) return null;
     const proposal = await this.add(old.kind, newText, "pending");
