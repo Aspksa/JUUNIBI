@@ -38,6 +38,7 @@ const meaning = (word: string): string => {
   return word.length >= 5 ? word.slice(0, word.length - 2) : word;
 };
 const concepts = (s: string) => new Set(tokens(s).map(meaning));
+const copyEntry = (entry: MemoryEntry): MemoryEntry => ({ ...entry, ...(entry.relatedIds ? { relatedIds: [...entry.relatedIds] } : {}) });
 const MAX_ENTRIES = 2000;
 const MAX_TEXT = 500;
 
@@ -89,7 +90,7 @@ export class Memory {
         dup.status = "active";
         await this.persist();
       }
-      return { ...dup };
+      return copyEntry(dup);
     }
     const entry: MemoryEntry = { id: crypto.randomUUID(), kind, text: clean, status, score: 0, createdAt: Date.now() };
     this.entries.push(entry);
@@ -98,11 +99,11 @@ export class Memory {
       this.entries = this.entries.filter((e) => e !== drop);
     }
     await this.persist();
-    return { ...entry };
+    return copyEntry(entry);
   }
   async list(status?: MemoryEntry["status"]): Promise<MemoryEntry[]> {
     await this.ready;
-    return this.entries.filter((e) => !status || e.status === status).map(e => ({ ...e }));
+    return this.entries.filter((e) => !status || e.status === status).map(copyEntry);
   }
   async approve(id: string): Promise<boolean> {
     await this.ready;
@@ -186,7 +187,7 @@ export class Memory {
       return ranked.filter(x => x.score > 0.15 || lexicalRanks.has(x.e.id))
         .sort((a, b) => (b.score + (lexicalRanks.has(b.e.id) ? 0.2 / (1 + lexicalRanks.get(b.e.id)!) : 0)) -
           (a.score + (lexicalRanks.has(a.e.id) ? 0.2 / (1 + lexicalRanks.get(a.e.id)!) : 0)))
-        .slice(0, Math.min(20, Math.floor(k))).map(x => ({ ...x.e }));
+        .slice(0, Math.min(20, Math.floor(k))).map(x => copyEntry(x.e));
     } catch {
       this.embeddingFailures++;
       return lexical.slice(0, Math.min(20, Math.floor(k)));
@@ -202,7 +203,7 @@ export class Memory {
     if (!stored || stored.status !== "pending") return null;
     stored.revisesId = oldId;
     await this.persist();
-    return { ...stored };
+    return copyEntry(stored);
   }
   /** Conservative opt-in-style extraction from direct user statements. Never auto-approves. */
   async suggestFromUserText(input: string): Promise<MemoryEntry[]> {
@@ -248,6 +249,6 @@ export class Memory {
       .filter((x) => x.s > 0)
       .sort((a, b) => (b.s + b.e.score * 0.1) - (a.s + a.e.score * 0.1) || b.e.createdAt - a.e.createdAt)
       .slice(0, Math.min(20, Math.floor(k)))
-      .map((x) => ({ ...x.e }));
+      .map((x) => copyEntry(x.e));
   }
 }
