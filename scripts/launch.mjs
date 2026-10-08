@@ -75,7 +75,7 @@ if (!existsSync(bin("vite", "bin", "vite.js"))) {
 }
 
 const PKGS = ["packages/core", "packages/assistant", "apps/server", "apps/web"];
-const TESTED = ["packages/core", "packages/assistant", "apps/server"];
+const TESTED = ["packages/core", "packages/assistant", "apps/server", "apps/web"];
 
 if (!flag("--skip-checks")) {
   for (const p of PKGS) run(`Проверка типов: ${p}`, process.execPath, [bin("typescript", "bin", "tsc"), "-p", `${p}/tsconfig.json`]);
