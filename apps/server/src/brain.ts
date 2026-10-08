@@ -12,6 +12,8 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  private writeQueue: Promise<void> = Promise.resolve();
+  flush() { return this.writeQueue; }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
