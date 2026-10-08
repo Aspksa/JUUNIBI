@@ -44,6 +44,14 @@ const concepts = (s: string) => new Set(tokens(s).map(meaning));
 const copyEntry = (entry: MemoryEntry): MemoryEntry => ({ ...entry, ...(entry.relatedIds ? { relatedIds: [...entry.relatedIds] } : {}) });
 const MAX_ENTRIES = 2000;
 const MAX_TEXT = 500;
+/** Relevance remains the main signal; stable preferences and feedback break close matches. */
+const rankMemory = (entry: MemoryEntry, matches: number, now: number): number => {
+  const ageDays = Math.max(0, (now - entry.createdAt) / 86_400_000);
+  const recency = 0.2 / (1 + ageDays / 90);
+  const preference = entry.kind === "preference" ? 0.15 : entry.kind === "lesson" ? 0.05 : 0;
+  const feedback = Math.max(-0.4, Math.min(0.4, entry.score * 0.1));
+  return matches * 2 + recency + preference + feedback;
+};
 
 /** Long-term memory with human-approved learning and keyword retrieval. */
 export class Memory {
@@ -255,11 +263,12 @@ export class Memory {
     if (!Number.isFinite(k) || k <= 0) return [];
     const q = concepts(query);
     if (!q.size) return [];
+    const now = Date.now();
     return this.entries
-      .filter((e) => e.status === "active" && e.score > -3 && !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()))
+      .filter((e) => e.status === "active" && e.score > -3 && !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > now))
       .map((e) => ({ e, s: [...concepts(e.text)].filter((t) => q.has(t)).length }))
       .filter((x) => x.s > 0)
-      .sort((a, b) => (b.s + b.e.score * 0.1) - (a.s + a.e.score * 0.1) || b.e.createdAt - a.e.createdAt)
+      .sort((a, b) => rankMemory(b.e, b.s, now) - rankMemory(a.e, a.s, now) || b.e.createdAt - a.e.createdAt)
       .slice(0, Math.min(20, Math.floor(k)))
       .map((x) => copyEntry(x.e));
   }
