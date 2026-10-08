@@ -1,52 +1,57 @@
 @echo off
-setlocal EnableExtensions
-chcp 65001 >nul
+setlocal EnableExtensions DisableDelayedExpansion
 title JUUNIBI
-rem Portable launcher: works from any drive (USB, network share, folder). Pass-through args: --dev --no-open --skip-checks --port N
 
-pushd "%~dp0" 2>nul || (echo [ОШИБКА] Не удалось открыть папку программы. & pause & exit /b 1)
+rem ASCII-only CMD bootstrap; avoid Unicode before setting a compatible code page.
+cd /d "%~dp0"
+if errorlevel 1 goto folder_error
+if not exist "scripts\launch.mjs" goto folder_error
 
-set "RUNTIME=%CD%\.runtime"
+set "ROOT=%CD%"
+set "RUNTIME=%ROOT%\.runtime"
 set "NODE_DIR=%RUNTIME%\node"
 
-rem 1) Node.js: system -> portable in .runtime -> download
 call :check_node
 if not errorlevel 1 goto have_node
+
 if exist "%NODE_DIR%\node.exe" (
   set "PATH=%NODE_DIR%;%PATH%"
   call :check_node
   if not errorlevel 1 goto have_node
 )
 
-echo Node.js 20+ не найден. Скачиваю переносную версию в "%RUNTIME%" ...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%CD%\scripts\bootstrap-node.ps1" -Dest "%RUNTIME%"
-if errorlevel 1 goto fail_node
+echo Node.js 20+ not found. Downloading portable runtime...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\scripts\bootstrap-node.ps1" -Dest "%RUNTIME%"
+if errorlevel 1 goto node_error
 set "PATH=%NODE_DIR%;%PATH%"
 call :check_node
-if errorlevel 1 goto fail_node
+if errorlevel 1 goto node_error
 
 :have_node
-for /f %%v in ('node -v') do echo Node.js %%v
-rem 2) Install, typecheck, tests, build, free port, serve, open browser
-node "%CD%\scripts\launch.mjs" %*
+chcp 65001 >nul
+node -v
+node "%ROOT%\scripts\launch.mjs" %*
 set "RC=%ERRORLEVEL%"
-if not "%RC%"=="0" (
-  echo.
-  echo [ОШИБКА] Запуск завершился с кодом %RC%.
-  popd
-  pause
-  exit /b %RC%
-)
-popd
+if not "%RC%"=="0" goto launch_error
 exit /b 0
 
-:fail_node
-echo.
-echo [ОШИБКА] Не удалось получить Node.js. Проверьте интернет или установите с https://nodejs.org
-popd
+:folder_error
+echo [ERROR] Cannot open JUUNIBI folder or scripts\launch.mjs is missing.
+echo Put JUUNIBI.bat in the extracted project folder.
 pause
 exit /b 1
 
+:node_error
+echo [ERROR] Node.js bootstrap failed. Check internet or install Node.js 20+.
+pause
+exit /b 1
+
+:launch_error
+echo.
+echo [ERROR] JUUNIBI exited with code %RC%.
+pause
+exit /b %RC%
+
 :check_node
-node -e "process.exit(+process.versions.node.split('.')[0]>=20?0:1)" >nul 2>&1
+node -e "process.exit(Number(process.versions.node.split('.')[0])>=20?0:1)" >nul 2>&1
 exit /b %ERRORLEVEL%
