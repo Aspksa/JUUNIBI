@@ -1,0 +1,23 @@
+name: Проверка JUUNIBI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Установка зависимостей
+        run: npm ci
+      - name: Проверка TypeScript
+        run: npm run typecheck
+      - name: Тесты
+        run: npm test
+      - name: Сборка
+        run: npm run build
