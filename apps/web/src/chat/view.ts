@@ -53,6 +53,9 @@ export class ChatView {
   private renamingId: string | null = null;
   private speakingId: string | null = null;
   private frameId = 0;
+  private technical = false;
+  private readonly technicalPane: HTMLElement;
+  private readonly switchChat: HTMLButtonElement;
   private lastConv: string | null = null;
   private onClose: () => void = () => {};
   private onNavigate: (r: Route) => void = () => {};
@@ -73,8 +76,9 @@ export class ChatView {
     this.titleEl = el("div", { cls: "chat-title" });
     this.maxBtn = iconButton("maximize", "На весь экран", () => this.toggleMax());
     const viewBtn = iconButton("view", "Вид: плотность и размер текста", (e) => { e.stopPropagation(); this.menu.hidden = !this.menu.hidden; if (!this.menu.hidden) this.renderMenu(); });
+    this.switchChat = iconButton("chat", "Переключить основной / технический чат", () => this.toggleTechnical());
     const head = el("header", { cls: "chat-head" }, iconButton("sidebar", "Показать/скрыть историю", () => this.toggleSide()), this.titleEl, el("span", { cls: "grow" }),
-      iconButton("help", "Горячие клавиши и команды (Ctrl+/)", () => this.toggleSheet()), viewBtn, iconButton("plus", "Новый чат", () => this.newChat()), this.maxBtn, iconButton("x", "Закрыть чат", () => this.onClose()));
+      this.switchChat, iconButton("help", "Горячие клавиши и команды (Ctrl+/)", () => this.toggleSheet()), viewBtn, iconButton("plus", "Новый чат", () => this.newChat()), this.maxBtn, iconButton("x", "Закрыть чат", () => this.onClose()));
     this.menu = el("div", { cls: "popover", hidden: true, attrs: { role: "dialog", "aria-label": "Настройки вида" } });
     this.menu.addEventListener("click", (e) => e.stopPropagation());
 
@@ -92,6 +96,7 @@ export class ChatView {
     this.sheet = el("div", { cls: "sheet", hidden: true, attrs: { role: "dialog", "aria-label": "Справка" } });
     this.drop = el("div", { cls: "drop-hint", hidden: true, textContent: "Отпустите, чтобы прикрепить текстовые файлы" });
 
+    this.technicalPane = el("div", { cls: "thread", hidden: true, attrs: { role: "log", "aria-label": "Технический диалог обучения" } });
     // ---- composer
     this.composer = new Composer({
       onSubmit: (text, files) => void this.sendText(text, files),
@@ -100,7 +105,7 @@ export class ChatView {
       onEditLast: () => this.editLast(),
     });
 
-    const main = el("section", { cls: "chat-main" }, head, this.menu, this.banner, el("div", { cls: "thread-wrap" }, ambient(), this.thread, this.toBottom), this.composer.root, this.sheet, this.drop);
+    const main = el("section", { cls: "chat-main" }, head, this.menu, this.banner, el("div", { cls: "thread-wrap" }, ambient(), this.thread, this.technicalPane, this.toBottom), this.composer.root, this.sheet, this.drop);
     this.root = el("div", { cls: "chat-window", hidden: true, attrs: { role: "dialog", "aria-label": "Чат с JUUNIBI" } }, this.side, el("div", { cls: "side-scrim" }), main);
     (this.root.querySelector(".side-scrim") as HTMLElement).addEventListener("click", () => this.root.classList.remove("side-open"));
     this.root.addEventListener("click", (e) => {
@@ -125,10 +130,37 @@ export class ChatView {
     chats.store.subscribe(() => this.schedule());
     ctl.store.subscribe(() => this.schedule());
     app.subscribe(() => this.schedule());
-    setInterval(() => { if (!this.root.hidden) { this.sideList.dataset.sig = ""; this.schedule(); } }, 30_000);
+    setInterval(() => { if (!this.root.hidden) { this.sideList.dataset.sig = ""; this.schedule(); if (this.technical) void this.refreshTechnical(); } }, 30_000);
     this.schedule();
   }
 
+  private toggleTechnical() {
+    this.technical = !this.technical;
+    this.thread.hidden = this.technical;
+    this.technicalPane.hidden = !this.technical;
+    this.composer.root.hidden = this.technical;
+    this.switchChat.title = this.technical ? "Вернуться в основной чат" : "Открыть технический чат";
+    this.switchChat.setAttribute("aria-label", this.switchChat.title);
+    if (this.technical) void this.refreshTechnical();
+    this.schedule();
+  }
+  private async refreshTechnical() {
+    if (!this.technical || this.root.hidden) return;
+    try {
+      const r = await fetch("/api/learning");
+      if (!r.ok) throw new Error(String(r.status));
+      const data = await r.json() as { used: number; settings: { dailyLimit: number }; events: { role: string; text: string; status: string }[] };
+      this.technicalPane.replaceChildren(
+        el("div", { cls: "thread-inner" },
+          el("h3", { textContent: "Технический чат · " + data.used + "/" + data.settings.dailyLimit }),
+          el("p", { textContent: "Ответы DeepSeek остаются непроверенными до независимого подтверждения." }),
+          ...data.events.slice(-50).map(e => el("div", { cls: "pg-card" },
+            el("strong", { textContent: e.role === "juunibi" ? "JUUNIBI" : e.role === "deepseek" ? "DeepSeek" : "Проверка" }),
+            el("p", { textContent: e.text }),
+            el("small", { textContent: e.status })))));
+      this.technicalPane.scrollTop = this.technicalPane.scrollHeight;
+    } catch { this.technicalPane.replaceChildren(el("p", { textContent: "Технический журнал недоступен." })); }
+  }
   setHandlers(onClose: () => void, onNavigate: (r: Route) => void) { this.onClose = onClose; this.onNavigate = onNavigate; }
   focus() { this.composer.focus(); }
   resetPosition() { this.frame.reset(); }
@@ -243,6 +275,7 @@ export class ChatView {
     this.composer.loadDraft(conv?.id ?? null);
     this.composer.setState({ configured, busy });
     this.renderApprovals();
+    if (this.technical) { this.titleEl.setAttribute("aria-label", "Технический чат"); }
     this.renderSide(conv);
     this.renderThread(conv, busy);
     if (conv?.id !== this.lastConv) { this.lastConv = conv?.id ?? null; this.stick = true; this.editingId = null; }
