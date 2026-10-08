@@ -4,7 +4,7 @@ import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./
 import { ToolRegistry, type Risk } from "./tools";
 import { validateToolArgs } from "./security";
 
-export interface ApprovalRequest { tool: string; args: Record<string, unknown>; risk: Risk }
+export interface ApprovalRequest { tool: string; args: Record<string, unknown>; risk: Risk; signal?: AbortSignal }
 export interface Turn {
   id: string;
   session: string;
@@ -29,7 +29,6 @@ export interface AssistantOptions {
   approve?: (req: ApprovalRequest) => Promise<boolean> | boolean;
   maxSteps?: number;
   /** Optional queue used by the server to safely request user consent. */
-  approvalSignal?: AbortSignal;
   persona?: string;
 }
 
@@ -107,7 +106,7 @@ export class Assistant {
       msgs.push({ role: "assistant", content: r.content, tool_calls: r.toolCalls });
       for (const call of r.toolCalls) {
         used.push(call.name);
-        msgs.push({ role: "tool", tool_call_id: call.id, content: await this.runTool(call.name, call.arguments) });
+        msgs.push({ role: "tool", tool_call_id: call.id, content: await this.runTool(call.name, call.arguments, signal) });
       }
     }
     reply ??= "Не удалось завершить задачу за отведённое число шагов.";
@@ -124,7 +123,7 @@ export class Assistant {
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
 
-  private async runTool(name: string, rawArgs: string): Promise<string> {
+  private async runTool(name: string, rawArgs: string, signal?: AbortSignal): Promise<string> {
     const tool = this.tools.get(name);
     if (!tool) return `Ошибка: инструмента "${name}" нет.`;
     let args: Record<string, unknown>;
@@ -136,7 +135,7 @@ export class Assistant {
     const invalid = validateToolArgs(tool.parameters, args);
     if (invalid) return `Ошибка: ${invalid}.`;
     if (tool.risk !== "read") {
-      const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk }) : false;
+      const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk, signal }) : false;
       this.log.info(`tool ${name} (${tool.risk}) ${ok ? "approved" : "denied"}`);
       if (!ok) return "Отказано: действие не одобрено супервайзером/пользователем.";
     }
