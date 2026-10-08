@@ -40,4 +40,22 @@ describe("Memory 3.1", () => {
     expect(memory.embeddingDiagnostics()).toMatchObject({ configured: true, checks: 1, failures: 1, mode: "hybrid" });
   });
 
+  it("approves pending proposals only once", async () => {
+    const memory = new Memory();
+    const pending = await memory.add("fact", "предпочитаю тесты", "pending");
+    expect(await memory.approve(pending.id)).toBe(true);
+    expect(await memory.approve(pending.id)).toBe(false);
+  });
+  it("does not allow competing proposals to replace the same fact", async () => {
+    const memory = new Memory();
+    const original = await memory.add("fact", "цвет синий", "active");
+    const first = await memory.proposeRevision(original.id, "цвет зелёный");
+    expect(first?.status).toBe("pending");
+    expect(await memory.proposeRevision(original.id, "цвет красный")).toBeNull();
+    expect((await memory.search("синий"))[0]?.id).toBe(original.id);
+    await memory.approve(first!.id);
+    expect(await memory.search("синий")).toEqual([]);
+    expect((await memory.search("зелёный"))[0]?.id).toBe(first!.id);
+  });
+
 });

@@ -108,7 +108,7 @@ export class Memory {
   async approve(id: string): Promise<boolean> {
     await this.ready;
     const e = this.entries.find((x) => x.id === id);
-    if (!e) return false;
+    if (!e || e.status !== "pending") return false;
     e.status = "active";
     if (e.revisesId) {
       const old = this.entries.find(x => x.id === e.revisesId && x.status === "active" && !x.supersededBy);
@@ -198,9 +198,10 @@ export class Memory {
     await this.ready;
     const old = this.entries.find(e => e.id === oldId && e.status === "active" && !e.supersededBy);
     if (!old || !newText.trim() || normalize(old.text) === normalize(newText)) return null;
+    if (this.entries.some(e => e.status === "pending" && e.revisesId === oldId)) return null;
     const proposal = await this.add(old.kind, newText, "pending");
     const stored = this.entries.find(e => e.id === proposal.id);
-    if (!stored || stored.status !== "pending") return null;
+    if (!stored || stored.status !== "pending" || (stored.revisesId && stored.revisesId !== oldId)) return null;
     stored.revisesId = oldId;
     await this.persist();
     return copyEntry(stored);
