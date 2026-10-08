@@ -82,6 +82,15 @@ export class Assistant {
       run: async (a) => (await this.memory.searchHybrid(String(a.query), 8)).map((m) => m.text),
     });
     this.tools.register({
+      name: "propose_memory_revision", risk: "read",
+      description: "Предложить исправление старого факта, ожидающее подтверждения пользователя.",
+      parameters: { type: "object", properties: { oldId: { type: "string" }, newText: { type: "string" } }, required: ["oldId", "newText"] },
+      run: async args => {
+        const result = await this.memory.proposeRevision(String(args.oldId), String(args.newText));
+        return result ? "Ожидает подтверждения: " + result.id : "Не создано";
+      },
+    });
+    this.tools.register({
       name: "remember", risk: "read",
       description: "Предложить запомнить факт/предпочтение. Запись станет активной только после подтверждения пользователя.",
       parameters: {
