@@ -56,4 +56,17 @@ describe("BrainCore", () => {
     await expect(brain.executeSequence(plan.id, ["list_modules", "search_memory"], () => [], async () => [])).rejects.toThrow();
   });
 
+  it("rejects unsafe automatic sequences without executing any steps", async () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("inspect", ["modules"]);
+    await expect(brain.executeSequence(p.id, ["shell"], () => { throw new Error("must not run"); }, async () => [])).rejects.toThrow("Недопустимые действия");
+    expect(brain.status().plans[0]?.steps[0]?.status).toBe("pending");
+  });
+  it("stops on the first failed step and leaves later steps pending", async () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("inspect", ["missing", "modules"]);
+    await expect(brain.executeSequence(p.id, ["search_memory", "list_modules"], () => ["modules"], async () => { throw new Error("lookup failed"); })).rejects.toThrow("lookup failed");
+    expect(brain.status().plans[0]?.steps.map(s => s.status)).toEqual(["failed", "pending"]);
+  });
+
 });
