@@ -7,6 +7,7 @@
     "build": "npm run build -w @juunibi/core && npm run build -w @juunibi/web",
     "dev": "npm run dev -w @juunibi/web",
     "test": "npm test -w @juunibi/core",
+    "start": "node scripts/launch.mjs",
     "typecheck": "npm run typecheck -w @juunibi/core && npm run typecheck -w @juunibi/web"
   },
   "engines": { "node": ">=20" }
