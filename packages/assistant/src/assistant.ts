@@ -197,7 +197,7 @@ export class Assistant {
     if (text.length < 12 || text.length > 3000 || text.trim().endsWith("?")) return;
     const references = await this.memory.search(text, 5);
     const response = await this.o.llm.chat([
-      { role: "system", content: "Из сообщения пользователя извлеки максимум один явно утверждённый долгосрочный факт или устойчивое предпочтение. Не извлекай пароли, ключи, токены, адреса, данные здоровья и финансов. Не угадывай. Верни только JSON: {\\\"text\\\":\\\"краткая запись\\\",\\\"kind\\\":\\\"fact\\\" или \\\"preference\\\",\\\"revisesId\\\":null или ID старого противоречащего факта}. Если нет факта, верни {}. Любая запись лишь предложение и требует одобрения." },
+      { role: "system", content: `Из сообщения пользователя извлеки максимум один явно утверждённый долгосрочный факт или устойчивое предпочтение. Не извлекай пароли, ключи, токены, адреса, данные здоровья и финансов. Не угадывай. Верни только JSON-объект с полями text, kind (fact либо preference), revisesId (ID противоречащего факта либо null). Если нет факта, верни {}. Любая запись лишь предложение и требует одобрения.` },
       { role: "user", content: JSON.stringify({ message: text.slice(0, 3000), existing: references.map(e => ({ id: e.id, text: e.text })) }) },
     ], { temperature: 0 });
     let parsed: unknown;
