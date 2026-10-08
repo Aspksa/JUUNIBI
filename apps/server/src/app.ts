@@ -105,6 +105,12 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.approvals) return send(res, 404, { error: "Подтверждения недоступны" });
           return send(res, deps.approvals.decide(approvalMatch[1]!, approvalMatch[2] === "approve") ? 200 : 404, { ok: true });
         }
+        if (req.method === "GET" && p === "/api/dialogs") return send(res, 200, await a.listDialogs());
+        if (req.method === "GET" && p === "/api/dialogs/turns") {
+          const id = url.searchParams.get("session") ?? "";
+          if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return send(res, 400, { error: "Некорректный диалог" });
+          return send(res, 200, await a.dialogTurns(id));
+        }
         if (req.method === "POST" && p === "/api/chat") {
           const b = await readJson(req);
           const msg = typeof b.message === "string" ? b.message.trim() : "";
