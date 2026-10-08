@@ -26,6 +26,21 @@ describe("autonomous learning", () => {
       expect(JSON.stringify(restored.status())).not.toContain("secretvalue");
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
+  it("checks arithmetic independently and never promotes open-domain replies", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-check-"));
+    try {
+      const ask = vi.fn(async (q: string) => {
+        const match = /Вычисли (\\d+) × (\\d+)/.exec(q);
+        return { text: match ? String(Number(match[1]) * Number(match[2])) : "Непроверенная гипотеза", tokens: 20 };
+      });
+      const learner = new AutonomousLearning(path.join(dir, "learn.json"), ask, () => []);
+      await learner.tick();
+      await learner.tick();
+      expect((await learner.tick())).toEqual({ ok: true, verified: true });
+      const statuses = learner.status().events.filter(e => e.role === "verifier").map(e => e.status);
+      expect(statuses).toEqual(["pending", "pending", "verified"]);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it("does not invoke the model when disabled", async () => {
     const ask = vi.fn();
     const e = new AutonomousLearning("unused", ask, () => []);
