@@ -1,6 +1,6 @@
 import { el, icon, iconButton } from "../dom";
 import { characterAvatar } from "./art";
-import { renderMarkdown } from "../markdown";
+import { renderMarkdownInto } from "../markdown";
 import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
 import { formatBytes, stepLabel } from "./helpers";
@@ -24,10 +24,11 @@ export function msgSignature(m: ChatMsg, c: Pick<MsgCtx, "streaming" | "isLast" 
 }
 
 export function fillMessage(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
-  root.replaceChildren();
   root.dataset.role = m.role;
+  if (m.role === "assistant") { fillAssistant(root, m, c); return; }
+  root.replaceChildren();
   if (m.role === "note") { root.append(el("p", { cls: "note-row", textContent: m.content })); return; }
-  if (m.role === "user") fillUser(root, m, c); else fillAssistant(root, m, c);
+  fillUser(root, m, c);
 }
 
 function copyButton(text: string): HTMLButtonElement {
@@ -69,40 +70,64 @@ function stepsBlock(steps: Step[]): HTMLElement {
   return d;
 }
 
+interface AssistantParts { scene: HTMLElement; steps: HTMLElement; prose: HTMLElement; typing: HTMLElement; extras: HTMLElement; actions: HTMLElement; sig: Record<string, string> }
+const PARTS = new WeakMap<HTMLElement, AssistantParts>();
+
+/** Assistant rows are patched in place (not rebuilt), so text selection and the streaming caret stay stable. */
+function partsFor(root: HTMLElement): AssistantParts {
+  let p = PARTS.get(root);
+  if (p) return p;
+  const slot = (cls: string) => el("div", { cls: `slot ${cls}` });
+  p = { scene: slot("slot-scene"), steps: slot("slot-steps"), prose: el("div", { cls: "prose" }), typing: slot("slot-typing"), extras: slot("slot-extras"), actions: slot("slot-actions"), sig: {} };
+  root.replaceChildren(characterAvatar(32, "msg-av"), el("div", { cls: "msg-body" }, p.scene, p.steps, p.prose, p.typing, p.extras, p.actions));
+  PARTS.set(root, p);
+  return p;
+}
+const patch = (p: AssistantParts, key: string, sig: string, slot: HTMLElement, build: () => Node[]) => { if (p.sig[key] !== sig) { p.sig[key] = sig; slot.replaceChildren(...build()); } };
+
 function fillAssistant(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
-  const body = el("div", { cls: "msg-body" });
-  root.append(characterAvatar(32, "msg-av"), body);
-  if (m.scene) body.append(el("div", { cls: "scene" }, el("em", { textContent: m.scene.action }), ...(m.scene.phrase ? [el("p", { textContent: "«" + m.scene.phrase + "»" })] : [])));
-  if (m.steps?.length) body.append(stepsBlock(m.steps));
-  const prose = el("div", { cls: "prose" + (c.streaming ? " streaming" : "") });
-  if (m.content) prose.append(renderMarkdown(m.content));
-  else if (c.streaming && !m.steps?.some((s) => s.status === "running")) prose.append(el("span", { cls: "typing", attrs: { "aria-label": "JUUNIBI печатает" } }, el("i"), el("i"), el("i")));
-  if (prose.childNodes.length) body.append(prose);
-  if (m.stopped) body.append(el("p", { cls: "note", textContent: "Генерация остановлена." }));
-  if (m.error && !m.stopped) {
-    const retry = el("button", { type: "button", cls: "btn", textContent: "Повторить" });
-    retry.addEventListener("click", () => { void c.ctl.regenerate(c.convId); });
-    body.append(el("div", { cls: "error-box", attrs: { role: "alert" } }, icon("alert", 16), el("span", { textContent: m.error }), c.isLast && !c.busy ? retry : null));
-  }
-  if (m.memoryUsed?.length) {
-    body.append(el("details", { cls: "mem-used" }, el("summary", {}, icon("memory", 14), el("span", { textContent: `Использована память · ${m.memoryUsed.length}` })),
-      el("ul", {}, ...m.memoryUsed.map((t) => el("li", { textContent: t })))));
-  }
-  if (c.streaming) return;
-  const actions = el("div", { cls: "msg-actions" }, el("span", { cls: "msg-time", textContent: time(m.at) }));
-  if (m.content) {
-    actions.append(copyButton(m.content));
-    if (m.turnId) for (const [name, label, r] of [["up", "Хороший ответ", 1], ["down", "Плохой ответ", -1]] as const) {
-      const b = iconButton(name, label, () => void c.ctl.rate(c.convId, m, r), "icon-btn sm");
-      b.setAttribute("aria-pressed", String(m.rating === r));
-      actions.append(b);
+  const p = partsFor(root);
+  patch(p, "scene", m.scene ? m.scene.action + "|" + (m.scene.phrase ?? "") : "", p.scene, () => m.scene
+    ? [el("div", { cls: "scene" }, el("em", { textContent: m.scene.action }), ...(m.scene.phrase ? [el("p", { textContent: "«" + m.scene.phrase + "»" })] : []))] : []);
+  patch(p, "steps", JSON.stringify(m.steps ?? []), p.steps, () => (m.steps?.length ? [stepsBlock(m.steps)] : []));
+
+  p.prose.classList.toggle("streaming", c.streaming);
+  renderMarkdownInto(p.prose, m.content, !c.streaming);
+  const waiting = c.streaming && !m.content && !m.steps?.some((s) => s.status === "running");
+  patch(p, "typing", String(waiting), p.typing, () => (waiting ? [el("span", { cls: "typing", attrs: { "aria-label": "JUUNIBI печатает" } }, el("i"), el("i"), el("i"))] : []));
+
+  patch(p, "extras", JSON.stringify([m.stopped, m.error, c.isLast, c.busy, m.memoryUsed]), p.extras, () => {
+    const out: Node[] = [];
+    if (m.stopped) out.push(el("p", { cls: "note", textContent: "Генерация остановлена." }));
+    if (m.error && !m.stopped) {
+      const retry = el("button", { type: "button", cls: "btn", textContent: "Повторить" });
+      retry.addEventListener("click", () => { void c.ctl.regenerate(c.convId); });
+      out.push(el("div", { cls: "error-box", attrs: { role: "alert" } }, icon("alert", 16), el("span", { textContent: m.error }), c.isLast && !c.busy ? retry : null));
     }
-    if (speechSupported()) {
-      const b = iconButton("volume", c.speaking ? "Остановить озвучку" : "Озвучить", () => c.onSpeak(m), "icon-btn sm");
-      b.setAttribute("aria-pressed", String(c.speaking));
-      actions.append(b);
+    if (m.memoryUsed?.length) {
+      out.push(el("details", { cls: "mem-used" }, el("summary", {}, icon("memory", 14), el("span", { textContent: `Использована память · ${m.memoryUsed.length}` })),
+        el("ul", {}, ...m.memoryUsed.map((t) => el("li", { textContent: t })))));
     }
-  }
-  if (c.isLast && !c.busy) actions.append(iconButton("refresh", "Сгенерировать заново", () => void c.ctl.regenerate(c.convId), "icon-btn sm"));
-  if (actions.childElementCount > 1) body.append(actions);
+    return out;
+  });
+
+  patch(p, "actions", JSON.stringify([c.streaming, m.content.length, m.turnId, m.rating, c.isLast, c.busy, c.speaking, m.at]), p.actions, () => {
+    if (c.streaming) return [];
+    const actions = el("div", { cls: "msg-actions" }, el("span", { cls: "msg-time", textContent: time(m.at) }));
+    if (m.content) {
+      actions.append(copyButton(m.content));
+      if (m.turnId) for (const [name, label, r] of [["up", "Хороший ответ", 1], ["down", "Плохой ответ", -1]] as const) {
+        const b = iconButton(name, label, () => void c.ctl.rate(c.convId, m, r), "icon-btn sm");
+        b.setAttribute("aria-pressed", String(m.rating === r));
+        actions.append(b);
+      }
+      if (speechSupported()) {
+        const b = iconButton("volume", c.speaking ? "Остановить озвучку" : "Озвучить", () => c.onSpeak(m), "icon-btn sm");
+        b.setAttribute("aria-pressed", String(c.speaking));
+        actions.append(b);
+      }
+    }
+    if (c.isLast && !c.busy) actions.append(iconButton("refresh", "Сгенерировать заново", () => void c.ctl.regenerate(c.convId), "icon-btn sm"));
+    return actions.childElementCount > 1 ? [actions] : [];
+  });
 }

@@ -143,7 +143,8 @@ function inlineNodes(list: Inline[]): Node[] {
     }
   });
 }
-function codeBlock(b: Extract<Block, { t: "code" }>): HTMLElement {
+export const COLLAPSE_LINES = 22;
+function codeBlock(b: Extract<Block, { t: "code" }>, collapse = false): HTMLElement {
   const wrap = document.createElement("div"); wrap.className = "md-code";
   const head = document.createElement("div"); head.className = "md-code-head";
   const dots = document.createElement("span"); dots.className = "md-dots"; dots.setAttribute("aria-hidden", "true"); dots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
@@ -161,15 +162,28 @@ function codeBlock(b: Extract<Block, { t: "code" }>): HTMLElement {
   }
   pre.append(code);
   wrap.append(head, pre);
+  const lines = b.text.split("\n").length;
+  if (collapse && lines > COLLAPSE_LINES) {
+    wrap.classList.add("collapsed");
+    const more = document.createElement("button"); more.type = "button"; more.className = "md-more";
+    more.textContent = `Показать ещё ${lines - COLLAPSE_LINES} строк`;
+    more.setAttribute("aria-expanded", "false");
+    more.addEventListener("click", () => {
+      const open = wrap.classList.toggle("collapsed") === false;
+      more.textContent = open ? "Свернуть" : `Показать ещё ${lines - COLLAPSE_LINES} строк`;
+      more.setAttribute("aria-expanded", String(open));
+    });
+    wrap.append(more);
+  }
   return wrap;
 }
-function blockNode(b: Block): Node {
+function blockNode(b: Block, collapse = false): Node {
   switch (b.t) {
     case "p": { const p = document.createElement("p"); p.append(...inlineNodes(b.c)); return p; }
     case "h": { const h = document.createElement(`h${Math.min(6, b.level + 1)}` as "h2"); h.append(...inlineNodes(b.c)); return h; }
     case "hr": return document.createElement("hr");
-    case "code": return codeBlock(b);
-    case "quote": { const q = document.createElement("blockquote"); q.append(...b.c.map(blockNode)); return q; }
+    case "code": return codeBlock(b, collapse);
+    case "quote": { const q = document.createElement("blockquote"); q.append(...b.c.map((x) => blockNode(x))); return q; }
     case "ul": case "ol": {
       const l = document.createElement(b.t); if (b.t === "ol" && b.start) l.setAttribute("start", String(b.start));
       for (const it of b.items) { const li = document.createElement("li"); li.append(...inlineNodes(it.c)); if (it.sub) li.append(blockNode(it.sub)); l.append(li); }
@@ -187,6 +201,41 @@ function blockNode(b: Block): Node {
 }
 export function renderMarkdown(src: string): DocumentFragment {
   const f = document.createDocumentFragment();
-  f.append(...parseMarkdown(src).map(blockNode));
+  f.append(...parseMarkdown(src).map((b) => blockNode(b)));
   return f;
+}
+
+// ---------- incremental rendering (streaming) ----------
+export interface BlockPlan { keep: number; replace: number; append: number; remove: number }
+/**
+ * Streaming appends to the tail, so everything before the first changed block can be reused as-is:
+ * kept nodes are untouched (selection and scroll survive), changed ones are re-rendered in place,
+ * only genuinely new ones animate in.
+ */
+export function planBlocks(prev: string[], next: string[]): BlockPlan {
+  let keep = 0;
+  while (keep < prev.length && keep < next.length && prev[keep] === next[keep]) keep++;
+  const common = Math.min(prev.length, next.length);
+  return { keep, replace: common - keep, append: Math.max(0, next.length - prev.length), remove: Math.max(0, prev.length - next.length) };
+}
+
+const SIGS = new WeakMap<HTMLElement, string[]>();
+/** Renders Markdown into `host`, patching only what changed since the last call. `final` enables collapsing long code. */
+export function renderMarkdownInto(host: HTMLElement, src: string, final = true): void {
+  const blocks = parseMarkdown(src);
+  const next = blocks.map((b) => JSON.stringify(b) + (final ? "|f" : ""));
+  const prev = SIGS.get(host) ?? [];
+  const plan = planBlocks(prev, next);
+  const kids = Array.from(host.childNodes);
+  for (let i = 0; i < plan.remove; i++) kids[prev.length - 1 - i]?.remove();
+  for (let i = plan.keep; i < plan.keep + plan.replace; i++) {
+    const fresh = blockNode(blocks[i]!, final);
+    kids[i]!.replaceWith(fresh);
+  }
+  for (let i = prev.length; i < next.length; i++) {
+    const n = blockNode(blocks[i]!, final);
+    if (!final && n instanceof HTMLElement) n.classList.add("enter"); // only blocks that appear while streaming animate
+    host.append(n);
+  }
+  SIGS.set(host, next);
 }
