@@ -121,9 +121,20 @@ export class ProjectUpdater {
   }
   private async run(cwd: string, command: string, args: string[]) {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(command, args, { cwd, shell: process.platform === "win32", stdio: "ignore", timeout: 180_000 });
+      const child = spawn(command, args, { cwd, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
+      let output = "";
+      const capture = (chunk: Buffer) => { output = (output + chunk.toString("utf8")).slice(-32_000); };
+      child.stdout?.on("data", capture);
+      child.stderr?.on("data", capture);
       child.on("error", reject);
-      child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(command + " " + args.join(" ") + " завершился с кодом " + code)));
+      child.on("exit", async (code) => {
+        if (code === 0) return resolve();
+        try {
+          const log = path.join(this.folder(), "test-output.log");
+          await writeFile(log, output, { mode: 0o600 });
+          reject(new Error(command + " " + args.join(" ") + " завершился с кодом " + code + ". Подробности: .updates/test-output.log"));
+        } catch { reject(new Error(command + " " + args.join(" ") + " завершился с кодом " + code)); }
+      });
     });
   }
   private async getJson(url: string): Promise<any> {
