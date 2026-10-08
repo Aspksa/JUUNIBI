@@ -204,6 +204,26 @@ export class Memory {
     await this.persist();
     return { ...stored };
   }
+  /** Conservative opt-in-style extraction from direct user statements. Never auto-approves. */
+  async suggestFromUserText(input: string): Promise<MemoryEntry[]> {
+    if (typeof input !== "string" || input.length > 2000) return [];
+    const text = input.trim();
+    if (text.includes("\\n") || text.startsWith(">") || text.startsWith("\"") || text.startsWith("«")) return [];
+    const patterns: { re: RegExp; kind: MemoryKind }[] = [
+      { re: /^(?:запомни|пожалуйста,? запомни)(?:,? что)?[:\s]+(.+)$/iu, kind: "fact" },
+      { re: /^я предпочитаю[:\s]+(.+)$/iu, kind: "preference" },
+      { re: /^мне нравится,? когда[:\s]+(.+)$/iu, kind: "preference" },
+    ];
+    for (const { re, kind } of patterns) {
+      const match = re.exec(text);
+      const candidate = match?.[1]?.trim();
+      if (!candidate || candidate.length < 6 || candidate.length > 300 ||
+          /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа)/iu.test(candidate)) return [];
+      const entry = await this.add(kind, candidate, "pending");
+      return entry.status === "pending" ? [entry] : [];
+    }
+    return [];
+  }
   /** Keep context compact and only include confirmed, non-expired records. */
   async context(query: string, maxChars = 1500): Promise<MemoryEntry[]> {
     const results = await this.searchHybrid(query, 8);

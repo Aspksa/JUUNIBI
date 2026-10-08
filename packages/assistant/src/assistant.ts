@@ -161,6 +161,8 @@ export class Assistant {
     this.turns.push(turn);
     this.turns = this.turns.slice(-TURNS_LIMIT);
     await this.saveTurns();
+    try { await this.memory.suggestFromUserText(text); }
+    catch (error) { this.log.warn("memory suggestion failed", error); }
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
 
