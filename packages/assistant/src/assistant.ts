@@ -93,9 +93,26 @@ export class Assistant {
     ].filter(Boolean).join("\n\n");
   }
 
+  async listDialogs() {
+    await this.turnsReady;
+    const dialogs = new Map<string, { id: string; title: string; updatedAt: number }>();
+    for (const t of this.turns) {
+      const existing = dialogs.get(t.session);
+      if (!existing) dialogs.set(t.session, { id: t.session, title: t.user.slice(0, 70), updatedAt: t.at });
+      else existing.updatedAt = Math.max(existing.updatedAt, t.at);
+    }
+    return [...dialogs.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  async dialogTurns(session: string) {
+    await this.turnsReady;
+    return this.turns.filter(t => t.session === session).map(t => ({ id: t.id, user: t.user, reply: t.reply, tools: t.tools, rating: t.rating, at: t.at }));
+  }
+
   async ask(text: string, session = "default", signal?: AbortSignal): Promise<AskResult> {
     const mem = await this.memory.search(text, 5);
-    const hist = this.sessions.get(session) ?? [];
+    await this.turnsReady;
+    const hist = this.sessions.get(session) ?? this.turns.filter(t => t.session === session).slice(-HISTORY_LIMIT).flatMap(t => ([{ role: "user" as const, content: t.user }, { role: "assistant" as const, content: t.reply }]));
     const msgs: Message[] = [{ role: "system", content: this.system(mem) }, ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
     let reply: string | null = null;
