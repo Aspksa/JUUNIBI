@@ -9,7 +9,7 @@ export interface LearningSettings {
 }
 export interface LearningEvent {
   id: string; at: string; role: "juunibi" | "deepseek" | "verifier";
-  text: string; status: "question" | "unverified" | "pending" | "rejected";
+  text: string; status: "question" | "unverified" | "pending" | "rejected" | "verified";
 }
 const defaults: LearningSettings = {
   enabled: true, mode: "autonomous", memory: true, reasoning: true,
@@ -50,7 +50,7 @@ export class AutonomousLearning {
       if (Array.isArray(v.events)) this.events = v.events.filter((e): e is LearningEvent =>
         !!e && typeof e === "object" && typeof e.text === "string" && typeof e.at === "string" &&
         ["juunibi", "deepseek", "verifier"].includes(e.role) &&
-        ["question", "unverified", "pending", "rejected"].includes(e.status)).slice(-150).map(e => ({ ...e, text: redact(e.text) }));
+        ["question", "unverified", "pending", "rejected", "verified"].includes(e.status)).slice(-150).map(e => ({ ...e, text: redact(e.text) }));
       if (typeof v.day === "string") this.day = v.day;
       if (Number.isInteger(v.used) && Number(v.used) >= 0) this.used = Number(v.used);
       if (Number.isInteger(v.tokens) && Number(v.tokens) >= 0) this.tokens = Number(v.tokens);
@@ -94,7 +94,8 @@ export class AutonomousLearning {
       // Prompts are bounded and derived from project metadata only; never send source files, chat history or secrets.
       const areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
       const subject = areas[this.cursor++ % areas.length]!;
-      const question = `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
+      const check = subject === "математика" ? { left: 11 + (this.cursor % 11), right: 13 + (this.cursor % 7) } : null;
+      const question = check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
       // Reserve before the network request, including failures, to prevent unlimited retries.
       this.used++;
@@ -102,13 +103,18 @@ export class AutonomousLearning {
       const result = await this.ask(question, this.settings.maxOutputTokens);
       this.tokens += Math.max(0, Math.ceil(result.tokens));
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "deepseek", text: redact(result.text), status: "unverified" });
-      // A model's self-assessment is NOT an independent fact check. Quarantine all generated knowledge.
+      // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
+      const verified = !!check && result.text.trim() === String(check.left * check.right);
+      const verificationText = check
+        ? verified ? "Математический ответ проверен локальным вычислением; другие утверждения не проверены."
+          : "Ответ не прошёл независимую математическую проверку."
+        : "Ответ помещён в карантин. Независимая проверка источниками/тестами не выполнена; запись в активную память и изменение кода запрещены.";
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier",
-        text: "Ответ помещён в карантин. Независимая проверка источниками/тестами не выполнена; запись в активную память и изменение кода запрещены.",
-        status: "pending" });
+        text: verificationText,
+        status: check ? verified ? "verified" : "rejected" : "pending" });
       this.events = this.events.slice(-150);
       await this.save();
-      return { ok: true, verified: false };
+      return { ok: true, verified };
     } catch {
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier", text: "Ошибка запроса Cloud.ru; запрос учтён в лимите.", status: "rejected" });
       this.events = this.events.slice(-150);
