@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/build-server.mjs && npm run build -w @juunibi/web",
     "dev": "npm run dev -w @juunibi/web",
-    "test": "npm test --workspaces --if-present",
+    "test": "node --test scripts/apply-update.test.mjs && npm test --workspaces --if-present",
     "start": "node scripts/launch.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
