@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
 import type { ProjectUpdater } from "./updater";
+import type { SceneEngine } from "./scenes";
 export interface AppDeps {
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
   getAssistant?: () => Assistant | undefined;
@@ -12,6 +13,7 @@ export interface AppDeps {
   assistant?: Assistant | undefined;
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
+  scenes?: SceneEngine;
   modules: () => unknown;
   staticDir?: string;
   configured: { model?: string; hint?: string };
@@ -83,6 +85,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (typeof b.apiKey !== "string") return send(res, 400, { error: "Введите API-ключ" });
           await deps.saveCloud(b.apiKey.trim());
           return send(res, 200, deps.cloudStatus?.() ?? { configured: true });
+        }
+        if (req.method === "GET" && p === "/api/juunibi/scenes/stats") return send(res, 200, deps.scenes?.stats() ?? { error: "Сцены не подключены" });
+        if (req.method === "POST" && p === "/api/juunibi/scenes/next") {
+          if (!deps.scenes) return send(res, 503, {error:"Сцены не подключены"});
+          return send(res, 200, await deps.scenes.next());
         }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
