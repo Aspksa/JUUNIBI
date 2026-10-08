@@ -14,6 +14,11 @@ export class BrainCore {
   history() { return this.logs.map(e => ({ ...e })); }
   private writeQueue: Promise<void> = Promise.resolve();
   flush() { return this.writeQueue; }
+  private persist() {
+    if (!this.storage) return;
+    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs });
+    this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
+  }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
