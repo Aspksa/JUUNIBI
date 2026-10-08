@@ -69,4 +69,22 @@ describe("BrainCore", () => {
     expect(brain.status().plans[0]?.steps.map(s => s.status)).toEqual(["failed", "pending"]);
   });
 
+  it("prevents skipping planned steps or running them out of order", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("check", ["first", "second"]);
+    expect(() => brain.updateStep(plan.id, plan.steps[1]!.id, "active")).toThrow("Нельзя пропускать шаги");
+    await expect(brain.executeReadStep(plan.id, plan.steps[1]!.id, "list_modules", () => [], async () => [])).rejects.toThrow("Предыдущие шаги");
+    expect(plan.steps.map(s => s.status)).toEqual(["pending", "pending"]);
+    await brain.executeReadStep(plan.id, plan.steps[0]!.id, "list_modules", () => [], async () => []);
+    expect((await brain.executeReadStep(plan.id, plan.steps[1]!.id, "list_modules", () => [], async () => [])).plan?.status).toBe("completed");
+  });
+
+  it("does not mark a step verified if its tool returns no result", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("check", ["first", "second"]);
+    await expect(brain.executeReadStep(plan.id, plan.steps[0]!.id, "list_modules", () => undefined, async () => [])).rejects.toThrow("проверяемый результат");
+    expect(brain.status().plans[0]?.steps.map(s => s.status)).toEqual(["failed", "pending"]);
+    expect(brain.history().some(e => e.outcome.startsWith("verified:"))).toBe(false);
+  });
+
 });
