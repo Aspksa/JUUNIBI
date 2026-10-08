@@ -48,6 +48,9 @@ export class Memory {
   private writing: Promise<void> = Promise.resolve();
   private readonly vectors = new Map<string, number[]>();
   private embedding?: EmbeddingProvider;
+  private embeddingChecks = 0;
+  private embeddingFailures = 0;
+  embeddingDiagnostics() { return { configured: !!this.embedding, checks: this.embeddingChecks, failures: this.embeddingFailures, mode: this.embedding ? "hybrid" : "lexical" }; }
   setEmbeddingProvider(provider?: EmbeddingProvider) { this.embedding = provider; this.vectors.clear(); }
 
   constructor(private readonly store: StorageAdapter = new MemoryAdapter()) {
@@ -164,6 +167,7 @@ export class Memory {
     const lexical = await this.search(query, 20);
     if (!this.embedding || !query.trim() || k <= 0) return lexical.slice(0, Math.max(0, k));
     try {
+      this.embeddingChecks++;
       const q = await this.embedding.embed(query);
       const valid = (v: number[]) => v.length > 0 && v.length <= 4096 && v.every(Number.isFinite);
       if (!valid(q)) return lexical.slice(0, k);
@@ -184,6 +188,7 @@ export class Memory {
           (a.score + (lexicalRanks.has(a.e.id) ? 0.2 / (1 + lexicalRanks.get(a.e.id)!) : 0)))
         .slice(0, Math.min(20, Math.floor(k))).map(x => ({ ...x.e }));
     } catch {
+      this.embeddingFailures++;
       return lexical.slice(0, Math.min(20, Math.floor(k)));
     }
   }

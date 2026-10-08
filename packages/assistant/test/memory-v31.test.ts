@@ -31,4 +31,13 @@ describe("Memory 3.1", () => {
     expect((await m.context("лиса", 2))).toEqual([]);
     expect((await m.context("лиса", 100))).toHaveLength(1);
   });
+  it("reports semantic fallback without exposing any credential", async () => {
+    const memory = new Memory();
+    await memory.add("fact", "лиса", "active");
+    expect(memory.embeddingDiagnostics()).toMatchObject({ configured: false, mode: "lexical" });
+    memory.setEmbeddingProvider({ embed: async () => { throw new Error("unavailable"); } });
+    expect((await memory.searchHybrid("лиса"))).toHaveLength(1);
+    expect(memory.embeddingDiagnostics()).toMatchObject({ configured: true, checks: 1, failures: 1, mode: "hybrid" });
+  });
+
 });
