@@ -1,17 +1,17 @@
 import { Kernel, Logger, Store, attempt } from "@juunibi/core";
-import { api, type MemoryItem, type Status } from "./api";
+import { api, type MemoryItem, type Status, type ApprovalItem } from "./api";
 import "./style.css";
 
 interface Msg { role: "user" | "bot" | "error"; text: string; turnId?: string; rating?: 1 | -1; tools?: string[] }
 interface State {
-  msgs: Msg[]; busy: boolean; status: Status | null; tab: "chat" | "memory" | "modules";
+  msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; status: Status | null; tab: "chat" | "memory" | "modules";
   memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[]; theme: "auto" | "light" | "dark";
 }
 
 const KEY = "juunibi:ui:v2";
 const saved = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<State>);
 const theme0 = saved.ok && (saved.value.theme === "light" || saved.value.theme === "dark") ? saved.value.theme : "auto";
-const store = new Store<State>({ msgs: [], busy: false, status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
+const store = new Store<State>({ msgs: [], busy: false, approvals: [], status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
 const kernel = new Kernel(new Logger("web", "info"));
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
@@ -29,6 +29,15 @@ async function refreshMemory() {
 async function refreshModules() {
   const r = await api.modules();
   if (r.ok) store.set({ modules: r.value });
+}
+
+async function refreshApprovals() {
+  const r = await api.approvals();
+  if (r.ok) store.set({ approvals: r.value });
+}
+async function decideApproval(id: string, approve: boolean) {
+  await api.decideApproval(id, approve);
+  await refreshApprovals();
 }
 
 async function send(text: string) {
@@ -88,6 +97,8 @@ kernel.register({
       else if (b?.id === "theme") store.set((s) => ({ theme: nextTheme[s.theme] }));
     });
 
+    const poll = setInterval(() => { if (store.get().busy || store.get().approvals.length) void refreshApprovals(); }, 1000);
+    ctx.onStop(() => clearInterval(poll));
     const render = () => {
       const s = store.get();
       const banner = s.status && !s.status.assistant ? el("p", { cls: "banner", role: "alert", textContent: s.status.hint ?? "Помощник не настроен." }) : null;
@@ -140,7 +151,19 @@ kernel.register({
       } else {
         body = el("ul", {}, ...s.modules.map((m) => el("li", {}, el("span", { cls: "grow", textContent: m.name }), el("small", { textContent: `${m.status}${m.deps.length ? " ← " + m.deps.join(", ") : ""}` }))));
       }
-      view.replaceChildren(head, nav, ...(banner ? [banner] : []), el("main", { cls: "card" }, body));
+      const approvals = s.approvals.map((a) => {
+        const panel = el("section", { cls: "card", role: "group" },
+          el("h2", { textContent: `Подтверждение: ${a.tool} (${a.risk})` }),
+          el("pre", { textContent: JSON.stringify(a.args, null, 2).slice(0, 4000) }),
+          el("p", { textContent: "Разрешение одноразовое. Проверьте действие и параметры." }));
+        for (const [allow, title] of [[false, "Отклонить"], [true, "Разрешить"]] as const) {
+          const b = el("button", { type: "button", cls: allow ? "primary" : "ghost", textContent: title });
+          b.addEventListener("click", () => void decideApproval(a.id, allow));
+          panel.append(b);
+        }
+        return panel;
+      });
+      view.replaceChildren(head, nav, ...(banner ? [banner] : []), ...approvals, el("main", { cls: "card" }, body));
     };
     ctx.onStop(store.subscribe(render));
     render();
