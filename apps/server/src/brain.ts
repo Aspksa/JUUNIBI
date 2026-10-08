@@ -9,6 +9,8 @@ export interface BrainPlan { id: string; goal: string; createdAt: string; status
 export class BrainCore {
   private mode: BrainMode = "chat";
   private plans: BrainPlan[] = [];
+  private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
+  history() { return this.logs.map(e => ({ ...e })); }
   constructor(private readonly assistantReady: () => boolean) {}
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
@@ -38,6 +40,8 @@ export class BrainCore {
     if (status === "done" && step.status !== "active") throw Object.assign(new Error("Сначала активируйте шаг"), { status: 409 });
     if (status === "active" && step.status !== "pending") throw Object.assign(new Error("Шаг нельзя активировать"), { status: 409 });
     step.status = status;
+    this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: status });
+    this.logs = this.logs.slice(0, 200);
     plan.status = plan.steps.some(s => s.status === "failed") ? "failed" : plan.steps.every(s => s.status === "done") ? "completed" : "running";
     return plan;
   }
