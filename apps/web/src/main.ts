@@ -27,21 +27,32 @@ const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "update", label: "Обновление", icon: "update" },
   { route: "settings", label: "Настройки", icon: "settings" },
 ];
-const THEME_ICON: Record<Theme, IconName> = { auto: "auto", light: "sun", dark: "moon" };
-const THEME_NAME: Record<Theme, string> = { auto: "Тема: как в системе", light: "Тема: светлая", dark: "Тема: тёмная" };
-const NEXT_THEME: Record<Theme, Theme> = { auto: "light", light: "dark", dark: "auto" };
+const cls = (n: SVGSVGElement, c: string): SVGSVGElement => { n.classList.add(c); return n; };
+const isDark = (t: Theme): boolean => t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+const syncMeta = (): void => {
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  let m = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (!m) { m = document.createElement("meta"); m.name = "theme-color"; document.head.append(m); }
+  if (bg) m.content = bg;
+};
 
 kernel.register({
   name: "theme",
   start(ctx) {
     const apply = (t: Theme) => (t === "auto" ? document.documentElement.removeAttribute("data-theme") : (document.documentElement.dataset.theme = t));
-    apply(app.get().theme);
+    let first = true;
+    const swap = (t: Theme) => {
+      const cl = document.documentElement.classList;
+      if (!first) { cl.add("theme-fade"); setTimeout(() => cl.remove("theme-fade"), 420); }
+      first = false; apply(t); syncMeta();
+    };
+    swap(app.get().theme);
     applyAccent(app.get().accent);
-    const reapply = () => applyAccent(app.get().accent);
+    const reapply = () => { applyAccent(app.get().accent); syncMeta(); };
     const mq = matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", reapply);
     ctx.onStop(() => mq.removeEventListener("change", reapply));
-    ctx.onStop(app.select((s) => s.theme, (t) => { apply(t); reapply(); }));
+    ctx.onStop(app.select((s) => s.theme, (t) => { swap(t); reapply(); }));
     ctx.onStop(app.select((s) => s.accent, reapply));
   },
 });
@@ -94,8 +105,11 @@ kernel.register({
     // ----- left menu
     const renderNav = (s: AppState) => {
       const newer = !!s.update?.latest && s.update.localVersion !== "не определена" && s.update.localVersion !== s.update.latest.sha;
-      const theme = el("button", { type: "button", cls: "nav-item", title: THEME_NAME[s.theme] }, icon(THEME_ICON[s.theme], 18), el("span", { textContent: THEME_NAME[s.theme] }));
-      theme.addEventListener("click", () => { app.set((x) => ({ theme: NEXT_THEME[x.theme] })); persistPrefs(app.get()); });
+      const dark = isDark(s.theme);
+      const theme = el("button", { type: "button", cls: "theme-switch", attrs: { role: "switch", "aria-checked": String(dark), "aria-label": "Тёмная тема" } },
+        el("span", { cls: "ts-label", textContent: "Тёмная тема" }),
+        el("span", { cls: "ts-track" }, cls(icon("sun", 14), "s"), cls(icon("moon", 14), "m"), el("span", { cls: "ts-thumb" }, icon(dark ? "moon" : "sun", 13))));
+      theme.addEventListener("click", () => { app.set({ theme: dark ? "light" : "dark" }); persistPrefs(app.get()); });
       nav.replaceChildren(
         el("div", { cls: "brand", textContent: "JUUNIBI" }), // reserved slot: put your logo here
         ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route ? " active" : ""), attrs: n.route === s.route ? { "aria-current": "page" } : {} },
