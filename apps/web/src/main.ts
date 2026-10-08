@@ -1,17 +1,17 @@
 import { Kernel, Logger, Store, attempt } from "@juunibi/core";
-import { api, type MemoryItem, type Status, type ApprovalItem, type UpdateStatus } from "./api";
+import { api, type MemoryItem, type Status, type ApprovalItem, type UpdateStatus, type DialogSummary } from "./api";
 import "./style.css";
 
 interface Msg { role: "user" | "bot" | "error"; text: string; turnId?: string; rating?: 1 | -1; tools?: string[] }
 interface State {
-  msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
+  dialogs: DialogSummary[]; session: string; msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
   memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[]; theme: "auto" | "light" | "dark";
 }
 
 const KEY = "juunibi:ui:v2";
 const saved = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<State>);
 const theme0 = saved.ok && (saved.value.theme === "light" || saved.value.theme === "dark") ? saved.value.theme : "auto";
-const store = new Store<State>({ msgs: [], busy: false, approvals: [], update: null, updateError: "", status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
+const store = new Store<State>({ dialogs: [], session: "default", msgs: [], busy: false, approvals: [], update: null, updateError: "", status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
 const kernel = new Kernel(new Logger("web", "info"));
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
@@ -54,13 +54,24 @@ async function decideApproval(id: string, approve: boolean) {
   await refreshApprovals();
 }
 
+async function loadDialogs() {
+  const r = await api.dialogs();
+  if (r.ok) store.set({ dialogs: r.value });
+}
+async function openDialog(session: string) {
+  if (store.get().busy) return;
+  const r = await api.dialogTurns(session);
+  if (r.ok) store.set({ session, msgs: r.value.flatMap(t => [{ role: "user" as const, text: t.user }, { role: "bot" as const, text: t.reply, turnId: t.id, tools: t.tools, rating: t.rating }]) });
+}
 async function send(text: string) {
+  const session = store.get().session;
   store.set((s) => ({ msgs: [...s.msgs, { role: "user", text }], busy: true }));
-  const r = await api.chat(text);
+  const r = await api.chat(text, session);
   store.set((s) => ({
     busy: false,
     msgs: [...s.msgs, r.ok ? { role: "bot", text: r.value.reply || "(пустой ответ)", turnId: r.value.turnId, tools: r.value.tools } : { role: "error", text: r.error.message }],
   }));
+  void loadDialogs();
 }
 
 async function rate(m: Msg, rating: 1 | -1) {
@@ -96,6 +107,7 @@ kernel.register({
     const input = el("input", { type: "text", id: "msg", placeholder: "Напишите помощнику…", autocomplete: "off", maxLength: 4000 });
     input.setAttribute("aria-label", "Сообщение");
     const log = el("div", { cls: "log", role: "log" });
+    const dialogBar = el("div", { cls: "dialog-bar" });
     log.setAttribute("aria-live", "polite");
     const form = el("form", {}, input, el("button", { type: "submit", cls: "primary", textContent: "Отправить" }));
     form.addEventListener("submit", (e) => {
@@ -159,7 +171,14 @@ kernel.register({
           ...(s.busy ? [el("p", { cls: "empty", textContent: "Помощник думает…" })] : []),
         );
         input.disabled = s.busy || !s.status?.assistant;
-        body = el("div", {}, log, form);
+        const newDialog = el("button", { type: "button", textContent: "+ Новый диалог" });
+        newDialog.addEventListener("click", () => { if (!store.get().busy) store.set({ session: crypto.randomUUID(), msgs: [] }); });
+        const dialogSelect = el("select", { "ariaLabel": "Выбрать диалог" });
+        dialogSelect.append(el("option", { value: s.session, textContent: s.dialogs.find(d => d.id === s.session)?.title ?? "Новый диалог" }));
+        for (const d of s.dialogs.filter(d => d.id !== s.session)) dialogSelect.append(el("option", { value: d.id, textContent: d.title }));
+        dialogSelect.addEventListener("change", () => void openDialog(dialogSelect.value));
+        dialogBar.replaceChildren(newDialog, dialogSelect);
+        body = el("div", {}, dialogBar, log, form);
         queueMicrotask(() => { log.scrollTop = shouldScroll ? log.scrollHeight : previousScroll; });
       } else if (s.tab === "memory") {
         const item = (m: MemoryItem) => {
@@ -248,6 +267,7 @@ kernel.register({
       render();
     }));
     render();
+    void loadDialogs().then(() => openDialog(store.get().dialogs[0]?.id ?? "default"));
     void api.status().then((r) => store.set({ status: r.ok ? r.value : { assistant: false, hint: "Сервер недоступен. Запустите через JUUNIBI.bat." } }));
     ctx.onStop(() => root.replaceChildren());
   },
