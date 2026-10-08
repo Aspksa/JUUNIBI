@@ -112,8 +112,8 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ---------- chat window ---------- */
-.chat-window{position:fixed;z-index:60;right:24px;bottom:24px;width:min(1040px,calc(100vw - 48px));height:min(760px,calc(100vh - 48px));height:min(760px,calc(100dvh - 48px));display:flex;background:var(--bg);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow);transform-origin:100% 100%}
-.chat-window.max{inset:0;width:auto;height:auto;border-radius:0;border:0}
+.chat-window{position:fixed;z-index:60;display:flex;background:var(--bg);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow);transform-origin:100% 100%}
+.chat-window.max{inset:0!important;width:auto!important;height:auto!important;border-radius:0;border:0}
 .chat-window.opening{animation:win-in .2s cubic-bezier(.2,.8,.2,1)}
 @keyframes win-in{from{opacity:0;transform:scale(.94) translateY(8px)}to{opacity:1;transform:none}}
 .chat-side{width:260px;flex:none;display:flex;flex-direction:column;background:var(--surface);border-right:1px solid var(--line);min-height:0}
@@ -192,9 +192,10 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 @keyframes blink{50%{opacity:.25}}
 
 /* composer */
-.composer-wrap{width:100%;max-width:768px;margin:0 auto;padding:0 16px 10px}
-.composer{display:flex;align-items:flex-end;gap:8px;padding:8px 8px 8px 20px;background:var(--surface-2);border-radius:28px}
-.composer-input{flex:1;min-width:0;max-height:200px;padding:9px 0;border:0;outline:0;resize:none;background:transparent;line-height:1.5}
+.composer-wrap{position:relative;width:100%;max-width:768px;margin:0 auto;padding:0 16px 10px}
+.composer-box{position:relative}
+.composer{display:flex;align-items:flex-end;gap:4px;padding:6px 8px 6px 8px;background:var(--surface-2);border-radius:28px}
+.composer-input{flex:1;min-width:0;max-height:200px;padding:9px 6px;border:0;outline:0;resize:none;background:transparent;line-height:1.5}
 .composer-input::placeholder{color:var(--muted)}
 .send-btn{flex:none;width:36px;height:36px;border:0;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:inline-flex;align-items:center;justify-content:center}
 .send-btn:disabled{opacity:.3;cursor:not-allowed}
@@ -215,7 +216,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
   .flight-layout{grid-template-columns:1fr}.flight-zone,.flight-center{max-height:180px}
 }
 @media (max-width:760px){
-  .chat-window,.chat-window.max{inset:0;width:auto;height:auto;border:0;border-radius:0}
+  .chat-window,.chat-window.max{inset:0!important;width:auto!important;height:auto!important;border:0;border-radius:0}
   .chat-side{position:absolute;inset:0 auto 0 0;z-index:5;transform:translateX(-100%);transition:transform .2s;box-shadow:var(--shadow);width:min(300px,86%)}
   .chat-window.side-open .chat-side{transform:none}
   .chat-window.side-open .side-scrim{display:block;position:absolute;inset:0;z-index:4;background:rgba(0,0,0,.5)}
@@ -227,3 +228,66 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+/* ---------- chat pro: window frame ---------- */
+.rz{position:absolute;z-index:3}
+.rz-n,.rz-s{left:12px;right:12px;height:8px;cursor:ns-resize}.rz-n{top:-4px}.rz-s{bottom:-4px}
+.rz-e,.rz-w{top:12px;bottom:12px;width:8px;cursor:ew-resize}.rz-e{right:-4px}.rz-w{left:-4px}
+.rz-ne,.rz-nw,.rz-se,.rz-sw{width:16px;height:16px}
+.rz-ne{top:-4px;right:-4px;cursor:nesw-resize}.rz-nw{top:-4px;left:-4px;cursor:nwse-resize}.rz-se{bottom:-4px;right:-4px;cursor:nwse-resize}.rz-sw{bottom:-4px;left:-4px;cursor:nesw-resize}
+.chat-window.max .rz{display:none}
+.chat-window.moving{transition:none;user-select:none}
+.chat-head{cursor:grab}.chat-head button,.chat-head input{cursor:pointer}
+.chat-window.max .chat-head{cursor:default}
+@media (max-width:760px){.rz{display:none}.chat-head{cursor:default}}
+
+/* ---------- chat pro: density & text size ---------- */
+.chat-window{--chat-fs:1rem;--chat-gap:22px}
+.chat-window.font-sm{--chat-fs:.9rem}.chat-window.font-lg{--chat-fs:1.12rem}
+.chat-window.dens-compact{--chat-gap:12px}
+.thread-inner{gap:var(--chat-gap);font-size:var(--chat-fs)}
+.chat-window.dens-compact .bubble{padding:6px 14px}
+.chat-window.dens-compact .prose{line-height:1.55}
+.chat-window.dens-compact .prose p,.chat-window.dens-compact .prose ul,.chat-window.dens-compact .prose ol{margin-bottom:.6em}
+
+/* ---------- chat pro: popover, sheet, drop hint ---------- */
+.popover{position:absolute;z-index:6;top:48px;right:12px;width:min(320px,calc(100% - 24px));padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--bg);box-shadow:0 8px 28px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:12px}
+.pop-row{display:flex;flex-direction:column;gap:6px;font-size:.88rem;color:var(--muted)}
+.pop-row .segmented{align-self:flex-start}
+.sheet{position:absolute;z-index:7;inset:8px;overflow:auto;padding:20px 24px;border:1px solid var(--line);border-radius:16px;background:var(--bg);box-shadow:0 8px 28px rgba(0,0,0,.35)}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.sheet h2{margin:0}.sheet h3{margin:18px 0 8px;font-size:.95rem;color:var(--muted)}
+.sheet dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 18px;margin:0}.sheet dt{white-space:nowrap}.sheet dd{margin:0;color:var(--muted)}
+.drop-hint{position:absolute;z-index:8;inset:8px;display:flex;align-items:center;justify-content:center;border:2px dashed var(--brand);border-radius:16px;background:color-mix(in srgb,var(--bg) 88%,transparent);font-weight:600;pointer-events:none}
+.kbd{display:inline-block;padding:1px 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;font:.8rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface-2)}
+
+/* ---------- chat pro: composer extras ---------- */
+.chips-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.file-chip{display:inline-flex;align-items:center;gap:6px;max-width:260px;padding:4px 4px 4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:.82rem}
+.msg-files .file-chip{padding:4px 12px}
+.file-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg-files{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-bottom:6px}
+.composer-note{min-height:0;margin:0 4px 6px;font-size:.8rem;color:var(--muted)}
+.composer-note:empty{display:none}
+.interim{margin:0 12px 6px;font-size:.88rem;color:var(--muted);font-style:italic}
+.palette{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:5;margin:0;padding:6px;list-style:none;border:1px solid var(--line);border-radius:14px;background:var(--bg);box-shadow:0 8px 28px rgba(0,0,0,.35);max-height:300px;overflow:auto}
+.palette-item{display:flex;align-items:baseline;gap:10px;padding:8px 12px;border-radius:10px;cursor:pointer;font-size:.92rem}
+.palette-item.sel,.palette-item:hover{background:var(--hover-2)}
+.palette-item strong{font-weight:600}
+.icon-btn.rec{color:var(--danger);background:var(--hover);animation:rec 1.2s ease-in-out infinite}
+@keyframes rec{50%{opacity:.45}}
+.hint-line{margin-top:18px;font-size:.85rem}
+
+/* ---------- chat pro: steps, memory, notes ---------- */
+.steps,.mem-used{margin:0 0 8px;font-size:.88rem;color:var(--muted)}
+.steps summary,.mem-used summary{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:4px 10px;border:1px solid var(--line);border-radius:999px;list-style:none}
+.steps summary::-webkit-details-marker,.mem-used summary::-webkit-details-marker{display:none}
+.steps[open] summary,.mem-used[open] summary{background:var(--hover)}
+.step{display:flex;align-items:center;gap:8px;padding:5px 10px 0 12px}
+.step-icon{width:14px;text-align:center}.step.ok .step-icon{color:var(--ok)}.step.error .step-icon,.step.denied .step-icon{color:var(--danger)}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.mem-used ul{margin:6px 0 0;padding:0 0 0 28px}
+.msg-time{align-self:center;margin-right:6px;font-size:.72rem;color:var(--muted)}
+.note-row{margin:0;text-align:center;color:var(--muted);font-size:.82rem}
+.msg[data-role=note]{align-items:center}
