@@ -1,35 +1,26 @@
 import { el } from "../dom";
-import { api, type BrainStatus } from "../api";
-import { btn, pageHead, section } from "./kit";
+import { api } from "../api";
+import { pageHead, section } from "./kit";
 
-const LABEL: Record<BrainStatus["mode"], string> = { chat: "Общение", analysis: "Анализ", agent: "Агент", creative: "Творчество" };
+/** Read-only dashboard: tasks are managed in the assistant chat, not through redundant buttons. */
 export function brainPage(): HTMLElement {
-  const root = el("div", { cls: "page" }, pageHead("modules", "Мозг JUUNIBI", "Режимы интеллекта, цели и планы. Реальные действия требуют отдельных разрешений."));
-  const content = el("div");
+  const root = el("div", { cls: "page" },
+    pageHead("modules", "Мозг JUUNIBI", "Автоматические безопасные шаги через помощницу. Опасные действия требуют подтверждения."));
+  const content = el("div", { attrs: { "aria-live": "polite" } }, el("p", { cls: "muted", textContent: "Загрузка состояния…" }));
   root.append(content);
-  const render = async () => {
-    const response = await api.brainStatus();
-    if (!response.ok) { content.replaceChildren(el("p", { textContent: "Мозг недоступен: " + response.error.message })); return; }
-    const state = response.value;
-    const modes = el("div", { cls: "mod-summary" }, ...(["chat", "analysis", "agent", "creative"] as const).map(m =>
-      btn(LABEL[m] + (state.mode === m ? " ✓" : ""), async () => { const r = await api.brainMode(m); if (r.ok) void render(); }, { primary: state.mode === m })));
-    const goal = el("input", { attrs: { placeholder: "Цель задачи", "aria-label": "Цель" } }) as HTMLInputElement;
-    const steps = el("textarea", { attrs: { placeholder: "Шаги — по одному на строке", "aria-label": "Шаги плана", rows: "4" } }) as HTMLTextAreaElement;
-    const feedback = el("p", { cls: "muted", attrs: { role: "status" } });
-    const create = btn("Создать план", async () => {
-      const r = await api.brainPlan(goal.value, steps.value.split("\n").map(s => s.trim()).filter(Boolean));
-      if (!r.ok) { feedback.textContent = r.error.message; return; }
-      void render();
-    }, { primary: true });
-    const plans = state.plans.map(p => section(p.goal,
-      el("p", { cls: "muted", textContent: "Статус: " + p.status }),
-      el("ol", {}, ...p.steps.map(s => el("li", { textContent: s.title + " — " + s.status })))));
-    content.replaceChildren(
-      section("Режим мышления", el("p", { cls: "muted", textContent: "Режим учитывается помощницей при следующем ответе. Создание плана через ИИ требует подтверждения; выполнение действий контролируется отдельно." }), modes),
-      section("Планировщик", goal, steps, create, feedback),
-      ...plans,
-    );
-  };
-  void render();
+  void api.brainStatus().then(r => {
+    if (!r.ok) { content.replaceChildren(el("p", { textContent: "Не удалось загрузить мозг: " + r.error.message })); return; }
+    const s = r.value;
+    const info = section("Состояние",
+      el("p", { textContent: s.assistantReady ? "ИИ подключён" : "ИИ не настроен" }),
+      el("p", { cls: "muted", textContent: "Текущий режим: " + s.mode }));
+    const plans = section("Планы",
+      ...(s.plans.length ? s.plans.map(p => el("div", { cls: "pg-card" },
+        el("strong", { textContent: p.goal }),
+        el("p", { cls: "muted", textContent: "Статус: " + p.status }),
+        el("ol", {}, ...p.steps.map(step => el("li", { textContent: step.title + " — " + step.status }))))) :
+        [el("p", { cls: "muted", textContent: "Пока нет планов. Попросите JUUNIBI составить план прямо в чате." })]));
+    content.replaceChildren(info, plans);
+  });
   return root;
 }
