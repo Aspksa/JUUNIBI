@@ -111,7 +111,8 @@ kernel.register({
       else if (b?.id === "theme") store.set((s) => ({ theme: nextTheme[s.theme] }));
     });
 
-    const poll = setInterval(() => { if (store.get().busy || store.get().approvals.length) void refreshApprovals(); if (store.get().tab === "update") void refreshUpdate(); }, 1000);
+    void refreshUpdate();
+    const poll = setInterval(() => { if (store.get().busy || store.get().approvals.length) void refreshApprovals(); void refreshUpdate(); }, 1000);
     ctx.onStop(() => clearInterval(poll));
     const render = () => {
       const s = store.get();
@@ -120,7 +121,7 @@ kernel.register({
         el("span", { cls: "model", textContent: s.status?.model ?? "" }),
         el("button", { id: "theme", type: "button", cls: "ghost", textContent: themeNames[s.theme] }));
       const nav = el("nav", { cls: "tabs" }, ...(Object.keys(tabs) as (keyof typeof tabs)[]).map((t) => {
-        const b = el("button", { type: "button", textContent: tabs[t] });
+        const b = el("button", { type: "button", textContent: tabs[t] + (t === "update" && s.update?.latest && s.update.localVersion !== s.update.latest.sha ? " ●" : "") });
         b.dataset.tab = t; b.setAttribute("aria-pressed", String(t === s.tab));
         return b;
       }));
@@ -189,6 +190,7 @@ kernel.register({
       } else {
         body = el("ul", {}, ...s.modules.map((m) => el("li", {}, el("span", { cls: "grow", textContent: m.name }), el("small", { textContent: `${m.status}${m.deps.length ? " ← " + m.deps.join(", ") : ""}` }))));
       }
+      const updateAlert = s.tab !== "update" && s.update?.latest && s.update.localVersion !== "не определена" && s.update.localVersion !== s.update.latest.sha ? el("p", { cls: "update-notice", role: "status", textContent: "Доступно обновление JUUNIBI: " + s.update.latest.version + ". Откройте «Обновление проекта»." }) : null;
       const approvals = s.approvals.map((a) => {
         const panel = el("section", { cls: "card", role: "group" },
           el("h2", { textContent: `Подтверждение: ${a.tool} (${a.risk})` }),
@@ -201,7 +203,7 @@ kernel.register({
         }
         return panel;
       });
-      view.replaceChildren(head, nav, ...(banner ? [banner] : []), ...approvals, el("main", { cls: "card" }, body));
+      view.replaceChildren(head, nav, ...(banner ? [banner] : []), ...(updateAlert ? [updateAlert] : []), ...approvals, el("main", { cls: "card" }, body));
     };
     ctx.onStop(store.subscribe(render));
     render();
