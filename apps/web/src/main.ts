@@ -124,6 +124,7 @@ kernel.register({
       if (current.tab === "update" || current.update?.phase === "downloading" || current.update?.phase === "testing") {void refreshUpdate();void refreshEvents();}
     }, 2500);
     ctx.onStop(() => clearInterval(poll));
+    let lastFlightEvent = "";
     const render = () => {
       const s = store.get();
       const banner = s.status && !s.status.assistant ? el("p", { cls: "banner", role: "alert", textContent: s.status.hint ?? "Помощник не настроен." }) : null;
@@ -272,6 +273,30 @@ kernel.register({
         return panel;
       });
       view.replaceChildren(head, nav, ...(banner ? [banner] : []), ...(updateAlert ? [updateAlert] : []), ...approvals, el("main", { cls: "card" }, body));
+      if (s.tab === "update" && s.updateMode === "visual" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        const event = [...s.updateEvents].reverse().find(e => e.relative_path && (e.type === "file_download_done" || e.type === "file_install_done"));
+        if (event && event.event_id !== lastFlightEvent) {
+          lastFlightEvent = event.event_id;
+          const zones = view.querySelectorAll<HTMLElement>(".flight-zone");
+          const center = view.querySelector<HTMLElement>(".flight-center");
+          const from = event.type === "file_install_done" ? center : zones[0];
+          const to = event.type === "file_install_done" ? zones[1] : center;
+          if (from && to) {
+            const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+            const x = a.left + a.width / 2, y = a.top + a.height / 2;
+            const dx = b.left + b.width / 2 - x, dy = b.top + b.height / 2 - y;
+            const chip = el("div", { cls: "update-flight-overlay", textContent: event.relative_path.split("/").pop() ?? "Файл" });
+            chip.style.left = x + "px"; chip.style.top = y + "px";
+            document.body.append(chip);
+            const animation = chip.animate([
+              { transform: "translate(-50%,-50%)", opacity: 0.6 },
+              { transform: "translate(calc(-50% + " + (dx / 2) + "px),calc(-50% + " + (dy / 2 - 24) + "px))", opacity: 1, offset: 0.5 },
+              { transform: "translate(calc(-50% + " + dx + "px),calc(-50% + " + dy + "px))", opacity: 0.85 }
+            ], { duration: 850, easing: "ease-in-out" });
+            void animation.finished.then(() => chip.remove(), () => chip.remove());
+          }
+        }
+      }
     };
     let previous = store.get();
     ctx.onStop(store.subscribe(() => {
