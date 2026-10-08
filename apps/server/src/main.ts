@@ -66,13 +66,13 @@ function moduleList(): ModuleInfo[] {
 }
 const memory = new Memory(fileStore(path.join(dataDir, "memory.json")));
 // Reuse the configured chat credential; embeddings use a separate model, never the chat model.
-const embeddingModel = process.env.CLOUDRU_EMBEDDING_MODEL || "BAAI/bge-m3";
+const embeddingModel = process.env.CLOUDRU_EMBEDDING_MODEL;
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
   const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
   sceneLlm = llm;
-  memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey, model: embeddingModel, baseUrl: process.env.CLOUDRU_EMBEDDING_BASE_URL ?? baseUrl }));
+  if (embeddingModel) memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey, model: embeddingModel, baseUrl: process.env.CLOUDRU_EMBEDDING_BASE_URL ?? baseUrl }));
   const character = JSON.parse(await readFile(path.join(root, "apps", "server", "assets", "JUUNIBI_character_v1.json"), "utf8"));
   const persona = [
     "Ты — JUUNIBI, мифическая двенадцатихвостая лисица, личная помощница и хранительница Дома Лисы.",
