@@ -58,4 +58,27 @@ describe("Memory 3.1", () => {
     expect((await memory.search("зелёный"))[0]?.id).toBe(first!.id);
   });
 
+  it("cleans links and restores visibility when a replacement is forgotten", async () => {
+    const memory = new Memory();
+    const original = await memory.add("fact", "старая тема", "active");
+    const related = await memory.add("fact", "связанная тема", "active");
+    await memory.relate(original.id, related.id);
+    const replacement = await memory.proposeRevision(original.id, "новая тема");
+    await memory.approve(replacement!.id);
+    expect(await memory.search("старая")).toEqual([]);
+    await memory.forget(replacement!.id);
+    expect((await memory.search("старая"))[0]?.id).toBe(original.id);
+    await memory.forget(related.id);
+    expect((await memory.list()).find(e => e.id === original.id)?.relatedIds).toEqual([]);
+  });
+  it("rejects stale replacement proposals rather than approving contradictory facts", async () => {
+    const memory = new Memory();
+    const original = await memory.add("fact", "параметр старый", "active");
+    const candidate = await memory.proposeRevision(original.id, "параметр новый");
+    const another = await memory.add("fact", "параметр современный", "active");
+    await memory.supersede(original.id, another.id);
+    expect(await memory.approve(candidate!.id)).toBe(false);
+    expect((await memory.list("pending")).some(e => e.id === candidate!.id)).toBe(true);
+  });
+
 });
