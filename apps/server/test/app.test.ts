@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type http from "node:http";
 import type { AddressInfo } from "node:net";
-import { Assistant, type LlmProvider } from "@juunibi/assistant";
+import { Assistant, Memory, type LlmProvider } from "@juunibi/assistant";
 import { Logger } from "@juunibi/core";
 import { createApp, hostAllowed, originAllowed } from "../src/app";
 
@@ -83,5 +83,22 @@ describe("api", () => {
     const res = await post(base, "/api/chat/stream", { message: "какой кофе я пью" });
     const events = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
     expect(events.at(-1).memory).toContain("кофе без сахара");
+  });
+  it("memory can be read and edited before an API key is configured (chat stays disabled)", async () => {
+    const mem = new Memory();
+    await mem.add("lesson", "предложение", "pending");
+    const srv = createApp({ assistant: undefined, memory: mem, modules: () => [], configured: { hint: "ключ" } });
+    const url = `http://127.0.0.1:${await start(srv)}`;
+    try {
+      const list = await (await fetch(url + "/api/memory")).json();
+      expect(list).toHaveLength(1);
+      expect((await post(url, "/api/memory", { text: "Я люблю чай" })).status).toBe(200);
+      expect((await post(url, `/api/memory/${list[0].id}/approve`, {})).status).toBe(200);
+      expect((await mem.list("pending")).length).toBe(0);
+      expect((await (await fetch(url + "/api/memory?status=active")).json()).length).toBe(2);
+      const del = await fetch(`${url}/api/memory/${list[0].id}`, { method: "DELETE" });
+      expect(await del.json()).toEqual({ ok: true });
+      expect((await post(url, "/api/chat", { message: "hi" })).status).toBe(503);
+    } finally { srv.close(); }
   });
 });
