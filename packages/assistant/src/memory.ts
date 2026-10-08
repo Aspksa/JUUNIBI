@@ -8,6 +8,7 @@ export class MemoryAdapter implements StorageAdapter {
   async save(d: string) { this.data = d; }
 }
 
+export interface EmbeddingProvider { embed(text: string): Promise<number[]> }
 export type MemoryKind = "fact" | "preference" | "lesson";
 export interface MemoryEntry {
   id: string;
@@ -44,6 +45,9 @@ export class Memory {
   private entries: MemoryEntry[] = [];
   private ready: Promise<void>;
   private writing: Promise<void> = Promise.resolve();
+  private readonly vectors = new Map<string, number[]>();
+  private embedding?: EmbeddingProvider;
+  setEmbeddingProvider(provider?: EmbeddingProvider) { this.embedding = provider; this.vectors.clear(); }
 
   constructor(private readonly store: StorageAdapter = new MemoryAdapter()) {
     this.ready = this.load();
@@ -148,6 +152,51 @@ export class Memory {
     await this.ready;
     for (const e of this.entries) if (ids.includes(e.id)) e.score += delta;
     await this.persist();
+  }
+  /** Optional semantic reranking. Lexical results remain available when the provider fails. */
+  async searchHybrid(query: string, k = 5): Promise<MemoryEntry[]> {
+    const lexical = await this.search(query, 20);
+    if (!this.embedding || !query.trim() || k <= 0) return lexical.slice(0, Math.max(0, k));
+    try {
+      const q = await this.embedding.embed(query);
+      const valid = (v: number[]) => v.length > 0 && v.length <= 4096 && v.every(Number.isFinite);
+      if (!valid(q)) return lexical.slice(0, k);
+      const active = (await this.list("active")).filter(e => !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()) && e.score > -3);
+      const ranked = await Promise.all(active.map(async e => {
+        let v = this.vectors.get(e.id);
+        if (!v) { v = await this.embedding!.embed(e.text); if (valid(v)) this.vectors.set(e.id, v); }
+        if (!v || !valid(v) || v.length !== q.length) return { e, score: -1 };
+        const dot = v.reduce((n, x, i) => n + x * q[i]!, 0);
+        const na = Math.hypot(...v), nb = Math.hypot(...q);
+        const similarity = na && nb ? dot / (na * nb) : -1;
+        return { e, score: similarity };
+      }));
+      const lexicalRanks = new Map(lexical.map((e, i) => [e.id, i]));
+      return ranked.filter(x => x.score > 0.15 || lexicalRanks.has(x.e.id))
+        .sort((a, b) => (b.score + (lexicalRanks.has(b.e.id) ? 0.2 / (1 + lexicalRanks.get(b.e.id)!) : 0)) -
+          (a.score + (lexicalRanks.has(a.e.id) ? 0.2 / (1 + lexicalRanks.get(a.e.id)!) : 0)))
+        .slice(0, Math.min(20, Math.floor(k))).map(x => ({ ...x.e }));
+    } catch {
+      return lexical.slice(0, Math.min(20, Math.floor(k)));
+    }
+  }
+  /** Explicitly propose a new version; it stays pending until approved. */
+  async proposeRevision(oldId: string, newText: string): Promise<MemoryEntry | null> {
+    await this.ready;
+    const old = this.entries.find(e => e.id === oldId && e.status === "active" && !e.supersededBy);
+    if (!old || !newText.trim() || normalize(old.text) === normalize(newText)) return null;
+    return this.add(old.kind, newText, "pending");
+  }
+  /** Keep context compact and only include confirmed, non-expired records. */
+  async context(query: string, maxChars = 1500): Promise<MemoryEntry[]> {
+    const results = await this.searchHybrid(query, 8);
+    const selected: MemoryEntry[] = [];
+    let used = 0;
+    for (const e of results) {
+      if (used + e.text.length > Math.max(0, maxChars)) continue;
+      selected.push(e); used += e.text.length;
+    }
+    return selected;
   }
   /** Active entries ranked by word overlap, boosted by past feedback. */
   async search(query: string, k = 5): Promise<MemoryEntry[]> {
