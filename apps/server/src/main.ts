@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
-import { Assistant, CloudRuProvider, Memory, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
+import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
 import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
@@ -65,11 +65,15 @@ function moduleList(): ModuleInfo[] {
   ];
 }
 const memory = new Memory(fileStore(path.join(dataDir, "memory.json")));
+if (process.env.CLOUDRU_EMBEDDING_MODEL && process.env.CLOUDRU_API_KEY) {
+  memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey: process.env.CLOUDRU_API_KEY, model: process.env.CLOUDRU_EMBEDDING_MODEL, baseUrl: process.env.CLOUDRU_EMBEDDING_BASE_URL ?? process.env.CLOUDRU_BASE_URL }));
+}
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
   const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
   sceneLlm = llm;
+  if (process.env.CLOUDRU_EMBEDDING_MODEL) memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey, model: process.env.CLOUDRU_EMBEDDING_MODEL, baseUrl: process.env.CLOUDRU_EMBEDDING_BASE_URL ?? baseUrl }));
   const character = JSON.parse(await readFile(path.join(root, "apps", "server", "assets", "JUUNIBI_character_v1.json"), "utf8"));
   const persona = [
     "Ты — JUUNIBI, мифическая двенадцатихвостая лисица, личная помощница и хранительница Дома Лисы.",
