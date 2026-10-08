@@ -23,7 +23,7 @@ export class ProjectUpdater {
     await appendFile(path.join(this.folder(), "events.jsonl"), JSON.stringify({ event_id: randomUUID(), type, timestamp: new Date().toISOString(), operation_id: this.operationId, relative_path, status, ...extra }) + "\n");
   }
   async events() {
-    try { const rows = (await readFile(path.join(this.folder(), "events.jsonl"), "utf8")).trim().split("\n").slice(-250); return rows.flatMap(s => { try { return [JSON.parse(s)]; } catch { return []; } }); }
+    try { const records = (await readFile(path.join(this.folder(), "events.jsonl"), "utf8")).trim().split("\n").flatMap(s => { try { return [JSON.parse(s)]; } catch { return []; } }); const manifest = [...records].reverse().find(e => e.type === "manifest_ready"); const recent = records.slice(-250); return manifest && !recent.some(e => e.event_id === manifest.event_id) ? [manifest, ...recent] : recent; }
     catch { return []; }
   }
   constructor(private readonly root: string) {}
