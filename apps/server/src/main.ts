@@ -8,6 +8,7 @@ import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
+import { AutonomousLearning } from "./autonomous-learning";
 import { durableMemoryStore } from "./durable-memory-store";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -47,9 +48,28 @@ const MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 let activeModel: string | undefined;
 let cloudConfigured = false;
 let sceneLlm: CloudRuProvider | undefined;
+let learningKey: string | undefined;
+const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
+  if (!learningKey) throw new Error("Cloud.ru не настроен");
+  const base = (process.env.CLOUDRU_BASE_URL ?? "https://foundation-models.api.cloud.ru/v1").replace(/\\/$/, "");
+  const ctl = new AbortController();
+  const timeout = setTimeout(() => ctl.abort(), 25000);
+  try {
+    const response = await fetch(base + "/chat/completions", {
+      method: "POST", signal: ctl.signal,
+      headers: { "Authorization": "Bearer " + learningKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: MODEL, messages: [{ role: "user", content: question }],
+        max_tokens: maxTokens, temperature: 0.3 }),
+    });
+    if (!response.ok) throw new Error("Cloud.ru status " + response.status);
+    const json = await response.json() as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
+    return { text: json.choices?.[0]?.message?.content ?? "", tokens: json.usage?.total_tokens ?? 1500 };
+  } finally { clearTimeout(timeout); }
+}, () => moduleList().map(m => m.name));
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
 await brain.load();
+await learning.load();
 interface ModuleInfo { name: string; title: string; deps: string[]; status: "started" | "pending" | "failed"; note: string }
 /** Real server components with their live state — shown on the Modules page and given to the assistant. */
 function moduleList(): ModuleInfo[] {
@@ -73,6 +93,7 @@ let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
   const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
   sceneLlm = llm;
+  learningKey = apiKey;
   const embeddingBaseUrl = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? baseUrl;
   if (embeddingModel) memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey, model: embeddingModel, ...(embeddingBaseUrl ? { baseUrl: embeddingBaseUrl } : {}) }));
   const character = JSON.parse(await readFile(path.join(root, "apps", "server", "assets", "JUUNIBI_character_v1.json"), "utf8"));
@@ -157,6 +178,7 @@ const server = createApp({
   approvals: approvalGate,
   updater,
   brain,
+  learning,
   scenes,
   modules: () => moduleList(),
   staticDir,
@@ -164,6 +186,7 @@ const server = createApp({
 });
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
-const shutdown = async () => { clearInterval(updateTimer); approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
+const learningTimer = setInterval(() => { if (cloudConfigured) void learning.tick(); }, 10 * 60_000);
+const shutdown = async () => { clearInterval(learningTimer); clearInterval(updateTimer); approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
