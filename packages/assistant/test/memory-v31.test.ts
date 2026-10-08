@@ -18,4 +18,17 @@ describe("Memory 3.1", () => {
     expect(await m.search("старый")).toEqual([]);
     expect((await m.search("новый"))[0]?.id).toBe(proposal!.id);
   });
+  it("reranks using optional semantic vectors", async () => {
+    const m = new Memory();
+    await m.add("fact", "кафе", "active");
+    const preferred = await m.add("fact", "лес", "active");
+    m.setEmbeddingProvider({ embed: async text => text === "лес" || text === "природа" ? [1, 0] : [0, 1] });
+    expect((await m.searchHybrid("природа", 1))[0]?.id).toBe(preferred.id);
+  });
+  it("keeps memory context within a character budget", async () => {
+    const m = new Memory();
+    await m.add("fact", "лиса маленькая", "active");
+    expect((await m.context("лиса", 2))).toEqual([]);
+    expect((await m.context("лиса", 100))).toHaveLength(1);
+  });
 });
