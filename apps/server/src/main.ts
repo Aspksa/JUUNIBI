@@ -51,7 +51,7 @@ let sceneLlm: CloudRuProvider | undefined;
 let learningKey: string | undefined;
 const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
   if (!learningKey) throw new Error("Cloud.ru не настроен");
-  const base = (process.env.CLOUDRU_BASE_URL ?? "https://foundation-models.api.cloud.ru/v1").replace(/\\/$/, "");
+  const base = (process.env.CLOUDRU_BASE_URL ?? "https://foundation-models.api.cloud.ru/v1").replace(/\/$/, "");
   const ctl = new AbortController();
   const timeout = setTimeout(() => ctl.abort(), 25000);
   try {
