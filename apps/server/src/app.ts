@@ -6,6 +6,7 @@ import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
 import type { BrainCore } from "./brain";
+import type { AutonomousLearning } from "./autonomous-learning";
 export interface AppDeps {
   /** Long-term memory is available (and editable by the user) even before an API key is configured. */
   memory?: import("@juunibi/assistant").Memory;
@@ -18,6 +19,7 @@ export interface AppDeps {
   updater?: ProjectUpdater;
   scenes?: SceneEngine;
   brain?: BrainCore;
+  learning?: AutonomousLearning;
   modules: () => unknown;
   staticDir?: string;
   configured: { model?: string; hint?: string };
@@ -99,6 +101,15 @@ export function createApp(deps: AppDeps): http.Server {
         }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
         if (req.method === "GET" && p === "/api/memory/diagnostics") return send(res, 200, (deps.memory ?? a?.memory)?.embeddingDiagnostics() ?? { configured: false, mode: "unavailable" });
+        if (req.method === "GET" && p === "/api/learning") return send(res, deps.learning ? 200 : 503, deps.learning?.status() ?? { error: "Обучение недоступно" });
+        if (req.method === "POST" && p === "/api/learning/settings") {
+          if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
+          return send(res, 200, await deps.learning.configure(await readJson(req)));
+        }
+        if (req.method === "POST" && p === "/api/learning/step") {
+          if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
+          return send(res, 200, await deps.learning.tick());
+        }
         if (req.method === "GET" && p === "/api/brain") return send(res, deps.brain ? 200 : 503, deps.brain?.status() ?? { error: "Мозг недоступен" });
         if (req.method === "POST" && p === "/api/brain/mode") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 200, deps.brain.setMode(b.mode)); }
         if (req.method === "POST" && p === "/api/brain/plans") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 201, deps.brain.plan(b.goal, b.steps)); }
