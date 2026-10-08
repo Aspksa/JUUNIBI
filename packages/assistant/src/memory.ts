@@ -58,7 +58,10 @@ export class Memory {
         e && typeof e.id === "string" && typeof e.text === "string" && e.text.length <= MAX_TEXT &&
         (e.kind === "fact" || e.kind === "preference" || e.kind === "lesson") &&
         (e.status === "active" || e.status === "pending") &&
-        Number.isFinite(e.score) && Number.isFinite(e.createdAt));
+        Number.isFinite(e.score) && Number.isFinite(e.createdAt) &&
+        (e.expiresAt === undefined || Number.isFinite(e.expiresAt)) &&
+        (e.supersededBy === undefined || typeof e.supersededBy === "string") &&
+        (e.relatedIds === undefined || (Array.isArray(e.relatedIds) && e.relatedIds.length <= 20 && e.relatedIds.every((id: unknown) => typeof id === "string"))));
     } catch { /* corrupt file: start empty rather than crash */ }
   }
   private persist() {
