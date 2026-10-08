@@ -161,6 +161,7 @@ export class Assistant {
     this.turns.push(turn);
     this.turns = this.turns.slice(-TURNS_LIMIT);
     await this.saveTurns();
+    await this.learnFromMessage(text).catch(e => this.log.warn("memory proposal failed", e));
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
 
@@ -188,6 +189,28 @@ export class Assistant {
     } catch (e) {
       this.log.warn(`tool ${name} failed`, e);
       return err(`Ошибка инструмента: ${(e as Error).message}`);
+    }
+  }
+
+  /** Suggest reusable user facts; proposals never enter retrieval before approval. */
+  private async learnFromMessage(text: string): Promise<void> {
+    if (text.length < 12 || text.length > 3000 || text.trim().endsWith("?")) return;
+    const references = await this.memory.search(text, 5);
+    const response = await this.o.llm.chat([
+      { role: "system", content: "Из сообщения пользователя извлеки максимум один явно утверждённый долгосрочный факт или устойчивое предпочтение. Не извлекай пароли, ключи, токены, адреса, данные здоровья и финансов. Не угадывай. Верни только JSON: {\\\"text\\\":\\\"краткая запись\\\",\\\"kind\\\":\\\"fact\\\" или \\\"preference\\\",\\\"revisesId\\\":null или ID старого противоречащего факта}. Если нет факта, верни {}. Любая запись лишь предложение и требует одобрения." },
+      { role: "user", content: JSON.stringify({ message: text.slice(0, 3000), existing: references.map(e => ({ id: e.id, text: e.text })) }) },
+    ], { temperature: 0 });
+    let parsed: unknown;
+    try { parsed = JSON.parse(response.content ?? "{}"); } catch { return; }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+    const data = parsed as { text?: unknown; kind?: unknown; revisesId?: unknown };
+    if (typeof data.text !== "string" || data.text.trim().length < 5 || data.text.length > 300 ||
+      (data.kind !== "fact" && data.kind !== "preference")) return;
+    // Do not let model-supplied identifiers act as permissions.
+    if (typeof data.revisesId === "string" && references.some(e => e.id === data.revisesId)) {
+      await this.memory.proposeRevision(data.revisesId, data.text);
+    } else {
+      await this.memory.add(data.kind, data.text, "pending");
     }
   }
 
