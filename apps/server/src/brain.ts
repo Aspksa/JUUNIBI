@@ -30,6 +30,28 @@ export class BrainCore {
     this.plans = this.plans.slice(0, 30);
     return item;
   }
+  /** Executes an explicitly selected read-only action; never accepts shell commands or arbitrary tool names. */
+  async executeReadStep(planId: string, stepId: string, action: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    if (action !== "list_modules" && action !== "search_memory")
+      throw Object.assign(new Error("Допускаются только безопасные действия чтения"), { status: 400 });
+    const plan = this.plans.find(p => p.id === planId);
+    const step = plan?.steps.find(s => s.id === stepId);
+    if (!plan || !step) throw Object.assign(new Error("Шаг не найден"), { status: 404 });
+    if (step.status !== "pending") throw Object.assign(new Error("Шаг уже запущен"), { status: 409 });
+    this.updateStep(planId, stepId, "active");
+    try {
+      const result = action === "list_modules" ? readModules() : await searchMemory(step.title);
+      const summary = JSON.stringify(result).slice(0, 2000);
+      this.updateStep(planId, stepId, "done");
+      this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "verified: " + action + ": " + summary });
+      this.logs = this.logs.slice(0, 200);
+      return { plan: this.status().plans.find(p => p.id === planId), result };
+    } catch (error) {
+      this.updateStep(planId, stepId, "failed");
+      throw error;
+    }
+  }
   updateStep(planId: string, stepId: string, status: unknown) {
     if (status !== "active" && status !== "done" && status !== "failed") throw Object.assign(new Error("Недопустимый статус"), { status: 400 });
     const plan = this.plans.find(p => p.id === planId);
