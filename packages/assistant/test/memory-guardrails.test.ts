@@ -4,6 +4,16 @@ import { Assistant } from "../src/assistant";
 import type { LlmProvider } from "../src/llm";
 
 describe("memory proposal guardrails", () => {
+  it.each([
+    ["Мне требуется краткий ответ, карта 1234", "Мне требуется краткий ответ карта 1234"],
+    ["Мне требуется краткий ответ 123456789012", "Мне требуется краткий ответ 123456789012"],
+  ])("rejects sensitive model proposals: %s", async (message, proposal) => {
+    let calls = 0;
+    const llm: LlmProvider = { chat: async () => ({ content: ++calls === 1 ? "Принято" : JSON.stringify({ text: proposal, kind: "preference" }), toolCalls: [] }) };
+    const memory = new Memory();
+    await new Assistant({ llm, memory }).ask(message);
+    expect(await memory.list()).toEqual([]);
+  });
   it("does not propose secrets or multiline quotes", async () => {
     const memory = new Memory();
     expect(await memory.suggestFromUserText("запомни пароль secret 123456")).toEqual([]);

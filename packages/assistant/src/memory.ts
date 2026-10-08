@@ -34,7 +34,10 @@ const RELATED: readonly (readonly string[])[] = [
   ["запомни", "память", "воспоминание"],
 ];
 const meaning = (word: string): string => {
-  for (const [i, group] of RELATED.entries()) if (group.includes(word)) return "concept:" + i;
+  const nounForm = word.replace(/(?:ами|ями|ого|ому|ему|ом|ем|ах|ях|ов|ев|ы|и|а|я|у|ю|е|о)$/u, "");
+  for (const [i, group] of RELATED.entries()) {
+    if (group.includes(word) || group.includes(nounForm)) return "concept:" + i;
+  }
   return word.length >= 5 ? word.slice(0, word.length - 2) : word;
 };
 const concepts = (s: string) => new Set(tokens(s).map(meaning));
@@ -48,7 +51,7 @@ export class Memory {
   private ready: Promise<void>;
   private writing: Promise<void> = Promise.resolve();
   private readonly vectors = new Map<string, number[]>();
-  private embedding?: EmbeddingProvider;
+  private embedding: EmbeddingProvider | undefined;
   private embeddingChecks = 0;
   private embeddingFailures = 0;
   embeddingDiagnostics() { return { configured: !!this.embedding, checks: this.embeddingChecks, failures: this.embeddingFailures, mode: this.embedding ? "hybrid" : "lexical" }; }
@@ -219,6 +222,7 @@ export class Memory {
     if (/(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа|паспорт|снилс|диагноз|телефон|адрес проживания)/iu.test(text)) return [];
     for (const { re, kind } of patterns) {
       const match = re.exec(text);
+      if (!match) continue;
       const candidate = match?.[1]?.trim();
       if (!candidate || candidate.length < 6 || candidate.length > 300 ||
           /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа)/iu.test(candidate)) return [];

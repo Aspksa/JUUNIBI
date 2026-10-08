@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { Memory, MemoryAdapter } from "../src/memory";
 
 describe("Memory 3.0", () => {
+  it.each(["проект", "проекта", "проектом", "проекты", "проектами", "репозиторий"])("finds related project forms: %s", async query => {
+    const memory = new Memory();
+    const entry = await memory.add("fact", "Работаю с проектом JUUNIBI", "active");
+    expect((await memory.search(query)).map(e => e.id)).toEqual([entry.id]);
+    expect(await memory.search("проектор")).toEqual([]);
+  });
   it("searches Russian text and related concepts", async () => {
     const memory = new Memory(new MemoryAdapter());
     const a = await memory.add("fact", "Моя помощница работает с проектом", "active");

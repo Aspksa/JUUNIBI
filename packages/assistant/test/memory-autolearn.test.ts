@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { Memory } from "../src/memory";
 
 describe("Automatic memory proposals", () => {
+  it.each([
+    ["Запомни, что я люблю травяной чай", "fact"],
+    ["Я предпочитаю краткие ответы", "preference"],
+    ["Мне нравится, когда ответы короткие", "preference"],
+  ])("recognizes every extraction pattern: %s", async (text, kind) => {
+    const memory = new Memory();
+    const entries = await memory.suggestFromUserText(text);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind, status: "pending" });
+    expect(await memory.context(entries[0]!.text)).toEqual([]);
+  });
   it("suggests explicit preferences, pending until approval", async () => {
     const memory = new Memory();
     const suggested = await memory.suggestFromUserText("Я предпочитаю краткие ответы");
