@@ -81,4 +81,30 @@ describe("Memory 3.1", () => {
     expect((await memory.list("pending")).some(e => e.id === candidate!.id)).toBe(true);
   });
 
+  it("prioritizes stable preferences over equally relevant facts", async () => {
+    const memory = new Memory();
+    await memory.add("fact", "цвет синий", "active");
+    const preference = await memory.add("preference", "цвет зелёный", "active");
+    expect((await memory.search("цвет"))[0]?.id).toBe(preference.id);
+  });
+  it("feedback affects ranking but cannot overcome stronger text relevance", async () => {
+    const memory = new Memory();
+    const strong = await memory.add("fact", "синий цвет оформление", "active");
+    const weak = await memory.add("fact", "синий фон", "active");
+    await memory.feedback([weak.id], 100);
+    expect((await memory.search("синий цвет оформление"))[0]?.id).toBe(strong.id);
+    await memory.feedback([strong.id], 2);
+    expect((await memory.search("синий"))[0]?.id).toBe(strong.id);
+  });
+  it("excludes unapproved, expired and superseded facts from ranked retrieval", async () => {
+    const memory = new Memory();
+    const old = await memory.add("preference", "тема тёмная", "active");
+    const proposal = await memory.proposeRevision(old.id, "тема светлая");
+    expect((await memory.search("светлая"))).toEqual([]);
+    await memory.approve(proposal!.id);
+    expect(await memory.search("тёмная")).toEqual([]);
+    await memory.setExpiry(proposal!.id, Date.now() - 1);
+    expect(await memory.search("светлая")).toEqual([]);
+  });
+
 });
