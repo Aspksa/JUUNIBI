@@ -39,12 +39,16 @@ export class Memory {
     if (!raw) return;
     try {
       const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) this.entries = arr.filter((e) => e && typeof e.id === "string" && typeof e.text === "string");
+      if (Array.isArray(arr)) this.entries = arr.slice(0, MAX_ENTRIES).filter((e): e is MemoryEntry =>
+        e && typeof e.id === "string" && typeof e.text === "string" && e.text.length <= MAX_TEXT &&
+        (e.kind === "fact" || e.kind === "preference" || e.kind === "lesson") &&
+        (e.status === "active" || e.status === "pending") &&
+        Number.isFinite(e.score) && Number.isFinite(e.createdAt));
     } catch { /* corrupt file: start empty rather than crash */ }
   }
   private persist() {
     const snapshot = JSON.stringify(this.entries);
-    this.writing = this.writing.then(() => this.store.save(snapshot)).catch(() => {});
+    this.writing = this.writing.catch(() => {}).then(() => this.store.save(snapshot));
     return this.writing;
   }
 
