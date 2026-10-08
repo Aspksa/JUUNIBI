@@ -42,6 +42,17 @@ export function learningPanel(): HTMLElement {
           body: JSON.stringify({ ...data.settings, enabled: !data.settings.enabled }) });
         void render();
       });
+      const limit = el("input", { type: "number", attrs: { min: "0", max: "50", step: "1", "aria-label": "Максимум запросов в сутки" } });
+      limit.value = String(data.settings.dailyLimit);
+      const saveLimit = el("button", { type: "button", textContent: "Сохранить лимит" });
+      saveLimit.addEventListener("click", async () => {
+        const n = Number(limit.value);
+        if (!Number.isInteger(n) || n < 0 || n > 50) { limit.setCustomValidity("От 0 до 50"); limit.reportValidity(); return; }
+        limit.setCustomValidity("");
+        await fetch("/api/learning/settings", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...data.settings, dailyLimit: n }) });
+        void render();
+      });
       const step = el("button", { type: "button", textContent: "Задать новый вопрос" });
       step.addEventListener("click", async () => {
         step.disabled = true;
@@ -52,7 +63,7 @@ export function learningPanel(): HTMLElement {
       box.replaceChildren(el("h2", { textContent: "Обучение и технический чат" }),
         el("p", { textContent: "Режим: " + data.settings.mode + " · Запросы: " + data.used + "/" + data.settings.dailyLimit + " · Токены: " + data.tokens }),
         el("p", { textContent: "Результаты DeepSeek изолированы до независимой проверки; код не меняется автоматически." }),
-        toggle, step, history);
+        toggle, el("label", { textContent: "Запросов Cloud.ru в сутки (0–50)" }), limit, saveLimit, step, history);
     } catch { box.replaceChildren(el("p", { textContent: "Нет соединения с журналом обучения." })); }
   }
   void render();
