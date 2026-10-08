@@ -36,6 +36,8 @@ const log = new Logger("server", "info");
 const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
+const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
+void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
 const { CLOUDRU_API_KEY: apiKey, CLOUDRU_MODEL: model, CLOUDRU_BASE_URL: baseUrl } = process.env;
 
 let assistant: Assistant | undefined;
@@ -81,6 +83,6 @@ const server = createApp({
 });
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
-const shutdown = async () => { approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
+const shutdown = async () => { clearInterval(updateTimer); approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
