@@ -208,12 +208,13 @@ export class Memory {
   async suggestFromUserText(input: string): Promise<MemoryEntry[]> {
     if (typeof input !== "string" || input.length > 2000) return [];
     const text = input.trim();
-    if (text.includes("\\n") || text.startsWith(">") || text.startsWith("\"") || text.startsWith("«")) return [];
+    if (text.includes("\n") || text.startsWith(">") || text.startsWith("\"") || text.startsWith("«")) return [];
     const patterns: { re: RegExp; kind: MemoryKind }[] = [
       { re: /^(?:запомни|пожалуйста,? запомни)(?:,? что)?[:\s]+(.+)$/iu, kind: "fact" },
       { re: /^я предпочитаю[:\s]+(.+)$/iu, kind: "preference" },
       { re: /^мне нравится,? когда[:\s]+(.+)$/iu, kind: "preference" },
     ];
+    if (/(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа|паспорт|снилс|диагноз|телефон|адрес проживания)/iu.test(text)) return [];
     for (const { re, kind } of patterns) {
       const match = re.exec(text);
       const candidate = match?.[1]?.trim();
