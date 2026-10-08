@@ -102,6 +102,15 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "POST" && p === "/api/brain/mode") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 200, deps.brain.setMode(b.mode)); }
         if (req.method === "POST" && p === "/api/brain/plans") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 201, deps.brain.plan(b.goal, b.steps)); }
         if (req.method === "GET" && p === "/api/brain/history") return send(res, deps.brain ? 200 : 503, deps.brain?.history() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/execute-sequence") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const b = await readJson(req);
+          if (typeof b.planId !== "string") return send(res, 400, { error: "Укажите план" });
+          const mem = deps.memory ?? deps.getAssistant?.()?.memory;
+          const result = await deps.brain.executeSequence(b.planId, b.actions,
+            () => deps.modules(), async query => mem ? (await mem.search(query, 8)).map(x => x.text) : []);
+          return send(res, 200, result);
+        }
         if (req.method === "POST" && p === "/api/brain/execute-read") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const b = await readJson(req);
