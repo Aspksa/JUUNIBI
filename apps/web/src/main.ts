@@ -8,6 +8,7 @@ import { el, icon, type IconName } from "./dom";
 import { homePage } from "./pages/home";
 import { memoryPage } from "./pages/memory";
 import { modulesPage } from "./pages/modules";
+import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
 import {
@@ -24,6 +25,7 @@ const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "home", label: "Главная", icon: "home" },
   { route: "memory", label: "Память", icon: "memory" },
   { route: "modules", label: "Модули", icon: "modules" },
+  { route: "brain", label: "Мозг", icon: "modules" },
   { route: "update", label: "Обновление", icon: "update" },
   { route: "settings", label: "Настройки", icon: "settings" },
 ];
@@ -127,6 +129,7 @@ kernel.register({
         case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
         case "memory": return JSON.stringify(s.memory);
         case "modules": return JSON.stringify(s.modules);
+        case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
         case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length]);
       }
@@ -140,6 +143,7 @@ kernel.register({
         s.route === "home" ? homePage(s, { go, openChat, chats })
         : s.route === "memory" ? memoryPage(s)
         : s.route === "modules" ? modulesPage(s, go)
+        : s.route === "brain" ? brainPage()
         : s.route === "update" ? updatePage(s)
         : settingsPage(s, chats);
       const scroll = pageHost.scrollTop;

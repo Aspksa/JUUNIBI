@@ -16,7 +16,8 @@ export function modulesPage(s: AppState, go: (r: Route) => void): HTMLElement {
   const card = (m: ModView) => {
     const action = m.name === "assistant" && m.status === "pending" ? btn("Настроить", () => go("settings"), { small: true, primary: true })
       : m.name === "updater" ? btn("Открыть", () => go("update"), { small: true })
-      : m.name === "memory" ? btn("Открыть", () => go("memory"), { small: true }) : null;
+      : m.name === "memory" ? btn("Открыть", () => go("memory"), { small: true })
+      : m.name === "brain" ? btn("Открыть", () => go("brain"), { small: true }) : null;
     const li = el("li", { cls: `mod-card ${m.status}`, attrs: { "data-depth": String(m.depth) } },
       el("div", { cls: "mod-main" },
         el("div", { cls: "mod-title" }, dot(TONE[m.status]), el("strong", { textContent: m.title }), m.title !== m.name ? el("code", { textContent: m.name }) : null,

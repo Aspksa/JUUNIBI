@@ -5,6 +5,7 @@ import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
+import type { BrainCore } from "./brain";
 export interface AppDeps {
   /** Long-term memory is available (and editable by the user) even before an API key is configured. */
   memory?: import("@juunibi/assistant").Memory;
@@ -16,6 +17,7 @@ export interface AppDeps {
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
   scenes?: SceneEngine;
+  brain?: BrainCore;
   modules: () => unknown;
   staticDir?: string;
   configured: { model?: string; hint?: string };
@@ -96,6 +98,18 @@ export function createApp(deps: AppDeps): http.Server {
           return send(res, 200, await deps.scenes.next());
         }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
+        if (req.method === "GET" && p === "/api/brain") return send(res, deps.brain ? 200 : 503, deps.brain?.status() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/mode") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 200, deps.brain.setMode(b.mode)); }
+        if (req.method === "POST" && p === "/api/brain/plans") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 201, deps.brain.plan(b.goal, b.steps)); }
+        if (req.method === "GET" && p === "/api/brain/history") return send(res, deps.brain ? 200 : 503, deps.brain?.history() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/execute-read") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const b = await readJson(req);
+          if (typeof b.planId !== "string" || typeof b.stepId !== "string") return send(res, 400, { error: "Некорректные идентификаторы" });
+          const mem = deps.memory ?? deps.getAssistant?.()?.memory;
+          return send(res, 200, await deps.brain.executeReadStep(b.planId, b.stepId, b.action,
+            () => deps.modules(), async (query) => mem ? (await mem.search(query, 8)).map(item => item.text) : []));
+        }
         if (req.method === "GET" && p === "/api/update/events") return send(res, 200, await deps.updater?.events() ?? []);
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
         if (req.method === "POST" && p === "/api/update/check") {

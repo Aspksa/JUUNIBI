@@ -7,6 +7,7 @@ import { Assistant, CloudRuProvider, Memory, ApprovalGate, type StorageAdapter }
 import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
+import { BrainCore } from "./brain";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -37,6 +38,7 @@ const log = new Logger("server", "info");
 const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
+const brain = new BrainCore(() => cloudConfigured);
 const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
 void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
@@ -52,6 +54,7 @@ function moduleList(): ModuleInfo[] {
   const sc = scenes.stats();
   const up = updater.status();
   return [
+    { name: "brain", title: "Мозг JUUNIBI", deps: ["memory", "assistant", "approvals"], status: "started", note: `Режим: ${brain.status().mode} · планов: ${brain.status().plans.length} · выполнение действий через подтверждения` },
     { name: "memory", title: "Память", deps: [], status: "started", note: "Долгая память помощницы: data/memory.json" },
     { name: "assistant", title: "Помощница", deps: ["memory"], status: cloudConfigured ? "started" : "pending", note: cloudConfigured ? `Модель ${activeModel ?? MODEL} (Cloud.ru)` : "Нужен ключ Cloud.ru — добавьте его в настройках" },
     { name: "approvals", title: "Подтверждение действий", deps: ["assistant"], status: "started", note: "Опасные действия выполняются только с вашего разрешения; журнал в data/agent-audit.jsonl" },
@@ -74,7 +77,17 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не выдавай художественный образ за реальное сознание или реальные чувства. Не обещай невыполненных действий. Перед публикациями, удалениями и иными существенными действиями проси разрешение.",
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\\n");
-  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList() });
+  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
+  assistant.tools.register({
+    name: "brain_get_plans", risk: "read", description: "Прочитать планы задач.",
+    parameters: { type: "object", properties: {} },
+    run: () => brain.status().plans,
+  });
+  assistant.tools.register({
+    name: "brain_create_plan", risk: "write", description: "Создать план после разрешения пользователя. Создание плана не исполняет шаги.",
+    parameters: { type: "object", properties: { goal: { type: "string" }, steps: { type: "array", items: { type: "string" } } }, required: ["goal", "steps"] },
+    run: (args) => brain.plan(args.goal, args.steps),
+  });
   activeModel = MODEL;
   cloudConfigured = true;
 }
@@ -119,6 +132,7 @@ const server = createApp({
   memory,
   approvals: approvalGate,
   updater,
+  brain,
   scenes,
   modules: () => moduleList(),
   staticDir,
