@@ -63,3 +63,18 @@ form{margin:12px 0 0}
 .scene-phrase{font-weight:500;margin-top:10px}
 @keyframes scene-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.scene-action{animation:none}}
+
+.update-modes{display:flex;gap:8px;flex-wrap:wrap}
+.update-modes button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg)}
+.flight-layout{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;min-height:230px}
+.flight-zone,.flight-center{min-width:0;max-height:330px;overflow:auto;padding:12px;background:var(--bg);border:1px solid var(--line);border-radius:12px}
+.flight-zone strong,.flight-center strong{display:block;font-size:.83rem;margin-bottom:8px}
+.flight-file{font-size:.76rem;padding:5px 6px;margin:3px 0;border:1px solid var(--line);border-radius:5px;overflow-wrap:anywhere}
+.flight-file.installed{border-color:#239568;color:#239568}.flight-file.downloaded{border-color:var(--accent);color:var(--accent)}.flight-file.failed{border-color:var(--danger);color:var(--danger)}
+.flight-zone summary{cursor:pointer;font-size:.79rem;padding:6px 0;overflow-wrap:anywhere}
+.flying-file{border:1px solid var(--accent);border-radius:8px;padding:10px;font-size:.8rem;overflow-wrap:anywhere;animation:file-flight 1.5s ease-in-out infinite alternate}
+.update-log{max-height:300px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;font-size:.79rem}
+.update-log p{margin:4px 0}
+@keyframes file-flight{from{transform:translateX(-10px) translateY(14px);opacity:.55}to{transform:translateX(10px) translateY(-14px);opacity:1}}
+@media(prefers-reduced-motion:reduce){.flying-file{animation:none}}
+@media(max-width:650px){.flight-layout{grid-template-columns:1fr}.flight-zone,.flight-center{max-height:180px}}

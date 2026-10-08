@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm, readFile, appendFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -16,6 +17,15 @@ export class ProjectUpdater {
   private state: UpdateState = { phase: "idle", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Ожидание" };
   private latest: { sha: string; version: string; description: string; date: string } | null = null;
   private busy = false;
+  private operationId = randomUUID();
+  private async emit(type: string, relative_path = "", status = "", extra: Record<string, unknown> = {}) {
+    await mkdir(this.folder(), { recursive: true });
+    await appendFile(path.join(this.folder(), "events.jsonl"), JSON.stringify({ event_id: randomUUID(), type, timestamp: new Date().toISOString(), operation_id: this.operationId, relative_path, status, ...extra }) + "\n");
+  }
+  async events() {
+    try { const rows = (await readFile(path.join(this.folder(), "events.jsonl"), "utf8")).trim().split("\n").slice(-250); return rows.flatMap(s => { try { return [JSON.parse(s)]; } catch { return []; } }); }
+    catch { return []; }
+  }
   constructor(private readonly root: string) {}
   private folder() { return path.join(this.root, ".updates"); }
   status() { return { ...this.state, latest: this.latest, localVersion: this.localVersion() }; }
@@ -36,6 +46,10 @@ export class ProjectUpdater {
   async start() {
     if (this.busy) throw new Error("Обновление уже выполняется");
     this.busy = true;
+    this.operationId = randomUUID();
+    await mkdir(this.folder(), {recursive:true});
+    await writeFile(path.join(this.folder(), "events.jsonl"), "");
+    await this.emit("update_check_started", "", "checking");
     this.state = { phase: "downloading", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Подключение к GitHub" };
     try {
       await this.check();
@@ -47,10 +61,17 @@ export class ProjectUpdater {
       const total = entries.reduce((sum, e) => sum + e.size, 0);
       if (total > 100_000_000) throw new Error("Размер обновления превышает 100 МБ");
       this.state.totalFiles = entries.length; this.state.totalBytes = total;
+      const changes = await Promise.all(entries.map(async e => {
+        try { const prior = await readFile(path.join(this.root, e.path)); return { path: e.path, change_type: gitHash(prior) === e.sha ? "unchanged" : "modified", size: e.size }; }
+        catch { return { path: e.path, change_type: "added", size: e.size }; }
+      }));
+      await this.emit("manifest_ready", "", "ready", { files: changes, sha });
       const staging = path.join(this.folder(), "staging");
       await rm(staging, { recursive: true, force: true });
       await mkdir(staging, { recursive: true });
       for (const e of entries) {
+        const change_type = changes.find(x=>x.path===e.path)?.change_type ?? "modified";
+        await this.emit("download_started", e.path, "downloading", {change_type,target_relative_path:e.path});
         if (!safeRelative(e.path) || !/^[0-9a-f]{40}$/.test(e.sha)) throw new Error("Недопустимый файл в обновлении");
         const response = await fetch("https://raw.githubusercontent.com/" + REPO + "/" + sha + "/" + e.path.split("/").map(encodeURIComponent).join("/"), { headers: HEADERS, signal: AbortSignal.timeout(30000) });
         if (!response.ok) throw new Error("Не удалось скачать " + e.path + ": HTTP " + response.status);
@@ -69,11 +90,14 @@ export class ProjectUpdater {
           }
         } finally { reader.releaseLock(); }
         const data = Buffer.concat(chunks);
+        await this.emit("file_verify_started", e.path, "verifying", {change_type});
         if (size !== e.size || gitHash(data) !== e.sha) throw new Error("Ошибка контроля целостности: " + e.path);
+        await this.emit("file_verify_done", e.path, "verified", {change_type});
         const dest = path.join(staging, e.path);
         await mkdir(path.dirname(dest), { recursive: true });
         await writeFile(dest, data);
         this.state.downloadedFiles++;
+        await this.emit("file_download_done", e.path, "downloaded", { change_type, bytes_done: size, bytes_total:e.size, target_relative_path:e.path });
         this.state.message = "Скачано: " + e.path;
       }
       this.state.phase = "testing"; this.state.message = "Установка зависимостей и проверка тестов";
@@ -82,9 +106,11 @@ export class ProjectUpdater {
       await this.run(staging, "npm", ["test"]);
       await this.run(staging, "npm", ["run", "build"]);
       await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => ({ path: e.path, sha: e.sha })), description: this.latest!.description }));
+      await this.emit("update_prepared", "", "ready", {sha});
       this.state.phase = "ready";
       this.state.message = "Проверки пройдены. Перезапустите JUUNIBI для установки.";
     } catch (e) {
+      await this.emit("update_failed", "", "failed", {message: e instanceof Error ? e.message : String(e)}).catch(()=>{});
       this.state.phase = "error";
       this.state.error = e instanceof Error ? e.message : String(e);
       this.state.message = "Не удалось подготовить обновление";

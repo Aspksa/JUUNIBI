@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { readFile, mkdir, copyFile, writeFile, rm, lstat } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, mkdir, copyFile, writeFile, rm, lstat, appendFile } from "node:fs/promises";
 import path from "node:path";
 
 function safe(p) {
@@ -17,8 +17,13 @@ export async function applyPreparedUpdate(root) {
   const staging = path.join(folder, "staging");
   const backup = path.join(folder, "backups", new Date().toISOString().replace(/[:.]/g, "-"));
   const changed = [];
+  const operationId = "install-" + Date.now();
+  const event = async (type, relative_path = "", status = "", extra = {}) => {
+    await appendFile(path.join(folder,"events.jsonl"), JSON.stringify({event_id: randomUUID(), type, timestamp:new Date().toISOString(), operation_id:operationId,relative_path,status,...extra})+"\n");
+  };
   console.log("Установка проверенного обновления JUUNIBI. Резервная копия: " + backup);
   try {
+    await event("backup_started", "", "backing_up");
     for (const file of manifest.files) {
       const name = file.path;
       const src = path.join(staging, name);
@@ -39,21 +44,27 @@ export async function applyPreparedUpdate(root) {
       } catch (e) {
         if (e?.code !== "ENOENT") throw e;
       }
+      await event("file_install_start", name, "installing", {change_type:existed?"modified":"added", target_relative_path:name});
       changed.push({ name, existed });
       await mkdir(path.dirname(dst), { recursive: true });
       await copyFile(src, dst);
+      await event("file_install_done", name, "installed", {change_type:existed?"modified":"added",target_relative_path:name});
     }
     await writeFile(path.join(root, ".juunibi-version"), manifest.sha + "\n");
     await rm(manifestFile);
+    await event("update_completed", "", "completed", {sha:manifest.sha, backup_relative_path:path.relative(root,backup)});
     console.log("Обновление установлено. Версия: " + manifest.sha.slice(0, 8));
     return true;
   } catch (e) {
     console.error("Ошибка обновления, восстановление предыдущих файлов…", e);
+    await event("update_failed", "", "failed", {message:String(e)}).catch(()=>{});
+    await event("rollback_started", "", "rolling_back").catch(()=>{});
     for (const { name, existed } of changed.reverse()) {
       const dst = path.join(root, name);
       if (existed) await copyFile(path.join(backup, name), dst);
       else await rm(dst, { force: true });
     }
+    await event("rollback_done", "", "rolled_back").catch(()=>{});
     throw e;
   }
 }
