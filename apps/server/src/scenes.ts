@@ -37,7 +37,7 @@ export class SceneEngine {
     const llm=this.provider();if(!llm)throw new Error("Все сцены использованы. Подключите Cloud.ru для генерации новой.");
     const existing=[...this.actions,...this.state.created].map(x=>x.text);
     for(let attempt=0;attempt<5;attempt++){
-      const response=await llm.chat([{role:"system",content:"Создай ОДНО новое кинематографичное действие перед речью двенадцатихвостой лисицы. На русском, 1–3 предложения, без имени и прямой речи, не более 12 хвостов. Верни только JSON: {\\"text\\":\\"...\\",\\"category\\":\\"новое\\",\\"emotion\\":\\"warm\\",\\"duration_seconds\\":4.5}."},{role:"user",content:"Избегай повторения этих примеров: "+existing.slice(-80).join(" | ").slice(0,10000)}]);
+      const response=await llm.chat([{role:"system",content:'Создай ОДНО новое кинематографичное действие перед речью двенадцатихвостой лисицы. На русском, 1–3 предложения, без имени и прямой речи, не более 12 хвостов. Верни только JSON с полями text, category, emotion, duration_seconds.'},{role:"user",content:"Избегай повторения этих примеров: "+existing.slice(-80).join(" | ").slice(0,10000)}]);
       try {
         const proposal=JSON.parse((response.content??"").replace(/^\\s*```(?:json)?|\\s*```\\s*$/g,"").trim());
         const text=String(proposal.text??"").trim();
