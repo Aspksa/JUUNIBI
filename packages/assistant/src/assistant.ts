@@ -205,8 +205,13 @@ export class Assistant {
     try { parsed = JSON.parse(response.content ?? "{}"); } catch { return; }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
     const data = parsed as { text?: unknown; kind?: unknown; revisesId?: unknown };
-    if (typeof data.text !== "string" || data.text.trim().length < 5 || data.text.length > 300 ||
+    if (typeof data.text !== "string" || data.text.trim().length < 8 || data.text.length > 250 ||
       (data.kind !== "fact" && data.kind !== "preference")) return;
+    const sensitive = /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа|паспорт|снилс|банковск|карт[аы]\\s*\\d|диагноз|болезн|адрес проживания|телефон|e-?mail)/iu;
+    if (sensitive.test(text) || sensitive.test(data.text) || /(?:\\b\\d[ -]?){10,}/u.test(data.text)) return;
+    const words = (s: string) => new Set(s.toLocaleLowerCase("ru").replace(/ё/g, "е").match(/[\\p{L}]{4,}/gu) ?? []);
+    const source = words(text), proposed = words(data.text);
+    if (!proposed.size || [...proposed].filter(w => source.has(w)).length < Math.min(2, proposed.size)) return;
     // Do not let model-supplied identifiers act as permissions.
     if (typeof data.revisesId === "string" && references.some(e => e.id === data.revisesId)) {
       await this.memory.proposeRevision(data.revisesId, data.text);
