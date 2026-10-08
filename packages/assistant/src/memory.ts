@@ -167,7 +167,8 @@ export class Memory {
       const q = await this.embedding.embed(query);
       const valid = (v: number[]) => v.length > 0 && v.length <= 4096 && v.every(Number.isFinite);
       if (!valid(q)) return lexical.slice(0, k);
-      const active = (await this.list("active")).filter(e => !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()) && e.score > -3);
+      const recent = (await this.list("active")).filter(e => !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()) && e.score > -3).slice(-20);
+      const active = [...new Map([...lexical, ...recent].map(e => [e.id, e])).values()];
       const ranked = await Promise.all(active.map(async e => {
         let v = this.vectors.get(e.id);
         if (!v) { v = await this.embedding!.embed(e.text); if (valid(v)) this.vectors.set(e.id, v); }
