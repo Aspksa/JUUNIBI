@@ -39,9 +39,11 @@ const updater = new ProjectUpdater(root);
 const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
 void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
-const MODEL = "DeepSeek-V4-Flash";
+const MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 let activeModel: string | undefined;
 let cloudConfigured = false;
+let assistant: Assistant | undefined;
+let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
   const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
   assistant = new Assistant({ llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => kernel.describe() });
@@ -56,14 +58,7 @@ async function saveCloud(apiKey: string) {
   await rename(tmp, settingsFile);
   await configureCloud(apiKey, process.env.CLOUDRU_BASE_URL);
 }
-try {
-  const stored = JSON.parse(await readFile(settingsFile, "utf8")) as { apiKey?: string };
-  if (stored.apiKey) await configureCloud(stored.apiKey, process.env.CLOUDRU_BASE_URL);
-} catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") log.warn("Настройки Cloud.ru не загружены", (e as Error).message); }
-if (!cloudConfigured && process.env.CLOUDRU_API_KEY) await configureCloud(process.env.CLOUDRU_API_KEY, process.env.CLOUDRU_BASE_URL);
-
-let assistant: Assistant | undefined;
-const approvalGate = new ApprovalGate(async (event) => {
+approvalGate = new ApprovalGate(async (event) => {
   await mkdir(dataDir, { recursive: true });
   await auditWrite(event);
 });
@@ -76,6 +71,13 @@ function auditWrite(event: unknown): Promise<void> {
   });
   return auditQueue;
 }
+try {
+  const stored = JSON.parse(await readFile(settingsFile, "utf8")) as { apiKey?: string };
+  if (stored.apiKey) await configureCloud(stored.apiKey, process.env.CLOUDRU_BASE_URL);
+} catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") log.warn("Настройки Cloud.ru не загружены", (e as Error).message); }
+if (!cloudConfigured && process.env.CLOUDRU_API_KEY) await configureCloud(process.env.CLOUDRU_API_KEY, process.env.CLOUDRU_BASE_URL);
+
+
 const hint = "Откройте вкладку «Настройки ИИ» и укажите ключ Cloud.ru.";
 
 await kernel.start();
