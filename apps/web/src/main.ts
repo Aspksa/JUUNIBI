@@ -1,17 +1,17 @@
 import { Kernel, Logger, Store, attempt } from "@juunibi/core";
-import { api, type MemoryItem, type Status, type ApprovalItem, type UpdateStatus } from "./api";
+import { api, type MemoryItem, type Status, type ApprovalItem, type UpdateStatus, type SceneReply } from "./api";
 import "./style.css";
 
 interface Msg { role: "user" | "bot" | "error"; text: string; turnId?: string; rating?: 1 | -1; tools?: string[] }
 interface State {
-  msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
+  scene: SceneReply | null; msgs: Msg[]; busy: boolean; approvals: ApprovalItem[]; update: UpdateStatus | null; updateError: string; status: Status | null; tab: "chat" | "memory" | "modules" | "update" | "settings";
   memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[]; theme: "auto" | "light" | "dark";
 }
 
 const KEY = "juunibi:ui:v2";
 const saved = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<State>);
 const theme0 = saved.ok && (saved.value.theme === "light" || saved.value.theme === "dark") ? saved.value.theme : "auto";
-const store = new Store<State>({ msgs: [], busy: false, approvals: [], update: null, updateError: "", status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
+const store = new Store<State>({ scene: null, msgs: [], busy: false, approvals: [], update: null, updateError: "", status: null, tab: "chat", memory: [], modules: [], theme: theme0 });
 const kernel = new Kernel(new Logger("web", "info"));
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...kids: (Node | string)[]): HTMLElementTagNameMap[K] => {
@@ -55,6 +55,8 @@ async function decideApproval(id: string, approve: boolean) {
 }
 
 async function send(text: string) {
+  const scene = await api.nextScene();
+  if (scene.ok) store.set({ scene: scene.value });
   store.set((s) => ({ msgs: [...s.msgs, { role: "user", text }], busy: true }));
   const r = await api.chat(text);
   store.set((s) => ({
@@ -159,7 +161,12 @@ kernel.register({
           ...(s.busy ? [el("p", { cls: "empty", textContent: "Помощник думает…" })] : []),
         );
         input.disabled = s.busy || !s.status?.assistant;
-        body = el("div", {}, log, form);
+        const scenePanel = s.scene ? el("section", { cls: "scene-panel", role: "status" },
+          el("div", { cls: "scene-meta", textContent: "✦ " + s.scene.action.category + " · " + s.scene.stats.used + "/" + s.scene.stats.total + " действий" }),
+          el("p", { cls: "scene-action", textContent: s.scene.action.text }),
+          ...(s.scene.phrase ? [el("p", { cls: "scene-phrase", textContent: s.scene.phrase.text })] : [])
+        ) : null;
+        body = el("div", {}, ...(scenePanel ? [scenePanel] : []), log, form);
         queueMicrotask(() => { log.scrollTop = shouldScroll ? log.scrollHeight : previousScroll; });
       } else if (s.tab === "memory") {
         const item = (m: MemoryItem) => {
