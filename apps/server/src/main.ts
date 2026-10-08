@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
 import { Assistant, CloudRuProvider, Memory, assistantPlugin, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
 import { createApp } from "./app";
+import { ProjectUpdater } from "./updater";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -34,6 +35,7 @@ function fileStore(file: string): StorageAdapter {
 const log = new Logger("server", "info");
 const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
+const updater = new ProjectUpdater(root);
 const { CLOUDRU_API_KEY: apiKey, CLOUDRU_MODEL: model, CLOUDRU_BASE_URL: baseUrl } = process.env;
 
 let assistant: Assistant | undefined;
@@ -72,6 +74,7 @@ const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist
 const server = createApp({
   assistant,
   approvals: approvalGate,
+  updater,
   modules: () => kernel.describe(),
   staticDir,
   configured: { ...(model ? { model } : {}), ...(hint ? { hint } : {}) },
