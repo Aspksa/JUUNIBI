@@ -110,7 +110,6 @@ export function createApp(deps: AppDeps): http.Server {
           return send(res, 200, await deps.brain.executeReadStep(b.planId, b.stepId, b.action,
             () => deps.modules(), async (query) => mem ? (await mem.search(query, 8)).map(item => item.text) : []));
         }
-        if (req.method === "POST" && p === "/api/brain/steps") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); if (typeof b.planId !== "string" || typeof b.stepId !== "string") return send(res, 400, { error: "Некорректные идентификаторы" }); return send(res, 200, deps.brain.updateStep(b.planId, b.stepId, b.status)); }
         if (req.method === "GET" && p === "/api/update/events") return send(res, 200, await deps.updater?.events() ?? []);
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
         if (req.method === "POST" && p === "/api/update/check") {
