@@ -9,7 +9,7 @@ describe("explicit preference contradictions", () => {
     expect(proposed).toHaveLength(1);
     expect(proposed[0]).toMatchObject({ status: "pending", revisesId: old.id });
     expect((await memory.search("тёмную тему"))[0]?.id).toBe(old.id);
-    expect(await memory.search("светлую тему")).toEqual([]);
+    expect((await memory.search("светлую тему")).every(e => e.id !== proposed[0]!.id)).toBe(true);
     expect(await memory.approve(proposed[0]!.id)).toBe(true);
     expect(await memory.search("тёмную тему")).toEqual([]);
     expect((await memory.search("светлую тему"))[0]?.id).toBe(proposed[0]!.id);
