@@ -15,6 +15,12 @@ export interface Turn {
   rating?: 1 | -1;
   at: number;
 }
+export type AskEvent = { type: "delta"; text: string } | { type: "tool"; name: string };
+export interface AskOptions {
+  /** Client-held conversation so far (the client is the source of truth). Replaces server-side session memory. */
+  history?: { role: "user" | "assistant"; content: string }[];
+  onEvent?: (e: AskEvent) => void;
+}
 export interface AskResult { turnId: string; reply: string; tools: string[]; memory: string[] }
 
 export interface AssistantOptions {
@@ -93,27 +99,37 @@ export class Assistant {
     ].filter(Boolean).join("\n\n");
   }
 
-  async ask(text: string, session = "default", signal?: AbortSignal): Promise<AskResult> {
+  async ask(text: string, session = "default", signal?: AbortSignal, opts: AskOptions = {}): Promise<AskResult> {
     const mem = await this.memory.search(text, 5);
-    const hist = this.sessions.get(session) ?? [];
+    const clientHistory = Array.isArray(opts.history)
+      ? opts.history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+          .slice(-30).map((m) => ({ role: m.role, content: m.content.slice(0, 8000) }))
+      : undefined;
+    const hist = clientHistory ?? this.sessions.get(session) ?? [];
     const msgs: Message[] = [{ role: "system", content: this.system(mem) }, ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
     let reply: string | null = null;
 
     for (let step = 0; step < (this.o.maxSteps ?? 6); step++) {
-      const r = await this.o.llm.chat(msgs, { tools: this.tools.specs(), ...(signal ? { signal } : {}) });
+      const r = await this.o.llm.chat(msgs, {
+        tools: this.tools.specs(), ...(signal ? { signal } : {}),
+        ...(opts.onEvent ? { onText: (text: string) => opts.onEvent!({ type: "delta", text }) } : {}),
+      });
       if (!r.toolCalls.length) { reply = r.content ?? ""; break; }
       msgs.push({ role: "assistant", content: r.content, tool_calls: r.toolCalls });
       for (const call of r.toolCalls) {
         used.push(call.name);
+        opts.onEvent?.({ type: "tool", name: call.name });
         msgs.push({ role: "tool", tool_call_id: call.id, content: await this.runTool(call.name, call.arguments, signal) });
       }
     }
     reply ??= "Не удалось завершить задачу за отведённое число шагов.";
 
-    const keep = this.sessions.get(session) ?? [];
-    keep.push({ role: "user", content: text }, { role: "assistant", content: reply });
-    this.sessions.set(session, keep.slice(-HISTORY_LIMIT * 2));
+    if (!clientHistory) {
+      const keep = this.sessions.get(session) ?? [];
+      keep.push({ role: "user", content: text }, { role: "assistant", content: reply });
+      this.sessions.set(session, keep.slice(-HISTORY_LIMIT * 2));
+    }
 
     await this.turnsReady;
     const turn: Turn = { id: crypto.randomUUID(), session, user: text, reply, tools: used, memoryIds: mem.map((m) => m.id), at: Date.now() };
