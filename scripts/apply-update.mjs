@@ -26,7 +26,7 @@ export async function applyPreparedUpdate(root) {
       const source = await lstat(src);
       if (!source.isFile() || source.isSymbolicLink()) throw new Error("Некорректный файл в пакете: " + name);
       const bytes = await readFile(src);
-      const actual = createHash("sha1").update("blob " + bytes.length + "\\0").update(bytes).digest("hex");
+      const actual = createHash("sha1").update("blob " + bytes.length + "\0").update(bytes).digest("hex");
       if (actual !== file.sha) throw new Error("Файл обновления изменился после проверки: " + name);
       let existed = false;
       try {
