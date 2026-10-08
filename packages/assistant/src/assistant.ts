@@ -194,7 +194,7 @@ export class Assistant {
 
   /** Suggest reusable user facts; proposals never enter retrieval before approval. */
   private async learnFromMessage(text: string): Promise<void> {
-    if (text.length < 12 || text.length > 3000 || text.includes("?") || !/(?:^|[.!\\s])(я|мне|мой|моя|мои|люблю|предпочитаю|запомни)(?=\\s|[,.!]|$)/iu.test(text)) return;
+    if (text.length < 12 || text.length > 3000 || text.includes("?") || !/(?:^|[.!\s])(я|мне|мой|моя|мои|люблю|предпочитаю|запомни)(?=\s|[,.!]|$)/iu.test(text)) return;
     const references = await this.memory.search(text, 5);
     const response = await this.o.llm.chat([
       { role: "system", content: `Из сообщения пользователя извлеки максимум один явно утверждённый долгосрочный факт или устойчивое предпочтение. Не извлекай пароли, ключи, токены, адреса, данные здоровья и финансов. Не угадывай. Верни только JSON-объект с полями text, kind (fact либо preference), revisesId (ID противоречащего факта либо null). Если нет факта, верни {}. Любая запись лишь предложение и требует одобрения.` },
