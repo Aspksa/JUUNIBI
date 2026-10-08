@@ -23,7 +23,7 @@ export class ProjectUpdater {
     await appendFile(path.join(this.folder(), "events.jsonl"), JSON.stringify({ event_id: randomUUID(), type, timestamp: new Date().toISOString(), operation_id: this.operationId, relative_path, status, ...extra }) + "\n");
   }
   async events() {
-    try { const rows = (await readFile(path.join(this.folder(), "events.jsonl"), "utf8")).trim().split("\n").slice(-250); return rows.flatMap(s => { try { return [JSON.parse(s)]; } catch { return []; } }); }
+    try { const records = (await readFile(path.join(this.folder(), "events.jsonl"), "utf8")).trim().split("\n").flatMap(s => { try { return [JSON.parse(s)]; } catch { return []; } }); const manifest = [...records].reverse().find(e => e.type === "manifest_ready"); const recent = records.slice(-250); return manifest && !recent.some(e => e.event_id === manifest.event_id) ? [manifest, ...recent] : recent; }
     catch { return []; }
   }
   constructor(private readonly root: string) {}
@@ -48,6 +48,7 @@ export class ProjectUpdater {
     this.busy = true;
     this.operationId = randomUUID();
     await mkdir(this.folder(), {recursive:true});
+    await rm(path.join(this.folder(), "ready.json"), {force:true});
     await writeFile(path.join(this.folder(), "events.jsonl"), "");
     await this.emit("update_check_started", "", "checking");
     this.state = { phase: "downloading", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Подключение к GitHub" };
@@ -57,13 +58,14 @@ export class ProjectUpdater {
       const tree = await this.getJson(API + "/git/trees/" + sha + "?recursive=1");
       if (tree.truncated || !Array.isArray(tree.tree)) throw new Error("Неполный список файлов GitHub");
       const entries: Entry[] = tree.tree.filter((x: Entry) => x.type === "blob");
+      if (entries.some(e => !safeRelative(e.path) || !/^[0-9a-f]{40}$/.test(e.sha)) || new Set(entries.map(e => e.path.toLowerCase())).size !== entries.length) throw new Error("Недопустимый путь или повтор файла в манифесте");
       if (entries.length > 2500 || entries.some(x => !Number.isSafeInteger(x.size) || x.size < 0 || x.size > 15_000_000)) throw new Error("Превышены ограничения размера обновления");
       const total = entries.reduce((sum, e) => sum + e.size, 0);
       if (total > 100_000_000) throw new Error("Размер обновления превышает 100 МБ");
       this.state.totalFiles = entries.length; this.state.totalBytes = total;
       const changes = await Promise.all(entries.map(async e => {
         try { const prior = await readFile(path.join(this.root, e.path)); return { path: e.path, change_type: gitHash(prior) === e.sha ? "unchanged" : "modified", size: e.size }; }
-        catch { return { path: e.path, change_type: "added", size: e.size }; }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; return { path: e.path, change_type: "added", size: e.size }; }
       }));
       await this.emit("manifest_ready", "", "ready", { files: changes, sha });
       const staging = path.join(this.folder(), "staging");
@@ -134,7 +136,7 @@ function gitHash(buf: Buffer) {
   return createHash("sha1").update("blob " + buf.length + "\0").update(buf).digest("hex");
 }
 function safeRelative(p: string) {
-  return !!p && !p.startsWith("/") && !p.includes("\\") && p.split("/").every(s => !!s && s !== "." && s !== ".." && ![".git", ".updates", ".env", "data", ".runtime", "node_modules"].includes(s));
+  return !!p && p.length < 1024 && !p.startsWith("/") && !p.includes("\\") && !p.includes(":") && p.split("/").every(s => !!s && s !== "." && s !== ".." && ![".git", ".updates", ".env", "data", ".runtime", "node_modules", ".juunibi-version"].includes(s) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(s) && !/[. ]$/.test(s));
 }
 import { readFileSync } from "node:fs";
 function requireMarker(root: string): string {
