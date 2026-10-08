@@ -10,7 +10,7 @@ export interface AppState {
   route: Route; navOpen: boolean;
   status: Status | null; memory: MemoryItem[]; modules: { name: string; deps: string[]; status: string }[];
   approvals: ApprovalItem[];
-  update: UpdateStatus | null; updateEvents: UpdateEvent[]; updateMode: "simple" | "visual" | "technical"; updateError: string;
+  update: UpdateStatus | null; updateEvents: UpdateEvent[]; updateError: string;
   theme: Theme; showScenes: boolean;
   chatOpen: boolean; chatMax: boolean; chatDensity: "comfortable" | "compact"; chatFont: "sm" | "md" | "lg"; accent: AccentId;
 }
@@ -23,7 +23,7 @@ const pick = <T extends string>(v: unknown, ok: readonly T[], d: T): T => (ok.in
 export const app = new Store<AppState>({
   route: routeFromHash(), navOpen: false,
   status: null, memory: [], modules: [], approvals: [],
-  update: null, updateEvents: [], updateMode: pick(saved.updateMode, ["simple", "visual", "technical"], "visual"), updateError: "",
+  update: null, updateEvents: [], updateError: "",
   theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false,
   chatOpen: false, chatMax: saved.chatMax === true,
   chatDensity: pick(saved.chatDensity, ["comfortable", "compact"], "comfortable"), chatFont: pick(saved.chatFont, ["sm", "md", "lg"], "md"), accent: pick(saved.accent, ACCENT_IDS, "gold"),
@@ -34,7 +34,7 @@ export function routeFromHash(): Route {
   return (ROUTES as string[]).includes(h) ? (h as Route) : "home";
 }
 export function persistPrefs(s: AppState) {
-  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, updateMode: s.updateMode, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent })));
+  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent })));
 }
 
 export async function refreshStatus() {
