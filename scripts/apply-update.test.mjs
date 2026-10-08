@@ -50,7 +50,7 @@ test("fails a corrupt later file without changing the earlier destination", asyn
     assert.equal(await readFile(path.join(root,"apps","one.txt"),"utf8"),"old");
   } finally { await rm(root,{recursive:true,force:true}); }
 });
-test("rejects symlinked destination directories", async () => {
+test("rejects symlinked destination directories", { skip: process.platform === "win32" ? "Creating directory symlinks requires Windows privileges or Developer Mode" : false }, async () => {
   const root=await fixture(),outside=await mkdtemp(path.join(os.tmpdir(),"juunibi-outside-"));
   try {
     await symlink(outside,path.join(root,"linked"),"dir");
