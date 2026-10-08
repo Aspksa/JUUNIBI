@@ -2,6 +2,7 @@ import { Logger } from "@juunibi/core";
 import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
 import { ToolRegistry, type Risk } from "./tools";
+import { validateToolArgs } from "./security";
 
 export interface ApprovalRequest { tool: string; args: Record<string, unknown>; risk: Risk }
 export interface Turn {
@@ -27,6 +28,8 @@ export interface AssistantOptions {
   /** Supervisor hook: called before any non-"read" tool runs. No hook => such tools are denied. */
   approve?: (req: ApprovalRequest) => Promise<boolean> | boolean;
   maxSteps?: number;
+  /** Optional queue used by the server to safely request user consent. */
+  approvalSignal?: AbortSignal;
   persona?: string;
 }
 
@@ -130,8 +133,8 @@ export class Assistant {
       if (typeof p !== "object" || p === null || Array.isArray(p)) throw new Error("not an object");
       args = p;
     } catch { return "Ошибка: аргументы должны быть JSON-объектом."; }
-    const missing = (tool.parameters.required ?? []).filter((k) => !(k in args));
-    if (missing.length) return `Ошибка: не хватает аргументов: ${missing.join(", ")}.`;
+    const invalid = validateToolArgs(tool.parameters, args);
+    if (invalid) return `Ошибка: ${invalid}.`;
     if (tool.risk !== "read") {
       const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk }) : false;
       this.log.info(`tool ${name} (${tool.risk}) ${ok ? "approved" : "denied"}`);
