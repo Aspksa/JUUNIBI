@@ -79,7 +79,16 @@ export class Assistant {
     this.tools.register({
       name: "search_memory", risk: "read", description: "Поиск по долгой памяти ассистента.",
       parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
-      run: async (a) => (await this.memory.search(String(a.query), 8)).map((m) => m.text),
+      run: async (a) => (await this.memory.searchHybrid(String(a.query), 8)).map((m) => ({ id: m.id, text: m.text })),
+    });
+    this.tools.register({
+      name: "propose_memory_revision", risk: "read",
+      description: "Предложить исправление старого факта, ожидающее подтверждения пользователя.",
+      parameters: { type: "object", properties: { oldId: { type: "string" }, newText: { type: "string" } }, required: ["oldId", "newText"] },
+      run: async args => {
+        const result = await this.memory.proposeRevision(String(args.oldId), String(args.newText));
+        return result ? "Ожидает подтверждения: " + result.id : "Не создано";
+      },
     });
     this.tools.register({
       name: "remember", risk: "read",
@@ -109,7 +118,7 @@ export class Assistant {
   }
 
   async ask(text: string, session = "default", signal?: AbortSignal, opts: AskOptions = {}): Promise<AskResult> {
-    const mem = await this.memory.search(text, 5);
+    const mem = await this.memory.context(text, 1500);
     const clientHistory = Array.isArray(opts.history)
       ? opts.history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
           .slice(-30).map((m) => ({ role: m.role, content: m.content.slice(0, MAX_HISTORY_MESSAGE) }))
