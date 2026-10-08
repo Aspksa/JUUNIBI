@@ -97,6 +97,28 @@ export class BrainCore {
       requiresExplicitExecution: true as const,
     };
   }
+  /** Build a validated recovery proposal without changing or executing the original plan. */
+  previewRecovery(planId: string, stepId: string, actions: unknown) {
+    const plan = this.plans.find(p => p.id === planId);
+    const step = plan?.steps.find(s => s.id === stepId);
+    if (!plan || !step) throw Object.assign(new Error("Шаг не найден"), { status: 404 });
+    if (plan.status !== "failed" || step.status !== "failed")
+      throw Object.assign(new Error("Восстановление доступно только после ошибки"), { status: 409 });
+    const index = plan.steps.indexOf(step);
+    if (plan.steps.slice(0, index).some(s => s.status !== "done") || plan.steps.slice(index + 1).some(s => s.status !== "pending"))
+      throw Object.assign(new Error("Нарушена последовательность плана"), { status: 409 });
+    const remaining = plan.steps.length - index;
+    if (!Array.isArray(actions) || actions.length !== remaining ||
+      !actions.every(action => action === "list_modules" || action === "search_memory"))
+      throw Object.assign(new Error("Допускается только последовательность безопасного чтения"), { status: 400 });
+    if ((step.retries ?? 0) >= 2) throw Object.assign(new Error("Исчерпан лимит повторов"), { status: 409 });
+    return {
+      planId, failedStepId: stepId, reason: step.lastError ?? "Причина не сохранена",
+      completedSteps: plan.steps.slice(0, index).map(s => ({ id: s.id, title: s.title })),
+      proposedSteps: plan.steps.slice(index).map((s, i) => ({ id: s.id, title: s.title, action: actions[i] as "list_modules" | "search_memory" })),
+      requiresExplicitExecution: true as const,
+    };
+  }
   /** Retry an explicitly selected failed read-only step, preserving verified earlier work. */
   async retryFailedReadStep(planId: string, stepId: string, action: unknown,
     readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
