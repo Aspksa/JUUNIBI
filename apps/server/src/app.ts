@@ -1,11 +1,12 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { Assistant } from "@juunibi/assistant";
+import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
 export interface AppDeps {
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
   assistant: Assistant | undefined;
+  approvals?: ApprovalGate;
   modules: () => unknown;
   staticDir?: string;
   configured: { model?: string; hint?: string };
@@ -73,6 +74,13 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
         if (!a) return send(res, 503, { error: deps.configured.hint ?? "Помощник не настроен" });
 
+        if (req.method === "GET" && p === "/api/approvals") return send(res, 200, deps.approvals?.list() ?? []);
+        if (req.method === "GET" && p === "/api/approvals/history") return send(res, 200, deps.approvals?.history() ?? []);
+        const approvalMatch = /^\/api\/approvals\/([\w-]+)\/(approve|reject)$/.exec(p);
+        if (req.method === "POST" && approvalMatch) {
+          if (!deps.approvals) return send(res, 404, { error: "Подтверждения недоступны" });
+          return send(res, deps.approvals.decide(approvalMatch[1]!, approvalMatch[2] === "approve") ? 200 : 404, { ok: true });
+        }
         if (req.method === "POST" && p === "/api/chat") {
           const b = await readJson(req);
           const msg = typeof b.message === "string" ? b.message.trim() : "";
