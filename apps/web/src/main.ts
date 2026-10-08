@@ -8,7 +8,7 @@ import { el, icon, type IconName } from "./dom";
 import { homePage } from "./pages/home";
 import { memoryPage } from "./pages/memory";
 import { modulesPage } from "./pages/modules";
-import { animateFlight, updatePage } from "./pages/update";
+import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
 import {
   app, persistPrefs, refreshApprovals, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, routeFromHash,
@@ -112,7 +112,7 @@ kernel.register({
         case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules.length]);
         case "memory": return JSON.stringify(s.memory);
         case "modules": return JSON.stringify(s.modules);
-        case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateMode, s.updateError]);
+        case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
         case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.showScenes]);
       }
     };
@@ -133,6 +133,7 @@ kernel.register({
       if (s.route === "update") animateFlight(pageHost, s);
     };
 
+    setUpdateRerender(() => { pageSig = ""; renderPage(app.get()); });
     const renderAvatar = () => {
       const s = app.get();
       avatar.setState({ hidden: s.chatOpen, busy: ctl.busy, unread: ctl.store.get().unread, ready: !!s.status?.assistant, attention: s.approvals.length > 0 });
@@ -152,7 +153,7 @@ kernel.register({
       pageHost.focus({ preventScroll: true });
     }));
 
-    void refreshStatus(); void refreshUpdate(); void refreshMemory(); void refreshModules();
+    void refreshStatus(); void refreshUpdate(); void refreshEvents(); void refreshMemory(); void refreshModules();
     let tick = 0;
     const poll = setInterval(() => {
       tick++;
