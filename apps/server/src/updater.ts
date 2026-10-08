@@ -75,7 +75,7 @@ export class ProjectUpdater {
       await this.run(staging, "npm", ["run", "typecheck"]);
       await this.run(staging, "npm", ["test"]);
       await this.run(staging, "npm", ["run", "build"]);
-      await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => e.path), description: this.latest!.description }));
+      await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => ({ path: e.path, sha: e.sha })), description: this.latest!.description }));
       this.state.phase = "ready";
       this.state.message = "Проверки пройдены. Перезапустите JUUNIBI для установки.";
     } catch (e) {
