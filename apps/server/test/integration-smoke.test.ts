@@ -47,4 +47,20 @@ describe("JUUNIBI integration smoke", () => {
     const result = await (await post(base, "/api/chat", { message: "Какую тему я люблю?" })).json();
     expect(result.memory).toContain("Люблю тёмную тему");
   });
+  it("denies dangerous tool execution when no approval supervisor is installed", async () => {
+    let executed = false;
+    let requests = 0;
+    const llm = { chat: async () => (++requests === 1
+      ? { content: null, toolCalls: [{ id: "deny-1", name: "danger_test", arguments: "{}" }] }
+      : { content: "Действие не выполнено", toolCalls: [] }) };
+    const memory = new Memory();
+    const assistant = new Assistant({ llm, memory });
+    assistant.tools.register({ name: "danger_test", description: "integration permission test", risk: "danger",
+      parameters: { type: "object", properties: {} }, run: () => { executed = true; return "unexpected"; } });
+    const base = await open(assistant, memory);
+    const reply = await (await post(base, "/api/chat", { message: "Проверь разрешение" })).json();
+    expect(reply.reply).toBe("Действие не выполнено");
+    expect(executed).toBe(false);
+  });
+
 });
