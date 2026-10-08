@@ -19,4 +19,20 @@ describe("BrainCore", () => {
     expect(b.updateStep(p.id, p.steps[1]!.id, "done").status).toBe("completed");
     expect(() => b.updateStep(p.id, p.steps[0]!.id, "active")).toThrow();
   });
+  it("executes only allowlisted read steps and records a result", async () => {
+    const b = new BrainCore(() => true);
+    const p = b.plan("inspect", ["modules"]);
+    await expect(b.executeReadStep(p.id, p.steps[0]!.id, "shell", () => [], async () => [])).rejects.toThrow();
+    const result = await b.executeReadStep(p.id, p.steps[0]!.id, "list_modules", () => [{ name: "brain" }], async () => []);
+    expect(result.plan?.status).toBe("completed");
+    expect(b.history().some(event => event.outcome.includes("verified: list_modules"))).toBe(true);
+    await expect(b.executeReadStep(p.id, p.steps[0]!.id, "list_modules", () => [], async () => [])).rejects.toThrow();
+  });
+  it("marks a failed read action as failed", async () => {
+    const b = new BrainCore(() => true);
+    const p = b.plan("inspect", ["memory"]);
+    await expect(b.executeReadStep(p.id, p.steps[0]!.id, "search_memory", () => [], async () => { throw new Error("storage"); })).rejects.toThrow("storage");
+    expect(b.status().plans[0]?.status).toBe("failed");
+  });
+
 });
