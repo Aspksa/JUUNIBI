@@ -35,6 +35,7 @@ export class Kernel<E extends Record<string, unknown> = Record<string, unknown>>
   private readonly services = new Map<string, unknown>();
   private readonly cleanups: { name: string; fn: () => void | Promise<void> }[] = [];
   private readonly failed = new Set<string>();
+  private readonly started = new Set<string>();
   private running = false;
 
   constructor(log = new Logger()) {
@@ -91,6 +92,7 @@ export class Kernel<E extends Record<string, unknown> = Record<string, unknown>>
       try {
         await p.start(ctx);
         for (const fn of local) this.cleanups.push({ name: p.name, fn });
+        this.started.add(p.name);
         this.bus.emit("plugin:started", { name: p.name } as never);
       } catch (e) {
         this.failed.add(p.name);
@@ -110,7 +112,17 @@ export class Kernel<E extends Record<string, unknown> = Record<string, unknown>>
     this.cleanups.length = 0;
     this.services.clear();
     this.failed.clear();
+    this.started.clear();
     this.bus.emit("kernel:stopped", undefined as never);
+  }
+
+  /** Snapshot of all modules, for introspection (e.g. by the assistant). */
+  describe(): { name: string; deps: string[]; status: "started" | "failed" | "pending" }[] {
+    return [...this.plugins.values()].map((p) => ({
+      name: p.name,
+      deps: p.deps ?? [],
+      status: this.started.has(p.name) ? "started" : this.failed.has(p.name) ? "failed" : "pending",
+    }));
   }
 
   get isRunning(): boolean {

@@ -72,32 +72,49 @@ if (!existsSync(bin("vite", "bin", "vite.js"))) {
   run("Установка зависимостей", "npm", [lock ? "ci" : "install", "--no-audit", "--no-fund"], { shell: true });
 }
 
+const PKGS = ["packages/core", "packages/assistant", "apps/server", "apps/web"];
+const TESTED = ["packages/core", "packages/assistant", "apps/server"];
+
 if (!flag("--skip-checks")) {
-  run("Проверка типов", process.execPath, [bin("typescript", "bin", "tsc"), "-p", "packages/core/tsconfig.json"]);
-  run("Проверка типов (web)", process.execPath, [bin("typescript", "bin", "tsc"), "-p", "apps/web/tsconfig.json"]);
-  run("Тесты", process.execPath, [bin("vitest", "vitest.mjs"), "run"], { cwd: path.join(root, "packages", "core") });
+  for (const p of PKGS) run(`Проверка типов: ${p}`, process.execPath, [bin("typescript", "bin", "tsc"), "-p", `${p}/tsconfig.json`]);
+  for (const p of TESTED) run(`Тесты: ${p}`, process.execPath, [bin("vitest", "vitest.mjs"), "run"], { cwd: path.join(root, p) });
 }
 
 const web = path.join(root, "apps", "web");
-if (!dev) run("Сборка", process.execPath, [bin("vite", "bin", "vite.js"), "build"], { cwd: web });
+run("Сборка сервера", process.execPath, [path.join(root, "scripts", "build-server.mjs")]);
+if (!dev) run("Сборка веба", process.execPath, [bin("vite", "bin", "vite.js"), "build"], { cwd: web });
+
+if (!existsSync(path.join(root, ".env"))) {
+  console.log("\n\x1b[33m[!] Файл .env не найден: помощник будет выключен. Скопируйте .env.example в .env и впишите ключ Cloud.ru.\x1b[0m");
+}
 
 const port = await findPort(wantPort);
 const url = `http://127.0.0.1:${port}/`;
 step(`Запуск сервера на порту ${port}`);
-const server = spawn(
-  process.execPath,
-  [bin("vite", "bin", "vite.js"), ...(dev ? [] : ["preview"]), "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-  { cwd: web, stdio: "inherit" },
-);
-const stop = () => { server.kill(); process.exit(0); };
-process.on("SIGINT", stop);
-process.on("SIGTERM", stop);
-server.on("exit", (code) => { if (code) console.error(`Сервер завершился с кодом ${code}`); process.exit(code ?? 0); });
+const children = [];
+const spawnChild = (cmd, a, o) => {
+  const c = spawn(cmd, a, { stdio: "inherit", ...o });
+  children.push(c);
+  c.on("exit", (code) => { if (code) console.error(`Процесс завершился с кодом ${code}`); stop(code ?? 0); });
+  return c;
+};
+function stop(code = 0) { for (const c of children) c.kill(); process.exit(code); }
+process.on("SIGINT", () => stop());
+process.on("SIGTERM", () => stop());
 
-if (await waitReady(`http://127.0.0.1:${port}/`)) {
-  console.log(`\n\x1b[32mJUUNIBI работает: ${url}\x1b[0m  (Ctrl+C — остановить)`);
-  if (!flag("--no-open")) openBrowser(url);
+spawnChild(process.execPath, [path.join(root, "apps", "server", "dist", "server.mjs")], { cwd: root, env: { ...process.env, PORT: String(port) } });
+let openUrl = url;
+if (dev) {
+  const vitePort = await findPort(port + 1);
+  spawnChild(process.execPath, [bin("vite", "bin", "vite.js"), "--host", "127.0.0.1", "--port", String(vitePort), "--strictPort"], {
+    cwd: web, env: { ...process.env, VITE_API_TARGET: `http://127.0.0.1:${port}` },
+  });
+  openUrl = `http://127.0.0.1:${vitePort}/`;
+}
+
+if (await waitReady(`${url}api/status`) && (!dev || await waitReady(openUrl))) {
+  console.log(`\n\x1b[32mJUUNIBI работает: ${openUrl}\x1b[0m  (Ctrl+C — остановить)`);
+  if (!flag("--no-open")) openBrowser(openUrl);
 } else {
-  server.kill();
   fail("Сервер не ответил за 30 секунд.");
 }
