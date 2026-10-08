@@ -1,5 +1,6 @@
 import { attemptAsync, type Result } from "@juunibi/core";
 
+export interface CloudStatus { configured: boolean; model: string }
 export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
 export interface ChatReply { turnId: string; reply: string; tools: string[]; memory: string[] }
@@ -15,6 +16,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export const api = {
+  cloudStatus: () => attemptAsync(() => call<CloudStatus>("/api/cloudru")),
+  cloudSave: (apiKey: string) => attemptAsync(() => call<CloudStatus>("/api/cloudru", post({ apiKey }))),
   updateStatus: () => attemptAsync(() => call<UpdateStatus>("/api/update/status")),
   updateCheck: () => attemptAsync(() => call<UpdateStatus>("/api/update/check", post({}))),
   updateDownload: () => attemptAsync(() => call<{ok:boolean}>("/api/update/download", post({}))),
