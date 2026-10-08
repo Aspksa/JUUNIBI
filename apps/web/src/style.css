@@ -56,3 +56,10 @@ form{margin:12px 0 0}
 .msg.user .copy-message{align-self:flex-end}
 .bubble,main p,main pre{user-select:text;-webkit-user-select:text}
 @media(max-width:600px){.wrap{padding:10px}.tabs button{flex:1 1 auto}.card{padding:12px}}
+
+.scene-panel{padding:16px;margin-bottom:12px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+.scene-meta{font-size:.78rem;color:var(--muted);letter-spacing:.03em}
+.scene-action{font-style:italic;white-space:pre-wrap;line-height:1.75;animation:scene-enter .7s ease both}
+.scene-phrase{font-weight:500;margin-top:10px}
+@keyframes scene-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.scene-action{animation:none}}
