@@ -108,6 +108,38 @@ export class Memory {
     await this.persist();
     return true;
   }
+  /** Mark a fact as superseded only after an explicit caller decision. */
+  async supersede(oldId: string, replacementId: string): Promise<boolean> {
+    await this.ready;
+    if (oldId === replacementId) return false;
+    const old = this.entries.find(e => e.id === oldId);
+    const next = this.entries.find(e => e.id === replacementId && e.status === "active" && !e.supersededBy);
+    if (!old || !next || old.status !== "active") return false;
+    old.supersededBy = next.id;
+    await this.persist();
+    return true;
+  }
+  async setExpiry(id: string, until: number | null): Promise<boolean> {
+    await this.ready;
+    const entry = this.entries.find(e => e.id === id);
+    if (!entry || (until !== null && (!Number.isFinite(until) || until <= 0))) return false;
+    if (until === null) delete entry.expiresAt;
+    else entry.expiresAt = until;
+    await this.persist();
+    return true;
+  }
+  /** Explicitly connect related facts, without changing their approval status. */
+  async relate(aId: string, bId: string): Promise<boolean> {
+    await this.ready;
+    if (aId === bId) return false;
+    const a = this.entries.find(e => e.id === aId);
+    const b = this.entries.find(e => e.id === bId);
+    if (!a || !b || a.status !== "active" || b.status !== "active") return false;
+    a.relatedIds = [...new Set([...(a.relatedIds ?? []), bId])].slice(0, 20);
+    b.relatedIds = [...new Set([...(b.relatedIds ?? []), aId])].slice(0, 20);
+    await this.persist();
+    return true;
+  }
   /** Reward/punish entries that were used in an answer. */
   async feedback(ids: string[], delta: number): Promise<void> {
     await this.ready;
