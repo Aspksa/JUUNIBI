@@ -61,10 +61,14 @@ export class BrainCore {
     const step = plan?.steps.find(s => s.id === stepId);
     if (!plan || !step) throw Object.assign(new Error("Шаг не найден"), { status: 404 });
     if (step.status !== "pending") throw Object.assign(new Error("Шаг уже запущен"), { status: 409 });
+    if (plan.steps.some(s => s !== step && s.status === "active") || plan.steps.slice(0, plan.steps.indexOf(step)).some(s => s.status !== "done"))
+      throw Object.assign(new Error("Предыдущие шаги ещё не завершены"), { status: 409 });
     this.updateStep(planId, stepId, "active");
     try {
       const result = action === "list_modules" ? readModules() : await searchMemory(step.title);
-      const summary = JSON.stringify(result).slice(0, 2000);
+      const serialized = JSON.stringify(result);
+      if (serialized === undefined || serialized === "null") throw new Error("Инструмент не вернул проверяемый результат");
+      const summary = serialized.slice(0, 2000);
       this.updateStep(planId, stepId, "done");
       this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "verified: " + action + ": " + summary });
       this.logs = this.logs.slice(0, 200);
@@ -99,6 +103,7 @@ export class BrainCore {
     if (!plan || !step) throw Object.assign(new Error("Шаг не найден"), { status: 404 });
     if (plan.status === "completed" || plan.status === "failed") throw Object.assign(new Error("План уже завершён"), { status: 409 });
     if (status === "active" && plan.steps.some(s => s.status === "active" && s !== step)) throw Object.assign(new Error("Уже есть активный шаг"), { status: 409 });
+    if (status === "active" && plan.steps.slice(0, plan.steps.indexOf(step)).some(s => s.status !== "done")) throw Object.assign(new Error("Нельзя пропускать шаги"), { status: 409 });
     if (status === "done" && step.status !== "active") throw Object.assign(new Error("Сначала активируйте шаг"), { status: 409 });
     if (status === "active" && step.status !== "pending") throw Object.assign(new Error("Шаг нельзя активировать"), { status: 409 });
     step.status = status;
