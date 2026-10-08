@@ -77,7 +77,7 @@ export class Memory {
     try {
       const arr = JSON.parse(raw);
       if (!Array.isArray(arr)) throw new Error("Память: неверный формат файла");
-      this.entries = arr.slice(0, MAX_ENTRIES).filter((e): e is MemoryEntry =>
+      const validated = arr.slice(0, MAX_ENTRIES).filter((e): e is MemoryEntry =>
         e && typeof e.id === "string" && typeof e.text === "string" && e.text.length <= MAX_TEXT &&
         (e.kind === "fact" || e.kind === "preference" || e.kind === "lesson") &&
         (e.status === "active" || e.status === "pending") &&
@@ -87,6 +87,8 @@ export class Memory {
         (e.revisesId === undefined || typeof e.revisesId === "string") &&
         (e.mentions === undefined || (Number.isInteger(e.mentions) && e.mentions >= 1 && e.mentions <= 100)) &&
         (e.relatedIds === undefined || (Array.isArray(e.relatedIds) && e.relatedIds.length <= 20 && e.relatedIds.every((id: unknown) => typeof id === "string"))));
+      if (arr.length > MAX_ENTRIES || validated.length !== arr.length) throw new Error("Память: некоторые записи повреждены");
+      this.entries = validated;
     } catch (error) { throw new Error("Память повреждена: изменения заблокированы для предотвращения потери данных", { cause: error }); }
   }
   private persist() {
