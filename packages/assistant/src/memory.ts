@@ -239,7 +239,7 @@ export class Memory {
       ["включённые", "выключенные"], ["включенные", "выключенные"],
     ];
     const clean = normalize(candidate);
-    const words = clean.split(/[^\\p{L}\\p{N}]+/u).filter(Boolean);
+    const words = clean.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
     for (const [left, right] of pairs) {
       const hasLeft = words.includes(normalize(left!));
       const hasRight = words.includes(normalize(right!));
@@ -249,7 +249,7 @@ export class Memory {
       if (!shared.length) continue;
       const old = this.entries.find(e => {
         if (e.kind !== "preference" || e.status !== "active" || e.supersededBy || (e.expiresAt !== undefined && e.expiresAt <= Date.now())) return false;
-        const oldWords = normalize(e.text).split(/[^\\p{L}\\p{N}]+/u).filter(Boolean);
+        const oldWords = normalize(e.text).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
         return oldWords.includes(opposite) && shared.every(w => oldWords.includes(w)) &&
           oldWords.filter(w => w !== opposite).every(w => shared.includes(w));
       });
