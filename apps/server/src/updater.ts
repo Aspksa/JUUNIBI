@@ -110,7 +110,7 @@ function requireMarker(root: string): string {
   catch {
     try {
       const head = readFileSync(path.join(root, ".git", "HEAD"), "utf8").trim();
-      return /^[a-f0-9]{40}$/.test(head) ? head.slice(0, 8) : (head.startsWith("ref: ") ? readFileSync(path.join(root, ".git", head.slice(5)), "utf8").trim().slice(0, 8) : "не определена");
+      return /^[a-f0-9]{40}$/.test(head) ? head : (head.startsWith("ref: ") ? readFileSync(path.join(root, ".git", head.slice(5)), "utf8").trim() : "не определена");
     } catch { return "не определена"; }
   }
 }
