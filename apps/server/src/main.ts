@@ -77,7 +77,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не выдавай художественный образ за реальное сознание или реальные чувства. Не обещай невыполненных действий. Перед публикациями, удалениями и иными существенными действиями проси разрешение.",
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\\n");
-  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList() });
+  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
   activeModel = MODEL;
   cloudConfigured = true;
 }
