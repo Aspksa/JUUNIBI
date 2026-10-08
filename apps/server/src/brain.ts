@@ -6,12 +6,13 @@ export interface BrainStep { id: string; title: string; status: StepState }
 export interface BrainPlan { id: string; goal: string; createdAt: string; status: "planned" | "running" | "completed" | "failed"; steps: BrainStep[] }
 
 /** Deliberately non-executing planner: operations still require the assistant's approval gate. */
+export interface BrainStorage { load(): Promise<string | null>; save(data: string): Promise<void> }
 export class BrainCore {
   private mode: BrainMode = "chat";
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
-  constructor(private readonly assistantReady: () => boolean) {}
+  constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
   }
