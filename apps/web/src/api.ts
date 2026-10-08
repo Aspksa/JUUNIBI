@@ -2,6 +2,8 @@ import { attemptAsync, type Result } from "@juunibi/core";
 
 export interface SceneReply { action: {id:string;text:string;category:string;emotion?:string;duration_seconds?:number;animation_cues?:{ears?:string;tails?:number;gaze?:string}}; phrase:null|{id:string;text:string;category:string};stats:{total:number;used:number;remaining:number;phrases:number;generated:number} }
 export interface CloudStatus { configured: boolean; model: string }
+export interface BrainPlan { id:string; goal:string; createdAt:string; status:"planned"|"running"|"completed"|"failed"; steps:{id:string;title:string;status:"pending"|"active"|"done"|"failed"}[] }
+export interface BrainStatus { mode:"chat"|"analysis"|"agent"|"creative"; assistantReady:boolean; capabilities:string[]; plans:BrainPlan[] }
 export interface UpdateEvent {event_id:string;type:string;timestamp:string;operation_id:string;relative_path:string;status:string;change_type?:string;bytes_done?:number;bytes_total?:number;target_relative_path?:string;message?:string;files?:{path:string;change_type:string;size:number}[]}
 export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; pendingRemovals?: string[]; removalsConfirmed?: boolean; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
@@ -19,6 +21,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export const api = {
+  brainStatus: () => attemptAsync(() => call<BrainStatus>("/api/brain")),
+  brainMode: (mode: BrainStatus["mode"]) => attemptAsync(() => call<BrainStatus>("/api/brain/mode", post({ mode }))),
+  brainPlan: (goal:string, steps:string[]) => attemptAsync(() => call<BrainPlan>("/api/brain/plans", post({ goal, steps }))),
+  brainStep: (planId:string, stepId:string, status:"active"|"done"|"failed") => attemptAsync(() => call<BrainPlan>("/api/brain/steps", post({ planId, stepId, status }))),
   nextScene: () => attemptAsync(() => call<SceneReply>("/api/juunibi/scenes/next",post({}))),
   cloudStatus: () => attemptAsync(() => call<CloudStatus>("/api/cloudru")),
   cloudSave: (apiKey: string) => attemptAsync(() => call<CloudStatus>("/api/cloudru", post({ apiKey }))),
