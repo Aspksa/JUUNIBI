@@ -108,6 +108,36 @@ describe("CloudRuProvider", () => {
   const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
   const cfg = { apiKey: "SECRET", model: "m", retries: 2 };
 
+  it("serializes tool-call history for the Cloud.ru function protocol", async () => {
+    const f = vi.fn(async () => ok({ choices: [{ message: { content: "Готово" } }] }));
+    const p = new CloudRuProvider({ ...cfg, fetch: f as never });
+    const history: Message[] = [
+      { role: "assistant", content: null, tool_calls: [{ id: "c1", name: "list_modules", arguments: "{}" }] },
+      { role: "tool", tool_call_id: "c1", content: "[]" },
+    ];
+    await p.chat(history);
+    const body = JSON.parse((f.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+    expect(body.messages).toEqual([
+      { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "list_modules", arguments: "{}" } }] },
+      history[1],
+    ]);
+    expect(history[0]!.tool_calls![0]).toEqual({ id: "c1", name: "list_modules", arguments: "{}" });
+  });
+
+  it("redacts credentials echoed by HTTP, network and stream errors", async () => {
+    const failures = [
+      async () => new Response("invalid Bearer SECRET", { status: 401 }),
+      async () => { throw new Error("request with SECRET failed"); },
+      async () => new Response('data: {"error":{"message":"invalid SECRET"}}\n\n', { headers: { "content-type": "text/event-stream" } }),
+    ];
+    for (const fetcher of failures) {
+      const p = new CloudRuProvider({ ...cfg, retries: 0, fetch: fetcher as typeof fetch });
+      const error = await p.chat([], { onText: () => {} }).catch(e => e);
+      expect(error).toBeInstanceOf(LlmError);
+      expect(error.message).not.toContain(cfg.apiKey);
+    }
+  });
+
   it("sends OpenAI-style request with bearer key and parses tool calls", async () => {
     const f = vi.fn(async () => ok({ choices: [{ message: { content: null, tool_calls: [{ id: "a", function: { name: "t", arguments: "{}" } }] } }] }));
     const p = new CloudRuProvider({ ...cfg, fetch: f as never });

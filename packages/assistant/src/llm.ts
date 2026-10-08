@@ -59,7 +59,12 @@ export class CloudRuProvider implements LlmProvider {
   async chat(messages: Message[], opts: ChatOptions = {}): Promise<LlmResponse> {
     const body = {
       model: this.cfg.model,
-      messages,
+      messages: messages.map(({ tool_calls, ...message }) => ({
+        ...message,
+        ...(tool_calls ? { tool_calls: tool_calls.map(call => ({
+          id: call.id, type: "function", function: { name: call.name, arguments: call.arguments },
+        })) } : {}),
+      })),
       temperature: opts.temperature ?? 0.3,
       ...(opts.onText ? { stream: true } : {}),
       ...(opts.tools?.length
@@ -95,14 +100,18 @@ export class CloudRuProvider implements LlmProvider {
         if (opts.onText && parsed.content) opts.onText(parsed.content);
         return parsed;
       } catch (e) {
-        if (e instanceof LlmError && e.status && e.status < 500 && e.status !== 429) throw e;
+        if (e instanceof LlmError && e.status && e.status < 500 && e.status !== 429) throw this.safeError(e);
         if (opts.signal?.aborted) throw new LlmError("Запрос отменён");
         lastErr = e;
       } finally {
         clearTimeout(timer);
       }
     }
-    throw lastErr instanceof LlmError ? lastErr : new LlmError(`Нет связи с Cloud.ru: ${(lastErr as Error)?.message ?? lastErr}`);
+    throw this.safeError(lastErr instanceof LlmError ? lastErr : new LlmError(`Нет связи с Cloud.ru: ${(lastErr as Error)?.message ?? lastErr}`));
+  }
+
+  private safeError(error: LlmError): LlmError {
+    return new LlmError(error.message.split(this.cfg.apiKey).join("[redacted]"), error.status);
   }
 }
 
