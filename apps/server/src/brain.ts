@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 export type BrainMode = "chat" | "analysis" | "agent" | "creative";
 export type StepState = "pending" | "active" | "done" | "failed";
-export interface BrainStep { id: string; title: string; status: StepState }
+export interface BrainStep { id: string; title: string; status: StepState; retries?: number }
 export interface BrainPlan { id: string; goal: string; createdAt: string; status: "planned" | "running" | "completed" | "failed"; steps: BrainStep[] }
 
 /** Deliberately non-executing planner: operations still require the assistant's approval gate. */
@@ -28,7 +28,7 @@ export class BrainCore {
     const saved = state as { mode?: unknown; plans?: unknown; logs?: unknown };
     if (!Array.isArray(saved.plans) || !Array.isArray(saved.logs) || saved.plans.length > 30 || saved.logs.length > 200) throw new Error("Неверный формат мозга");
     this.mode = saved.mode === "agent" || saved.mode === "analysis" || saved.mode === "creative" ? saved.mode : "chat";
-    if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status)))) throw new Error("Некорректные планы");
+    if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2))))) throw new Error("Некорректные планы");
     this.plans = (saved.plans as BrainPlan[]).map(p => ({ ...p, status: p.status === "running" ? "planned" : p.status, steps: p.steps.map(s => ({ ...s, status: s.status === "active" ? "pending" : s.status })) }));
     this.logs = saved.logs as typeof this.logs;
   }
@@ -78,6 +78,27 @@ export class BrainCore {
       this.updateStep(planId, stepId, "failed");
       throw error;
     }
+  }
+  /** Retry an explicitly selected failed read-only step, preserving verified earlier work. */
+  async retryFailedReadStep(planId: string, stepId: string, action: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    if (action !== "list_modules" && action !== "search_memory")
+      throw Object.assign(new Error("Повтор разрешён только для безопасного чтения"), { status: 400 });
+    const plan = this.plans.find(p => p.id === planId);
+    const step = plan?.steps.find(s => s.id === stepId);
+    if (!plan || !step) throw Object.assign(new Error("Шаг не найден"), { status: 404 });
+    if (plan.status !== "failed" || step.status !== "failed")
+      throw Object.assign(new Error("Повторить можно только неудавшийся шаг"), { status: 409 });
+    if (plan.steps.some(s => s.status === "active") || plan.steps.slice(0, plan.steps.indexOf(step)).some(s => s.status !== "done"))
+      throw Object.assign(new Error("Предыдущие шаги должны быть завершены"), { status: 409 });
+    if ((step.retries ?? 0) >= 2) throw Object.assign(new Error("Исчерпан лимит повторов шага"), { status: 409 });
+    step.retries = (step.retries ?? 0) + 1;
+    step.status = "pending";
+    plan.status = plan.steps.some(s => s.status === "done") ? "running" : "planned";
+    this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "retry: " + action });
+    this.logs = this.logs.slice(0, 200);
+    this.persist();
+    return this.executeReadStep(planId, stepId, action, readModules, searchMemory);
   }
   async executeSequence(planId: string, actions: unknown,
     readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
