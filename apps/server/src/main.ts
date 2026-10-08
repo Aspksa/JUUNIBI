@@ -43,7 +43,7 @@ const approvalGate = new ApprovalGate(async (event) => {
 });
 let auditQueue = Promise.resolve();
 function auditWrite(event: unknown): Promise<void> {
-  const line = JSON.stringify(event) + "\\n";
+  const line = JSON.stringify(event) + "\n";
   auditQueue = auditQueue.then(async () => {
     const { appendFile } = await import("node:fs/promises");
     await appendFile(path.join(dataDir, "agent-audit.jsonl"), line, { mode: 0o600 });
@@ -55,7 +55,7 @@ if (apiKey && model) {
   const llm = new CloudRuProvider({ apiKey, model, ...(baseUrl ? { baseUrl } : {}) });
   kernel.register(
     assistantPlugin(
-      { llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req) },
+      { llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req, req.signal) },
       () => kernel.describe(),
       (a) => (assistant = a),
     ),
