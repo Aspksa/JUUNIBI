@@ -1,7 +1,8 @@
 import { Store } from "@juunibi/core";
 import { api } from "../api";
 import { app, refreshMemory } from "../state";
-import { DEFAULT_TITLE, titleFrom, type Chats, type ChatMsg } from "./chats";
+import { DEFAULT_TITLE, titleFrom, type Chats, type ChatMsg, type Step } from "./chats";
+import { withFiles, type Attachment } from "./helpers";
 import { streamChat } from "./stream";
 
 export interface CtlState { busyId: string | null; unread: number }
@@ -21,19 +22,29 @@ export class ChatController {
     if (!c) return [];
     const upTo = msgId ? c.messages.findIndex((m) => m.id === msgId) : c.messages.length;
     return c.messages.slice(0, upTo < 0 ? c.messages.length : upTo)
-      .filter((m) => m.content.trim() && !m.error)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .filter((m): m is ChatMsg & { role: "user" | "assistant" } => m.role !== "note" && !!m.content.trim() && !m.error)
+      .map((m) => ({ role: m.role, content: m.role === "user" ? withFiles(m.content, m.files) : m.content }));
   }
 
-  async send(convId: string, text: string): Promise<void> {
+  async send(convId: string, text: string, files: Attachment[] = []): Promise<void> {
     const content = text.trim();
-    if (!content || this.busy) return;
+    if ((!content && !files.length) || this.busy) return;
     const conv = this.chats.get(convId);
     if (!conv) return;
     const history = this.historyBefore(convId);
-    this.chats.append(convId, { role: "user", content });
-    if (conv.title === DEFAULT_TITLE && conv.messages.length === 0) this.chats.rename(convId, titleFrom(content));
-    await this.generate(convId, content, history);
+    this.chats.append(convId, { role: "user", content, ...(files.length ? { files } : {}) });
+    if (conv.title === DEFAULT_TITLE && !conv.messages.some((m) => m.role === "user")) this.chats.rename(convId, titleFrom(content || files[0]?.name || ""));
+    await this.generate(convId, withFiles(content, files), history);
+  }
+
+  /** A local note in the thread (command results). Never sent to the model. */
+  note(convId: string, text: string) { this.chats.append(convId, { role: "note", content: text }); }
+
+  async remember(convId: string, text: string): Promise<boolean> {
+    const r = await api.addMemory(text.trim().slice(0, 2000));
+    this.note(convId, r.ok ? `Запомнено: «${r.value.text}»` : `Не удалось запомнить: ${r.error.message}`);
+    if (r.ok) await refreshMemory();
+    return r.ok;
   }
 
   /** Re-asks the last user message, replacing the last assistant reply. */
@@ -48,17 +59,20 @@ export class ChatController {
     // drop everything after the user message, keep the user message itself
     const after = c.messages[idx + 1];
     if (after) this.chats.truncateFrom(convId, after.id);
-    await this.generate(convId, lastUser.content, history);
+    await this.generate(convId, withFiles(lastUser.content, lastUser.files), history);
   }
 
   /** Replaces a user message with edited text and regenerates from there. */
   async edit(convId: string, msgId: string, newText: string): Promise<void> {
     const content = newText.trim();
-    if (!content || this.busy) return;
+    if (this.busy) return;
+    const original = this.chats.get(convId)?.messages.find((m) => m.id === msgId);
+    const files = original?.files ?? [];
+    if (!content && !files.length) return;
     const history = this.historyBefore(convId, msgId);
     this.chats.truncateFrom(convId, msgId);
-    this.chats.append(convId, { role: "user", content });
-    await this.generate(convId, content, history);
+    this.chats.append(convId, { role: "user", content, ...(files.length ? { files } : {}) });
+    await this.generate(convId, withFiles(content, files), history);
   }
 
   stop() { this.abort?.abort(); }
@@ -77,14 +91,19 @@ export class ChatController {
     }
 
     let text = "";
+    let steps: Step[] = [];
     let finished = false;
     try {
       await streamChat({ message: userText, history }, ctl.signal, (e) => {
         if (e.type === "delta") { text += e.text; this.chats.patch(convId, reply.id, { content: text }); }
-        else if (e.type === "tool") { /* shown after completion via `tools` */ }
+        else if (e.type === "tool") {
+          if (e.phase === "start") steps = [...steps, { id: e.id, name: e.name, status: "running" }];
+          else steps = steps.map((st) => (st.id === e.id ? { ...st, status: e.status, ms: e.ms } : st));
+          this.chats.patch(convId, reply.id, { steps });
+        }
         else if (e.type === "done") {
           finished = true;
-          const patch: Partial<ChatMsg> = { turnId: e.turnId, tools: e.tools };
+          const patch: Partial<ChatMsg> = { turnId: e.turnId, tools: e.tools, ...(e.memory?.length ? { memoryUsed: e.memory } : {}) };
           if (!text && e.reply) patch.content = e.reply; // server returned a reply without deltas
           this.chats.patch(convId, reply.id, patch);
         } else if (e.type === "error") {
@@ -97,6 +116,7 @@ export class ChatController {
       if (ctl.signal.aborted) this.chats.patch(convId, reply.id, { stopped: true });
       else this.chats.patch(convId, reply.id, { error: (e as Error).message || "Не удалось получить ответ." });
     } finally {
+      if (steps.some((st) => st.status === "running")) this.chats.patch(convId, reply.id, { steps: steps.map((st) => (st.status === "running" ? { ...st, status: "error" as const } : st)) });
       if (this.abort === ctl) this.abort = null;
       this.store.set((s) => ({ busyId: null, unread: app.get().chatOpen ? 0 : s.unread + (ctl.signal.aborted ? 0 : 1) }));
     }

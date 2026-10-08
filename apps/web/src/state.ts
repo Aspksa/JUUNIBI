@@ -11,7 +11,7 @@ export interface AppState {
   approvals: ApprovalItem[];
   update: UpdateStatus | null; updateEvents: UpdateEvent[]; updateMode: "simple" | "visual" | "technical"; updateError: string;
   theme: Theme; showScenes: boolean;
-  chatOpen: boolean; chatMax: boolean;
+  chatOpen: boolean; chatMax: boolean; chatDensity: "comfortable" | "compact"; chatFont: "sm" | "md" | "lg";
 }
 
 const KEY = "juunibi:ui:v3";
@@ -25,6 +25,7 @@ export const app = new Store<AppState>({
   update: null, updateEvents: [], updateMode: pick(saved.updateMode, ["simple", "visual", "technical"], "visual"), updateError: "",
   theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false,
   chatOpen: false, chatMax: saved.chatMax === true,
+  chatDensity: pick(saved.chatDensity, ["comfortable", "compact"], "comfortable"), chatFont: pick(saved.chatFont, ["sm", "md", "lg"], "md"),
 });
 
 export function routeFromHash(): Route {
@@ -32,7 +33,7 @@ export function routeFromHash(): Route {
   return (ROUTES as string[]).includes(h) ? (h as Route) : "home";
 }
 export function persistPrefs(s: AppState) {
-  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, updateMode: s.updateMode })));
+  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, updateMode: s.updateMode, chatDensity: s.chatDensity, chatFont: s.chatFont })));
 }
 
 export async function refreshStatus() {

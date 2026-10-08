@@ -15,7 +15,11 @@ export interface Turn {
   rating?: 1 | -1;
   at: number;
 }
-export type AskEvent = { type: "delta"; text: string } | { type: "tool"; name: string };
+export type ToolStatus = "ok" | "error" | "denied";
+export type AskEvent =
+  | { type: "delta"; text: string }
+  | { type: "tool"; phase: "start"; id: string; name: string; args: string }
+  | { type: "tool"; phase: "end"; id: string; name: string; status: ToolStatus; ms: number };
 export interface AskOptions {
   /** Client-held conversation so far (the client is the source of truth). Replaces server-side session memory. */
   history?: { role: "user" | "assistant"; content: string }[];
@@ -39,6 +43,8 @@ export interface AssistantOptions {
 }
 
 const MAX_TOOL_OUTPUT = 8000;
+const MAX_HISTORY_MESSAGE = 120_000;
+const MAX_HISTORY_TOTAL = 300_000;
 const HISTORY_LIMIT = 20;
 const TURNS_LIMIT = 1000;
 
@@ -103,8 +109,12 @@ export class Assistant {
     const mem = await this.memory.search(text, 5);
     const clientHistory = Array.isArray(opts.history)
       ? opts.history.filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
-          .slice(-30).map((m) => ({ role: m.role, content: m.content.slice(0, 8000) }))
+          .slice(-30).map((m) => ({ role: m.role, content: m.content.slice(0, MAX_HISTORY_MESSAGE) }))
       : undefined;
+    if (clientHistory) { // keep the newest messages within a total character budget
+      let total = clientHistory.reduce((n, m) => n + m.content.length, 0);
+      while (clientHistory.length > 1 && total > MAX_HISTORY_TOTAL) total -= clientHistory.shift()!.content.length;
+    }
     const hist = clientHistory ?? this.sessions.get(session) ?? [];
     const msgs: Message[] = [{ role: "system", content: this.system(mem) }, ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
@@ -119,8 +129,11 @@ export class Assistant {
       msgs.push({ role: "assistant", content: r.content, tool_calls: r.toolCalls });
       for (const call of r.toolCalls) {
         used.push(call.name);
-        opts.onEvent?.({ type: "tool", name: call.name });
-        msgs.push({ role: "tool", tool_call_id: call.id, content: await this.runTool(call.name, call.arguments, signal) });
+        opts.onEvent?.({ type: "tool", phase: "start", id: call.id, name: call.name, args: call.arguments.slice(0, 300) });
+        const t0 = Date.now();
+        const result = await this.runTool(call.name, call.arguments, signal);
+        opts.onEvent?.({ type: "tool", phase: "end", id: call.id, name: call.name, status: result.status, ms: Date.now() - t0 });
+        msgs.push({ role: "tool", tool_call_id: call.id, content: result.text });
       }
     }
     reply ??= "Не удалось завершить задачу за отведённое число шагов.";
@@ -139,29 +152,30 @@ export class Assistant {
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
 
-  private async runTool(name: string, rawArgs: string, signal?: AbortSignal): Promise<string> {
+  private async runTool(name: string, rawArgs: string, signal?: AbortSignal): Promise<{ text: string; status: ToolStatus }> {
+    const err = (text: string) => ({ text, status: "error" as const });
     const tool = this.tools.get(name);
-    if (!tool) return `Ошибка: инструмента "${name}" нет.`;
+    if (!tool) return err(`Ошибка: инструмента "${name}" нет.`);
     let args: Record<string, unknown>;
     try {
       const p = JSON.parse(rawArgs || "{}");
       if (typeof p !== "object" || p === null || Array.isArray(p)) throw new Error("not an object");
       args = p;
-    } catch { return "Ошибка: аргументы должны быть JSON-объектом."; }
+    } catch { return err("Ошибка: аргументы должны быть JSON-объектом."); }
     const invalid = validateToolArgs(tool.parameters, args);
-    if (invalid) return `Ошибка: ${invalid.charAt(0).toLowerCase() + invalid.slice(1)}.`;
+    if (invalid) return err(`Ошибка: ${invalid.charAt(0).toLowerCase() + invalid.slice(1)}.`);
     if (tool.risk !== "read") {
       const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk, ...(signal ? { signal } : {}) }) : false;
       this.log.info(`tool ${name} (${tool.risk}) ${ok ? "approved" : "denied"}`);
-      if (!ok) return "Отказано: действие не одобрено супервайзером/пользователем.";
+      if (!ok) return { text: "Отказано: действие не одобрено супервайзером/пользователем.", status: "denied" };
     }
     try {
       const out = await tool.run(args);
       const s = typeof out === "string" ? out : JSON.stringify(out) ?? "null";
-      return s.length > MAX_TOOL_OUTPUT ? s.slice(0, MAX_TOOL_OUTPUT) + "…[обрезано]" : s;
+      return { text: s.length > MAX_TOOL_OUTPUT ? s.slice(0, MAX_TOOL_OUTPUT) + "…[обрезано]" : s, status: "ok" };
     } catch (e) {
       this.log.warn(`tool ${name} failed`, e);
-      return `Ошибка инструмента: ${(e as Error).message}`;
+      return err(`Ошибка инструмента: ${(e as Error).message}`);
     }
   }
 

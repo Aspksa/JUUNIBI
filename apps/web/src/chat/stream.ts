@@ -1,6 +1,8 @@
 export type StreamEvent =
-  | { type: "delta"; text: string } | { type: "tool"; name: string }
-  | { type: "done"; turnId: string; reply: string; tools: string[] } | { type: "error"; message: string };
+  | { type: "delta"; text: string }
+  | { type: "tool"; phase: "start"; id: string; name: string; args: string }
+  | { type: "tool"; phase: "end"; id: string; name: string; status: "ok" | "error" | "denied"; ms: number }
+  | { type: "done"; turnId: string; reply: string; tools: string[]; memory?: string[] } | { type: "error"; message: string };
 
 /** POSTs to /api/chat/stream and yields NDJSON events. Aborting the signal cancels generation on the server too. */
 export async function streamChat(body: { message: string; history: { role: string; content: string }[] }, signal: AbortSignal, onEvent: (e: StreamEvent) => void): Promise<void> {

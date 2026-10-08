@@ -1,8 +1,10 @@
 import { Store, attempt } from "@juunibi/core";
 
+export interface Step { id: string; name: string; status: "running" | "ok" | "error" | "denied"; ms?: number }
 export interface ChatMsg {
-  id: string; role: "user" | "assistant"; content: string; at: number;
+  id: string; role: "user" | "assistant" | "note"; content: string; at: number;
   turnId?: string; rating?: 1 | -1; scene?: { action: string; phrase?: string }; tools?: string[];
+  steps?: Step[]; memoryUsed?: string[]; files?: { name: string; size: number; text: string }[];
   error?: string; stopped?: boolean;
 }
 export interface Conversation { id: string; title: string; createdAt: number; updatedAt: number; messages: ChatMsg[] }
@@ -19,9 +21,12 @@ function sanitize(raw: unknown): Conversation[] {
   const out: Conversation[] = [];
   for (const c of raw) {
     if (!c || typeof c.id !== "string" || !Array.isArray(c.messages)) continue;
-    const messages: ChatMsg[] = c.messages.filter((m: ChatMsg) => m && typeof m.id === "string" && (m.role === "user" || m.role === "assistant") && typeof m.content === "string");
+    const messages: ChatMsg[] = c.messages.filter((m: ChatMsg) => m && typeof m.id === "string" && (m.role === "user" || m.role === "assistant" || m.role === "note") && typeof m.content === "string");
     // a message that was streaming when the page closed is finished by definition
-    for (const m of messages) if (m.role === "assistant" && !m.turnId && !m.error && !m.content) { m.error = "Ответ не был получен."; }
+    for (const m of messages) {
+      if (m.role === "assistant" && !m.turnId && !m.error && !m.content) m.error = "Ответ не был получен.";
+      if (m.steps) m.steps = m.steps.map((st) => (st.status === "running" ? { ...st, status: "error" as const } : st));
+    }
     out.push({ id: c.id, title: typeof c.title === "string" && c.title ? c.title.slice(0, 120) : DEFAULT_TITLE, createdAt: Number(c.createdAt) || Date.now(), updatedAt: Number(c.updatedAt) || Date.now(), messages });
   }
   return out.slice(0, MAX_CONVERSATIONS);
@@ -60,6 +65,7 @@ export class Chats {
     });
   }
   rename(id: string, title: string) { const t = title.trim().slice(0, 120); if (t) this.update(id, (c) => ({ ...c, title: t })); }
+  clearMessages(id: string) { this.update(id, (c) => ({ ...c, messages: [] })); }
   clearAll() { this.store.set({ items: [], activeId: null }); }
 
   append(id: string, msg: Omit<ChatMsg, "id" | "at"> & Partial<Pick<ChatMsg, "id" | "at">>): ChatMsg {

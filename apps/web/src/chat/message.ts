@@ -1,0 +1,105 @@
+import { el, icon, iconButton } from "../dom";
+import { renderMarkdown } from "../markdown";
+import type { ChatMsg, Step } from "./chats";
+import type { ChatController } from "./controller";
+import { formatBytes, stepLabel } from "./helpers";
+import { speechSupported } from "./voice";
+
+export interface MsgCtx {
+  convId: string; streaming: boolean; isLast: boolean; busy: boolean; editing: boolean; speaking: boolean;
+  ctl: ChatController;
+  onEdit(id: string): void; onCancelEdit(): void; onSaveEdit(id: string, text: string): void;
+  onRemember(text: string): void; onSpeak(m: ChatMsg): void;
+}
+
+const time = (ts: number) => new Date(ts).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+const STEP_ICON: Record<Step["status"], string> = { running: "", ok: "✓", error: "✕", denied: "⊘" };
+const STEP_TITLE: Record<Step["status"], string> = { running: "выполняется", ok: "готово", error: "ошибка", denied: "отклонено" };
+
+/** Signature of everything that changes how a message looks; rows are rebuilt only when it changes. */
+export function msgSignature(m: ChatMsg, c: Pick<MsgCtx, "streaming" | "isLast" | "busy" | "editing" | "speaking">): string {
+  return [m.content.length, m.rating, m.error, m.stopped, m.turnId, m.scene?.action, m.steps?.map((s) => s.status).join(), m.memoryUsed?.length, m.files?.length,
+    c.streaming, c.isLast, c.busy, c.editing, c.speaking].join("|");
+}
+
+export function fillMessage(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
+  root.replaceChildren();
+  root.dataset.role = m.role;
+  if (m.role === "note") { root.append(el("p", { cls: "note-row", textContent: m.content })); return; }
+  if (m.role === "user") fillUser(root, m, c); else fillAssistant(root, m, c);
+}
+
+function copyButton(text: string): HTMLButtonElement {
+  const b = iconButton("copy", "Копировать", async () => {
+    try { await navigator.clipboard.writeText(text); b.replaceChildren(icon("check", 16)); setTimeout(() => b.replaceChildren(icon("copy", 16)), 1500); } catch { b.title = "Не удалось скопировать"; }
+  }, "icon-btn sm");
+  return b;
+}
+
+function fillUser(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
+  if (c.editing) {
+    const ta = el("textarea", { value: m.content, cls: "edit-input", rows: 3, maxLength: 100000, attrs: { "aria-label": "Редактирование сообщения" } });
+    const cancel = el("button", { type: "button", cls: "btn", textContent: "Отмена" });
+    const save = el("button", { type: "button", cls: "btn primary", textContent: "Отправить" });
+    cancel.addEventListener("click", () => c.onCancelEdit());
+    save.addEventListener("click", () => c.onSaveEdit(m.id, ta.value));
+    ta.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel.click(); } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) save.click(); });
+    root.append(el("div", { cls: "edit-box" }, ta, el("div", { cls: "row" }, cancel, save)));
+    queueMicrotask(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+    return;
+  }
+  if (m.files?.length) root.append(el("div", { cls: "msg-files" }, ...m.files.map((f) => el("span", { cls: "file-chip", title: f.name }, icon("file", 14), el("span", { cls: "file-name", textContent: f.name }), el("span", { cls: "muted", textContent: formatBytes(f.size) })))));
+  if (m.content) root.append(el("div", { cls: "bubble", textContent: m.content }));
+  const actions = el("div", { cls: "msg-actions" }, el("span", { cls: "msg-time", textContent: time(m.at) }), copyButton(m.content));
+  if (!c.busy) actions.append(iconButton("edit", "Изменить сообщение", () => c.onEdit(m.id), "icon-btn sm"));
+  if (m.content.trim()) actions.append(iconButton("memory", "Запомнить это", () => c.onRemember(m.content), "icon-btn sm"));
+  root.append(actions);
+}
+
+function stepsBlock(steps: Step[]): HTMLElement {
+  const running = steps.some((s) => s.status === "running");
+  const d = el("details", { cls: "steps" + (running ? " running" : ""), open: running },
+    el("summary", {}, running ? el("i", { cls: "spin" }) : icon("check", 14), el("span", { textContent: running ? stepLabel(steps.find((s) => s.status === "running")!.name) + "…" : `Шагов выполнено: ${steps.length}` })));
+  for (const s of steps) {
+    d.append(el("div", { cls: `step ${s.status}` },
+      s.status === "running" ? el("i", { cls: "spin" }) : el("span", { cls: "step-icon", textContent: STEP_ICON[s.status], attrs: { "aria-label": STEP_TITLE[s.status] } }),
+      el("span", { cls: "grow", textContent: stepLabel(s.name) }), el("span", { cls: "muted", textContent: s.ms !== undefined ? (s.ms < 1000 ? `${s.ms} мс` : `${(s.ms / 1000).toFixed(1)} с`) : "" })));
+  }
+  return d;
+}
+
+function fillAssistant(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
+  if (m.scene) root.append(el("div", { cls: "scene" }, el("em", { textContent: m.scene.action }), ...(m.scene.phrase ? [el("p", { textContent: "«" + m.scene.phrase + "»" })] : [])));
+  if (m.steps?.length) root.append(stepsBlock(m.steps));
+  const prose = el("div", { cls: "prose" + (c.streaming ? " streaming" : "") });
+  if (m.content) prose.append(renderMarkdown(m.content));
+  else if (c.streaming && !m.steps?.some((s) => s.status === "running")) prose.append(el("span", { cls: "typing", attrs: { "aria-label": "JUUNIBI печатает" } }, el("i"), el("i"), el("i")));
+  if (prose.childNodes.length) root.append(prose);
+  if (m.stopped) root.append(el("p", { cls: "note", textContent: "Генерация остановлена." }));
+  if (m.error && !m.stopped) {
+    const retry = el("button", { type: "button", cls: "btn", textContent: "Повторить" });
+    retry.addEventListener("click", () => { void c.ctl.regenerate(c.convId); });
+    root.append(el("div", { cls: "error-box", attrs: { role: "alert" } }, icon("alert", 16), el("span", { textContent: m.error }), c.isLast && !c.busy ? retry : null));
+  }
+  if (m.memoryUsed?.length) {
+    root.append(el("details", { cls: "mem-used" }, el("summary", {}, icon("memory", 14), el("span", { textContent: `Использована память · ${m.memoryUsed.length}` })),
+      el("ul", {}, ...m.memoryUsed.map((t) => el("li", { textContent: t })))));
+  }
+  if (c.streaming) return;
+  const actions = el("div", { cls: "msg-actions" }, el("span", { cls: "msg-time", textContent: time(m.at) }));
+  if (m.content) {
+    actions.append(copyButton(m.content));
+    if (m.turnId) for (const [name, label, r] of [["up", "Хороший ответ", 1], ["down", "Плохой ответ", -1]] as const) {
+      const b = iconButton(name, label, () => void c.ctl.rate(c.convId, m, r), "icon-btn sm");
+      b.setAttribute("aria-pressed", String(m.rating === r));
+      actions.append(b);
+    }
+    if (speechSupported()) {
+      const b = iconButton("volume", c.speaking ? "Остановить озвучку" : "Озвучить", () => c.onSpeak(m), "icon-btn sm");
+      b.setAttribute("aria-pressed", String(c.speaking));
+      actions.append(b);
+    }
+  }
+  if (c.isLast && !c.busy) actions.append(iconButton("refresh", "Сгенерировать заново", () => void c.ctl.regenerate(c.convId), "icon-btn sm"));
+  if (actions.childElementCount > 1) root.append(actions);
+}

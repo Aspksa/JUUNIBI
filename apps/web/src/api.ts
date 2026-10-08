@@ -33,6 +33,7 @@ export const api = {
   chat: (message: string) => attemptAsync(() => call<ChatReply>("/api/chat", post({ message }))),
   feedback: (turnId: string, rating: 1 | -1) => attemptAsync(() => call("/api/feedback", post({ turnId, rating }))),
   reflect: (turnId: string) => attemptAsync(() => call<MemoryItem[]>("/api/reflect", post({ turnId }))),
+  addMemory: (text: string, kind: "fact" | "preference" = "fact") => attemptAsync(() => call<MemoryItem>("/api/memory", post({ text, kind }))),
   memory: () => attemptAsync(() => call<MemoryItem[]>("/api/memory")),
   approve: (id: string) => attemptAsync(() => call(`/api/memory/${id}/approve`, post({}))),
   forget: (id: string) => attemptAsync(() => call(`/api/memory/${id}`, { method: "DELETE" })),

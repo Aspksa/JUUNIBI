@@ -76,8 +76,8 @@ kernel.register({
       void refreshStatus();
       queueMicrotask(() => chatWin.focus());
     };
-    const closeChat = () => { app.set({ chatOpen: false }); chatWin.root.hidden = true; avatar.focus(); };
-    chatWin.setHandlers(closeChat, () => { closeChat(); go("settings"); });
+    const closeChat = () => { app.set({ chatOpen: false }); chatWin.root.hidden = true; chatWin.onClosed(); avatar.focus(); };
+    chatWin.setHandlers(closeChat, (r) => { closeChat(); go(r); });
     addEventListener("keydown", (e) => {
       if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (app.get().chatOpen) closeChat(); else openChat(); }
       else if (e.key === "Escape" && app.get().chatOpen && !e.defaultPrevented) { if (chatWin.escape() === "close") closeChat(); }

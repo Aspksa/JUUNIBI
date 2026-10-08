@@ -41,7 +41,9 @@ describe("api", () => {
     expect((await (await post(base, "/api/feedback", { turnId: r.turnId, rating: 1 })).json()).ok).toBe(true);
     expect((await post(base, "/api/chat", { message: "  " })).status).toBe(400);
     expect((await post(base, "/api/feedback", { turnId: "x", rating: 5 })).status).toBe(400);
-    expect((await post(base, "/api/chat", { message: "x".repeat(70_000) })).status).toBe(413);
+    expect((await post(base, "/api/chat", { message: "x".repeat(800_000) })).status).toBe(413); // body too large
+    expect((await post(base, "/api/chat", { message: "x".repeat(120_000) })).status).toBe(400); // message too long
+    expect((await post(base, "/api/chat", { message: "x".repeat(90_000) })).status).toBe(200); // attached files fit
     expect((await post(base, "/api/chat", { message: "x" }, { origin: "http://evil.com" })).status).toBe(403);
   });
   it("lists modules and memory; unknown route 404", async () => {
@@ -65,5 +67,21 @@ describe("api", () => {
     expect((await post(base, "/api/chat/stream", { message: " " })).status).toBe(400);
     expect((await post(base, "/api/chat/stream", { message: "x" }, { origin: "http://evil.com" })).status).toBe(403);
     expect((await post(bareBase, "/api/chat/stream", { message: "x" })).status).toBe(503);
+  });
+  it("POST /api/memory stores an active entry on explicit user request; validates", async () => {
+    const r = await post(base, "/api/memory", { text: "Люблю чай без сахара", kind: "preference" });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ status: "active", kind: "preference", text: "Люблю чай без сахара" });
+    expect((await post(base, "/api/memory", { text: " " })).status).toBe(400);
+    expect((await post(base, "/api/memory", { text: "x".repeat(2001) })).status).toBe(400);
+    expect((await post(base, "/api/memory", { text: "x" }, { origin: "http://evil.com" })).status).toBe(403);
+    const list = await (await fetch(base + "/api/memory?status=active")).json();
+    expect(list.some((m: { text: string }) => m.text === "Люблю чай без сахара")).toBe(true);
+  });
+  it("stream done event includes the memories used", async () => {
+    await post(base, "/api/memory", { text: "кофе без сахара", kind: "fact" });
+    const res = await post(base, "/api/chat/stream", { message: "какой кофе я пью" });
+    const events = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.at(-1).memory).toContain("кофе без сахара");
   });
 });
