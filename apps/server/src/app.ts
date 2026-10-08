@@ -6,7 +6,10 @@ import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 import type { ProjectUpdater } from "./updater";
 export interface AppDeps {
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
-  assistant: Assistant | undefined;
+  getAssistant?: () => Assistant | undefined;
+  cloudStatus?: () => { configured: boolean; model: string };
+  saveCloud?: (apiKey: string) => Promise<void>;
+  assistant?: Assistant | undefined;
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
   modules: () => unknown;
@@ -71,8 +74,16 @@ export function createApp(deps: AppDeps): http.Server {
 
       if (p.startsWith("/api/")) {
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
-        const a = deps.assistant;
+        const a = deps.getAssistant?.() ?? deps.assistant;
         if (req.method === "GET" && p === "/api/status") return send(res, 200, { assistant: !!a, ...deps.configured });
+        if (req.method === "GET" && p === "/api/cloudru") return send(res, 200, deps.cloudStatus?.() ?? { configured: !!a, model: deps.configured.model });
+        if (req.method === "POST" && p === "/api/cloudru") {
+          if (!deps.saveCloud) return send(res, 503, { error: "Настройки недоступны" });
+          const b = await readJson(req);
+          if (typeof b.apiKey !== "string") return send(res, 400, { error: "Введите API-ключ" });
+          await deps.saveCloud(b.apiKey.trim());
+          return send(res, 200, deps.cloudStatus?.() ?? { configured: true });
+        }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
         if (req.method === "POST" && p === "/api/update/check") {
