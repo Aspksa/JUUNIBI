@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
-import { Assistant, CloudRuProvider, Memory, assistantPlugin, type StorageAdapter } from "@juunibi/assistant";
+import { Assistant, CloudRuProvider, Memory, assistantPlugin, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
 import { createApp } from "./app";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -37,12 +37,25 @@ const dataDir = path.join(root, "data");
 const { CLOUDRU_API_KEY: apiKey, CLOUDRU_MODEL: model, CLOUDRU_BASE_URL: baseUrl } = process.env;
 
 let assistant: Assistant | undefined;
+const approvalGate = new ApprovalGate(async (event) => {
+  await mkdir(dataDir, { recursive: true });
+  await auditWrite(event);
+});
+let auditQueue = Promise.resolve();
+function auditWrite(event: unknown): Promise<void> {
+  const line = JSON.stringify(event) + "\\n";
+  auditQueue = auditQueue.then(async () => {
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(path.join(dataDir, "agent-audit.jsonl"), line, { mode: 0o600 });
+  });
+  return auditQueue;
+}
 let hint: string | undefined;
 if (apiKey && model) {
   const llm = new CloudRuProvider({ apiKey, model, ...(baseUrl ? { baseUrl } : {}) });
   kernel.register(
     assistantPlugin(
-      { llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")) },
+      { llm, memory: new Memory(fileStore(path.join(dataDir, "memory.json"))), turnsStore: fileStore(path.join(dataDir, "turns.json")), approve: (req) => approvalGate.request(req) },
       () => kernel.describe(),
       (a) => (assistant = a),
     ),
@@ -58,12 +71,13 @@ const port = Number(process.env.PORT ?? 4173);
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
 const server = createApp({
   assistant,
+  approvals: approvalGate,
   modules: () => kernel.describe(),
   staticDir,
   configured: { ...(model ? { model } : {}), ...(hint ? { hint } : {}) },
 });
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
-const shutdown = async () => { server.close(); await kernel.stop(); process.exit(0); };
+const shutdown = async () => { approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
