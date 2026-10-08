@@ -92,6 +92,7 @@ export function createApp(deps: AppDeps): http.Server {
           return send(res, 200, await deps.scenes.next());
         }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
+        if (req.method === "GET" && p === "/api/update/events") return send(res, 200, await deps.updater?.events() ?? []);
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
         if (req.method === "POST" && p === "/api/update/check") {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
