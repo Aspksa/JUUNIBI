@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, rm, stat } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -30,7 +30,7 @@ export class ProjectUpdater {
     const sha = String(response.sha);
     if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("Неверный идентификатор GitHub");
     const version = String(response.commit?.message ?? "").split("\n")[0]!.slice(0, 160);
-    this.latest = { sha, version: sha.slice(0, 8), description: version || "Обновление из основной ветки", date: String(response.commit?.committer?.date ?? "") };
+    this.latest = { sha, version: sha.slice(0, 8), description: "Обновление проекта из GitHub. Коммит: " + (version || "без описания"), date: String(response.commit?.committer?.date ?? "") };
     return this.status();
   }
   async start() {
@@ -102,7 +102,7 @@ function gitHash(buf: Buffer) {
   return createHash("sha1").update("blob " + buf.length + "\0").update(buf).digest("hex");
 }
 function safeRelative(p: string) {
-  return !!p && !p.startsWith("/") && !p.includes("\\") && p.split("/").every(s => !!s && s !== "." && s !== ".." && s !== ".git" && s !== ".updates");
+  return !!p && !p.startsWith("/") && !p.includes("\\") && p.split("/").every(s => !!s && s !== "." && s !== ".." && ![".git", ".updates", ".env", "data", ".runtime", "node_modules"].includes(s));
 }
 import { readFileSync } from "node:fs";
 function requireMarker(root: string): string {
