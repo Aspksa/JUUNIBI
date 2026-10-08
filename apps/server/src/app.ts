@@ -118,6 +118,22 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.approvals) return send(res, 404, { error: "Подтверждения недоступны" });
           return send(res, deps.approvals.decide(approvalMatch[1]!, approvalMatch[2] === "approve") ? 200 : 404, { ok: true });
         }
+        if (req.method === "POST" && p === "/api/chat/stream") {
+          const b = await readJson(req);
+          const msg = typeof b.message === "string" ? b.message.trim() : "";
+          if (!msg || msg.length > 8000) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
+          const session = typeof b.session === "string" ? b.session.slice(0, 64) : "default";
+          const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
+          const ctl = new AbortController();
+          res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
+          res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-accel-buffering": "no" });
+          const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
+          try {
+            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line });
+            line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools });
+          } catch (e) { line({ type: "error", message: ctl.signal.aborted ? "Остановлено" : (e as Error).message }); }
+          return void res.end();
+        }
         if (req.method === "POST" && p === "/api/chat") {
           const b = await readJson(req);
           const msg = typeof b.message === "string" ? b.message.trim() : "";
@@ -125,7 +141,8 @@ export function createApp(deps: AppDeps): http.Server {
           const session = typeof b.session === "string" ? b.session.slice(0, 64) : "default";
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
-          return send(res, 200, await a.ask(msg, session, ctl.signal));
+          const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
+          return send(res, 200, await a.ask(msg, session, ctl.signal, history ? { history } : {}));
         }
         if (req.method === "POST" && p === "/api/feedback") {
           const b = await readJson(req);

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Kernel, Logger } from "@juunibi/core";
-import { Assistant, CloudRuProvider, LlmError, Memory, ToolRegistry, assistantPlugin, type LlmProvider, type LlmResponse, type Message } from "../src";
+import { Assistant, CloudRuProvider, LlmError, readStream, Memory, ToolRegistry, assistantPlugin, type LlmProvider, type LlmResponse, type Message } from "../src";
 
 const quiet = new Logger("t", "silent");
 function scripted(...rs: LlmResponse[]): LlmProvider & { seen: Message[][] } {
@@ -132,5 +132,67 @@ describe("CloudRuProvider", () => {
   it("rejects missing key/model", () => {
     expect(() => new CloudRuProvider({ apiKey: "", model: "m" })).toThrow();
     expect(() => new CloudRuProvider({ apiKey: "k", model: "" })).toThrow();
+  });
+});
+
+describe("streaming", () => {
+  const sse = (...chunks: string[]) => new Response(new ReadableStream({ start(c) { for (const x of chunks) c.enqueue(new TextEncoder().encode(x)); c.close(); } }), { status: 200, headers: { "content-type": "text/event-stream" } });
+  const d = (o: unknown) => `data: ${JSON.stringify(o)}\n\n`;
+
+  it("readStream assembles text and tool-call fragments split across chunks", async () => {
+    const texts: string[] = [];
+    const body = sse(
+      d({ choices: [{ delta: { content: "При" } }] }),
+      'data: {"choices":[{"delta":{"content":"вет"}}]}\n',
+      '\ndata: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"list_","arguments":"{\\"a\\":"}}]}}]}\n\n',
+      d({ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "modules", arguments: "1}" } }] } }] }),
+      "data: [DONE]\n\n",
+    ).body!;
+    const r = await readStream(body, (t) => texts.push(t));
+    expect(texts.join("")).toBe("Привет");
+    expect(r.content).toBe("Привет");
+    expect(r.toolCalls).toEqual([{ id: "c1", name: "list_modules", arguments: '{"a":1}' }]);
+  });
+
+  it("CloudRuProvider streams when onText is given, and sends stream:true", async () => {
+    const f = vi.fn(async () => sse(d({ choices: [{ delta: { content: "a" } }] }), d({ choices: [{ delta: { content: "b" } }] }), "data: [DONE]\n\n"));
+    const got: string[] = [];
+    const r = await new CloudRuProvider({ apiKey: "k-12345678", model: "m", fetch: f as never }).chat([], { onText: (t) => got.push(t) });
+    expect(got).toEqual(["a", "b"]);
+    expect(r.content).toBe("ab");
+    expect(JSON.parse((f.mock.calls[0] as unknown as [string, RequestInit])[1].body as string).stream).toBe(true);
+  });
+
+  it("falls back to a whole-text delta when the server ignores stream", async () => {
+    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: "целиком" } }] }), { status: 200 });
+    const got: string[] = [];
+    await new CloudRuProvider({ apiKey: "k-12345678", model: "m", fetch: f as never }).chat([], { onText: (t) => got.push(t) });
+    expect(got).toEqual(["целиком"]);
+  });
+
+  it("surfaces an error event from the stream", async () => {
+    const body = sse(d({ error: { message: "quota" } })).body!;
+    await expect(readStream(body, () => {})).rejects.toThrow(/quota/);
+  });
+
+  it("Assistant.ask emits delta/tool events and uses client history instead of server sessions", async () => {
+    const seen: Message[][] = [];
+    const llm: LlmProvider = {
+      chat: async (m, o) => {
+        seen.push(structuredClone(m));
+        if (seen.length === 1) { o?.onText?.("Смотрю… "); return { content: "Смотрю… ", toolCalls: [{ id: "1", name: "list_modules", arguments: "{}" }] }; }
+        o?.onText?.("Готово"); return { content: "Готово", toolCalls: [] };
+      },
+    };
+    const a = new Assistant({ llm, log: quiet });
+    const events: unknown[] = [];
+    const r = await a.ask("что нового?", "s1", undefined, { history: [{ role: "user", content: "привет" }, { role: "assistant", content: "здравствуйте" }], onEvent: (e) => events.push(e) });
+    expect(events).toEqual([{ type: "delta", text: "Смотрю… " }, { type: "tool", name: "list_modules" }, { type: "delta", text: "Готово" }]);
+    expect(r.reply).toBe("Готово");
+    expect(seen[0]!.map((m) => m.content).slice(1)).toEqual(["привет", "здравствуйте", "что нового?"]);
+    // server-side session memory was NOT touched: a later call without history starts clean
+    seen.length = 0;
+    await a.ask("второй", "s1");
+    expect(seen[0]!.filter((m) => m.role !== "system")).toHaveLength(1);
   });
 });

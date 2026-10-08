@@ -5,7 +5,7 @@ import { Assistant, type LlmProvider } from "@juunibi/assistant";
 import { Logger } from "@juunibi/core";
 import { createApp, hostAllowed, originAllowed } from "../src/app";
 
-const llm: LlmProvider = { chat: async () => ({ content: "привет", toolCalls: [] }) };
+const llm: LlmProvider = { chat: async (_m, o) => { o?.onText?.("при"); o?.onText?.("вет"); return { content: "привет", toolCalls: [] }; } };
 let server: http.Server, base: string, port: number;
 let bare: http.Server, bareBase: string;
 
@@ -54,5 +54,16 @@ describe("api", () => {
     expect(r.status).toBe(503);
     expect((await r.json()).error).toContain(".env");
     expect((await (await fetch(bareBase + "/api/status")).json()).assistant).toBe(false);
+  });
+  it("streams NDJSON events: deltas then done; validates input", async () => {
+    const res = await post(base, "/api/chat/stream", { message: "привет", history: [{ role: "user", content: "a" }, { role: "assistant", content: "b" }] });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+    const events = (await res.text()).trim().split("\n").map((l) => JSON.parse(l));
+    expect(events.filter((e) => e.type === "delta").map((e) => e.text).join("")).toBe("привет");
+    expect(events.at(-1)).toMatchObject({ type: "done", reply: "привет" });
+    expect((await post(base, "/api/chat/stream", { message: " " })).status).toBe(400);
+    expect((await post(base, "/api/chat/stream", { message: "x" }, { origin: "http://evil.com" })).status).toBe(403);
+    expect((await post(bareBase, "/api/chat/stream", { message: "x" })).status).toBe(503);
   });
 });
