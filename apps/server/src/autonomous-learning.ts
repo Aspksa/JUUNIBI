@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chooseLearningTopic } from "./learning-priorities";
 import { LearningProgress } from "./learning-progress";
+import { ReasoningEvaluation } from "./reasoning-evaluation";
 import { makeReasoningTask, checkReasoningAnswer } from "./reasoning-assessment";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
