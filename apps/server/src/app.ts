@@ -7,6 +7,7 @@ import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
 import type { BrainCore } from "./brain";
 import type { AutonomousLearning } from "./autonomous-learning";
+import type { KnowledgeLedger } from "./knowledge-ledger";
 export interface AppDeps {
   /** Long-term memory is available (and editable by the user) even before an API key is configured. */
   memory?: import("@juunibi/assistant").Memory;
@@ -20,6 +21,7 @@ export interface AppDeps {
   scenes?: SceneEngine;
   brain?: BrainCore;
   learning?: AutonomousLearning;
+  knowledge?: KnowledgeLedger;
   modules: () => unknown;
   staticDir?: string;
   configured: { model?: string; hint?: string };
@@ -101,6 +103,25 @@ export function createApp(deps: AppDeps): http.Server {
         }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
         if (req.method === "GET" && p === "/api/memory/diagnostics") return send(res, 200, (deps.memory ?? a?.memory)?.embeddingDiagnostics() ?? { configured: false, mode: "unavailable" });
+        if (req.method === "GET" && p === "/api/knowledge") return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.list() ?? { error: "Память знаний недоступна" });
+        if (req.method === "GET" && p === "/api/knowledge/due") return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.due() ?? { error: "Память знаний недоступна" });
+        // Owner-operated API, never callable by the autonomous learning engine.
+        if (req.method === "POST" && p === "/api/knowledge/confirm") {
+          if (!deps.knowledge) return send(res, 503, { error: "Память знаний недоступна" });
+          const b = await readJson(req);
+          if (typeof b.claim !== "string" || typeof b.topic !== "string" || typeof b.source !== "string") return send(res, 400, { error: "Укажите тему, утверждение и источник" });
+          const item = deps.knowledge.addVerified({ claim: b.claim, topic: b.topic, source: b.source, evidence: "owner-confirmed" });
+          await deps.knowledge.flush();
+          return send(res, 201, item);
+        }
+        if (req.method === "POST" && p === "/api/knowledge/review") {
+          if (!deps.knowledge) return send(res, 503, { error: "Память знаний недоступна" });
+          const b = await readJson(req);
+          if (typeof b.id !== "string" || typeof b.correct !== "boolean") return send(res, 400, { error: "Некорректный результат повторения" });
+          const item = deps.knowledge.review(b.id, b.correct);
+          await deps.knowledge.flush();
+          return send(res, 200, item);
+        }
         if (req.method === "GET" && p === "/api/learning") return send(res, deps.learning ? 200 : 503, deps.learning?.status() ?? { error: "Обучение недоступно" });
         if (req.method === "POST" && p === "/api/learning/settings") {
           if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });

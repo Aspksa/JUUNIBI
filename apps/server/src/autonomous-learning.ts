@@ -43,7 +43,8 @@ export class AutonomousLearning {
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
   constructor(private readonly file: string, private readonly ask: (question: string, maxTokens: number) => Promise<{ text: string; tokens: number }>,
-    private readonly topics: () => string[]) {}
+    private readonly topics: () => string[],
+    private readonly onVerifiedMath?: (fact: { claim: string; source: string }) => Promise<void>) {}
   async load() {
     try {
       const v = JSON.parse(await readFile(this.file, "utf8")) as Record<string, unknown>;
@@ -119,6 +120,10 @@ export class AutonomousLearning {
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "deepseek", text: redact(result.text), status: "unverified" });
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
       const verified = !!check && result.text.trim() === String(check.left * check.right);
+      if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
+        claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
+        source: "Локальная детерминированная проверка арифметики",
+      });
       const verificationText = check
         ? verified ? "Математический ответ проверен локальным вычислением; другие утверждения не проверены."
           : "Ответ не прошёл независимую математическую проверку."

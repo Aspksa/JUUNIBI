@@ -9,6 +9,7 @@ import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
 import { AutonomousLearning } from "./autonomous-learning";
+import { KnowledgeLedger } from "./knowledge-ledger";
 import { durableMemoryStore } from "./durable-memory-store";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -48,6 +49,7 @@ const MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 let activeModel: string | undefined;
 let cloudConfigured = false;
 let sceneLlm: CloudRuProvider | undefined;
+const knowledge = new KnowledgeLedger(path.join(dataDir, "verified-knowledge.json"));
 let learningKey: string | undefined;
 const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
   if (!learningKey) throw new Error("Cloud.ru не настроен");
@@ -65,11 +67,15 @@ const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.
     const json = await response.json() as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
     return { text: json.choices?.[0]?.message?.content ?? "", tokens: json.usage?.total_tokens ?? 1500 };
   } finally { clearTimeout(timeout); }
-}, () => moduleList().map(m => m.name));
+}, () => moduleList().map(m => m.name), async fact => {
+  knowledge.addVerified({ topic: "математика", ...fact, evidence: "deterministic-test" });
+  await knowledge.flush();
+});
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
 await brain.load();
 await learning.load();
+await knowledge.load();
 interface ModuleInfo { name: string; title: string; deps: string[]; status: "started" | "pending" | "failed"; note: string }
 /** Real server components with their live state — shown on the Modules page and given to the assistant. */
 function moduleList(): ModuleInfo[] {
@@ -179,6 +185,7 @@ const server = createApp({
   updater,
   brain,
   learning,
+  knowledge,
   scenes,
   modules: () => moduleList(),
   staticDir,

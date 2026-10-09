@@ -41,6 +41,25 @@ describe("autonomous learning", () => {
       expect(statuses).toEqual(["pending", "pending", "verified"]);
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
+  it("promotes only independently correct arithmetic and respects memory setting", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-promote-"));
+    try {
+      const saved: string[] = [];
+      const answer = async (q: string) => {
+        const m = /Вычисли (\d+) × (\d+)/.exec(q);
+        return { text: m ? String(Number(m[1]) * Number(m[2])) : "unverified", tokens: 10 };
+      };
+      const learner = new AutonomousLearning(path.join(dir, "a.json"), answer, () => [],
+        async (fact) => { saved.push(fact.claim); });
+      await learner.tick();
+      await learner.tick();
+      expect((await learner.tick())).toEqual({ ok: true, verified: true });
+      expect(saved).toHaveLength(1);
+      await learner.configure({ memory: false });
+      for (let i = 0; i < 7; i++) await learner.tick();
+      expect(saved).toHaveLength(1);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it("does not invoke the model when disabled", async () => {
     const ask = vi.fn();
     const e = new AutonomousLearning("unused", ask, () => []);

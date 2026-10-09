@@ -20,7 +20,7 @@ export function brainPage(): HTMLElement {
         el("p", { cls: "muted", textContent: "Статус: " + p.status }),
         el("ol", {}, ...p.steps.map(step => el("li", { textContent: step.title + " — " + step.status }))))) :
         [el("p", { cls: "muted", textContent: "Пока нет планов. Попросите JUUNIBI составить план прямо в чате." })]));
-    content.replaceChildren(info, plans, learningPanel());
+    content.replaceChildren(info, plans, learningPanel(), knowledgePanel());
   });
   return root;
 }
@@ -72,4 +72,36 @@ export function learningPanel(): HTMLElement {
   }
   void render();
   return box;
+}
+
+/** Owner-reviewed knowledge and spaced-repetition dashboard. No AI output is auto-approved. */
+export function knowledgePanel(): HTMLElement {
+  const root = section("Проверенные знания Brain 4.0", el("p", { textContent: "Загрузка…" }));
+  const load = async () => {
+    try {
+      const r = await fetch("/api/knowledge");
+      if (!r.ok) throw new Error(String(r.status));
+      const rows = await r.json() as { id: string; topic: string; claim: string; source: string; status: string; nextReviewAt: string }[];
+      const entries = rows.slice(-50).reverse().map(item => {
+        const yes = el("button", { type: "button", textContent: "Повторил — верно" });
+        const no = el("button", { type: "button", textContent: "Нужна проверка" });
+        const report = async (correct: boolean) => {
+          await fetch("/api/knowledge/review", { method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: item.id, correct }) }); void load();
+        };
+        yes.addEventListener("click", () => void report(true));
+        no.addEventListener("click", () => void report(false));
+        return el("div", { cls: "pg-card" },
+          el("strong", { textContent: item.topic + " · " + item.status }),
+          el("p", { textContent: item.claim }),
+          el("p", { cls: "muted", textContent: "Источник: " + item.source + " · повторение: " + item.nextReviewAt }),
+          yes, no);
+      });
+      root.replaceChildren(el("h2", { textContent: "Память обучения" }),
+        el("p", { cls: "muted", textContent: "Добавление знаний требует отдельного подтверждения. Ответы DeepSeek не становятся фактами автоматически." }),
+        ...entries, ...(entries.length ? [] : [el("p", { textContent: "Подтверждённых учебных знаний пока нет." })]));
+    } catch { root.replaceChildren(el("p", { textContent: "Реестр знаний недоступен." })); }
+  };
+  void load();
+  return root;
 }
