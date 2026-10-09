@@ -131,7 +131,8 @@ export class AutonomousLearning {
       this.tokens += Math.max(0, Math.ceil(result.tokens));
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "deepseek", text: redact(result.text), status: "unverified" });
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
-      const verified = reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
+      const graded = structured ? this.reasoningEvaluation.evaluate(structured, result.text) : null;
+      const verified = graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
       if (check || reasoning) this.progress.record(verified);
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
