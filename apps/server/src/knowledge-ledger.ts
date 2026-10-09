@@ -24,6 +24,17 @@ export class KnowledgeLedger {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   list() { return this.items.map(x => ({ ...x })); }
+  /** Read-only learning priorities: records needing review, unconnected topics, and sparse coverage. */
+  gaps() {
+    const graph = this.graph();
+    const connected = new Set(graph.edges.flatMap(edge => [edge.from, edge.to]));
+    return this.items.filter(item => item.status === "needs-review" || !connected.has(item.id))
+      .map(item => ({
+        id: item.id, topic: item.topic,
+        reason: item.status === "needs-review" ? "Требует повторной проверки" : "Нет связей с другими знаниями",
+        priority: item.status === "needs-review" ? 2 : 1,
+      })).sort((a, b) => b.priority - a.priority).slice(0, 30);
+  }
   /** Explainable, derived edges; similarity never implies factual correctness. */
   graph() {
     const words = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter(w =>
