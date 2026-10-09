@@ -168,6 +168,11 @@ export function createApp(deps: AppDeps): http.Server {
           const input = await readJson(req);
           return send(res, 200, deps.brain.previewActivePlan(input.planId as string, input as unknown as Parameters<BrainCore["previewActivePlan"]>[1]));
         }
+        if (req.method === "POST" && p === "/api/brain/review-tool-outcome") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.reviewToolOutcome(input as unknown as import("./tool-outcome-review").ToolOutcomeEvidence));
+        }
         if (req.method === "POST" && p === "/api/brain/preview-thought-cycle") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
