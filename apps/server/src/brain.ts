@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { reviewLearningCase, type LearningCase } from "./learning-repair-review";
 import { DecisionMemory } from "./decision-memory";
 import { analyzeTaskPatterns } from "./task-patterns";
 import { rankWithExperience, type RankingOption } from "./experience-ranking";
@@ -19,6 +20,7 @@ export class BrainCore {
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
+  reviewRepairs(input: LearningCase) { return reviewLearningCase(input, this.decisions.snapshot()); }
   rankDecisions(options: RankingOption[], enabled = true) { return { ranked: rankWithExperience(options, this.decisions.snapshot(), enabled), requiresApproval: true as const }; }
   recordDecision(input: {goal:string;chosen:string;reason:string;predictedSuccess:boolean;taskType?:string}) { const result=this.decisions.record(input);this.persist();return result; }
   confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();return result; }
