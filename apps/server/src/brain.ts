@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { auditDraftPlan, type DraftPlan } from "./plan-25-audit";
 import { RecoveryTrials } from "./recovery-trials";
 import { rankRecoveryStrategies } from "./recovery-strategy-ranking";
 import { analyzeToolFailures } from "./tool-failure-patterns";
@@ -32,6 +33,7 @@ export interface BrainPlan { id: string; goal: string; createdAt: string; status
 export interface BrainStorage { load(): Promise<string | null>; save(data: string): Promise<void> }
 export class BrainCore {
   private mode: BrainMode = "chat";
+  audit25StagePlan(input:DraftPlan){return auditDraftPlan(input);}
   private readonly revisions = new RevisionHistory();
   revisionHistory() { return this.revisions.snapshot(); }
   reviewRevisionFreshness(input: FreshnessRequest) { return assessRevisionFreshness(input, this.revisions.snapshot()); }
