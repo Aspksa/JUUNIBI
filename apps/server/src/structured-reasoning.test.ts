@@ -13,7 +13,7 @@ describe("Brain 4.5 structural reasoning", () => {
   }
   it("identifies first wrong intermediate step", () => {
     const t = makeStructuredTask("multi-step", 3);
-    const corrupted = [t.steps[0], t.steps[1]+1, t.steps[2]].join(",");
+    const corrupted = [t.steps[0], t.steps[1]!+1, t.steps[2]].join(",");
     expect(gradeStructuredTask(t, corrupted)).toEqual({ correct:false, firstIncorrectStep:2 });
     expect(gradeStructuredTask(t, "1,2")).toEqual({ correct:false, firstIncorrectStep:1 });
   });
