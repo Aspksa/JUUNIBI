@@ -21,7 +21,7 @@ describe("Brain 7.0 safe knowledge suggestions", () => {
       const a=ledger.addVerified({topic:"наука",claim:"Проверенное утверждение A",source:"user",evidence:"owner-confirmed"});
       const b=ledger.addVerified({topic:"наука",claim:"Проверенное утверждение B",source:"user",evidence:"owner-confirmed"});
       ledger.review(a.id,false);
-      expect(ledger.gaps()).toEqual([expect.objectContaining({id:a.id,priority:2,count:1})]);
+      expect(ledger.gaps()).toEqual([expect.objectContaining({id:a.id,priority:2,count:1}),expect.objectContaining({id:b.id,priority:1,count:1})]);
       expect(ledger.suggestedLinks()).toHaveLength(0);
     }finally{await rm(dir,{recursive:true,force:true});}
   });
