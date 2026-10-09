@@ -9,6 +9,7 @@ import type { BrainCore } from "./brain";
 import type { PlanOption, PlanLimits } from "./plan-evaluator";
 import type { SequenceStep } from "./sequence-simulator";
 import type { DecisionBranch, DecisionEvent } from "./decision-tree";
+import type { RankingOption } from "./experience-ranking";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
@@ -149,6 +150,11 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "POST" && p === "/api/learning/step") {
           if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
           return send(res, 200, await deps.learning.tick());
+        }
+        if (req.method === "POST" && p === "/api/brain/rank-with-experience") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.rankDecisions(input.options as RankingOption[], input.enabled !== false));
         }
         if (req.method === "GET" && p === "/api/brain/decision-history")
           return send(res, deps.brain ? 200 : 503, deps.brain?.decisionHistory() ?? { error: "Мозг недоступен" });
