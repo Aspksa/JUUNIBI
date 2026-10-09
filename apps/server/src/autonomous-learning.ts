@@ -46,6 +46,8 @@ export class AutonomousLearning {
   /** Only independently checkable failed arithmetic is eligible for bounded retry. */
   private logicRetry: { kind: "logic" | "transfer"; turn: number; attempts: number } | null = null;
   private logicRetryResults = { attempted: 0, corrected: 0 };
+  private retention: { kind: "logic" | "transfer"; turn: number; dueCursor: number }[] = [];
+  private retentionMetrics = { tested: 0, retained: 0 };
   private mathRetry: { left: number; right: number; attempts: number } | null = null;
   private retryResults = { attempted: 0, corrected: 0 };
   private readonly progress = new LearningProgress();
@@ -83,6 +85,12 @@ export class AutonomousLearning {
       const lm=v.logicRetryResults as {attempted?:unknown;corrected?:unknown}|undefined;
       if (lm && Number.isSafeInteger(lm.attempted) && Number.isSafeInteger(lm.corrected) && Number(lm.attempted)>=0 && Number(lm.corrected)>=0 && Number(lm.corrected)<=Number(lm.attempted))
         this.logicRetryResults={attempted:Number(lm.attempted),corrected:Number(lm.corrected)};
+      if (Array.isArray(v.retention)) this.retention = v.retention.filter((x): x is {kind:"logic"|"transfer";turn:number;dueCursor:number} =>
+        !!x && (x.kind==="logic"||x.kind==="transfer") && Number.isInteger(x.turn) && x.turn>=1 && x.turn<=10000 &&
+        Number.isInteger(x.dueCursor) && x.dueCursor>=1 && x.dueCursor<=1000000).slice(0,20);
+      const rm=v.retentionMetrics as {tested?:unknown;retained?:unknown}|undefined;
+      if(rm && Number.isSafeInteger(rm.tested)&&Number.isSafeInteger(rm.retained)&&Number(rm.tested)>=0&&Number(rm.retained)>=0&&Number(rm.retained)<=Number(rm.tested))
+        this.retentionMetrics={tested:Number(rm.tested),retained:Number(rm.retained)};
       const metrics = v.retryResults as { attempted?: unknown; corrected?: unknown } | undefined;
       if (metrics && Number.isSafeInteger(metrics.attempted) && Number.isSafeInteger(metrics.corrected) &&
           Number(metrics.attempted) >= 0 && Number(metrics.corrected) >= 0 && Number(metrics.corrected) <= Number(metrics.attempted))
@@ -95,7 +103,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -108,7 +116,7 @@ export class AutonomousLearning {
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
-      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, retentionMetrics: { ...this.retentionMetrics }, pendingRetention: this.retention.length, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
     const checks = this.events.filter(e => e.role === "verifier");
@@ -139,13 +147,14 @@ export class AutonomousLearning {
       const previous = [...this.events].reverse().find(e => e.role === "verifier");
       const retry = this.mathRetry;
       const logicRetry = retry ? null : this.logicRetry;
+      const due = !retry && !logicRetry ? this.retention.find(x=>x.dueCursor<=this.cursor+1) : undefined;
       const next = this.areas[this.cursor++ % this.areas.length]!;
-      const subject = retry ? "математика" : logicRetry ? "логика и планирование" : previous?.status === "rejected" && previous.text.includes("математическ")
+      const subject = retry ? "математика" : logicRetry || due ? "логика и планирование" : previous?.status === "rejected" && previous.text.includes("математическ")
         ? "математика" : chooseLearningTopic(next, this.gaps(), this.cursor);
       const level = this.progress.difficulty();
       const check = retry ?? (subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null);
-      const reasoning = logicRetry ? makeReasoningTask(logicRetry.kind, logicRetry.turn) : subject === "логика и планирование" ? makeReasoningTask(this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
-      const structured = !logicRetry && this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
+      const reasoning = logicRetry ? makeReasoningTask(logicRetry.kind, logicRetry.turn) : due ? makeReasoningTask(due.kind, due.turn) : subject === "логика и планирование" ? makeReasoningTask(this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
+      const structured = !logicRetry && !due && this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
       const question = structured ? structured.question : reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
       // Reserve before the network request, including failures, to prevent unlimited retries.
@@ -172,6 +181,14 @@ export class AutonomousLearning {
         this.logicRetry = verified || logicRetry.attempts >= 1 ? null : { ...logicRetry, attempts: logicRetry.attempts + 1 };
       } else if (!retry && reasoning && !structured && !verified) {
         this.logicRetry = { kind: reasoning.kind, turn: Math.min(10000, this.cursor), attempts: 0 };
+      }
+      if (due && reasoning) {
+        this.retention = this.retention.filter(x=>x!==due);
+        this.retentionMetrics.tested++;
+        if (verified) this.retentionMetrics.retained++;
+      } else if (logicRetry && reasoning && verified && this.retention.length<20) {
+        // Delay by at least three subsequent training cycles; only one retention check per correction.
+        this.retention.push({kind:logicRetry.kind,turn:logicRetry.turn,dueCursor:this.cursor+3});
       }
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
