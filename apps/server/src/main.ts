@@ -70,7 +70,7 @@ const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.
 }, () => moduleList().map(m => m.name), async fact => {
   knowledge.addVerified({ topic: "математика", ...fact, evidence: "deterministic-test" });
   await knowledge.flush();
-});
+}, () => knowledge.gaps());
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
 await brain.load();
