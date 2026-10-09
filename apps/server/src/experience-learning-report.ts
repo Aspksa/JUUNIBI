@@ -11,13 +11,17 @@ export function analyzeExperience(observations: ToolObservation[], decisions: De
  const confirmed = decisions.filter(x=>x && (x.observed==="success" || x.observed==="failure"));
  const count=(a:ToolObservation[],s:ToolObservation["status"])=>a.filter(x=>x.status===s).length;
  const rate=(ok:number,total:number)=>total ? Math.round(100*ok/total) : null;
- const byTool=Object.entries(Object.groupBy(tools,x=>x.tool)).map(([name,rows])=>{
+ const toolGroups=new Map<string,ToolObservation[]>();
+ for(const item of tools) toolGroups.set(item.tool,[...(toolGroups.get(item.tool)??[]),item]);
+ const byTool=[...toolGroups.entries()].map(([name,rows])=>{
    const a=rows ?? [];const errors=count(a,"error"),denials=count(a,"denied"),successes=count(a,"ok");
    return {name,attempts:a.length,successes,errors,denials,successRate:rate(successes,a.length),
     recurringErrors:errors>=2,lastObservedAt:a.reduce((m,x)=>x.at>m?x.at:m,""),
     meanElapsedMs:Math.round(a.reduce((n,x)=>n+x.elapsedMs,0)/a.length)};
  }).sort((a,b)=>b.errors-a.errors||a.name.localeCompare(b.name));
- const groups=Object.entries(Object.groupBy(confirmed,x=>x.taskType||"без категории")).map(([name,items])=>{
+ const decisionGroups=new Map<string,DecisionRecord[]>();
+ for(const item of confirmed) { const name=item.taskType||"без категории"; decisionGroups.set(name,[...(decisionGroups.get(name)??[]),item]); }
+ const groups=[...decisionGroups.entries()].map(([name,items])=>{
    const rows=items??[];const success=rows.filter(x=>x.observed==="success").length;
    return {name,confirmed:rows.length,successRate:rate(success,rows.length)};
  }).sort((a,b)=>b.confirmed-a.confirmed||a.name.localeCompare(b.name));
