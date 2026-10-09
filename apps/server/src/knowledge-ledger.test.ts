@@ -16,6 +16,8 @@ describe("Brain 4.0 knowledge ledger", () => {
       ledger.review(b.id, false);
       expect(ledger.graph().edges).toHaveLength(0);
       expect(ledger.graph().nodes.some(n => n.id === c.id)).toBe(true);
+      expect(ledger.gaps().find(g => g.id === b.id)?.priority).toBe(2);
+      expect(ledger.gaps().some(g => g.id === c.id)).toBe(true);
       await ledger.flush();
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
