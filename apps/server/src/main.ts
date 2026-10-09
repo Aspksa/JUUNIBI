@@ -14,6 +14,7 @@ import { KnowledgeLedger } from "./knowledge-ledger";
 import { searchVerifiedKnowledge } from "./brain-knowledge-search";
 import { summarizeChatExperience } from "./brain-chat-experience";
 import { runUnifiedBrainCycle } from "./brain-v4-cycle";
+import { automaticBrainReview } from "./brain-v41-automatic";
 import { durableMemoryStore } from "./durable-memory-store";
 import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
@@ -296,6 +297,13 @@ const server = createApp({
   approvals: approvalGate,
   updater,
   brain,
+  automaticBrainReview: (message: string) => automaticBrainReview({
+    message,
+    verifiedKnowledge: knowledge.list(),
+    recentToolWarnings: brain.toolReliabilityGuidance(),
+    decisionGroups: brain.experienceLearningReport().decisionGroups,
+    learningEnabled: learning.status().settings.enabled,
+  }),
   learning,
   knowledge,
   scenes,
