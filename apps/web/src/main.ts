@@ -6,7 +6,6 @@ import { ChatController } from "./chat/controller";
 import { ChatView } from "./chat/view";
 import { el, icon, type IconName } from "./dom";
 import { homePage } from "./pages/home";
-import { memoryPage } from "./pages/memory";
 import { modulesPage } from "./pages/modules";
 import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
@@ -23,7 +22,6 @@ const ctl = new ChatController(chats);
 
 const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "home", label: "Главная", icon: "home" },
-  { route: "memory", label: "Память", icon: "memory" },
   { route: "modules", label: "Модули", icon: "modules" },
   { route: "brain", label: "Мозг", icon: "brain" },
   { route: "update", label: "Обновление", icon: "update" },
@@ -114,12 +112,12 @@ kernel.register({
       theme.addEventListener("click", () => { app.set({ theme: dark ? "light" : "dark" }); persistPrefs(app.get()); });
       nav.replaceChildren(
         el("div", { cls: "brand", textContent: "JUUNIBI" }), // reserved slot: put your logo here
-        ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route ? " active" : ""), attrs: n.route === s.route ? { "aria-current": "page" } : {} },
+        ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route || (n.route === "brain" && s.route === "memory") ? " active" : ""), attrs: n.route === s.route || (n.route === "brain" && s.route === "memory") ? { "aria-current": "page" } : {} },
           icon(n.icon, 18), el("span", { textContent: n.label }), n.route === "update" && newer ? el("i", { cls: "dot", title: "Доступно обновление" }) : null)),
         el("span", { cls: "grow" }), theme);
       nav.classList.toggle("open", s.navOpen);
       navScrim.classList.toggle("show", s.navOpen);
-      topTitle.textContent = NAV.find((n) => n.route === s.route)?.label ?? "";
+      topTitle.textContent = NAV.find((n) => n.route === (s.route === "memory" ? "brain" : s.route))?.label ?? "";
     };
 
     // ----- pages (re-rendered only when what they show actually changed, so typing in forms is never disturbed)
@@ -127,7 +125,7 @@ kernel.register({
     const sigFor = (s: AppState): string => {
       switch (s.route) {
         case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
-        case "memory": return JSON.stringify(s.memory);
+        case "memory": return ""; // lives on the Brain page, which keeps itself up to date
         case "modules": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
@@ -141,7 +139,7 @@ kernel.register({
       pageSig = sig;
       const page =
         s.route === "home" ? homePage(s, { go, openChat, chats })
-        : s.route === "memory" ? memoryPage(s)
+        : s.route === "memory" ? brainPage({ open: "memory", onClosed: () => { if (routeFromHash() === "memory") go("brain"); } })
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()
         : s.route === "update" ? updatePage(s)
@@ -167,7 +165,7 @@ kernel.register({
 
     // route entry hooks
     ctx.onStop(app.select((s) => s.route, (r) => {
-      if (r === "memory") void refreshMemory();
+      if (r === "memory" || r === "brain") void refreshMemory();
       if (r === "modules") void refreshModules();
       if (r === "update") { void refreshUpdate(); void refreshEvents(); }
       pageHost.focus({ preventScroll: true });

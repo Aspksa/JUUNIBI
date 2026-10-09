@@ -1,6 +1,10 @@
-import { el } from "../dom";
+import { el, icon } from "../dom";
 import { api, type BrainPlan } from "../api";
+import { app } from "../state";
 import { btn, dot, pageHead } from "./kit";
+import { buildBrainTiles, type BrainData, type TileId } from "./brain-model";
+import { memoryPanel } from "./memory";
+import { openSheet, type Sheet } from "./sheet";
 
 const MODES: Record<string, string> = { chat: "Обычный чат", analysis: "Анализ", agent: "Агент", creative: "Творчество" };
 const PLAN_STATUS: Record<string, string> = { planned: "Запланирован", running: "Выполняется", completed: "Готов", failed: "Ошибка" };
@@ -47,29 +51,102 @@ function fold(summary: string, ...kids: Node[]): HTMLElement {
   return el("details", { cls: "br-fold" }, el("summary", { textContent: summary }), ...kids);
 }
 
-// ---------- page ----------
-/** Read-only dashboard: tasks are managed in the assistant chat, not through redundant buttons. */
-export function brainPage(): HTMLElement {
+// ---------- page: a hub of tiles, each opening in a window in the middle of the screen ----------
+export interface BrainPageOpts { /** Tile to open as soon as the page is shown (used by the old #/memory address). */ open?: TileId; /** Called after that opening window is closed. */ onClosed?: () => void }
+
+const getJson = async <T>(url: string): Promise<T | null> => {
+  try { const r = await fetch(url); return r.ok ? await r.json() as T : null; } catch { return null; }
+};
+const TONE_CLASS = { ok: "started", warn: "pending", off: "stopped" } as const;
+/** Only the memory panel has no hint of its own; every other panel explains itself under its title. */
+const MEMORY_HINT = "Что помощница помнит о вас. Новые записи работают только после вашего «Принять».";
+
+/** Dashboard of tiles; tasks are managed in the assistant chat, not through redundant buttons here. */
+export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
+  let data: BrainData = { memory: app.get().memory, plans: null, learning: null, knowledge: null, graph: null, gaps: null };
+  let mode = "";
+  let problem = "";
+  let sheet: Sheet | null = null;
+  let openId: TileId | null = null;
+
+  const grid = el("div", { cls: "mod-grid", attrs: { "aria-live": "polite" } });
+  const status = el("p", { cls: "muted small br-mode" });
   const root = el("div", { cls: "page brain" },
-    pageHead("brain", "Мозг JUUNIBI", "Состояние помощницы, её планы и обучение."),
+    pageHead("brain", "Мозг JUUNIBI", "Память, планы, обучение и знания. Нажмите на плитку, чтобы открыть."),
     el("div", { cls: "br-safety", attrs: { role: "note" } },
       el("div", {}, el("strong", { textContent: "Выполняется само" }), el("span", { cls: "muted", textContent: "Только чтение: список модулей и поиск по памяти." })),
-      el("div", {}, el("strong", { textContent: "Только с вашего подтверждения" }), el("span", { cls: "muted", textContent: "Создание планов и любые действия с последствиями." }))));
-  const content = el("div", { cls: "br-content", attrs: { "aria-live": "polite" } }, empty("Загрузка состояния…"));
-  root.append(content);
-  void api.brainStatus().then(r => {
-    if (!r.ok) { content.replaceChildren(empty("Не удалось загрузить мозг: " + r.error.message)); return; }
-    const s = r.value;
-    const overview = el("div", { cls: "br-tiles" },
-      tile("Помощница", s.assistantReady ? "Подключена" : "Не настроена", s.assistantReady ? undefined : "Добавьте ключ в настройках", s.assistantReady ? "ok" : "off"),
-      tile("Режим", MODES[s.mode] ?? s.mode),
-      tile("Планы", String(s.plans.length), s.plans.length ? "в работе: " + s.plans.filter(p => p.status === "running").length : "пока нет"));
-    content.replaceChildren(overview, plansBlock(s.plans), learningPanel(), knowledgePanel(), evidenceGraphPanel(), knowledgeGapsPanel());
-  });
+      el("div", {}, el("strong", { textContent: "Только с вашего подтверждения" }), el("span", { cls: "muted", textContent: "Создание планов и любые действия с последствиями." }))),
+    status, grid);
+
+  const renderGrid = () => {
+    status.textContent = problem || (mode ? "Режим: " + (MODES[mode] ?? mode) : "");
+    grid.replaceChildren(...buildBrainTiles(data).map((t) => {
+      const b = el("article", { cls: `mtile bt ${TONE_CLASS[t.tone]}`, tabindex: 0, attrs: { role: "button", "aria-label": `${t.title}: ${t.value}, ${t.sub}. Открыть`, "data-tile": t.id } },
+        el("div", { cls: "mt-top" }, el("span", { cls: "mt-ic" }, icon(t.icon, 24), el("i", { cls: "mt-dot", attrs: { "aria-hidden": "true" } })),
+          t.badge ? el("span", { cls: "mt-badges" }, el("span", { cls: "mt-badge warn", textContent: t.badge })) : null),
+        el("strong", { cls: "mt-title", textContent: t.title }),
+        el("span", { cls: "bt-value", textContent: t.value }),
+        el("p", { cls: "mt-note", textContent: t.sub }));
+      b.addEventListener("click", () => openTile(t.id));
+      b.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target === b) { e.preventDefault(); openTile(t.id); } });
+      return b;
+    }));
+  };
+
+  async function reload() {
+    const [st, learning, knowledge, graph, gaps] = await Promise.all([
+      api.brainStatus(),
+      getJson<{ settings: { enabled: boolean; dailyLimit: number }; used: number }>("/api/learning"),
+      getJson<unknown[]>("/api/knowledge"),
+      getJson<{ nodes: unknown[]; edges: unknown[] }>("/api/knowledge/graph"),
+      getJson<unknown[]>("/api/knowledge/gaps"),
+    ]);
+    problem = st.ok ? "" : "Модуль «Мозг» недоступен: " + st.error.message;
+    mode = st.ok ? st.value.mode : "";
+    data = {
+      memory: app.get().memory,
+      plans: st.ok ? st.value.plans : null,
+      learning: learning ? { enabled: learning.settings.enabled, used: learning.used, limit: learning.settings.dailyLimit } : null,
+      knowledge: knowledge ? knowledge.length : null,
+      graph: graph ? { nodes: graph.nodes.length, edges: graph.edges.length } : null,
+      gaps: gaps ? gaps.length : null,
+    };
+    renderGrid();
+  }
+
+  function content(id: TileId): Node {
+    switch (id) {
+      case "memory": return memoryPanel(app.get());
+      case "plans": return plansBlock(data.plans ?? []);
+      case "learning": return learningPanel();
+      case "knowledge": return knowledgePanel();
+      case "graph": return evidenceGraphPanel();
+      case "gaps": return knowledgeGapsPanel();
+    }
+  }
+  function openTile(id: TileId, onClosed?: () => void) {
+    const t = buildBrainTiles(data).find((x) => x.id === id)!;
+    openId = id;
+    let off = () => {};
+    sheet = openSheet({ title: t.title, icon: t.icon, tone: t.tone, ...(id === "memory" ? { sub: MEMORY_HINT } : {}), content: content(id), onClose: () => {
+      off(); openId = null; sheet = null; renderGrid(); void reload(); onClosed?.();
+    } });
+    // The memory list changes while the window is open (accept, forget, add): rebuild it from the shared state.
+    if (id === "memory") off = app.select((s) => s.memory, () => { if (openId === "memory") sheet?.setContent(memoryPanel(app.get())); });
+  }
+
+  // A window must not outlive its page (browser back, menu).
+  const onHash = () => queueMicrotask(() => { if (!root.isConnected) { sheet?.close(); removeEventListener("hashchange", onHash); } });
+  addEventListener("hashchange", onHash);
+  const stopMemory = app.select((s) => s.memory, () => { data = { ...data, memory: app.get().memory }; if (root.isConnected) renderGrid(); else stopMemory(); });
+
+  renderGrid();
+  void reload();
+  if (opts.open) openTile(opts.open, opts.onClosed);
   return root;
 }
 
-function plansBlock(plans: BrainPlan[]): HTMLElement {
+export function plansBlock(plans: BrainPlan[]): HTMLElement {
   const cards = plans.map(p => {
     const done = p.steps.filter(x => x.status === "done").length;
     return el("article", { cls: "br-plan" },
@@ -228,12 +305,12 @@ export function knowledgeGapsPanel(): HTMLElement {
   const root = block("Пробелы в знаниях", null, empty("Анализ…"));
   void fetch("/api/knowledge/gaps").then(async r => {
     if (!r.ok) throw new Error(String(r.status));
-    const gaps = await r.json() as { topic: string; reason: string; priority: number }[];
+    const gaps = await r.json() as { topic: string; reason: string; priority: number; count?: number }[];
     root.replaceChildren(
       el("header", { cls: "br-block-head" }, el("h2", { textContent: "Пробелы в знаниях" }),
         el("p", { cls: "muted", textContent: "Что стоит изучить или перепроверить." })),
       gaps.length ? el("ul", { cls: "br-links" }, ...gaps.slice(0, 15).map(g => el("li", {},
-        el("strong", { textContent: g.topic }), tag(g.priority > 1 ? "перепроверить" : "изучить", g.priority > 1 ? "warn" : ""), el("span", { cls: "muted", textContent: g.reason }))))
+        el("strong", { textContent: g.topic + ((g.count ?? 1) > 1 ? ` ×${g.count}` : "") }), tag(g.priority > 1 ? "перепроверить" : "изучить", g.priority > 1 ? "warn" : ""), el("span", { cls: "muted", textContent: g.reason }))))
         : empty("Пробелов не найдено или реестр пока пуст."));
   }).catch(() => root.replaceChildren(...failed("Пробелы в знаниях", "Не удалось прочитать пробелы знаний.")));
   return root;
