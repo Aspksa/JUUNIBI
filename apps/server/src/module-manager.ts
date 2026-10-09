@@ -28,6 +28,8 @@ export interface ToolOutcome { tool: string; status: "ok" | "error" | "denied"; 
 export interface ModuleItem {
   name: string; title: string; deps: string[]; status: ModuleStatus; note: string; kind: "builtin" | "manifest";
   error?: string; enabled: boolean; running: boolean; core: boolean; dependents: string[]; assistantBlocked: boolean;
+  /** Short health summary for the tile; the full picture is in detail(). */
+  uptimeSec: number; errors24h: number; lastMs: number | null;
 }
 interface Health { startedAt: number; errors: number[]; calls: number; lastError?: string; lastOkAt?: number; lastMs?: number; durations: number[] }
 interface Persisted { enabled: Record<string, boolean>; toolsOff: string[]; blocked: string[] }
@@ -147,13 +149,15 @@ export class ModuleManager {
       enabled: this.persisted.enabled[d.name] !== false, running: this.running.get(d.name) === true,
       core: !!d.core, dependents: this.dependents(d.name),
       assistantBlocked: this.persisted.blocked.includes(d.name),
+      uptimeSec: this.running.get(d.name) ? Math.max(0, Math.round((this.now() - (h?.startedAt ?? this.now())) / 1000)) : 0,
+      errors24h: (h?.errors ?? []).filter(t => this.now() - t < DAY).length, lastMs: h?.lastMs ?? null,
     };
   }
   list(): ModuleItem[] {
     const manifests = (this.extra.manifests?.() ?? []).map((m): ModuleItem => ({
       name: m.name, title: m.title, deps: m.deps, status: "pending",
       note: "Манифест без кода: описывает права, ничего не выполняет.", kind: "manifest",
-      enabled: true, running: false, core: false, dependents: [], assistantBlocked: false,
+      enabled: true, running: false, core: false, dependents: [], assistantBlocked: false, uptimeSec: 0, errors24h: 0, lastMs: null,
     }));
     return [...[...this.defs.values()].map(d => this.item(d)), ...manifests];
   }
