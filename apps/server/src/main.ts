@@ -12,6 +12,7 @@ import { BrainCore } from "./brain";
 import { AutonomousLearning } from "./autonomous-learning";
 import { KnowledgeLedger } from "./knowledge-ledger";
 import { searchVerifiedKnowledge } from "./brain-knowledge-search";
+import { summarizeChatExperience } from "./brain-chat-experience";
 import { durableMemoryStore } from "./durable-memory-store";
 import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
@@ -194,7 +195,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\n");
   currentPersona = persona;
-  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance() }) });
+  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
   for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData })) assistant.tools.register(tool);
   assistant.tools.register({
     name: "brain_search_verified_knowledge", risk: "read",
