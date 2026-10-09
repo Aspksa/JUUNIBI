@@ -34,7 +34,7 @@ export function learningPanel(): HTMLElement {
       if (!response.ok) throw new Error("HTTP " + response.status);
       const data = await response.json() as {
         settings: { enabled: boolean; dailyLimit: number; mode: string; memory: boolean; reasoning: boolean; suggestCode: boolean };
-        used: number; tokens: number; diary: { questions: number; verified: number; rejected: number; pending: number; nextTopic: string; retention: string; note: string }; events: { role: string; text: string; status: string; at: string }[];
+        used: number; tokens: number; progress: { total: number; correct: number; accuracy: number | null; recentAccuracy: number | null; difficulty: number }; diary: { questions: number; verified: number; rejected: number; pending: number; nextTopic: string; retention: string; note: string }; events: { role: string; text: string; status: string; at: string }[];
       };
       const toggle = el("button", { type: "button", textContent: data.settings.enabled ? "Приостановить обучение" : "Включить обучение" });
       toggle.addEventListener("click", async () => {
@@ -61,6 +61,7 @@ export function learningPanel(): HTMLElement {
       const history = el("div", { cls: "pg-card" },
         ...data.events.slice(-25).reverse().map(e => el("p", { textContent: "[" + e.role + " · " + e.status + "] " + e.text })));
       box.replaceChildren(el("h2", { textContent: "Обучение и технический чат" }),
+        el("p", { textContent: "Контрольные задачи: " + data.progress.total + " · правильных: " + data.progress.correct + " · точность: " + (data.progress.accuracy ?? "нет данных") + "% · сложность: " + data.progress.difficulty + "/5" }),
         el("p", { textContent: "Режим: " + data.settings.mode + " · Запросы: " + data.used + "/" + data.settings.dailyLimit + " · Токены: " + data.tokens }),
         el("p", { textContent: "Результаты DeepSeek изолированы до независимой проверки; код не меняется автоматически." }),
         section("Дневник развития",
