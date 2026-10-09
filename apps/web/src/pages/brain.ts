@@ -20,7 +20,7 @@ export function brainPage(): HTMLElement {
         el("p", { cls: "muted", textContent: "Статус: " + p.status }),
         el("ol", {}, ...p.steps.map(step => el("li", { textContent: step.title + " — " + step.status }))))) :
         [el("p", { cls: "muted", textContent: "Пока нет планов. Попросите JUUNIBI составить план прямо в чате." })]));
-    content.replaceChildren(info, plans, learningPanel(), knowledgePanel(), evidenceGraphPanel());
+    content.replaceChildren(info, plans, learningPanel(), knowledgePanel(), evidenceGraphPanel(), knowledgeGapsPanel());
   });
   return root;
 }
@@ -145,5 +145,18 @@ export function evidenceGraphPanel(): HTMLElement {
       el("p", { cls: "muted", textContent: "Поиск точного текста не даёт автоматического права записывать факт в память." }),
       source, sectionField, quote, check, result);
   }).catch(() => root.replaceChildren(el("p", { textContent: "Граф знаний недоступен." })));
+  return root;
+}
+
+/** Read-only learning opportunities; no automatic tool execution. */
+export function knowledgeGapsPanel(): HTMLElement {
+  const root = section("Пробелы в знаниях", el("p", { textContent: "Анализ…" }));
+  void fetch("/api/knowledge/gaps").then(async r => {
+    if (!r.ok) throw new Error(String(r.status));
+    const gaps = await r.json() as { topic: string; reason: string; priority: number }[];
+    root.replaceChildren(el("h2", { textContent: "Что изучить или перепроверить" }),
+      ...(gaps.length ? gaps.slice(0, 15).map(g => el("p", { textContent: g.topic + " — " + g.reason })) :
+        [el("p", { cls: "muted", textContent: "Пробелы не найдены или реестр пока пуст." })]));
+  }).catch(() => root.replaceChildren(el("p", { textContent: "Не удалось прочитать пробелы знаний." })));
   return root;
 }
