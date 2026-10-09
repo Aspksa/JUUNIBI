@@ -159,6 +159,18 @@ export function createApp(deps: AppDeps): http.Server {
           const input = await readJson(req);
           return send(res, 200, deps.brain.rankDecisions(input.options as RankingOption[], input.enabled !== false));
         }
+        if (req.method === "GET" && p === "/api/brain/revision-history")
+          return send(res, deps.brain ? 200 : 503, deps.brain?.revisionHistory() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/revision-history") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 201, deps.brain.proposeRevision({claimId: input.claimId as string, previous: input.previous as boolean, proposed: input.proposed as boolean, reason: input.reason as string}));
+        }
+        if (req.method === "POST" && p === "/api/brain/resolve-revision") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.resolveRevision(input.id as string, input.outcome as "accepted" | "rejected"));
+        }
         if (req.method === "POST" && p === "/api/brain/preview-reasoning-revision") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);

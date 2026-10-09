@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { RevisionHistory } from "./revision-history";
 import { reviewReasoningRevision, type ReasoningExample, type ReasoningRevision, type RevisionEvidence } from "./reasoning-revision";
 import { reviewReasoning, type ReasoningClaim, type ReasoningEvidence } from "./reasoning-review";
 import { reviewLearningCase, type LearningCase } from "./learning-repair-review";
@@ -19,6 +20,10 @@ export interface BrainPlan { id: string; goal: string; createdAt: string; status
 export interface BrainStorage { load(): Promise<string | null>; save(data: string): Promise<void> }
 export class BrainCore {
   private mode: BrainMode = "chat";
+  private readonly revisions = new RevisionHistory();
+  revisionHistory() { return this.revisions.snapshot(); }
+  proposeRevision(input:{claimId:string;previous:boolean;proposed:boolean;reason:string}) { const r=this.revisions.add(input);this.persist();return {...r,warnings:this.revisions.warnings(input.claimId,input.proposed)}; }
+  resolveRevision(id:string,outcome:"accepted"|"rejected") { const r=this.revisions.resolve(id,outcome);this.persist();return r; }
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
@@ -40,7 +45,7 @@ export class BrainCore {
   flush() { return this.writeQueue; }
   private persist() {
     if (!this.storage) return;
-    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot() });
+    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot(), revisions: this.revisions.snapshot() });
     this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
   }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
@@ -56,6 +61,7 @@ export class BrainCore {
     this.plans = (saved.plans as BrainPlan[]).map(p => ({ ...p, status: p.status === "running" ? "planned" : p.status, steps: p.steps.map(s => ({ ...s, status: s.status === "active" ? "pending" : s.status })) }));
     this.logs = saved.logs as typeof this.logs;
     this.decisions.load((state as { decisions?: unknown }).decisions);
+    this.revisions.load((state as { revisions?: unknown }).revisions);
   }
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
