@@ -44,6 +44,7 @@ export class AutonomousLearning {
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
   private readonly progress = new LearningProgress();
+  private readonly reasoningEvaluation = new ReasoningEvaluation();
   private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
@@ -56,6 +57,7 @@ export class AutonomousLearning {
       const v = JSON.parse(await readFile(this.file, "utf8")) as Record<string, unknown>;
       this.settings = validateSettings(v.settings);
       this.progress.load(v.progress);
+      this.reasoningEvaluation.load(v.reasoningEvaluation);
       if (Array.isArray(v.events)) this.events = v.events.filter((e): e is LearningEvent =>
         !!e && typeof e === "object" && typeof e.text === "string" && typeof e.at === "string" &&
         ["juunibi", "deepseek", "verifier"].includes(e.role) &&
@@ -72,7 +74,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -83,7 +85,7 @@ export class AutonomousLearning {
   }
   status() {
     this.resetDay();
-    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(),
+    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
       busy: this.busy, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
