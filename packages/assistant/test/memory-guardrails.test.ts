@@ -27,7 +27,7 @@ describe("memory proposal guardrails", () => {
       : { content: JSON.stringify({ text: "Я живу на Марсе", kind: "fact" }), toolCalls: [] }) };
     const memory = new Memory();
     const assistant = new Assistant({ llm, memory });
-    expect((await assistant.ask("Мне нравится тёмный интерфейс во всех приложениях")).reply).toBe("Хорошо");
+    expect((await assistant.ask("Мой коллега обсуждал тёмный интерфейс во всех приложениях")).reply).toBe("Хорошо");
     expect(await memory.list("pending")).toEqual([]);
   });
   it("does not expose mutable relatedIds via list or search", async () => {

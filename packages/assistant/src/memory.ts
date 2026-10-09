@@ -24,6 +24,8 @@ export interface MemoryEntry {
   revisesId?: string;
   /** Repeated user statements strengthen a pending proposal, never approve it. */
   mentions?: number;
+  /** Marked important by the owner: ranks higher and is the last to be dropped when memory is full. */
+  pinned?: boolean;
 }
 
 const normalize = (s: string) => s.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/[.!?…]+$/u, "").replace(/\s+/g, " ").trim();
@@ -52,7 +54,7 @@ const rankMemory = (entry: MemoryEntry, matches: number, now: number): number =>
   const recency = 0.2 / (1 + ageDays / 90);
   const preference = entry.kind === "preference" ? 0.15 : entry.kind === "lesson" ? 0.05 : 0;
   const feedback = Math.max(-0.4, Math.min(0.4, entry.score * 0.1));
-  return matches * 2 + recency + preference + feedback;
+  return matches * 2 + recency + preference + feedback + (entry.pinned ? 0.6 : 0);
 };
 
 /** Long-term memory with human-approved learning and keyword retrieval. */
@@ -64,8 +66,30 @@ export class Memory {
   private embedding: EmbeddingProvider | undefined;
   private embeddingChecks = 0;
   private embeddingFailures = 0;
-  embeddingDiagnostics() { return { configured: !!this.embedding, checks: this.embeddingChecks, failures: this.embeddingFailures, mode: this.embedding ? "hybrid" : "lexical" }; }
-  setEmbeddingProvider(provider?: EmbeddingProvider) { this.embedding = provider; this.vectors.clear(); }
+  private failStreak = 0;
+  private pausedUntil = 0;
+  private clock: () => number = Date.now;
+  /** Tests only. */
+  setClock(clock: () => number) { this.clock = clock; }
+  /** After this many failures in a row semantic search is skipped for a while, so a wrong model name never slows every reply. */
+  static readonly BREAKER_FAILS = 3;
+  static readonly BREAKER_PAUSE_MS = 10 * 60_000;
+  embeddingDiagnostics() {
+    const paused = this.pausedUntil > this.clock();
+    return { configured: !!this.embedding, checks: this.embeddingChecks, failures: this.embeddingFailures, paused,
+      ...(paused ? { pausedUntil: this.pausedUntil } : {}), mode: this.embedding ? (paused ? "lexical" : "hybrid") : "lexical" };
+  }
+  setEmbeddingProvider(provider?: EmbeddingProvider) { this.embedding = provider; this.vectors.clear(); this.failStreak = 0; this.pausedUntil = 0; }
+  /** Try the embedding provider once, bypassing the pause; used by the "check connection" button. */
+  async probeEmbedding(): Promise<{ ok: boolean; dims?: number; ms: number; error?: string }> {
+    const t0 = this.clock();
+    if (!this.embedding) return { ok: false, ms: 0, error: "Поиск по смыслу не настроен" };
+    try {
+      const v = await this.embedding.embed("проверка соединения");
+      this.failStreak = 0; this.pausedUntil = 0;
+      return { ok: true, dims: v.length, ms: this.clock() - t0 };
+    } catch (e) { return { ok: false, ms: this.clock() - t0, error: (e as Error).message.slice(0, 200) }; }
+  }
 
   constructor(private readonly store: StorageAdapter = new MemoryAdapter()) {
     this.ready = this.load();
@@ -86,6 +110,7 @@ export class Memory {
         (e.supersededBy === undefined || typeof e.supersededBy === "string") &&
         (e.revisesId === undefined || typeof e.revisesId === "string") &&
         (e.mentions === undefined || (Number.isInteger(e.mentions) && e.mentions >= 1 && e.mentions <= 100)) &&
+        (e.pinned === undefined || typeof e.pinned === "boolean") &&
         (e.relatedIds === undefined || (Array.isArray(e.relatedIds) && e.relatedIds.length <= 20 && e.relatedIds.every((id: unknown) => typeof id === "string"))));
       if (arr.length > MAX_ENTRIES || validated.length !== arr.length) throw new Error("Память: некоторые записи повреждены");
       this.entries = validated;
@@ -117,7 +142,8 @@ export class Memory {
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) {
       // Never evict the record being added; prefer pending proposals over approved knowledge.
-      const drop = this.entries.filter((e) => e !== entry)
+      const others = this.entries.filter((e) => e !== entry);
+      const drop = (others.some((e) => !e.pinned) ? others.filter((e) => !e.pinned) : others)
         .sort((a, b) => Number(a.status === "active") - Number(b.status === "active") || a.score - b.score || a.createdAt - b.createdAt)[0]!;
       this.entries = this.entries.filter((e) => e !== drop);
     }
@@ -175,6 +201,45 @@ export class Memory {
     await this.persist();
     return true;
   }
+  /** Mark an entry as important (or not). Pinned entries rank higher and are dropped last. */
+  async setPinned(id: string, pinned: boolean): Promise<boolean> {
+    await this.ready;
+    const entry = this.entries.find(e => e.id === id);
+    if (!entry) return false;
+    if (pinned) entry.pinned = true; else delete entry.pinned;
+    await this.persist();
+    return true;
+  }
+  /** Everything worth carrying to another installation. Vectors and feedback scores stay behind. */
+  async exportData(): Promise<{ app: "JUUNIBI"; kind: "memory"; version: 1; exportedAt: string; entries: Pick<MemoryEntry, "kind" | "text" | "status" | "createdAt" | "expiresAt" | "pinned">[] }> {
+    await this.ready;
+    return { app: "JUUNIBI", kind: "memory", version: 1, exportedAt: new Date(this.clock()).toISOString(),
+      entries: this.entries.filter(e => !e.supersededBy).map(e => ({ kind: e.kind, text: e.text, status: e.status, createdAt: e.createdAt, ...(e.expiresAt !== undefined ? { expiresAt: e.expiresAt } : {}), ...(e.pinned ? { pinned: true } : {}) })) };
+  }
+  /**
+   * Imported entries ALWAYS arrive as pending proposals: a file can never put anything into active memory.
+   * Duplicates, oversized and secret-looking texts are skipped and counted.
+   */
+  async importData(input: unknown): Promise<{ added: number; duplicates: number; skipped: number }> {
+    await this.ready;
+    const list = Array.isArray(input) ? input : input && typeof input === "object" ? (input as { entries?: unknown }).entries : undefined;
+    if (!Array.isArray(list)) throw Object.assign(new Error("Ожидается файл экспорта памяти JUUNIBI"), { status: 400 });
+    if (list.length > 500) throw Object.assign(new Error("В одном файле не больше 500 записей"), { status: 400 });
+    const secret = /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа|паспорт|снилс)/iu;
+    let added = 0, duplicates = 0, skipped = 0;
+    for (const raw of list) {
+      const r = raw as { kind?: unknown; text?: unknown; expiresAt?: unknown } | null;
+      const kind = r?.kind === "preference" || r?.kind === "lesson" ? r.kind : r?.kind === "fact" ? "fact" : null;
+      const text = typeof r?.text === "string" ? r.text.trim() : "";
+      if (!kind || !text || text.length > MAX_TEXT || secret.test(text) || /\d(?:[ -]?\d){9,}/u.test(text)) { skipped++; continue; }
+      if (this.entries.some(e => normalize(e.text) === normalize(text))) { duplicates++; continue; }
+      const entry = await this.add(kind, text, "pending");
+      const stored = this.entries.find(e => e.id === entry.id);
+      if (stored && typeof r?.expiresAt === "number" && Number.isFinite(r.expiresAt) && r.expiresAt > this.clock()) { stored.expiresAt = r.expiresAt; await this.persist(); }
+      added++;
+    }
+    return { added, duplicates, skipped };
+  }
   /** Explicitly connect related facts, without changing their approval status. */
   async relate(aId: string, bId: string): Promise<boolean> {
     await this.ready;
@@ -196,7 +261,7 @@ export class Memory {
   /** Optional semantic reranking. Lexical results remain available when the provider fails. */
   async searchHybrid(query: string, k = 5): Promise<MemoryEntry[]> {
     const lexical = await this.search(query, 20);
-    if (!this.embedding || !query.trim() || k <= 0) return lexical.slice(0, Math.max(0, k));
+    if (!this.embedding || !query.trim() || k <= 0 || this.pausedUntil > this.clock()) return lexical.slice(0, Math.max(0, k));
     try {
       this.embeddingChecks++;
       const q = await this.embedding.embed(query);
@@ -214,12 +279,15 @@ export class Memory {
         return { e, score: similarity };
       }));
       const lexicalRanks = new Map(lexical.map((e, i) => [e.id, i]));
-      return ranked.filter(x => x.score > 0.15 || lexicalRanks.has(x.e.id))
+      const result = ranked.filter(x => x.score > 0.15 || lexicalRanks.has(x.e.id))
         .sort((a, b) => (b.score + (lexicalRanks.has(b.e.id) ? 0.2 / (1 + lexicalRanks.get(b.e.id)!) : 0)) -
           (a.score + (lexicalRanks.has(a.e.id) ? 0.2 / (1 + lexicalRanks.get(a.e.id)!) : 0)))
         .slice(0, Math.min(20, Math.floor(k))).map(x => copyEntry(x.e));
+      this.failStreak = 0;
+      return result;
     } catch {
       this.embeddingFailures++;
+      if (++this.failStreak >= Memory.BREAKER_FAILS) this.pausedUntil = this.clock() + Memory.BREAKER_PAUSE_MS;
       return lexical.slice(0, Math.min(20, Math.floor(k)));
     }
   }
@@ -281,17 +349,25 @@ export class Memory {
   async suggestFromUserText(input: string): Promise<MemoryEntry[]> {
     if (typeof input !== "string" || input.length > 2000) return [];
     const text = input.trim();
+    if (text.includes("?")) return []; // questions are not statements about the user
     if (text.includes("\n") || text.startsWith(">") || text.startsWith("\"") || text.startsWith("«")) return [];
-    const patterns: { re: RegExp; kind: MemoryKind }[] = [
+    const patterns: { re: RegExp; kind: MemoryKind; whole?: boolean }[] = [
       { re: /^(?:запомни|пожалуйста,? запомни)(?:,? что)?[:\s]+(.+)$/iu, kind: "fact" },
+      { re: /^(?:имей в виду|не забудь|помни)(?:,? что)?[:\s]+(.+)$/iu, kind: "fact" },
       { re: /^я предпочитаю[:\s]+(.+)$/iu, kind: "preference" },
       { re: /^мне нравится,? когда[:\s]+(.+)$/iu, kind: "preference" },
+      // Statements that only make sense with their opening words are stored whole.
+      { re: /^(?:меня зовут|моё имя|мое имя)\s+\S.*$/iu, kind: "fact", whole: true },
+      { re: /^я (?:живу|работаю|учусь|занимаюсь)\s+\S.*$/iu, kind: "fact", whole: true },
+      { re: /^(?:называй меня|не называй меня)\s+\S.*$/iu, kind: "preference", whole: true },
+      { re: /^(?:всегда|обычно|пожалуйста)\s+(?:отвечай|пиши|говори|объясняй)\s+\S.*$/iu, kind: "preference", whole: true },
+      { re: /^мне (?:не )?(?:нравится|нравятся|подходит|подходят)\s+\S.*$/iu, kind: "preference", whole: true },
     ];
     if (/(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа|паспорт|снилс|диагноз|телефон|адрес проживания)/iu.test(text)) return [];
-    for (const { re, kind } of patterns) {
+    for (const { re, kind, whole } of patterns) {
       const match = re.exec(text);
       if (!match) continue;
-      const candidate = match?.[1]?.trim();
+      const candidate = (whole ? match[0] : match[1])?.trim().replace(/[.!]+$/u, "");
       if (!candidate || candidate.length < 6 || candidate.length > 300 ||
           /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа)/iu.test(candidate)) return [];
       const conflict = kind === "preference" ? this.conflictingPreference(candidate) : undefined;

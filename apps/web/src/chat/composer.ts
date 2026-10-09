@@ -11,6 +11,8 @@ export interface ComposerHandlers {
   onCommand(command: Command, arg: string): void;
   onStop(): void;
   onEditLast(): void;
+  /** Owner-defined quick commands (re-read on every keystroke, so a new one works at once). */
+  quick?(): Command[];
 }
 
 /** Message input: auto-grow, drafts per chat, slash-command palette, text-file attachments, dictation. */
@@ -116,7 +118,7 @@ export class Composer {
 
   // ---------- commands palette ----------
   private refreshPalette() {
-    this.paletteItems = suggestCommands(this.input.value);
+    this.paletteItems = suggestCommands(this.input.value, this.h.quick?.() ?? []);
     this.sel = Math.min(this.sel, Math.max(0, this.paletteItems.length - 1));
     this.palette.hidden = this.paletteItems.length === 0;
     this.palette.replaceChildren(...this.paletteItems.map((c, i) => {
@@ -152,7 +154,7 @@ export class Composer {
   private submit() {
     const text = this.input.value.trim();
     if (!text && !this.files.length) return;
-    const parsed = parseCommand(text);
+    const parsed = parseCommand(text, this.h.quick?.() ?? []);
     const files = this.files;
     this.clear();
     if (parsed) this.h.onCommand(parsed.command, parsed.arg);

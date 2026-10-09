@@ -81,23 +81,29 @@ export function layoutGraph(items: ModView[], opts = { w: 176, h: 48, gapX: 64, 
 }
 
 // ---------- memory ----------
-export type MemFilter = "all" | "pending" | "fact" | "preference" | "lesson";
+export type MemFilter = "all" | "pending" | "fact" | "preference" | "lesson" | "pinned" | "archived";
 export const KIND_LABEL: Record<string, string> = { fact: "Факт", preference: "Предпочтение", lesson: "Урок" };
-export function memoryCounts(items: MemoryItem[]): Record<MemFilter, number> & { active: number } {
-  const c = { all: items.length, pending: 0, fact: 0, preference: 0, lesson: 0, active: 0 };
+/** An entry whose expiry date has passed: kept for the owner to see, never used in answers. */
+export const isArchived = (m: Pick<MemoryItem, "expiresAt">, now = Date.now()): boolean => m.expiresAt !== undefined && m.expiresAt <= now;
+export function memoryCounts(items: MemoryItem[], now = Date.now()): Record<MemFilter, number> & { active: number } {
+  const c = { all: 0, pending: 0, fact: 0, preference: 0, lesson: 0, pinned: 0, archived: 0, active: 0 };
   for (const m of items) {
+    if (isArchived(m, now)) { c.archived++; continue; }
+    c.all++;
     if (m.status === "pending") c.pending++; else c.active++;
+    if (m.pinned) c.pinned++;
     if (m.kind === "fact" || m.kind === "preference" || m.kind === "lesson") c[m.kind]++;
   }
   return c;
 }
-/** Pending proposals first, then newest first; text search is case-insensitive. */
-export function filterMemory(items: MemoryItem[], filter: MemFilter, query: string): MemoryItem[] {
+/** Pending proposals first, then pinned, then newest first. Archived entries only appear under "Архив". */
+export function filterMemory(items: MemoryItem[], filter: MemFilter, query: string, now = Date.now()): MemoryItem[] {
   const q = query.trim().toLowerCase();
   return items
-    .filter((m) => (filter === "all" ? true : filter === "pending" ? m.status === "pending" : m.kind === filter))
+    .filter((m) => (filter === "archived" ? isArchived(m, now) : !isArchived(m, now)))
+    .filter((m) => (filter === "all" || filter === "archived" ? true : filter === "pending" ? m.status === "pending" : filter === "pinned" ? !!m.pinned : m.kind === filter))
     .filter((m) => !q || m.text.toLowerCase().includes(q))
-    .sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending") || (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    .sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending") || Number(!!b.pinned) - Number(!!a.pinned) || (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 // ---------- module tiles ----------

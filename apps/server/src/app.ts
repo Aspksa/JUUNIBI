@@ -21,6 +21,11 @@ import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
 import { comparePublicEvidence } from "./evidence-comparison";
+import type { AssistantSettingsStore } from "./assistant-settings";
+import type { Brief, Organizer } from "./organizer";
+import type { EvalService } from "./evals";
+import { buildQualityReport } from "./quality";
+import { repeatedRequests } from "./suggestions";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
   list(): unknown;
@@ -43,6 +48,14 @@ export interface ModuleControl {
 }
 export interface AppDeps {
   moduleControl?: ModuleControl;
+  /** Owner preferences for the assistant (embeddings, memory proposals, summaries, files, web, quick commands). */
+  settings?: AssistantSettingsStore;
+  /** Notes, to-dos and reminders. */
+  organizer?: Organizer;
+  /** Control questions that show whether the assistant got better or worse. */
+  evals?: EvalService;
+  /** Data for the start-of-day summary. */
+  brief?: () => Promise<Brief>;
   /** Long-term memory is available (and editable by the user) even before an API key is configured. */
   memory?: import("@juunibi/assistant").Memory;
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
@@ -358,8 +371,41 @@ export function createApp(deps: AppDeps): http.Server {
           deps.updater.start().catch(() => {});
           return send(res, 202, { ok: true });
         }
+        if (deps.organizer && p.startsWith("/api/organizer")) {
+          const o = deps.organizer;
+          if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders() });
+          if (req.method === "POST" && p === "/api/organizer/notes") { const b = await readJson(req); return send(res, 201, await o.addNote(b.kind ?? "note", b.text)); }
+          if (req.method === "POST" && p === "/api/organizer/reminders") { const b = await readJson(req); return send(res, 201, await o.addReminder(b.text, b.at)); }
+          const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss))?$/.exec(p);
+          if (om) {
+            const [, kind, id, action] = om;
+            if (req.method === "DELETE" && !action) { if (kind === "notes") await o.removeNote(id!); else await o.removeReminder(id!); return send(res, 200, { ok: true }); }
+            if (req.method === "POST" && kind === "notes" && action === "done") { const b = await readJson(req); if (typeof b.done !== "boolean") return send(res, 400, { error: "Укажите done: true или false" }); return send(res, 200, await o.setDone(id!, b.done)); }
+            if (req.method === "POST" && kind === "reminders" && action === "dismiss") return send(res, 200, await o.dismissReminder(id!));
+          }
+          return send(res, 404, { error: "Не найдено" });
+        }
+        if (deps.brief && req.method === "GET" && p === "/api/brief") return send(res, 200, await deps.brief());
+        if (deps.settings && p === "/api/assistant/settings") {
+          if (req.method === "GET") return send(res, 200, deps.settings.get());
+          if (req.method === "POST") return send(res, 200, await deps.settings.update(await readJson(req)));
+        }
         const mem = deps.memory ?? a?.memory;
         if (mem) {
+        if (req.method === "POST" && p === "/api/assistant/embedding-test") return send(res, 200, await mem.probeEmbedding());
+        if (req.method === "GET" && p === "/api/memory/export") return send(res, 200, await mem.exportData());
+        if (req.method === "POST" && p === "/api/memory/import") return send(res, 200, await mem.importData(await readJson(req, 512 * 1024)));
+        const mp = /^\/api\/memory\/([\w-]+)\/(pin|expiry)$/.exec(p);
+        if (mp && req.method === "POST") {
+          const b = await readJson(req);
+          if (mp[2] === "pin") {
+            if (typeof b.pinned !== "boolean") return send(res, 400, { error: "Укажите pinned: true или false" });
+            return send(res, 200, { ok: await mem.setPinned(mp[1]!, b.pinned) });
+          }
+          const until = b.until === null ? null : typeof b.until === "number" ? b.until : undefined;
+          if (until === undefined || (until !== null && (!Number.isFinite(until) || until <= Date.now()))) return send(res, 400, { error: "Срок должен быть датой в будущем или null" });
+          return send(res, 200, { ok: await mem.setExpiry(mp[1]!, until) });
+        }
         if (req.method === "POST" && p === "/api/memory") { // the user explicitly asks to remember something
           const b = await readJson(req);
           const text = typeof b.text === "string" ? b.text.trim() : "";
@@ -423,7 +469,13 @@ export function createApp(deps: AppDeps): http.Server {
           if (typeof b.turnId !== "string") return send(res, 400, { error: "turnId" });
           return send(res, 200, await a.reflect(b.turnId));
         }
-        if (req.method === "GET" && p === "/api/dataset") return send(res, 200, await a.exportDataset(), "application/x-ndjson");
+        if (req.method === "GET" && p === "/api/dataset") return send(res, 200, await a.exportDataset({ redact: url.searchParams.get("raw") !== "1" }), "application/x-ndjson");
+        if (req.method === "GET" && p === "/api/assistant/suggestions") return send(res, 200, repeatedRequests(a.turnsSnapshot(), deps.settings?.get().quickCommands ?? []));
+        if (req.method === "GET" && p === "/api/assistant/quality") return send(res, 200, buildQualityReport(a.turnsSnapshot()));
+        if (deps.evals && p === "/api/assistant/eval") {
+          if (req.method === "GET") return send(res, 200, deps.evals.status());
+          if (req.method === "POST") return deps.evals.start() ? send(res, 202, deps.evals.status()) : send(res, 409, { error: "Проверка уже идёт" });
+        }
         return send(res, 404, { error: "Не найдено" });
       }
 

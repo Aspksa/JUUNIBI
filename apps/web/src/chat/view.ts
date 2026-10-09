@@ -4,7 +4,7 @@ import { app, decideApproval, persistPrefs, type Route } from "../state";
 import { groupLabel, type Chats, type ChatMsg, type Conversation } from "./chats";
 import { Composer } from "./composer";
 import type { ChatController } from "./controller";
-import { COMMANDS, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
+import { BRIEF_PROMPT, COMMANDS, quickToCommands, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
 import { fillMessage, msgSignature } from "./message";
 import { isSpeaking, speak, speechSupported, stopSpeaking } from "./voice";
 import { WindowFrame } from "./window";
@@ -93,6 +93,7 @@ export class ChatView {
       onCommand: (c, arg) => void this.runCommand(c, arg),
       onStop: () => this.ctl.stop(),
       onEditLast: () => this.editLast(),
+      quick: () => quickToCommands(app.get().assistantSettings?.quickCommands ?? []),
     });
 
     const main = el("section", { cls: "chat-main" }, head, this.banner, el("div", { cls: "thread-wrap" }, ambient(), this.thread, this.toBottom), this.composer.root, this.sheet, this.drop);
@@ -125,6 +126,8 @@ export class ChatView {
 
   setHandlers(onClose: () => void, onNavigate: (r: Route) => void) { this.onClose = onClose; this.onNavigate = onNavigate; }
   focus() { this.composer.focus(); }
+  /** The "Сегодня" card on Home asks the assistant for the day summary. */
+  askBrief() { return this.sendText(BRIEF_PROMPT); }
   resetPosition() { this.frame.reset(); }
   /** Esc: close the innermost transient thing first; "close" means nothing was open. */
   escape(): "handled" | "close" {
@@ -175,6 +178,8 @@ export class ChatView {
         break;
       case "memory": case "modules": case "update": case "settings": this.onNavigate(c.id); break;
       case "export": this.exportChat(conv); break;
+      case "brief": void this.sendText(BRIEF_PROMPT); break;
+      case "quick": if (c.quick) void this.sendText(arg ? c.quick + "\n\n" + arg : c.quick); break;
       case "clear":
         if (conv.messages.length && confirm("Очистить текущий чат?")) { if (this.ctl.busy) this.ctl.stop(); this.chats.clearMessages(conv.id); }
         break;
