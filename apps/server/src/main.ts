@@ -67,7 +67,10 @@ const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.
     const json = await response.json() as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
     return { text: json.choices?.[0]?.message?.content ?? "", tokens: json.usage?.total_tokens ?? 1500 };
   } finally { clearTimeout(timeout); }
-}, () => moduleList().map(m => m.name));
+}, () => moduleList().map(m => m.name), async fact => {
+  knowledge.addVerified({ topic: "математика", ...fact, evidence: "deterministic-test" });
+  await knowledge.flush();
+});
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
 await brain.load();
