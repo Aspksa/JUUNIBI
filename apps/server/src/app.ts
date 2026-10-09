@@ -14,6 +14,7 @@ import type { ReasoningClaim, ReasoningEvidence } from "./reasoning-review";
 import type { ReasoningExample, ReasoningRevision, RevisionEvidence } from "./reasoning-revision";
 import type { FreshnessRequest } from "./revision-freshness";
 import type { KnowledgeNode } from "./knowledge-impact";
+import type { RecheckPriority } from "./knowledge-recheck";
 import type { RankingOption } from "./experience-ranking";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
@@ -160,6 +161,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
           return send(res, 200, deps.brain.rankDecisions(input.options as RankingOption[], input.enabled !== false));
+        }
+        if (req.method === "POST" && p === "/api/brain/preview-knowledge-recheck") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.previewKnowledgeRecheck(input.nodes as KnowledgeNode[], input.changedId as string, input.priorities as RecheckPriority[]));
         }
         if (req.method === "POST" && p === "/api/brain/preview-knowledge-impact") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
