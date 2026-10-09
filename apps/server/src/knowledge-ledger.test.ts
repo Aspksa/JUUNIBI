@@ -5,6 +5,20 @@ import os from "node:os";
 import { KnowledgeLedger } from "./knowledge-ledger";
 
 describe("Brain 4.0 knowledge ledger", () => {
+  it("links only verified entries with shared meaningful terms", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-graph-"));
+    try {
+      const ledger = new KnowledgeLedger(path.join(dir, "g.json"));
+      const a = ledger.addVerified({ topic: "physics", claim: "gravity attracts planetary bodies", source: "test", evidence: "owner-confirmed" });
+      const b = ledger.addVerified({ topic: "physics", claim: "gravity governs many planetary orbits", source: "test", evidence: "owner-confirmed" });
+      const c = ledger.addVerified({ topic: "botany", claim: "leaves photosynthesize light", source: "test", evidence: "owner-confirmed" });
+      expect(ledger.graph().edges).toEqual([{ from: a.id, to: b.id, shared: expect.arrayContaining(["physics", "gravity", "planetary"]) }]);
+      ledger.review(b.id, false);
+      expect(ledger.graph().edges).toHaveLength(0);
+      expect(ledger.graph().nodes.some(n => n.id === c.id)).toBe(true);
+      await ledger.flush();
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it("requires trusted provenance and rejects arbitrary promotion", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-ledger-"));
     try {
