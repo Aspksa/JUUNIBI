@@ -30,7 +30,7 @@ describe("autonomous learning", () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-check-"));
     try {
       const ask = vi.fn(async (q: string) => {
-        const match = /Вычисли (\\d+) × (\\d+)/.exec(q);
+        const match = /Вычисли (\d+) × (\d+)/.exec(q);
         return { text: match ? String(Number(match[1]) * Number(match[2])) : "Непроверенная гипотеза", tokens: 20 };
       });
       const learner = new AutonomousLearning(path.join(dir, "learn.json"), ask, () => []);
