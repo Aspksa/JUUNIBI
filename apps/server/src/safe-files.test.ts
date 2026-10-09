@@ -37,7 +37,7 @@ describe("пути", () => {
 
 describe("чтение", () => {
   it("список папки без секретов, скрытых служебных папок и ссылок", async () => {
-    await symlink(outside, path.join(root, "link"));
+    if (process.platform !== "win32") await symlink(outside, path.join(root, "link"));
     const r = await listDir(root, "");
     expect(r.entries.map((e) => e.name)).toEqual(["a.txt", "bin.dat", "sub"]);
     expect((await listDir(root, "sub")).entries).toEqual([{ name: "b.md", type: "file", size: Buffer.byteLength("# Заметка\nчай и кофе") }]);
@@ -56,14 +56,14 @@ describe("чтение", () => {
     await refused(readText(root, "../outside/secret.txt"));
     await refused(readText(root, "sub"));
   });
-  it("символическая ссылка наружу не работает ни на файл, ни на папку", async () => {
+  it.skipIf(process.platform === "win32")("символическая ссылка наружу не работает ни на файл, ни на папку", async () => {
     await symlink(path.join(outside, "secret.txt"), path.join(root, "leak.txt"));
     await symlink(outside, path.join(root, "leakdir"));
     await refused(readText(root, "leak.txt"), 403);
     await refused(readText(root, "leakdir/secret.txt"), 403);
     await refused(listDir(root, "leakdir"), 403);
   });
-  it("ссылка внутри папки на секрет тоже закрыта", async () => {
+  it.skipIf(process.platform === "win32")("ссылка внутри папки на секрет тоже закрыта", async () => {
     await symlink(path.join(root, ".env"), path.join(root, "innocent.txt"));
     await refused(readText(root, "innocent.txt"), 403);
   });
@@ -99,6 +99,16 @@ describe("запись", () => {
     await refused(writeText(root, "ok.txt", "a\0b", backups));
     await refused(writeText(root, "ok.txt", 5 as never, backups));
     await refused(writeText(root, "", "x", backups));
+    if (process.platform !== "win32") {
+      await symlink(path.join(outside, "secret.txt"), path.join(root, "link.txt"));
+      await refused(writeText(root, "link.txt", "перезапись", backups), 403);
+      expect(await readFile(path.join(outside, "secret.txt"), "utf8")).toBe("за пределами");
+      await symlink(outside, path.join(root, "outdir"));
+      await refused(writeText(root, "outdir/new.txt", "x", backups), 403);
+      await expect(readdir(outside)).resolves.toEqual(["secret.txt"]);
+    }
+  });
+  it.skipIf(process.platform === "win32")("не позволяет записывать через ссылки наружу", async () => {
     await symlink(path.join(outside, "secret.txt"), path.join(root, "link.txt"));
     await refused(writeText(root, "link.txt", "перезапись", backups), 403);
     expect(await readFile(path.join(outside, "secret.txt"), "utf8")).toBe("за пределами");
