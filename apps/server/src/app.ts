@@ -332,6 +332,10 @@ export function createApp(deps: AppDeps): http.Server {
           const input = await readJson(req);
           return send(res, 200, deps.brain.compareAlternatives(input.options as PlanOption[], input.limits as PlanLimits));
         }
+        if (req.method === "GET" && p === "/api/knowledge/memory-review") {
+          if (!deps.knowledge) return send(res, 503, { error: "Память недоступна" });
+          return send(res, 200, deps.knowledge.analyze((url.searchParams.get("query") ?? "").slice(0, 300)));
+        }
         if (req.method === "GET" && p === "/api/brain") return send(res, deps.brain ? 200 : 503, deps.brain?.status() ?? { error: "Мозг недоступен" });
         if (req.method === "POST" && p === "/api/brain/mode") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 200, deps.brain.setMode(b.mode)); }
         if (req.method === "POST" && p === "/api/brain/plan-compare-34") {
