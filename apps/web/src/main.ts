@@ -11,9 +11,12 @@ import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
 import {
-  app, persistPrefs, refreshApprovals, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, routeFromHash,
+  app, BRAIN_TILE_ROUTES, dismissSuggestion, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, routeFromHash,
   type AppState, type Route, type Theme,
 } from "./state";
+import { announceDue } from "./notify";
+import { showToast } from "./toast";
+import { api } from "./api";
 import "./style.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
@@ -112,24 +115,24 @@ kernel.register({
       theme.addEventListener("click", () => { app.set({ theme: dark ? "light" : "dark" }); persistPrefs(app.get()); });
       nav.replaceChildren(
         el("div", { cls: "brand", textContent: "JUUNIBI" }), // reserved slot: put your logo here
-        ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route || (n.route === "brain" && s.route === "memory") ? " active" : ""), attrs: n.route === s.route || (n.route === "brain" && s.route === "memory") ? { "aria-current": "page" } : {} },
+        ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route || (n.route === "brain" && !!BRAIN_TILE_ROUTES[s.route]) ? " active" : ""), attrs: n.route === s.route || (n.route === "brain" && !!BRAIN_TILE_ROUTES[s.route]) ? { "aria-current": "page" } : {} },
           icon(n.icon, 18), el("span", { textContent: n.label }), n.route === "update" && newer ? el("i", { cls: "dot", title: "Доступно обновление" }) : null)),
         el("span", { cls: "grow" }), theme);
       nav.classList.toggle("open", s.navOpen);
       navScrim.classList.toggle("show", s.navOpen);
-      topTitle.textContent = NAV.find((n) => n.route === (s.route === "memory" ? "brain" : s.route))?.label ?? "";
+      topTitle.textContent = NAV.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : s.route))?.label ?? "";
     };
 
     // ----- pages (re-rendered only when what they show actually changed, so typing in forms is never disturbed)
     let pageSig = "";
     const sigFor = (s: AppState): string => {
       switch (s.route) {
-        case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
-        case "memory": return ""; // lives on the Brain page, which keeps itself up to date
+        case "home": return JSON.stringify([s.brief, s.repeatSuggestions, s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
+        case "memory": case "notes": case "reminders": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
         case "modules": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
-        case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length]);
+        case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length]);
       }
     };
     const renderPage = (s: AppState) => {
@@ -138,8 +141,10 @@ kernel.register({
       const changedRoute = !pageSig.startsWith(s.route + "|");
       pageSig = sig;
       const page =
-        s.route === "home" ? homePage(s, { go, openChat, chats })
-        : s.route === "memory" ? brainPage({ open: "memory", onClosed: () => { if (routeFromHash() === "memory") go("brain"); } })
+        s.route === "home" ? homePage(s, { go, openChat, chats, askBrief: () => { openChat(); void chatWin.askBrief(); },
+            saveQuickCommand: (name, text) => { const cur = app.get().assistantSettings?.quickCommands ?? []; void api.saveAssistantSettings({ quickCommands: [...cur, { name, text }] }).then((r) => { if (r.ok) { app.set({ assistantSettings: r.value }); dismissSuggestion(name); showToast(`Команда /${name} сохранена`); } else showToast(r.error.message); }); },
+            dismissSuggestion })
+        : BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()
         : s.route === "update" ? updatePage(s)
@@ -165,20 +170,21 @@ kernel.register({
 
     // route entry hooks
     ctx.onStop(app.select((s) => s.route, (r) => {
-      if (r === "memory" || r === "brain") void refreshMemory();
+      if (BRAIN_TILE_ROUTES[r] || r === "brain") void refreshMemory();
       if (r === "modules") void refreshModules();
       if (r === "update") { void refreshUpdate(); void refreshEvents(); }
       pageHost.focus({ preventScroll: true });
     }));
 
-    void refreshStatus(); void refreshUpdate(); void refreshEvents(); void refreshMemory(); void refreshModules();
+    void refreshStatus(); void refreshUpdate(); void refreshEvents(); void refreshMemory(); void refreshModules(); void refreshSettings(); void refreshBrief(); void refreshSuggestions();
+    ctx.onStop(app.select((s) => s.brief?.due.map((d) => d.id).join(",") ?? "", () => { const due = app.get().brief?.due ?? []; if (due.length) announceDue(due, () => go("reminders")); }));
     let tick = 0;
     const poll = setInterval(() => {
       tick++;
       const s = app.get();
       if (ctl.busy || s.approvals.length) void refreshApprovals();
       if (s.route === "update" || s.update?.phase === "downloading" || s.update?.phase === "testing") { void refreshUpdate(); void refreshEvents(); }
-      if (tick % 8 === 0) { void refreshStatus(); void refreshUpdate(); }
+      if (tick % 8 === 0) { void refreshStatus(); void refreshUpdate(); void refreshBrief(); void refreshSuggestions(); }
     }, 2500);
     ctx.onStop(() => clearInterval(poll));
     ctx.onStop(() => { chatWin.root.remove(); avatar.root.remove(); root.replaceChildren(); });

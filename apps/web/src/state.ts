@@ -1,14 +1,17 @@
 import { Store, attempt } from "@juunibi/core";
 import { ACCENT_IDS, type AccentId } from "./accents";
-import { api, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
+import { api, type AssistantSettings, type Brief, type RepeatSuggestion, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
 
-export type Route = "home" | "memory" | "modules" | "brain" | "update" | "settings";
-export const ROUTES: Route[] = ["home", "memory", "modules", "brain", "update", "settings"];
+export type Route = "home" | "memory" | "notes" | "reminders" | "quality" | "modules" | "brain" | "update" | "settings";
+export const ROUTES: Route[] = ["home", "memory", "notes", "reminders", "quality", "modules", "brain", "update", "settings"];
+/** Addresses that open a tile of the Brain page in its window. */
+export const BRAIN_TILE_ROUTES: Partial<Record<Route, "memory" | "notes" | "reminders" | "quality">> = { memory: "memory", notes: "notes", reminders: "reminders", quality: "quality" };
 export type Theme = "auto" | "light" | "dark";
 
 export interface AppState {
   route: Route; navOpen: boolean;
   status: Status | null; memory: MemoryItem[]; modules: ModuleInfo[];
+  assistantSettings: AssistantSettings | null; brief: Brief | null; repeatSuggestions: RepeatSuggestion[];
   approvals: ApprovalItem[];
   update: UpdateStatus | null; updateEvents: UpdateEvent[]; updateError: string;
   theme: Theme; showScenes: boolean;
@@ -22,7 +25,7 @@ const pick = <T extends string>(v: unknown, ok: readonly T[], d: T): T => (ok.in
 
 export const app = new Store<AppState>({
   route: routeFromHash(), navOpen: false,
-  status: null, memory: [], modules: [], approvals: [],
+  status: null, memory: [], modules: [], approvals: [], assistantSettings: null, brief: null, repeatSuggestions: [],
   update: null, updateEvents: [], updateError: "",
   theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false,
   chatOpen: false, chatMax: saved.chatMax === true,
@@ -42,6 +45,24 @@ export async function refreshStatus() {
   app.set({ status: r.ok ? r.value : { assistant: false, hint: "Сервер недоступен. Запустите через JUUNIBI.bat." } });
 }
 export async function refreshMemory() { const r = await api.memory(); if (r.ok) app.set({ memory: r.value }); }
+export async function refreshSettings() { const r = await api.assistantSettings(); if (r.ok) app.set({ assistantSettings: r.value }); }
+const DISMISSED_KEY = "juunibi:dismissedSuggestions";
+export const dismissedSuggestions = (): string[] => { const r = attempt(() => JSON.parse(localStorage.getItem(DISMISSED_KEY) ?? "[]") as string[]); return r.ok && Array.isArray(r.value) ? r.value : []; };
+export function dismissSuggestion(name: string) {
+  attempt(() => localStorage.setItem(DISMISSED_KEY, JSON.stringify([...new Set([...dismissedSuggestions(), name])].slice(-50))));
+  app.set({ repeatSuggestions: app.get().repeatSuggestions.filter((x) => x.name !== name) });
+}
+export async function refreshSuggestions() {
+  const r = await api.suggestions();
+  if (!r.ok) return;
+  const hidden = new Set(dismissedSuggestions());
+  const fresh = r.value.filter((x) => !hidden.has(x.name));
+  if (JSON.stringify(fresh) !== JSON.stringify(app.get().repeatSuggestions)) app.set({ repeatSuggestions: fresh });
+}
+export async function refreshBrief() {
+  const r = await api.brief();
+  if (r.ok && JSON.stringify(r.value) !== JSON.stringify(app.get().brief)) app.set({ brief: r.value });
+}
 export async function refreshModules() { const r = await api.modules(); if (r.ok) app.set({ modules: r.value }); }
 export async function refreshApprovals() {
   const r = await api.approvals();

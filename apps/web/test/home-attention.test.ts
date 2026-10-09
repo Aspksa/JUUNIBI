@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppState } from "../src/state";
-import { buildAttention } from "../src/pages/home";
+import { briefItems, buildAttention } from "../src/pages/home";
 
 const base = { status: { assistant: true }, memory: [], modules: [], approvals: [], update: null, chatOpen: false } as unknown as AppState;
 const state = (o: Partial<AppState>): AppState => ({ ...base, ...o } as AppState);
@@ -43,6 +43,27 @@ describe("Требует внимания: каждый повод ровно о
     const modules = [{ name: "a", deps: [], status: "stopped" }] as unknown as AppState["modules"];
     expect(ids(state({ modules }))).toEqual([]);
   });
+  it("сработавшие напоминания: одна строка с текстом, при нескольких — со счётом", () => {
+    const brief = (n: number) => ({ now: "", due: Array.from({ length: n }, (_, i) => ({ id: "r" + i, text: "Позвонить маме", at: "" })), today: [], openTodos: { count: 0, first: [] }, plansRunning: 0, memoryPending: 0, modulesFailed: [], updateAvailable: false, attention: n }) as AppState["brief"];
+    const one = buildAttention(state({ brief: brief(1) }), deps());
+    expect(one.map((a) => a.id)).toEqual(["reminder"]);
+    expect(one[0]!.text).toContain("Позвонить маме");
+    expect(buildAttention(state({ brief: brief(3) }), deps())[0]!.text).toContain("3");
+    const d = deps(); one[0]!.run();
+    expect(ids(state({ brief: brief(0) }))).toEqual([]);
+    void d;
+  });
+  it("повторяющаяся просьба: предложение сохранить, с кнопкой «Не надо»; без обработчиков не показывается", () => {
+    const suggestion = { text: "Подведи итоги дня", count: 3, name: "подведи" };
+    const saved = vi.fn(), dismissed = vi.fn();
+    const items = buildAttention(state({ repeatSuggestions: [suggestion] }), { ...deps(), saveQuickCommand: saved, dismissSuggestion: dismissed });
+    expect(items.map((a) => a.id)).toEqual(["suggest"]);
+    expect(items[0]!.text).toContain("/подведи");
+    items[0]!.run(); items[0]!.secondary!.run();
+    expect(saved).toHaveBeenCalledWith("подведи", "Подведи итоги дня");
+    expect(dismissed).toHaveBeenCalledWith("подведи");
+    expect(ids(state({ repeatSuggestions: [suggestion] }))).toEqual([]);
+  });
   it("все id в одном списке уникальны", () => {
     const s = state({ status: { assistant: false } as AppState["status"], update: upd({}), approvals: [{ id: "1" }] as never, memory: [{ status: "pending" }] as never,
       modules: [{ name: "a", deps: [], status: "failed" }] as never });
@@ -50,4 +71,17 @@ describe("Требует внимания: каждый повод ровно о
     expect(new Set(list).size).toBe(list.length);
     expect(list).toEqual(["key", "approvals", "update", "memory", "modules"]);
   });
+});
+
+describe("карточка «Сегодня»", () => {
+  const brief = (o: Partial<NonNullable<AppState["brief"]>> = {}) => ({ now: "", due: [], today: [], openTodos: { count: 0, first: [] }, plansRunning: 0, memoryPending: 0, modulesFailed: [], updateAvailable: false, attention: 0, ...o }) as NonNullable<AppState["brief"]>;
+  it("порядок: сработавшее, запланированное на сегодня, дела; не больше шести", () => {
+    const b = brief({ due: [{ id: "1", text: "утро", at: "" }], today: [{ id: "2", text: "вечер", at: "2026-10-09T18:00:00" }], openTodos: { count: 9, first: Array.from({ length: 5 }, (_, i) => ({ id: "t" + i, text: "дело " + i })) } });
+    const items = briefItems(b);
+    expect(items.map((i) => i.kind)).toEqual(["due", "today", "todo", "todo", "todo", "todo"]);
+    expect(items[0]!.when).toBe("сработало");
+    expect(items[1]!.when).toMatch(/18:00/);
+    expect(briefItems(b, 2)).toHaveLength(2);
+  });
+  it("пустой день — пустой список", () => { expect(briefItems(brief())).toEqual([]); });
 });

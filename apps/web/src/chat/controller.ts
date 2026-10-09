@@ -94,7 +94,7 @@ export class ChatController {
     let steps: Step[] = [];
     let finished = false;
     try {
-      await streamChat({ message: userText, history }, ctl.signal, (e) => {
+      await streamChat({ message: userText, history, session: convId }, ctl.signal, (e) => {
         if (e.type === "delta") { text += e.text; this.chats.patch(convId, reply.id, { content: text }); }
         else if (e.type === "tool") {
           if (e.phase === "start") steps = [...steps, { id: e.id, name: e.name, status: "running" }];

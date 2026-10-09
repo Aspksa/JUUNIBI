@@ -1,10 +1,12 @@
 import { el, icon } from "../dom";
-import { api, type BrainPlan } from "../api";
+import { api, type BrainPlan, type EvalStatus, type Note, type QualityReport, type Reminder } from "../api";
 import { app } from "../state";
 import { btn, dot, pageHead } from "./kit";
 import { buildBrainTiles, type BrainData, type TileId } from "./brain-model";
 import { memoryPanel } from "./memory";
 import { openSheet, type Sheet } from "./sheet";
+import { notesPanel, qualityPanel, remindersPanel } from "./brain-panels";
+import { block, empty, failed, field, fold, note, pct, postJson, progress, tag, tile, when } from "./brain-ui";
 
 const MODES: Record<string, string> = { chat: "Обычный чат", analysis: "Анализ", agent: "Агент", creative: "Творчество" };
 const PLAN_STATUS: Record<string, string> = { planned: "Запланирован", running: "Выполняется", completed: "Готов", failed: "Ошибка" };
@@ -15,42 +17,6 @@ const CATEGORIES: Record<string, string> = { "multi-step": "Многошагов
 const ROLES: Record<string, string> = { juunibi: "JUUNIBI", deepseek: "Модель", verifier: "Проверка" };
 const EVENT_STATUS: Record<string, string> = { question: "вопрос", unverified: "не проверено", pending: "в карантине", rejected: "отклонено", verified: "проверено" };
 const KNOWLEDGE_STATUS: Record<string, string> = { verified: "проверено", "needs-review": "нужна проверка" };
-const pct = (v: number | null | undefined) => (v === null || v === undefined ? "—" : Math.round(v) + "%");
-const when = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
-
-const failed = (title: string, text: string) => [el("header", { cls: "br-block-head" }, el("h2", { textContent: title })), empty(text)];
-const postJson = (path: string, body: unknown) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-
-// ---------- small building blocks ----------
-/** Page block with a title, an optional one-line hint and a body. Never nested inside another block. */
-function block(title: string, hint: string | null, ...kids: (Node | null)[]): HTMLElement {
-  return el("section", { cls: "br-block" },
-    el("header", { cls: "br-block-head" }, el("h2", { textContent: title }), hint ? el("p", { cls: "muted", textContent: hint }) : null),
-    ...kids);
-}
-function tile(label: string, value: string, sub?: string, tone?: "ok" | "warn" | "off"): HTMLElement {
-  return el("div", { cls: "br-tile" },
-    el("span", { cls: "br-tile-label" }, tone ? dot(tone) : null, label),
-    el("strong", { cls: "br-tile-value", textContent: value }),
-    sub ? el("span", { cls: "br-tile-sub muted", textContent: sub }) : null);
-}
-const tag = (text: string, tone = "") => el("span", { cls: "br-tag " + tone, textContent: text });
-const note = (text: string) => el("p", { cls: "br-note muted", textContent: text });
-const empty = (text: string) => el("p", { cls: "br-empty muted", textContent: text });
-function progress(done: number, total: number, label: string): HTMLElement {
-  const v = total > 0 ? Math.min(100, Math.round((100 * done) / total)) : 0;
-  const bar = el("div", { cls: "br-bar", attrs: { role: "progressbar", "aria-label": label, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(v) } },
-    el("i", {}));
-  (bar.firstElementChild as HTMLElement).style.width = v + "%";
-  return bar;
-}
-function field(label: string, control: HTMLElement, hint?: string): HTMLElement {
-  return el("label", { cls: "br-field" }, el("span", { textContent: label }), control, hint ? el("small", { cls: "muted", textContent: hint }) : null);
-}
-function fold(summary: string, ...kids: Node[]): HTMLElement {
-  return el("details", { cls: "br-fold" }, el("summary", { textContent: summary }), ...kids);
-}
-
 // ---------- page: a hub of tiles, each opening in a window in the middle of the screen ----------
 export interface BrainPageOpts { /** Tile to open as soon as the page is shown (used by the old #/memory address). */ open?: TileId; /** Called after that opening window is closed. */ onClosed?: () => void }
 
@@ -61,9 +27,10 @@ const TONE_CLASS = { ok: "started", warn: "pending", off: "stopped" } as const;
 /** Only the memory panel has no hint of its own; every other panel explains itself under its title. */
 const MEMORY_HINT = "Что помощница помнит о вас. Новые записи работают только после вашего «Принять».";
 
+
 /** Dashboard of tiles; tasks are managed in the assistant chat, not through redundant buttons here. */
 export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
-  let data: BrainData = { memory: app.get().memory, plans: null, learning: null, knowledge: null, graph: null, gaps: null };
+  let data: BrainData = { memory: app.get().memory, plans: null, learning: null, knowledge: null, graph: null, gaps: null, organizer: null, quality: null, evalLast: null };
   let mode = "";
   let problem = "";
   let sheet: Sheet | null = null;
@@ -74,8 +41,8 @@ export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
   const root = el("div", { cls: "page brain" },
     pageHead("brain", "Мозг JUUNIBI", "Память, планы, обучение и знания. Нажмите на плитку, чтобы открыть."),
     el("div", { cls: "br-safety", attrs: { role: "note" } },
-      el("div", {}, el("strong", { textContent: "Выполняется само" }), el("span", { cls: "muted", textContent: "Только чтение: список модулей и поиск по памяти." })),
-      el("div", {}, el("strong", { textContent: "Только с вашего подтверждения" }), el("span", { cls: "muted", textContent: "Создание планов и любые действия с последствиями." }))),
+      el("div", {}, el("strong", { textContent: "Выполняется само" }), el("span", { cls: "muted", textContent: "Только чтение: модули, память, заметки, сводка дня, а также папка и справочник, если вы их разрешили." })),
+      el("div", {}, el("strong", { textContent: "Только с вашего подтверждения" }), el("span", { cls: "muted", textContent: "Планы, заметки и напоминания, запись файлов и любые действия с последствиями." }))),
     status, grid);
 
   const renderGrid = () => {
@@ -94,12 +61,15 @@ export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
   };
 
   async function reload() {
-    const [st, learning, knowledge, graph, gaps] = await Promise.all([
+    const [st, learning, knowledge, graph, gaps, organizer, quality, evalSt] = await Promise.all([
       api.brainStatus(),
       getJson<{ settings: { enabled: boolean; dailyLimit: number }; used: number }>("/api/learning"),
       getJson<unknown[]>("/api/knowledge"),
       getJson<{ nodes: unknown[]; edges: unknown[] }>("/api/knowledge/graph"),
       getJson<unknown[]>("/api/knowledge/gaps"),
+      getJson<{ notes: Note[]; reminders: Reminder[] }>("/api/organizer"),
+      getJson<QualityReport>("/api/assistant/quality"),
+      getJson<EvalStatus>("/api/assistant/eval"),
     ]);
     problem = st.ok ? "" : "Модуль «Мозг» недоступен: " + st.error.message;
     mode = st.ok ? st.value.mode : "";
@@ -110,6 +80,7 @@ export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
       knowledge: knowledge ? knowledge.length : null,
       graph: graph ? { nodes: graph.nodes.length, edges: graph.edges.length } : null,
       gaps: gaps ? gaps.length : null,
+      organizer, quality, evalLast: evalSt?.last ? { passed: evalSt.last.passed, total: evalSt.last.total } : null,
     };
     renderGrid();
   }
@@ -117,6 +88,9 @@ export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
   function content(id: TileId): Node {
     switch (id) {
       case "memory": return memoryPanel(app.get());
+      case "notes": return notesPanel(() => void reload());
+      case "reminders": return remindersPanel(() => void reload());
+      case "quality": return qualityPanel(() => void reload());
       case "plans": return plansBlock(data.plans ?? []);
       case "learning": return learningPanel();
       case "knowledge": return knowledgePanel();

@@ -2,8 +2,8 @@
 import type { Conversation } from "./chats";
 
 // ---------- slash commands ----------
-export type CommandId = "new" | "remember" | "memory" | "modules" | "update" | "settings" | "export" | "clear" | "scenes" | "help";
-export interface Command { id: CommandId; names: string[]; hint: string; arg?: string }
+export type CommandId = "new" | "remember" | "memory" | "modules" | "update" | "settings" | "export" | "clear" | "scenes" | "help" | "brief" | "quick";
+export interface Command { id: CommandId; names: string[]; hint: string; arg?: string; /** For owner-defined quick commands: the text that is sent. */ quick?: string }
 export const COMMANDS: Command[] = [
   { id: "new", names: ["новый", "new"], hint: "Начать новый чат" },
   { id: "remember", names: ["запомни", "remember"], hint: "Запомнить факт или предпочтение", arg: "текст" },
@@ -14,23 +14,29 @@ export const COMMANDS: Command[] = [
   { id: "export", names: ["экспорт", "export"], hint: "Сохранить чат в файл Markdown" },
   { id: "clear", names: ["очистить", "clear"], hint: "Очистить текущий чат" },
   { id: "scenes", names: ["сцены", "scenes"], hint: "Включить/выключить сцены персонажа" },
+  { id: "brief", names: ["сводка", "brief"], hint: "Сводка дня: напоминания, дела, что требует внимания" },
   { id: "help", names: ["помощь", "help"], hint: "Горячие клавиши и команды" },
 ];
+/** What `/сводка` sends: the assistant answers from the daily_brief tool. */
+export const BRIEF_PROMPT = "Сделай сводку дня: возьми данные из инструмента daily_brief и коротко расскажи, что требует моего внимания сегодня.";
+/** Owner-defined quick commands ("/итоги") shown next to the built-in ones. */
+export const quickToCommands = (list: { name: string; text: string }[]): Command[] =>
+  list.map((q) => ({ id: "quick" as const, names: [q.name], hint: q.text.replace(/\s+/g, " ").slice(0, 70), quick: q.text }));
 
 /** `/запомни кофе без сахара` -> { command, arg }. Unknown commands return null (the text is sent as a normal message). */
-export function parseCommand(input: string): { command: Command; arg: string } | null {
+export function parseCommand(input: string, extra: Command[] = []): { command: Command; arg: string } | null {
   const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(input.trim());
   if (!m) return null;
   const name = m[1]!.toLowerCase();
-  const command = COMMANDS.find((c) => c.names.includes(name));
+  const command = [...COMMANDS, ...extra].find((c) => c.names.includes(name));
   return command ? { command, arg: (m[2] ?? "").trim() } : null;
 }
 /** Palette entries for what the user is typing: only while the first word is still being typed. */
-export function suggestCommands(input: string): Command[] {
+export function suggestCommands(input: string, extra: Command[] = []): Command[] {
   const m = /^\/(\S*)$/.exec(input);
   if (!m) return [];
   const q = m[1]!.toLowerCase();
-  return COMMANDS.filter((c) => c.names.some((n) => n.startsWith(q)));
+  return [...COMMANDS, ...extra].filter((c) => c.names.some((n) => n.startsWith(q)));
 }
 
 // ---------- attachments ----------
@@ -79,6 +85,9 @@ export function withFiles(text: string, files: Attachment[] | undefined): string
 // ---------- tool steps ----------
 const STEP_LABELS: Record<string, string> = {
   list_modules: "Смотрю модули проекта", search_memory: "Ищу в памяти", remember: "Предлагаю запомнить", get_time: "Узнаю время",
+  list_files: "Смотрю папку", read_file: "Читаю файл", search_files: "Ищу в файлах", write_file: "Записываю файл",
+  web_search: "Ищу в справочнике", web_read: "Читаю статью", list_notes: "Смотрю заметки", add_note: "Добавляю заметку", complete_todo: "Отмечаю дело",
+  list_reminders: "Смотрю напоминания", add_reminder: "Ставлю напоминание", cancel_reminder: "Отменяю напоминание", daily_brief: "Собираю сводку дня",
 };
 export const stepLabel = (name: string) => STEP_LABELS[name] ?? `Использую «${name}»`;
 

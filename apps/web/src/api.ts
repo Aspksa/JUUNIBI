@@ -8,7 +8,39 @@ export interface UpdateEvent {event_id:string;type:string;timestamp:string;opera
 export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; pendingRemovals?: string[]; removalsConfirmed?: boolean; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
 export interface ChatReply { turnId: string; reply: string; tools: string[]; memory: string[] }
-export interface MemoryItem { id: string; kind: string; text: string; status: "active" | "pending"; score: number; createdAt?: number }
+export interface MemoryItem { id: string; kind: string; text: string; status: "active" | "pending"; score: number; createdAt?: number; expiresAt?: number; pinned?: boolean }
+export interface QuickCommand { name: string; text: string }
+export interface AssistantSettings {
+  embeddings: { enabled: boolean; model: string };
+  suggestions: "off" | "rules" | "smart";
+  summaries: boolean;
+  files: { root: string; allowWrite: boolean };
+  web: boolean;
+  quickCommands: QuickCommand[];
+}
+export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string }
+export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string }
+export interface Brief {
+  now: string; due: { id: string; text: string; at: string }[]; today: { id: string; text: string; at: string }[];
+  openTodos: { count: number; first: { id: string; text: string }[] }; plansRunning: number; memoryPending: number; modulesFailed: string[]; updateAvailable: boolean; attention: number;
+}
+export interface QualityReport {
+  totals: { turns: number; rated: number; up: number; down: number; unrated: number; satisfaction: number | null };
+  byDay: { day: string; up: number; down: number }[];
+  byTool: { tool: string; uses: number; up: number; down: number; satisfaction: number | null }[];
+  worst: { id: string; at: string; user: string; reply: string; tools: string[] }[];
+  troubleWords: { word: string; down: number; up: number }[];
+  datasetReady: number;
+}
+export interface EvalResult { id: string; title: string; passed: boolean; ms: number; answer: string; tools: string[]; error?: string }
+export interface EvalRun { id: string; at: string; model: string; fingerprint: string; passed: number; total: number; results: EvalResult[] }
+export interface EvalStatus {
+  running: boolean; progress: { done: number; total: number } | null; error: string | null; last: EvalRun | null; previous: EvalRun | null;
+  compare: { improved: string[]; regressed: string[]; delta: number | null; sameSetup: boolean } | null;
+  history: { id: string; at: string; model: string; passed: number; total: number }[]; cases: { id: string; title: string }[];
+}
+export interface RepeatSuggestion { text: string; count: number; name: string }
+export interface EmbeddingDiagnostics { configured: boolean; checks: number; failures: number; paused: boolean; mode: string }
 export interface ModuleInfo {
   name: string; deps: string[]; status: string; title?: string; note?: string;
   kind?: "builtin" | "manifest"; error?: string; enabled?: boolean; running?: boolean; core?: boolean;
@@ -64,6 +96,26 @@ export const api = {
   chat: (message: string) => attemptAsync(() => call<ChatReply>("/api/chat", post({ message }))),
   feedback: (turnId: string, rating: 1 | -1) => attemptAsync(() => call("/api/feedback", post({ turnId, rating }))),
   reflect: (turnId: string) => attemptAsync(() => call<MemoryItem[]>("/api/reflect", post({ turnId }))),
+  assistantSettings: () => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings")),
+  saveAssistantSettings: (patch: Partial<AssistantSettings>) => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings", post(patch))),
+  embeddingTest: () => attemptAsync(() => call<{ ok: boolean; dims?: number; ms: number; error?: string }>("/api/assistant/embedding-test", post({}))),
+  embeddingDiagnostics: () => attemptAsync(() => call<EmbeddingDiagnostics>("/api/memory/diagnostics")),
+  memoryPin: (id: string, pinned: boolean) => attemptAsync(() => call<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/pin`, post({ pinned }))),
+  memoryExpiry: (id: string, until: number | null) => attemptAsync(() => call<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/expiry`, post({ until }))),
+  memoryExport: () => attemptAsync(() => call<unknown>("/api/memory/export")),
+  memoryImport: (data: unknown) => attemptAsync(() => call<{ added: number; duplicates: number; skipped: number }>("/api/memory/import", post(data))),
+  organizer: () => attemptAsync(() => call<{ notes: Note[]; reminders: Reminder[] }>("/api/organizer")),
+  addNote: (kind: "note" | "todo", text: string) => attemptAsync(() => call<Note>("/api/organizer/notes", post({ kind, text }))),
+  setTodoDone: (id: string, done: boolean) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/done`, post({ done }))),
+  removeNote: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/notes/${encodeURIComponent(id)}`, { method: "DELETE" })),
+  addReminder: (text: string, at: string) => attemptAsync(() => call<Reminder>("/api/organizer/reminders", post({ text, at }))),
+  dismissReminder: (id: string) => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/dismiss`, post({}))),
+  removeReminder: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/reminders/${encodeURIComponent(id)}`, { method: "DELETE" })),
+  brief: () => attemptAsync(() => call<Brief>("/api/brief")),
+  quality: () => attemptAsync(() => call<QualityReport>("/api/assistant/quality")),
+  evalStatus: () => attemptAsync(() => call<EvalStatus>("/api/assistant/eval")),
+  evalStart: () => attemptAsync(() => call<EvalStatus>("/api/assistant/eval", post({}))),
+  suggestions: () => attemptAsync(() => call<RepeatSuggestion[]>("/api/assistant/suggestions")),
   addMemory: (text: string, kind: "fact" | "preference" = "fact") => attemptAsync(() => call<MemoryItem>("/api/memory", post({ text, kind }))),
   memory: () => attemptAsync(() => call<MemoryItem[]>("/api/memory")),
   approve: (id: string) => attemptAsync(() => call(`/api/memory/${id}/approve`, post({}))),

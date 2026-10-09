@@ -14,6 +14,10 @@ import { KnowledgeLedger } from "./knowledge-ledger";
 import { durableMemoryStore } from "./durable-memory-store";
 import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
+import { AssistantSettingsStore } from "./assistant-settings";
+import { Organizer, buildBrief } from "./organizer";
+import { EvalHistory, EvalService } from "./evals";
+import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -134,8 +138,38 @@ const modules = new ModuleManager(root, [
 await loadOrQuarantine("модули", path.join(dataDir, "modules.json"), () => modules.load());
 await loadOrQuarantine("манифесты", path.join(dataDir, "module-manifests.json"), () => manifests.load());
 const memory = new Memory(durableMemoryStore(path.join(dataDir, "memory.json")));
-// Reuse the configured chat credential; embeddings use a separate model, never the chat model.
-const embeddingModel = process.env.CLOUDRU_EMBEDDING_MODEL;
+const settings = new AssistantSettingsStore(path.join(dataDir, "assistant-settings.json"));
+await loadOrQuarantine("настройки помощницы", path.join(dataDir, "assistant-settings.json"), () => settings.load());
+let embeddingKey: { apiKey: string; baseUrl?: string } | undefined;
+/** Reuse the chat credential; embeddings use their own model (never the chat model). Any problem leaves word search in place. */
+function applyEmbeddings() {
+  const e = settings.get().embeddings;
+  if (!embeddingKey || !e.enabled) { memory.setEmbeddingProvider(undefined); return; }
+  const base = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? embeddingKey.baseUrl;
+  try { memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) })); }
+  catch (error) { memory.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
+}
+settings.onChange(() => applyEmbeddings());
+let currentPersona = "";
+const evalHistory = new EvalHistory(path.join(dataDir, "evals.json"));
+await loadOrQuarantine("проверки качества", path.join(dataDir, "evals.json"), () => evalHistory.load());
+const evals = new EvalService(evalHistory, {
+  ask: () => { const a = assistant; return a ? async (q, signal) => { const r = await a.ask(q, "eval", signal, { history: [], ephemeral: true }); return { reply: r.reply, tools: r.tools }; } : undefined; },
+  model: () => activeModel ?? MODEL, persona: () => currentPersona,
+});
+const organizer = new Organizer(path.join(dataDir, "organizer.json"));
+await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
+/** Start-of-day data, shared by the assistant tool and the Home page. */
+async function briefData() {
+  const up = updater.status();
+  return buildBrief({
+    now: Date.now(), reminders: organizer.listReminders(), notes: organizer.listNotes(),
+    plansRunning: brain.status().plans.filter((p) => p.status === "running").length,
+    memoryPending: (await memory.list("pending")).length,
+    modulesFailed: modules.list().filter((m) => m.status === "failed").map((m) => m.name),
+    updateAvailable: !!up.latest && up.localVersion !== "не определена" && up.localVersion !== up.latest.sha,
+  });
+}
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
@@ -148,8 +182,8 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
   } };
   sceneLlm = llm;
   learningKey = apiKey;
-  const embeddingBaseUrl = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? baseUrl;
-  if (embeddingModel) memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey, model: embeddingModel, ...(embeddingBaseUrl ? { baseUrl: embeddingBaseUrl } : {}) }));
+  embeddingKey = { apiKey, ...(baseUrl ? { baseUrl } : {}) };
+  applyEmbeddings();
   const character = JSON.parse(await readFile(path.join(root, "apps", "server", "assets", "JUUNIBI_character_v1.json"), "utf8"));
   const persona = [
     "Ты — JUUNIBI, мифическая двенадцатихвостая лисица, личная помощница и хранительница Дома Лисы.",
@@ -158,7 +192,9 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не выдавай художественный образ за реальное сознание или реальные чувства. Не обещай невыполненных действий. Перед публикациями, удалениями и иными существенными действиями проси разрешение.",
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\n");
-  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
+  currentPersona = persona;
+  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
+  for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData })) assistant.tools.register(tool);
   assistant.tools.register({
     name: "brain_get_plans", risk: "read", description: "Прочитать планы задач.",
     parameters: { type: "object", properties: {} },
@@ -237,6 +273,7 @@ const server = createApp({
   knowledge,
   scenes,
   modules: () => modules.list(),
+  settings, organizer, brief: briefData, evals,
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),
     title: (n) => modules.list().find((m) => m.name === n)?.title ?? n,
@@ -252,14 +289,16 @@ const server = createApp({
 checkUpdates();
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
+const reminderTimer = setInterval(() => { void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e)); }, 20_000);
+void organizer.tick().catch(() => {});
 const learningTimer = setInterval(() => { if (cloudConfigured && modules.isActive("brain") && modules.isActive("assistant")) void modules.track("brain", () => learning.tick()).catch(() => {}); }, 10 * 60_000);
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
-  clearInterval(learningTimer); clearInterval(updateTimer); approvalGate.denyAll(); server.close();
+  clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
   // Let pending state writes finish so a stop never loses data.
-  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), auditQueue]);
+  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue]);
   await kernel.stop();
   process.exit(0);
 };

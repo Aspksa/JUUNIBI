@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryItem, ModuleInfo } from "../src/api";
-import { buildModules, filterMemory, filterModules, impactOf, layoutGraph, memoryCounts, moduleMeta, needsOf, shortUptime, statusShares } from "../src/pages/models";
+import { buildModules, filterMemory, filterModules, impactOf, isArchived, layoutGraph, memoryCounts, moduleMeta, needsOf, shortUptime, statusShares } from "../src/pages/models";
 
 const mod = (name: string, deps: string[] = [], status = "started"): ModuleInfo => ({ name, deps, status });
 describe("buildModules", () => {
@@ -28,7 +28,7 @@ const m = (id: string, text: string, kind = "fact", status: "active" | "pending"
 describe("memory helpers", () => {
   const items = [m("1", "Люблю чай", "preference", "active", 10), m("2", "Живу в Москве", "fact", "active", 30), m("3", "Отвечать кратко", "lesson", "pending", 20), m("4", "Кофе без сахара", "fact", "pending", 40)];
   it("counts by status and kind", () => {
-    expect(memoryCounts(items)).toEqual({ all: 4, pending: 2, fact: 2, preference: 1, lesson: 1, active: 2 });
+    expect(memoryCounts(items)).toEqual({ all: 4, pending: 2, fact: 2, preference: 1, lesson: 1, pinned: 0, archived: 0, active: 2 });
   });
   it("pending first, then newest first", () => {
     expect(filterMemory(items, "all", "").map((x) => x.id)).toEqual(["4", "3", "2", "1"]);
@@ -105,5 +105,23 @@ describe("module tiles", () => {
   });
   it("shortUptime picks the shortest useful unit", () => {
     expect([shortUptime(5), shortUptime(150), shortUptime(7300), shortUptime(200000)]).toEqual(["только что", "2 мин", "2 ч", "2 д"]);
+  });
+});
+
+describe("memory: pinned and archive", () => {
+  const NOW = 1_000_000;
+  const mk = (id: string, o: Partial<MemoryItem> = {}): MemoryItem => ({ id, kind: "fact", text: "запись " + id, status: "active", score: 0, createdAt: 1, ...o });
+  const items = [mk("a"), mk("b", { pinned: true }), mk("c", { expiresAt: NOW - 1 }), mk("d", { expiresAt: NOW + 1000 }), mk("e", { status: "pending", kind: "lesson" }), mk("f", { pinned: true, expiresAt: NOW - 5 })];
+  it("isArchived: only a date in the past", () => {
+    expect([isArchived({}, NOW), isArchived({ expiresAt: NOW + 1 }, NOW), isArchived({ expiresAt: NOW }, NOW), isArchived({ expiresAt: NOW - 1 }, NOW)]).toEqual([false, false, true, true]);
+  });
+  it("counts: archived entries are counted apart and never in the other numbers", () => {
+    expect(memoryCounts(items, NOW)).toMatchObject({ all: 4, archived: 2, pinned: 1, pending: 1, active: 3, lesson: 1, fact: 3 });
+  });
+  it("filter: the main list hides the archive, the archive shows only expired, pinned come first", () => {
+    expect(filterMemory(items, "all", "", NOW).map((m) => m.id)).toEqual(["e", "b", "a", "d"]);
+    expect(filterMemory(items, "archived", "", NOW).map((m) => m.id).sort()).toEqual(["c", "f"]);
+    expect(filterMemory(items, "pinned", "", NOW).map((m) => m.id)).toEqual(["b"]);
+    expect(filterMemory(items, "archived", "запись c", NOW).map((m) => m.id)).toEqual(["c"]);
   });
 });

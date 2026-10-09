@@ -127,3 +127,23 @@ describe("speechText", () => {
     expect(speechText("```py\nunterminated")).toBe("Блок кода.");
   });
 });
+
+import { BRIEF_PROMPT, parseCommand as parseCmd, quickToCommands, suggestCommands as suggestCmds } from "../src/chat/helpers";
+describe("быстрые команды и /сводка", () => {
+  const quick = quickToCommands([{ name: "итоги", text: "Подведи итоги дня" }, { name: "план", text: "Составь план\nна завтра" }]);
+  it("/сводка — встроенная команда", () => {
+    expect(parseCmd("/сводка")?.command.id).toBe("brief");
+    expect(parseCmd("/brief")?.command.id).toBe("brief");
+    expect(BRIEF_PROMPT).toContain("daily_brief");
+  });
+  it("быстрая команда находится по имени, с лишним текстом в аргументе", () => {
+    expect(parseCmd("/итоги", quick)).toMatchObject({ command: { id: "quick", quick: "Подведи итоги дня" }, arg: "" });
+    expect(parseCmd("/итоги за неделю", quick)).toMatchObject({ arg: "за неделю" });
+    expect(parseCmd("/итоги")).toBeNull(); // без списка быстрых — неизвестная команда
+  });
+  it("палитра показывает быстрые команды вместе со встроенными", () => {
+    expect(suggestCmds("/ит", quick).map((c) => c.names[0])).toEqual(["итоги"]);
+    expect(suggestCmds("/", quick).length).toBeGreaterThan(10);
+    expect(quick[1]!.hint).not.toContain("\n");
+  });
+});

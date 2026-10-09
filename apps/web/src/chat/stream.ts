@@ -5,7 +5,7 @@ export type StreamEvent =
   | { type: "done"; turnId: string; reply: string; tools: string[]; memory?: string[] } | { type: "error"; message: string };
 
 /** POSTs to /api/chat/stream and yields NDJSON events. Aborting the signal cancels generation on the server too. */
-export async function streamChat(body: { message: string; history: { role: string; content: string }[] }, signal: AbortSignal, onEvent: (e: StreamEvent) => void): Promise<void> {
+export async function streamChat(body: { message: string; history: { role: string; content: string }[]; session?: string }, signal: AbortSignal, onEvent: (e: StreamEvent) => void): Promise<void> {
   const res = await fetch("/api/chat/stream", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
   if (!res.ok || !res.body) {
     const j = await res.json().catch(() => ({}));

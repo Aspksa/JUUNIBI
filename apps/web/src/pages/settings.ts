@@ -1,10 +1,11 @@
 import { ACCENTS, swatchColor } from "../accents";
-import { api } from "../api";
+import { api, type AssistantSettings } from "../api";
 import type { Chats } from "../chat/chats";
 import { formatBytes } from "../chat/helpers";
-import { el, icon, short } from "../dom";
+import { el, icon, iconButton, short } from "../dom";
 import { app, persistPrefs, refreshStatus, type AppState, type Theme } from "../state";
 import { btn, dot, pageHead, section } from "./kit";
+import { toggle } from "./modules-parts";
 
 const KEY_FLASH = { text: "", bad: false };
 
@@ -33,6 +34,70 @@ function switchRow(label: string, hint: string, checked: boolean, set: (v: boole
   const i = el("input", { type: "checkbox", checked, attrs: { role: "switch" } });
   i.addEventListener("change", () => { set(i.checked); persistPrefs(app.get()); });
   return el("label", { cls: "set-row switch-row" }, el("span", { cls: "grow" }, el("strong", { textContent: label }), el("small", { cls: "muted", textContent: hint })), el("span", { cls: "switch" }, i));
+}
+
+const BEH_FLASH = { text: "", bad: false };
+const SUGGEST_MODES: ["off" | "rules" | "smart", string, string][] = [["off", "Выкл", "Ничего не предлагает"], ["rules", "По фразам", "Только после «Запомни…», «Я предпочитаю…», «Меня зовут…»"], ["smart", "Умно", "Ещё и модель выделяет факты из ваших слов"]];
+
+/** What the assistant may do and how it behaves. Everything here only ever NARROWS or tunes; memory entries still need your "Принять". */
+function behaviorSection(s: AppState): HTMLElement {
+  const cfg = s.assistantSettings;
+  if (!cfg) return section("Поведение помощницы", el("p", { cls: "muted", textContent: "Загрузка…" }));
+  const flash = el("p", { cls: "flash" + (BEH_FLASH.bad ? " bad" : ""), attrs: { role: "status" }, textContent: BEH_FLASH.text });
+  const save = async (patch: Partial<AssistantSettings>, ok = "Сохранено."): Promise<boolean> => {
+    const r = await api.saveAssistantSettings(patch);
+    BEH_FLASH.bad = !r.ok; BEH_FLASH.text = r.ok ? ok : r.error.message;
+    flash.className = "flash" + (r.ok ? "" : " bad"); flash.textContent = BEH_FLASH.text;
+    if (r.ok) app.set({ assistantSettings: r.value });
+    return r.ok;
+  };
+
+  // semantic memory search
+  const model = el("input", { type: "text", value: cfg.embeddings.model, spellcheck: false, attrs: { "aria-label": "Модель эмбеддингов" } });
+  const probe = el("p", { cls: "muted small", attrs: { role: "status" } });
+  const check = btn("Проверить", async () => {
+    check.disabled = true; probe.textContent = "Проверяю…";
+    const r = await api.embeddingTest();
+    check.disabled = false;
+    probe.textContent = !r.ok ? r.error.message : r.value.ok ? `Работает: ответ за ${r.value.ms} мс, размерность ${r.value.dims}.` : "Не работает: " + (r.value.error ?? "нет ответа") + ". Память продолжит искать по словам.";
+  }, { small: true });
+  const saveModel = btn("Сохранить модель", () => void save({ embeddings: { enabled: cfg.embeddings.enabled, model: model.value.trim() } }, "Модель сохранена."), { small: true });
+  const search = el("div", { cls: "beh-sub" }, el("label", { cls: "beh-field" }, el("span", { textContent: "Модель эмбеддингов (Cloud.ru)" }), model), el("div", { cls: "row" }, saveModel, check), probe);
+  // proposals
+  const modes = el("div", { cls: "segmented", attrs: { role: "radiogroup", "aria-label": "Предлагать запомнить" } }, ...SUGGEST_MODES.map(([v, label, hint]) => {
+    const b = el("button", { type: "button", textContent: label, title: hint, attrs: { role: "radio", "aria-checked": String(cfg.suggestions === v) } });
+    b.addEventListener("click", () => void save({ suggestions: v }));
+    return b;
+  }));
+  // files
+  const root = el("input", { type: "text", value: cfg.files.root, placeholder: "Например: C:\\Users\\Я\\Документы\\Заметки", spellcheck: false, attrs: { "aria-label": "Папка для чтения" } });
+  const saveRoot = btn("Сохранить папку", () => void save({ files: { root: root.value.trim(), allowWrite: cfg.files.allowWrite } }, root.value.trim() ? "Папка выбрана." : "Доступ к файлам закрыт."), { small: true });
+  const files = el("div", { cls: "beh-sub" }, el("label", { cls: "beh-field" }, el("span", { textContent: "Папка, которую помощница может читать" }), root),
+    el("div", { cls: "row" }, saveRoot, ...(cfg.files.root ? [btn("Закрыть доступ", () => void save({ files: { root: "", allowWrite: false } }, "Доступ к файлам закрыт."), { small: true })] : [])),
+    el("p", { cls: "muted small", textContent: "Только чтение текстовых файлов до 200 КБ. Секреты (.env, ключи), папки .git и node_modules, а также ссылки наружу закрыты." }));
+  // quick commands
+  const qName = el("input", { type: "text", maxLength: 24, placeholder: "итоги", attrs: { "aria-label": "Имя команды" } });
+  const qText = el("input", { type: "text", maxLength: 2000, placeholder: "Подведи итоги дня", attrs: { "aria-label": "Текст команды" } });
+  const qAdd = btn("Добавить", async () => {
+    if (!qName.value.trim() || !qText.value.trim()) return;
+    if (await save({ quickCommands: [...cfg.quickCommands, { name: qName.value.trim(), text: qText.value.trim() }] }, `Команда /${qName.value.trim().toLowerCase().replace(/^\//, "")} добавлена.`)) { qName.value = ""; qText.value = ""; }
+  }, { small: true, primary: true });
+  const quick = el("div", { cls: "beh-sub" },
+    ...(cfg.quickCommands.length ? [el("ul", { cls: "beh-quick" }, ...cfg.quickCommands.map((c) => el("li", {}, el("code", { textContent: "/" + c.name }), el("span", { cls: "grow muted", textContent: c.text }),
+      iconButton("trash", "Удалить /" + c.name, () => void save({ quickCommands: cfg.quickCommands.filter((x) => x.name !== c.name) }, "Команда удалена."), "icon-btn sm"))))] : [el("p", { cls: "muted small", textContent: "Быстрых команд пока нет." })]),
+    el("div", { cls: "beh-add" }, el("label", { cls: "beh-field" }, el("span", { textContent: "Команда" }), qName), el("label", { cls: "beh-field grow" }, el("span", { textContent: "Что отправить" }), qText), qAdd));
+
+  return section("Поведение помощницы",
+    el("p", { cls: "muted small", textContent: "Настройки хранятся на этом компьютере. Они только ограничивают или настраивают помощницу: записи в память и действия по-прежнему требуют вашего подтверждения." }),
+    toggle("Поиск по смыслу", "Память ищется не только по словам, но и по значению. При сбоях сам переключается на поиск по словам.", cfg.embeddings.enabled, (v) => save({ embeddings: { enabled: v, model: cfg.embeddings.model } })), search,
+    el("div", { cls: "set-row stack" }, el("span", {}, el("strong", { textContent: "Предлагать запомнить" }), el("small", { cls: "muted", textContent: "Любое предложение попадает в «Ждут решения» и работает только после вашего «Принять»." })), modes),
+    toggle("Сводка длинных бесед", "Начало долгого разговора сжимается в краткое содержание, чтобы помощница не теряла нить.", cfg.summaries, (v) => save({ summaries: v })),
+    toggle("Справочник (Википедия)", "Помощница может искать и читать статьи русской Википедии и указывает ссылку на источник.", cfg.web, (v) => save({ web: v })),
+    el("div", { cls: "set-row stack" }, el("span", {}, el("strong", { textContent: "Доступ к файлам" }), el("small", { cls: "muted", textContent: "Выберите одну папку: помощница сможет в ней читать и искать." })), files),
+    toggle("Разрешить запись в эту папку", "Создание и замена текстовых документов (.md, .txt, .csv…). Каждый раз нужно ваше подтверждение; прежняя версия сохраняется в резервной копии.", cfg.files.allowWrite,
+      (v) => save({ files: { root: cfg.files.root, allowWrite: v } }), !cfg.files.root),
+    el("div", { cls: "set-row stack" }, el("span", {}, el("strong", { textContent: "Быстрые команды" }), el("small", { cls: "muted", textContent: "Короткое «/имя» в чате отправляет заготовленный текст." })), quick),
+    flash);
 }
 
 export function settingsPage(s: AppState, chats: Chats): HTMLElement {
@@ -99,5 +164,5 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
       el("span", { cls: "muted", textContent: "Исходный код" }), link,
       el("span", { cls: "muted", textContent: "Быстро открыть чат" }), el("span", {}, el("kbd", { cls: "kbd", textContent: "Ctrl" }), " + ", el("kbd", { cls: "kbd", textContent: "K" }))));
 
-  return el("div", { cls: "page" }, pageHead("settings", "Настройки", "Подключение помощницы, внешний вид и ваши данные."), assistant, look, chat, data, about);
+  return el("div", { cls: "page" }, pageHead("settings", "Настройки", "Подключение помощницы, внешний вид и ваши данные."), assistant, behaviorSection(s), look, chat, data, about);
 }
