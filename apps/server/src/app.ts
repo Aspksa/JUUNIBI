@@ -7,6 +7,7 @@ import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
 import type { BrainCore } from "./brain";
 import type { PlanOption, PlanLimits } from "./plan-evaluator";
+import type { SequenceStep } from "./sequence-simulator";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
@@ -147,6 +148,11 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "POST" && p === "/api/learning/step") {
           if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
           return send(res, 200, await deps.learning.tick());
+        }
+        if (req.method === "POST" && p === "/api/brain/preview-sequence") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.previewSequence(input.steps as SequenceStep[], input.limits as PlanLimits));
         }
         if (req.method === "POST" && p === "/api/brain/compare-plans") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
