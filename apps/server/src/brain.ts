@@ -40,6 +40,16 @@ export class BrainCore {
   confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();return result; }
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
+  private toolObservations: {tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number;at:string}[]=[];
+  toolOutcomeHistory(){return this.toolObservations.map(x=>({...x}));}
+  observeToolOutcome(event:{tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number}){
+    if (!event || !/^[a-zA-Z0-9_-]{1,64}$/.test(event.tool) ||
+       !["ok","error","denied"].includes(event.status) || !["read","write","danger"].includes(event.risk) ||
+       !Number.isFinite(event.elapsedMs) || event.elapsedMs<0 || event.elapsedMs>3600000) return;
+    this.toolObservations.unshift({...event,at:new Date().toISOString()});
+    this.toolObservations=this.toolObservations.slice(0,100);
+    this.persist();
+  }
   history() { return this.logs.map(e => ({ ...e })); }
   reviewToolOutcome(input: ToolOutcomeEvidence) { return reviewToolOutcome(input); }
   previewThoughtCycle(input: UnifiedThoughtInput) { return previewUnifiedThought(input); }
@@ -84,7 +94,7 @@ export class BrainCore {
   flush() { return this.writeQueue; }
   private persist() {
     if (!this.storage) return;
-    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot(), revisions: this.revisions.snapshot() });
+    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot(), revisions: this.revisions.snapshot(), toolObservations: this.toolObservations });
     this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
   }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
@@ -101,6 +111,8 @@ export class BrainCore {
     this.logs = saved.logs as typeof this.logs;
     this.decisions.load((state as { decisions?: unknown }).decisions);
     this.revisions.load((state as { revisions?: unknown }).revisions);
+    const observations = (state as {toolObservations?:unknown}).toolObservations;
+    if (Array.isArray(observations)) this.toolObservations=observations.filter(e=>e&&typeof e==="object"&&/^[a-zA-Z0-9_-]{1,64}$/.test(e.tool)&&["ok","error","denied"].includes(e.status)&&["read","write","danger"].includes(e.risk)&&Number.isFinite(e.elapsedMs)&&e.elapsedMs>=0&&e.elapsedMs<=3600000&&typeof e.at==="string"&&!Number.isNaN(Date.parse(e.at))).slice(0,100);
   }
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
