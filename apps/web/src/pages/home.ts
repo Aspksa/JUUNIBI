@@ -53,7 +53,7 @@ export function homePage(s: AppState, d: HomeDeps): HTMLElement {
   const cards = el("div", { cls: "stat-grid" },
     stat("update", "Версия", short(u?.localVersion), hasUpdate ? `Доступна ${u?.latest?.version}` : u?.latest ? "Последняя версия" : "Ещё не проверялась", hasUpdate ? "warn" : u?.latest ? "ok" : "off", "update"),
     stat("memory", "Память", `${s.memory.filter((m) => m.status === "active").length} записей`, pending ? `${pending} ждут подтверждения` : "Всё подтверждено", pending ? "warn" : "ok", "memory"),
-    stat("modules", "Модули", s.modules.length ? `${mods.counts.started} из ${s.modules.length} работают` : "—", mods.counts.pending ? `${mods.counts.pending} ждут настройки` : modsBad ? `${modsBad} со сбоем` : "Всё запущено", modsBad ? "bad" : mods.counts.pending ? "warn" : s.modules.length ? "ok" : "off", "modules"));
+    stat("modules", "Модули", s.modules.length ? `${mods.counts.started} из ${s.modules.length} работают` : "—", mods.counts.pending ? `${mods.counts.pending} ждут настройки` : modsBad ? `${modsBad} со сбоем` : mods.counts.stopped ? `${mods.counts.stopped} остановлены` : "Всё запущено", modsBad ? "bad" : mods.counts.pending || mods.counts.stopped ? "warn" : s.modules.length ? "ok" : "off", "modules"));
 
   const recent = d.chats.store.get().items.filter((c) => c.messages.length).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
   const recents = el("section", { cls: "pg-card" }, el("h2", { textContent: "Недавние чаты" }),

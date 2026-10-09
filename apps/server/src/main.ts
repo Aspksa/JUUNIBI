@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
-import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGate, type StorageAdapter } from "@juunibi/assistant";
+import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGate, type StorageAdapter, type LlmProvider } from "@juunibi/assistant";
 import { createApp } from "./app";
 import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
@@ -12,6 +12,8 @@ import { BrainCore } from "./brain";
 import { AutonomousLearning } from "./autonomous-learning";
 import { KnowledgeLedger } from "./knowledge-ledger";
 import { durableMemoryStore } from "./durable-memory-store";
+import { ModuleManager, type ModuleAction } from "./module-manager";
+import { ManifestStore, fetchManifest } from "./module-manifest";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -54,13 +56,13 @@ const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
 const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, "brain.json")));
-const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
-void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
+const checkUpdates = () => { if (modules.isActive("updater")) void modules.track("updater", () => updater.check()).catch((e) => log.warn("Не удалось проверить обновления", e)); };
+const updateTimer = setInterval(checkUpdates, 15 * 60_000);
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
 const MODEL = process.env.CLOUDRU_MODEL?.trim() || "deepseek-ai/DeepSeek-V4-Flash";
 let activeModel: string | undefined;
 let cloudConfigured = false;
-let sceneLlm: CloudRuProvider | undefined;
+let sceneLlm: LlmProvider | undefined;
 const knowledge = new KnowledgeLedger(path.join(dataDir, "verified-knowledge.json"));
 let learningKey: string | undefined;
 const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
@@ -88,28 +90,62 @@ await scenes.init();
 await loadOrQuarantine("мозг", path.join(dataDir, "brain.json"), () => brain.load());
 await loadOrQuarantine("обучение", path.join(dataDir, "autonomous-learning.json"), () => learning.load());
 await loadOrQuarantine("знания", path.join(dataDir, "verified-knowledge.json"), () => knowledge.load());
-interface ModuleInfo { name: string; title: string; deps: string[]; status: "started" | "pending" | "failed"; note: string }
-/** Real server components with their live state — shown on the Modules page and given to the assistant. */
-function moduleList(): ModuleInfo[] {
-  const sc = scenes.stats();
-  const up = updater.status();
-  return [
-    { name: "brain", title: "Мозг JUUNIBI", deps: ["memory", "assistant", "approvals"], status: "started", note: `Режим: ${brain.status().mode} · планов: ${brain.status().plans.length} · выполнение действий через подтверждения` },
-    { name: "memory", title: "Память", deps: [], status: "started", note: "Долгая память помощницы: data/memory.json" },
-    { name: "assistant", title: "Помощница", deps: ["memory"], status: cloudConfigured ? "started" : "pending", note: cloudConfigured ? `Модель ${activeModel ?? MODEL} (Cloud.ru)` : "Нужен ключ Cloud.ru — добавьте его в настройках" },
-    { name: "approvals", title: "Подтверждение действий", deps: ["assistant"], status: "started", note: "Опасные действия выполняются только с вашего разрешения; журнал в data/agent-audit.jsonl" },
-    { name: "scenes", title: "Сцены и реплики", deps: [], status: sc.total > 0 ? "started" : "failed", note: `${sc.total} действий, ${sc.phrases} реплик, использовано ${sc.used}` },
-    { name: "updater", title: "Обновление проекта", deps: [], status: up.phase === "error" ? "failed" : "started", note: up.phase === "error" ? (up.error ?? "Ошибка обновления") : `Источник github.com/Aspksa/JUUNIBI · этап: ${up.phase}` },
-    ...kernel.describe().map((m) => ({ name: m.name, title: m.name, deps: m.deps, status: m.status, note: "" })),
-  ];
-}
+/** What the assistant (and the Modules page's "what the assistant sees" view) gets: one shared source of truth. */
+function moduleList() { return modules.promptView(); }
+const BUILTIN_MODULES = ["brain", "memory", "assistant", "approvals", "scenes", "updater"];
+const manifests = new ManifestStore(path.join(dataDir, "module-manifests.json"), () => BUILTIN_MODULES);
+const modules = new ModuleManager(root, [
+  { name: "brain", title: "Мозг JUUNIBI", deps: ["memory", "assistant", "approvals"],
+    description: "Планы задач, обучение, проверенные знания и разбор решений. Сам ничего не выполняет без подтверждений.",
+    files: ["data/brain.json", "data/verified-knowledge.json", "data/autonomous-learning.json"],
+    probe: () => ({ status: "started", note: `Режим: ${brain.status().mode} · планов: ${brain.status().plans.length} · выполнение действий через подтверждения` }),
+    start: async () => { await brain.flush(); await brain.load(); await knowledge.flush(); await knowledge.load(); },
+    stop: async () => { await brain.flush(); await knowledge.flush(); } },
+  { name: "memory", title: "Память", deps: [], core: true,
+    description: "Долгая память помощницы: факты, предпочтения и уроки. Новые записи активны только после вашего одобрения.",
+    files: ["data/memory.json", "data/memory.json.bak"],
+    probe: () => ({ status: "started", note: "Долгая память помощницы: data/memory.json" }) },
+  { name: "assistant", title: "Помощница", deps: ["memory"],
+    description: "Чат с моделью Cloud.ru: отвечает, вызывает инструменты и учится на ваших оценках.",
+    files: ["data/turns.json", "data/cloudru-settings.json"],
+    probe: () => cloudConfigured ? { status: "started", note: `Модель ${activeModel ?? MODEL} (Cloud.ru)` } : { status: "pending", note: "Нужен ключ Cloud.ru — добавьте его в настройках" },
+    start: async () => { if (learningKey) await configureCloud(learningKey, process.env.CLOUDRU_BASE_URL); },
+    stop: async () => { approvalGate.denyAll(); } },
+  { name: "approvals", title: "Подтверждение действий", deps: ["assistant"], core: true,
+    description: "Каждое действие с последствиями выполняется только после вашего «Да». Все решения пишутся в журнал.",
+    files: ["data/agent-audit.jsonl"],
+    probe: () => ({ status: "started", note: "Опасные действия выполняются только с вашего разрешения; журнал в data/agent-audit.jsonl" }) },
+  { name: "scenes", title: "Сцены и реплики", deps: [],
+    description: "Библиотека кинематографичных действий и реплик персонажа. Влияет только на оформление ответов.",
+    files: ["data/juunibi-scenes.json"],
+    probe: () => { const sc = scenes.stats(); return { status: sc.total > 0 ? "started" : "failed", note: `${sc.total} действий, ${sc.phrases} реплик, использовано ${sc.used}` }; },
+    start: () => scenes.init() },
+  { name: "updater", title: "Обновление проекта", deps: [],
+    description: "Проверяет GitHub, скачивает и проверяет обновления. Устанавливает их только при следующем запуске.",
+    files: [".updates/events.jsonl", ".updates/installed.json", ".updates/ready.json"],
+    probe: () => { const up = updater.status(); return up.phase === "error" ? { status: "failed", note: up.error ?? "Ошибка обновления" } : { status: "started", note: `Источник github.com/Aspksa/JUUNIBI · этап: ${up.phase}` }; },
+    start: async () => { await updater.check(); },
+    busy: () => (updater.isBusy() ? "Идёт подготовка обновления — дождитесь её завершения." : null) },
+], path.join(dataDir, "modules.json"), {
+  manifests: () => manifests.list(),
+  tools: () => assistant?.tools.list().map(({ name, risk, description }) => ({ name, risk, description })) ?? [],
+  outcomes: () => brain.toolOutcomeHistory(),
+});
+await loadOrQuarantine("модули", path.join(dataDir, "modules.json"), () => modules.load());
+await loadOrQuarantine("манифесты", path.join(dataDir, "module-manifests.json"), () => manifests.load());
 const memory = new Memory(durableMemoryStore(path.join(dataDir, "memory.json")));
 // Reuse the configured chat credential; embeddings use a separate model, never the chat model.
 const embeddingModel = process.env.CLOUDRU_EMBEDDING_MODEL;
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
-  const llm = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
+  const raw = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
+  // Measures every model call for the Modules page (latency, errors); a user cancel is not an error.
+  const llm: LlmProvider = { chat: async (messages, opts) => {
+    const t0 = Date.now();
+    try { const r = await raw.chat(messages, opts); modules.ok("assistant", Date.now() - t0); return r; }
+    catch (e) { if (!opts?.signal?.aborted) modules.fail("assistant", (e as Error).message); throw e; }
+  } };
   sceneLlm = llm;
   learningKey = apiKey;
   const embeddingBaseUrl = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? baseUrl;
@@ -122,7 +158,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не выдавай художественный образ за реальное сознание или реальные чувства. Не обещай невыполненных действий. Перед публикациями, удалениями и иными существенными действиями проси разрешение.",
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\n");
-  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
+  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
   assistant.tools.register({
     name: "brain_get_plans", risk: "read", description: "Прочитать планы задач.",
     parameters: { type: "object", properties: {} },
@@ -190,7 +226,7 @@ const port = Number(process.env.PORT ?? 4173);
 if (!Number.isInteger(port) || port < 1 || port > 65535) { log.error("Некорректный PORT: " + process.env.PORT); process.exit(1); }
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
 const server = createApp({
-  getAssistant: () => assistant,
+  getAssistant: () => (modules.isActive("assistant") ? assistant : undefined),
   cloudStatus: () => ({ configured: cloudConfigured, model: MODEL }),
   saveCloud,
   memory,
@@ -200,20 +236,30 @@ const server = createApp({
   learning,
   knowledge,
   scenes,
-  modules: () => moduleList(),
+  modules: () => modules.list(),
+  moduleControl: {
+    list: () => modules.list(), isActive: (n) => modules.isActive(n),
+    title: (n) => modules.list().find((m) => m.name === n)?.title ?? n,
+    detail: (n) => modules.detail(n), act: (n, a) => modules.act(n, a as ModuleAction),
+    promptView: () => modules.promptView(), tools: () => modules.tools(),
+    setToolAllowed: (t, a) => modules.setToolAllowed(t, a), setAssistantAccess: (n, a) => modules.setAssistantAccess(n, a),
+    track: (n, w) => modules.track(n, w),
+    manifests: { list: () => manifests.list(), preview: (i) => manifests.preview(i), install: (i, h) => manifests.install(i, h), remove: (n) => manifests.remove(n), fetch: (u) => fetchManifest(u) },
+  },
   staticDir,
   configured: { model: MODEL, hint },
 });
+checkUpdates();
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
-const learningTimer = setInterval(() => { if (cloudConfigured) void learning.tick(); }, 10 * 60_000);
+const learningTimer = setInterval(() => { if (cloudConfigured && modules.isActive("brain") && modules.isActive("assistant")) void modules.track("brain", () => learning.tick()).catch(() => {}); }, 10 * 60_000);
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
   clearInterval(learningTimer); clearInterval(updateTimer); approvalGate.denyAll(); server.close();
   // Let pending state writes finish so a stop never loses data.
-  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), auditQueue]);
+  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), auditQueue]);
   await kernel.stop();
   process.exit(0);
 };

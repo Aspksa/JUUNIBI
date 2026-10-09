@@ -63,3 +63,33 @@ describe("Memory: вытеснение", () => {
     expect(all.some((e) => e.id === "id0")).toBe(false); // вытеснен самый слабый — черновик
   });
 });
+
+import { Assistant } from "../src";
+describe("toolPolicy", () => {
+  const quiet = { info() {}, warn() {}, error() {}, debug() {}, child() { return quiet; } } as never;
+  const mk = (policy: (n: string) => boolean) => {
+    const seen: string[][] = [];
+    let step = 0;
+    const llm = { chat: async (_m: unknown, o?: { tools?: { name: string }[] }) => {
+      seen.push((o?.tools ?? []).map(t => t.name));
+      return step++ === 0 ? { content: null, toolCalls: [{ id: "1", name: "list_modules", arguments: "{}" }] } : { content: "ок", toolCalls: [] };
+    } };
+    const events: string[] = [];
+    const a = new Assistant({ llm: llm as never, log: quiet, describeModules: () => [{ name: "x" }], toolPolicy: policy });
+    return { a, seen, events };
+  };
+  it("запрещённый инструмент скрыт от модели и отклоняется при вызове", async () => {
+    const { a, seen } = mk(n => n !== "list_modules");
+    const ev: { status?: string }[] = [];
+    await a.ask("что в проекте?", "s", undefined, { onEvent: e => { if (e.type === "tool" && e.phase === "end") ev.push(e); } });
+    expect(seen[0]).not.toContain("list_modules");
+    expect(seen[0]).toContain("search_memory");
+    expect(ev[0]!.status).toBe("denied");
+  });
+  it("разрешающая политика ничего не меняет", async () => {
+    const { a, seen } = mk(() => true);
+    const r = await a.ask("что в проекте?");
+    expect(seen[0]).toContain("list_modules");
+    expect(r.tools).toEqual(["list_modules"]);
+  });
+});

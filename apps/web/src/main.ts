@@ -128,7 +128,7 @@ kernel.register({
       switch (s.route) {
         case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
         case "memory": return JSON.stringify(s.memory);
-        case "modules": return JSON.stringify(s.modules);
+        case "modules": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
         case "settings": return JSON.stringify([s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length]);

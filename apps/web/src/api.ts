@@ -9,7 +9,23 @@ export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "rea
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
 export interface ChatReply { turnId: string; reply: string; tools: string[]; memory: string[] }
 export interface MemoryItem { id: string; kind: string; text: string; status: "active" | "pending"; score: number; createdAt?: number }
-export interface ModuleInfo { name: string; deps: string[]; status: string; title?: string; note?: string }
+export interface ModuleInfo {
+  name: string; deps: string[]; status: string; title?: string; note?: string;
+  kind?: "builtin" | "manifest"; error?: string; enabled?: boolean; running?: boolean; core?: boolean;
+  dependents?: string[]; assistantBlocked?: boolean;
+}
+export interface ModuleToolInfo { name: string; risk: "read" | "write" | "danger"; description: string; module: string; allowed: boolean; calls24h: number; errors24h: number; denied24h: number }
+export interface ModuleDetail extends ModuleInfo {
+  description: string; version?: string; permissions?: string[];
+  files: { path: string; size: number | null }[]; tools: ModuleToolInfo[];
+  health: null | { uptimeSec: number; errors24h: number; calls: number; lastError: string | null; lastOkAt: string | null; lastMs: number | null; avgMs: number | null };
+  log: { at: string; level: "info" | "error"; text: string }[];
+}
+export interface ManifestPreview {
+  manifest: { name: string; title: string; description: string; version: string; deps: string[]; permissions: string[]; source?: string };
+  sha256: string; permissions: { id: string; label: string; risk: "low" | "medium" | "high" }[]; warnings: string[]; executable: false; note: string;
+}
+export type ModuleAction = "start" | "stop" | "restart" | "enable" | "disable";
 export interface Status { assistant: boolean; model?: string; hint?: string }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -36,6 +52,15 @@ export const api = {
   decideApproval: (id: string, approve: boolean) => attemptAsync(() => call<{ok:boolean}>(`/api/approvals/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, post({}))),
   status: (): Promise<Result<Status>> => attemptAsync(() => call<Status>("/api/status")),
   modules: () => attemptAsync(() => call<ModuleInfo[]>("/api/modules")),
+  moduleDetail: (name: string) => attemptAsync(() => call<ModuleDetail>(`/api/modules/${encodeURIComponent(name)}`)),
+  moduleAct: (name: string, action: ModuleAction) => attemptAsync(() => call<ModuleInfo>(`/api/modules/${encodeURIComponent(name)}/${action}`, post({}))),
+  moduleTools: () => attemptAsync(() => call<ModuleToolInfo[]>("/api/modules/tools")),
+  moduleToolAllowed: (tool: string, allowed: boolean) => attemptAsync(() => call<ModuleToolInfo[]>("/api/modules/tools/policy", post({ tool, allowed }))),
+  moduleAccess: (name: string, allowed: boolean) => attemptAsync(() => call<ModuleInfo>(`/api/modules/${encodeURIComponent(name)}/access`, post({ allowed }))),
+  assistantView: () => attemptAsync(() => call<{ json: string; chars: number }>("/api/modules/assistant-view")),
+  manifestPreview: (src: { manifest: unknown } | { url: string }) => attemptAsync(() => call<ManifestPreview>("/api/modules/manifests/preview", post(src))),
+  manifestInstall: (manifest: unknown, sha256: string) => attemptAsync(() => call<ManifestPreview>("/api/modules/manifests/install", post({ manifest, sha256 }))),
+  manifestRemove: (name: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/modules/manifests/${encodeURIComponent(name)}`, { method: "DELETE" })),
   chat: (message: string) => attemptAsync(() => call<ChatReply>("/api/chat", post({ message }))),
   feedback: (turnId: string, rating: 1 | -1) => attemptAsync(() => call("/api/feedback", post({ turnId, rating }))),
   reflect: (turnId: string) => attemptAsync(() => call<MemoryItem[]>("/api/reflect", post({ turnId }))),
