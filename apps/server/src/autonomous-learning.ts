@@ -77,6 +77,12 @@ export class AutonomousLearning {
           Number(retry.right) >= 1 && Number(retry.right) <= 10000 &&
           Number.isInteger(retry.attempts) && Number(retry.attempts) >= 0 && Number(retry.attempts) < 2)
         this.mathRetry = { left: Number(retry.left), right: Number(retry.right), attempts: Number(retry.attempts) };
+      const logic = v.logicRetry as {kind?:unknown;turn?:unknown;attempts?:unknown}|undefined;
+      if (logic && (logic.kind === "logic" || logic.kind === "transfer") && Number.isInteger(logic.turn) && Number(logic.turn)>=1 && Number(logic.turn)<=10000 && Number.isInteger(logic.attempts) && Number(logic.attempts)>=0 && Number(logic.attempts)<2)
+        this.logicRetry={kind:logic.kind,turn:Number(logic.turn),attempts:Number(logic.attempts)};
+      const lm=v.logicRetryResults as {attempted?:unknown;corrected?:unknown}|undefined;
+      if (lm && Number.isSafeInteger(lm.attempted) && Number.isSafeInteger(lm.corrected) && Number(lm.attempted)>=0 && Number(lm.corrected)>=0 && Number(lm.corrected)<=Number(lm.attempted))
+        this.logicRetryResults={attempted:Number(lm.attempted),corrected:Number(lm.corrected)};
       const metrics = v.retryResults as { attempted?: unknown; corrected?: unknown } | undefined;
       if (metrics && Number.isSafeInteger(metrics.attempted) && Number.isSafeInteger(metrics.corrected) &&
           Number(metrics.attempted) >= 0 && Number(metrics.corrected) >= 0 && Number(metrics.corrected) <= Number(metrics.attempted))
