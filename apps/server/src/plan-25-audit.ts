@@ -17,7 +17,7 @@ export function auditDraftPlan(p:DraftPlan) {
  const totalCost=steps.reduce((s,x)=>s+(Number.isFinite(x?.cost)?x.cost:0),0);
  const totalMinutes=steps.reduce((s,x)=>s+(Number.isFinite(x?.minutes)?x.minutes:0),0);
  const known=new Set(ids), seen=new Set<string>();
- const inOrder=steps.every(x=>{const ok=x.dependsOn?.every(d=>seen.has(d))??false;seen.add(x.id);return ok;});
+ const inOrder=steps.every(x=>{const ok=Array.isArray(x?.dependsOn)&&x.dependsOn.every(d=>seen.has(d));if(x?.id)seen.add(x.id);return ok;});
  const checks:[string,boolean][]=[
  ["goal_present",safe(p?.goal,500)],
  ["steps_present",steps.length>0],
