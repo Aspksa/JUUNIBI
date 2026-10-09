@@ -4,9 +4,11 @@ import { proposePlanRepair } from "./plan-repair";
 /** 25 existing plan checks plus 9 comparison safeguards; suggestions never execute. */
 export function comparePlanVariants(input: DraftPlan, alternatives: DraftPlan[]) {
  if (!Array.isArray(alternatives) || alternatives.length>5) throw Object.assign(new Error("Допускается до пяти альтернатив"),{status:400});
+ if (!input || !Array.isArray(input.steps) || input.steps.length<1 || input.steps.length>25) throw Object.assign(new Error("Некорректный исходный план"),{status:400});
  const original=auditDraftPlan(input);
  const baseline=JSON.stringify(input);
  const candidates=[input,...alternatives].map((plan,index)=>{
+   if (!plan || !Array.isArray(plan.steps) || plan.steps.length<1 || plan.steps.length>25) throw Object.assign(new Error("Некорректная альтернатива"),{status:400});
    const audit=auditDraftPlan(plan);
    const originalIds=input.steps.map(s=>s.id);
    const sameSteps=plan.steps.length===originalIds.length&&plan.steps.every(s=>originalIds.includes(s.id))&&new Set(plan.steps.map(s=>s.id)).size===originalIds.length;
@@ -21,7 +23,8 @@ export function comparePlanVariants(input: DraftPlan, alternatives: DraftPlan[])
      const old=input.steps.find(x=>x.id===s.id)!;
      return s.dependsOn.every(d=>old.dependsOn.includes(d));
    });
-   const review=proposePlanRepair({...plan,steps:plan.steps});
+   const repairPossible=audit.checks.filter(x=>["step_shape","unique_ids","id_syntax","nonnegative_costs","nonnegative_durations"].includes(x.id)).every(x=>x.passed);
+   const repairSafe=repairPossible ? proposePlanRepair(plan).executable===false : false;
    const checks=[
      ["baseline_integrity",JSON.stringify(input)===baseline],
      ["same_goal",sameGoal],
@@ -31,7 +34,7 @@ export function comparePlanVariants(input: DraftPlan, alternatives: DraftPlan[])
      ["no_added_dependencies",safeDependencies],
      ["no_new_privileges",stepIdentity],
      ["audit_passes",audit.failed.length===0],
-     ["repair_still_nonexecuting",review.executable===false]
+     ["repair_still_nonexecuting",repairSafe]
    ] as const;
    const valid=checks.every(x=>x[1]);
    return {index,valid,checks:checks.map(([id,passed],i)=>({stage:i+26,id,passed})),
