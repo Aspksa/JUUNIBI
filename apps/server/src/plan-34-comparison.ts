@@ -3,11 +3,15 @@ import { proposePlanRepair } from "./plan-repair";
 
 /** 25 existing plan checks plus 9 comparison safeguards; suggestions never execute. */
 export function comparePlanVariants(input: DraftPlan, alternatives: DraftPlan[]) {
- if (!Array.isArray(alternatives) || alternatives.length>5) throw Object.assign(new Error("Допускается до пяти альтернатив"),{status:400});
+ if (!Array.isArray(alternatives) || alternatives.length>59) throw Object.assign(new Error("Допускается до 59 альтернатив (60 планов всего)"),{status:400});
  if (!input || !Array.isArray(input.steps) || input.steps.length<1 || input.steps.length>25) throw Object.assign(new Error("Некорректный исходный план"),{status:400});
  const original=auditDraftPlan(input);
+ // Bound total work and avoid unbounded nested JSON payloads before running checks.
+ const all=[input,...alternatives];
+ if(all.some(p=>!p||!Array.isArray(p.steps)||p.steps.length>25||!Array.isArray(p.availableTools)||p.availableTools.length>50)) throw Object.assign(new Error("Превышены ограничения размера плана"),{status:400});
+ if(JSON.stringify(all).length>250000) throw Object.assign(new Error("Слишком большой пакет планов"),{status:400});
  const baseline=JSON.stringify(input);
- const candidates=[input,...alternatives].map((plan,index)=>{
+ const candidates=all.map((plan,index)=>{
    if (!plan || !Array.isArray(plan.steps) || plan.steps.length<1 || plan.steps.length>25) throw Object.assign(new Error("Некорректная альтернатива"),{status:400});
    const audit=auditDraftPlan(plan);
    const originalIds=input.steps.map(s=>s.id);
@@ -43,7 +47,7 @@ export function comparePlanVariants(input: DraftPlan, alternatives: DraftPlan[])
  });
  const ranked=candidates.filter(x=>x.valid).sort((a,b)=>a.riskScore-b.riskScore||
    a.estimatedCost-b.estimatedCost||a.estimatedMinutes-b.estimatedMinutes||a.index-b.index);
- return {original,reviewStages:34,candidates,recommendedIndex:ranked[0]?.index??null,
+ return {original,reviewStages:34,comparedPlans:candidates.length,candidates,recommendedIndex:ranked[0]?.index??null,
   requiresApproval:true as const,executable:false as const,
   note:"Выбор по заданным ограничениям и оценкам; не доказательство эффективности. Разрешения при фактическом запуске проверяются отдельно."};
 }
