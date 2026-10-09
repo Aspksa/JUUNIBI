@@ -166,6 +166,13 @@ export class AutonomousLearning {
       } else if (check && !verified) {
         this.mathRetry = { left: check.left, right: check.right, attempts: 0 };
       }
+      if (logicRetry && reasoning) {
+        this.logicRetryResults.attempted++;
+        if (verified) this.logicRetryResults.corrected++;
+        this.logicRetry = verified || logicRetry.attempts >= 1 ? null : { ...logicRetry, attempts: logicRetry.attempts + 1 };
+      } else if (!retry && reasoning && !structured && !verified) {
+        this.logicRetry = { kind: reasoning.kind, turn: Math.min(10000, this.cursor), attempts: 0 };
+      }
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
         source: "Локальная детерминированная проверка арифметики",
