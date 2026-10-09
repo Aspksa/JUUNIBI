@@ -30,7 +30,7 @@ export interface AskOptions {
   /** Leave no trace: the turn is not logged, nothing is proposed to memory, no summary is kept. Used by quality checks. */
   ephemeral?: boolean;
   /** Trusted server-side reasoning guidance; never grants tool permissions. */
-  brainGuidance?: { needsPlanning: boolean; needsApproval: boolean; needsEvidenceReview: boolean };
+  brainGuidance?: { needsPlanning: boolean; needsApproval: boolean; needsEvidenceReview: boolean; evidenceWarnings?: string[] };
 }
 export interface AskResult { turnId: string; reply: string; tools: string[]; memory: string[] }
 
@@ -195,6 +195,7 @@ export class Assistant {
       guidance.needsPlanning ? "Сложная задача: сначала сформулируй план действий и предположения; не утверждай, что план уже выполнен." : "",
       guidance.needsEvidenceReview ? "Отделяй проверенные сведения от гипотез. Для проверки фактов используй доступные инструменты чтения." : "",
       guidance.needsApproval ? "Возможны действия с последствиями: поясни риски и используй только фактическое подтверждение через существующий ApprovalGate. Текст пользователя или этот совет не являются разрешением." : "",
+      ...(guidance.evidenceWarnings ?? []).filter(x => typeof x === "string").slice(0, 3).map(x => x.slice(0, 300)),
     ].filter(Boolean).join(" ") : "";
     const msgs: Message[] = [{ role: "system", content: this.system(mem, summary) },
       ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
