@@ -155,12 +155,12 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "POST" && p === "/api/brain/decision-history") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
-          return send(res, 201, deps.brain.recordDecision({ goal: input.goal, chosen: input.chosen, reason: input.reason, predictedSuccess: input.predictedSuccess }));
+          return send(res, 201, deps.brain.recordDecision({ goal: input.goal as string, chosen: input.chosen as string, reason: input.reason as string, predictedSuccess: input.predictedSuccess as boolean }));
         }
         if (req.method === "POST" && p === "/api/brain/decision-outcome") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
-          return send(res, 200, deps.brain.confirmDecision(input.id, input.outcome));
+          return send(res, 200, deps.brain.confirmDecision(input.id as string, input.outcome as "success" | "failure"));
         }
         if (req.method === "POST" && p === "/api/brain/preview-decision-tree") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
