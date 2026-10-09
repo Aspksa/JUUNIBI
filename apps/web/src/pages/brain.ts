@@ -20,7 +20,7 @@ export function brainPage(): HTMLElement {
         el("p", { cls: "muted", textContent: "Статус: " + p.status }),
         el("ol", {}, ...p.steps.map(step => el("li", { textContent: step.title + " — " + step.status }))))) :
         [el("p", { cls: "muted", textContent: "Пока нет планов. Попросите JUUNIBI составить план прямо в чате." })]));
-    content.replaceChildren(info, plans, learningPanel(), knowledgePanel());
+    content.replaceChildren(info, plans, learningPanel(), knowledgePanel(), evidenceGraphPanel(), knowledgeGapsPanel());
   });
   return root;
 }
@@ -103,5 +103,60 @@ export function knowledgePanel(): HTMLElement {
     } catch { root.replaceChildren(el("p", { textContent: "Реестр знаний недоступен." })); }
   };
   void load();
+  return root;
+}
+
+/** Owner-facing source check. Quotes are only evidence candidates, never automatically trusted facts. */
+export function evidenceGraphPanel(): HTMLElement {
+  const root = section("Brain 4.1 · Источники и связи", el("p", { textContent: "Загрузка графа…" }));
+  const source = el("select", { attrs: { "aria-label": "Проверяемый источник" } },
+    ...[["nasa", "NASA"], ["britannica", "Britannica"], ["python", "Python Docs"], ["mdn", "MDN"]]
+      .map(([value, label]) => el("option", { value, textContent: label })));
+  const sectionField = el("input", { type: "text", placeholder: "Раздел сайта, например library/", maxLength: 160,
+    attrs: { "aria-label": "Раздел справочника" } });
+  const quote = el("textarea", { placeholder: "Точная цитата с сайта (не меньше 30 символов)",
+    attrs: { "aria-label": "Цитата для поиска" } });
+  const result = el("p", { cls: "muted", attrs: { "aria-live": "polite" } });
+  const check = el("button", { type: "button", textContent: "Найти цитату в источнике" });
+  check.addEventListener("click", async () => {
+    check.disabled = true;
+    result.textContent = "Проверка…";
+    try {
+      const r = await fetch("/api/knowledge/evidence", { method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: source.value, section: sectionField.value, quote: quote.value }) });
+      const response = await r.json() as { matched?: boolean; source?: string; error?: string };
+      result.textContent = r.ok
+        ? (response.matched ? "Цитата найдена. Это ещё не подтверждение истинности факта. " : "Цитата не найдена. ") + (response.source ?? "")
+        : "Ошибка проверки: " + (response.error ?? r.status);
+    } catch { result.textContent = "Источник недоступен."; }
+    finally { check.disabled = false; }
+  });
+  void fetch("/api/knowledge/graph").then(async r => {
+    if (!r.ok) throw new Error(String(r.status));
+    const graph = await r.json() as { nodes: { id: string; topic: string }[];
+      edges: { from: string; to: string; shared: string[] }[] };
+    const names = new Map(graph.nodes.map(n => [n.id, n.topic]));
+    root.replaceChildren(el("h2", { textContent: "Граф проверенных знаний" }),
+      el("p", { textContent: "Узлов: " + graph.nodes.length + " · связей: " + graph.edges.length }),
+      ...graph.edges.slice(0, 30).map(e => el("p", { cls: "muted",
+        textContent: (names.get(e.from) ?? "?") + " ↔ " + (names.get(e.to) ?? "?") + " · " + e.shared.join(", ") })),
+      el("h3", { textContent: "Поиск цитаты в публичном справочнике" }),
+      el("p", { cls: "muted", textContent: "Поиск точного текста не даёт автоматического права записывать факт в память." }),
+      source, sectionField, quote, check, result);
+  }).catch(() => root.replaceChildren(el("p", { textContent: "Граф знаний недоступен." })));
+  return root;
+}
+
+/** Read-only learning opportunities; no automatic tool execution. */
+export function knowledgeGapsPanel(): HTMLElement {
+  const root = section("Пробелы в знаниях", el("p", { textContent: "Анализ…" }));
+  void fetch("/api/knowledge/gaps").then(async r => {
+    if (!r.ok) throw new Error(String(r.status));
+    const gaps = await r.json() as { topic: string; reason: string; priority: number }[];
+    root.replaceChildren(el("h2", { textContent: "Что изучить или перепроверить" }),
+      ...(gaps.length ? gaps.slice(0, 15).map(g => el("p", { textContent: g.topic + " — " + g.reason })) :
+        [el("p", { cls: "muted", textContent: "Пробелы не найдены или реестр пока пуст." })]));
+  }).catch(() => root.replaceChildren(el("p", { textContent: "Не удалось прочитать пробелы знаний." })));
   return root;
 }

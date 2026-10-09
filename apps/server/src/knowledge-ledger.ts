@@ -24,6 +24,32 @@ export class KnowledgeLedger {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   list() { return this.items.map(x => ({ ...x })); }
+  /** Read-only learning priorities: records needing review, unconnected topics, and sparse coverage. */
+  gaps() {
+    const graph = this.graph();
+    const connected = new Set(graph.edges.flatMap(edge => [edge.from, edge.to]));
+    return this.items.filter(item => item.status === "needs-review" || !connected.has(item.id))
+      .map(item => ({
+        id: item.id, topic: item.topic,
+        reason: item.status === "needs-review" ? "Требует повторной проверки" : "Нет связей с другими знаниями",
+        priority: item.status === "needs-review" ? 2 : 1,
+      })).sort((a, b) => b.priority - a.priority).slice(0, 30);
+  }
+  /** Explainable, derived edges; similarity never implies factual correctness. */
+  graph() {
+    const words = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter(w =>
+      !["который", "этого", "после", "проверка", "знание"].includes(w)));
+    const entries = this.items.filter(x => x.status === "verified").map(x => ({ id: x.id, topic: x.topic, words: words(x.topic + " " + x.claim) }));
+    const edges: { from: string; to: string; shared: string[] }[] = [];
+    for (let i = 0; i < entries.length; i++)
+      for (let j = i + 1; j < entries.length; j++) {
+        const a = entries[i]!, b = entries[j]!;
+        const shared = [...a.words].filter(w => b.words.has(w)).slice(0, 8);
+        if (shared.length >= 2) edges.push({ from: a.id, to: b.id, shared });
+        if (edges.length >= 300) return { nodes: entries.map(({id, topic}) => ({id, topic})), edges };
+      }
+    return { nodes: entries.map(({id, topic}) => ({id, topic})), edges };
+  }
   due(at = new Date()) { return this.list().filter(x => x.nextReviewAt <= at.toISOString()); }
   addVerified(input: { topic: string; claim: string; source: string; evidence: "deterministic-test" | "owner-confirmed" }) {
     if (!["deterministic-test", "owner-confirmed"].includes(input.evidence) ||
