@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { simulateSequence, type SequenceStep } from "./sequence-simulator";
 import { evaluateOptions, type PlanLimits, type PlanOption } from "./plan-evaluator";
 
 export type BrainMode = "chat" | "analysis" | "agent" | "creative";
@@ -13,6 +14,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  previewSequence(steps: SequenceStep[], limits: PlanLimits) { return simulateSequence(steps, limits); }
   /** Simulate alternatives only. The selected plan is never executed or saved. */
   compareAlternatives(options: PlanOption[], limits: PlanLimits) { return evaluateOptions(options, limits); }
   private writeQueue: Promise<void> = Promise.resolve();
