@@ -58,6 +58,9 @@ export class AutonomousLearning {
   private readonly skills = new LearningSkillTracker();
   private readonly reasoningEvaluation = new ReasoningEvaluation();
   private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "русский язык", "языки", "творчество"];
+  private lastAttemptAt: string | null = null;
+  private lastError: string | null = null;
+  private lastOutcome: "success" | "error" | null = null;
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
   constructor(private readonly file: string, private readonly ask: (question: string, maxTokens: number) => Promise<{ text: string; tokens: number }>,
@@ -68,6 +71,9 @@ export class AutonomousLearning {
     try {
       const v = JSON.parse(await readFile(this.file, "utf8")) as Record<string, unknown>;
       this.settings = validateSettings(v.settings);
+      if (typeof v.lastAttemptAt === "string" && /^\d{4}-/.test(v.lastAttemptAt)) this.lastAttemptAt = v.lastAttemptAt;
+      if (typeof v.lastError === "string") this.lastError = v.lastError.slice(0, 120);
+      if (v.lastOutcome === "success" || v.lastOutcome === "error") this.lastOutcome = v.lastOutcome;
       this.progress.load(v.progress);
       this.skills.load(v.skillHistory);
       this.reasoningEvaluation.load(v.reasoningEvaluation);
@@ -122,7 +128,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, transferChecks: this.transferChecks, transferMetrics: this.transferMetrics, transferSeries: this.transferSeries, retryResults: this.retryResults, progress: this.progress.snapshot(), skillHistory: this.skills.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ lastAttemptAt: this.lastAttemptAt, lastError: this.lastError, lastOutcome: this.lastOutcome, settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, transferChecks: this.transferChecks, transferMetrics: this.transferMetrics, transferSeries: this.transferSeries, retryResults: this.retryResults, progress: this.progress.snapshot(), skillHistory: this.skills.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -135,7 +141,7 @@ export class AutonomousLearning {
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
-      busy: this.busy, skills: this.skills.summary(), weakestSkill: this.skills.weakest(), retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, retentionMetrics: { ...this.retentionMetrics }, pendingRetention: this.retention.length, transferMetrics: { ...this.transferMetrics }, transferSeries: { ...this.transferSeries, passRate: this.transferSeries.completed ? Math.round(this.transferSeries.passed / this.transferSeries.completed * 100) : null }, pendingTransfer: this.transferChecks.length, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+      busy: this.busy, lastAttemptAt: this.lastAttemptAt, lastOutcome: this.lastOutcome, lastError: this.lastError, skills: this.skills.summary(), weakestSkill: this.skills.weakest(), retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, retentionMetrics: { ...this.retentionMetrics }, pendingRetention: this.retention.length, transferMetrics: { ...this.transferMetrics }, transferSeries: { ...this.transferSeries, passRate: this.transferSeries.completed ? Math.round(this.transferSeries.passed / this.transferSeries.completed * 100) : null }, pendingTransfer: this.transferChecks.length, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
     const checks = this.events.filter(e => e.role === "verifier");
@@ -159,6 +165,8 @@ export class AutonomousLearning {
     if (this.used >= this.settings.dailyLimit || this.tokens + this.settings.maxOutputTokens + Math.ceil(this.settings.maxInputChars / 2) > this.settings.dailyTokenBudget)
       return { skipped: "budget" };
     this.busy = true;
+    this.lastAttemptAt = new Date().toISOString();
+    this.lastError = null;
     try {
       const topics = this.topics().filter(t => typeof t === "string" && t.length <= 200).slice(0, 30);
       // Prompts are bounded and derived from project metadata only; never send source files, chat history or secrets.
@@ -252,9 +260,14 @@ export class AutonomousLearning {
         status: (check || reasoning || structured) ? verified ? "verified" : "rejected" : "pending" });
       this.events = this.events.slice(-150);
       await this.save();
+      this.lastOutcome = "success";
+      await this.save();
       return { ok: true, verified };
-    } catch {
-      this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier", text: "Ошибка запроса Cloud.ru; запрос учтён в лимите.", status: "rejected" });
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : "";
+      this.lastError = /Cloud.ru status 401|Cloud.ru status 403/.test(msg) ? "Авторизация Cloud.ru отклонена" : /Cloud.ru status 429/.test(msg) ? "Превышен лимит запросов Cloud.ru" : /Cloud.ru status 5\d\d/.test(msg) ? "Сервер Cloud.ru временно недоступен" : /abort|timeout/i.test(msg) ? "Тайм-аут запроса Cloud.ru" : /Cloud.ru не настроен/.test(msg) ? "Ключ Cloud.ru отсутствует" : "Ошибка соединения или ответа Cloud.ru";
+      this.lastOutcome = "error";
+      this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier", text: this.lastError + "; запрос учтён в лимите.", status: "rejected" });
       this.events = this.events.slice(-150);
       await this.save().catch(() => {});
       return { ok: false };
