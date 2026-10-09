@@ -24,16 +24,34 @@ export class KnowledgeLedger {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   list() { return this.items.map(x => ({ ...x })); }
+  /** Unverified topical suggestions, never factual or causal claims. */
+  suggestedLinks() {
+    const entries=this.items.filter(x=>x.status==="verified");
+    const links: {from:string;to:string;relation:"same-topic"|"same-operation";reason:string;verified:false}[]=[];
+    const operation=(s:string)=>/^\s*\d+\s*([×+÷−-])\s*\d+\s*=\s*\d+\s*$/.exec(s)?.[1];
+    for(let i=0;i<entries.length;i++) for(let j=i+1;j<entries.length;j++){
+      const a=entries[i]!,b=entries[j]!;
+      if(a.topic.toLowerCase()!==b.topic.toLowerCase())continue;
+      const same=!!operation(a.claim)&&operation(a.claim)===operation(b.claim);
+      links.push({from:a.id,to:b.id,relation:same?"same-operation":"same-topic",reason:same?"Одинаковая арифметическая операция; метод не проверен":"Общая тема, смысловая связь не доказана",verified:false});
+      if(links.length===300)return links;
+    }
+    return links;
+  }
   /** Read-only learning priorities: records needing review, unconnected topics, and sparse coverage. */
   gaps() {
-    const graph = this.graph();
-    const connected = new Set(graph.edges.flatMap(edge => [edge.from, edge.to]));
-    return this.items.filter(item => item.status === "needs-review" || !connected.has(item.id))
-      .map(item => ({
-        id: item.id, topic: item.topic,
-        reason: item.status === "needs-review" ? "Требует повторной проверки" : "Нет связей с другими знаниями",
-        priority: item.status === "needs-review" ? 2 : 1,
-      })).sort((a, b) => b.priority - a.priority).slice(0, 30);
+    const connected=new Set(this.graph().edges.flatMap(e=>[e.from,e.to]));
+    for(const e of this.suggestedLinks()){connected.add(e.from);connected.add(e.to);}
+    const grouped=new Map<string,{id:string;topic:string;reason:string;priority:number;count:number}>();
+    for(const item of this.items){
+      const review=item.status==="needs-review";
+      if(!review&&connected.has(item.id))continue;
+      const reason=review?"Требует повторной проверки":"Нет связей с другими знаниями";
+      const key=item.topic.toLowerCase()+"|"+reason,old=grouped.get(key);
+      if(old)old.count++;
+      else grouped.set(key,{id:item.id,topic:item.topic,reason,priority:review?2:1,count:1});
+    }
+    return [...grouped.values()].sort((a,b)=>b.priority-a.priority).slice(0,30);
   }
   /** Explainable, derived edges; similarity never implies factual correctness. */
   graph() {

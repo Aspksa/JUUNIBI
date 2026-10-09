@@ -45,7 +45,7 @@ export class AutonomousLearning {
   private cursor = 0;
   private readonly progress = new LearningProgress();
   private readonly reasoningEvaluation = new ReasoningEvaluation();
-  private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
+  private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "русский язык", "языки", "творчество"];
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
   constructor(private readonly file: string, private readonly ask: (question: string, maxTokens: number) => Promise<{ text: string; tokens: number }>,

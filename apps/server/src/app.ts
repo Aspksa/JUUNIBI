@@ -185,6 +185,7 @@ export function createApp(deps: AppDeps): http.Server {
         }
         if (req.method === "GET" && p === "/api/knowledge/gaps")
           return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.gaps() ?? { error: "Пробелы недоступны" });
+        if (req.method === "GET" && p === "/api/knowledge/suggested-links") return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.suggestedLinks() ?? { error: "Память знаний недоступна" });
         if (req.method === "GET" && p === "/api/knowledge/graph")
           return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.graph() ?? { error: "Граф недоступен" });
         if (req.method === "POST" && p === "/api/knowledge/evidence") {
