@@ -1,3 +1,32 @@
+describe("Brain 7.0 safe knowledge suggestions", () => {
+  it("groups repeated math gaps without promoting or inventing factual links", async () => {
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-links-"));
+    try {
+      const ledger=new KnowledgeLedger(path.join(dir,"knowledge.json"));
+      const values=[[41,22],[29,17],[17,19],[14,16]];
+      for(const [a,b] of values)ledger.addVerified({topic:"математика",claim:`${a} × ${b} = ${a*b}`,source:"Локальный арифметический тест",evidence:"deterministic-test"});
+      expect(ledger.list()).toHaveLength(4);
+      expect(ledger.suggestedLinks()).toHaveLength(6);
+      expect(ledger.suggestedLinks().every(x=>x.verified===false&&x.relation==="same-operation")).toBe(true);
+      expect(ledger.gaps()).toHaveLength(0);
+      expect(ledger.graph().edges).toHaveLength(0);
+      const extra=ledger.addVerified({topic:"русский язык",claim:"Подлежащее обозначает предмет речи",source:"Проверил пользователь",evidence:"owner-confirmed"});
+      expect(ledger.gaps()).toEqual([expect.objectContaining({id:extra.id,topic:"русский язык",count:1})]);
+    } finally {await rm(dir,{recursive:true,force:true});}
+  });
+  it("groups unconnected entries of the same topic into one diagnostic", async () => {
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-grouped-"));
+    try {
+      const ledger=new KnowledgeLedger(path.join(dir,"knowledge.json"));
+      const a=ledger.addVerified({topic:"наука",claim:"Проверенное утверждение A",source:"user",evidence:"owner-confirmed"});
+      const b=ledger.addVerified({topic:"наука",claim:"Проверенное утверждение B",source:"user",evidence:"owner-confirmed"});
+      ledger.review(a.id,false);
+      expect(ledger.gaps()).toEqual([expect.objectContaining({id:a.id,priority:2,count:1})]);
+      expect(ledger.suggestedLinks()).toHaveLength(0);
+    }finally{await rm(dir,{recursive:true,force:true});}
+  });
+});
+
 import { describe, it, expect } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
