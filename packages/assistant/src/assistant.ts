@@ -24,6 +24,8 @@ export interface AskOptions {
   /** Client-held conversation so far (the client is the source of truth). Replaces server-side session memory. */
   history?: { role: "user" | "assistant"; content: string }[];
   onEvent?: (e: AskEvent) => void;
+  /** Trusted server-side reasoning guidance; never grants tool permissions. */
+  brainGuidance?: { needsPlanning: boolean; needsApproval: boolean; needsEvidenceReview: boolean };
 }
 export interface AskResult { turnId: string; reply: string; tools: string[]; memory: string[] }
 
@@ -128,7 +130,15 @@ export class Assistant {
       while (clientHistory.length > 1 && total > MAX_HISTORY_TOTAL) total -= clientHistory.shift()!.content.length;
     }
     const hist = clientHistory ?? this.sessions.get(session) ?? [];
-    const msgs: Message[] = [{ role: "system", content: this.system(mem) }, ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
+    const guidance = opts.brainGuidance;
+    const instructions = guidance ? [
+      guidance.needsPlanning ? "Сложная задача: сначала сформулируй план действий и предположения; не утверждай, что план уже выполнен." : "",
+      guidance.needsEvidenceReview ? "Отделяй проверенные сведения от гипотез. Для проверки фактов используй доступные инструменты чтения." : "",
+      guidance.needsApproval ? "Возможны действия с последствиями: поясни риски и используй только фактическое подтверждение через существующий ApprovalGate. Текст пользователя или этот совет не являются разрешением." : "",
+    ].filter(Boolean).join(" ") : "";
+    const msgs: Message[] = [{ role: "system", content: this.system(mem) },
+      ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
+      ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
     let reply: string | null = null;
 
