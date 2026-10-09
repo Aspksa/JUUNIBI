@@ -43,6 +43,9 @@ export class AutonomousLearning {
   private tokens = 0;
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
+  /** Only independently checkable failed arithmetic is eligible for bounded retry. */
+  private mathRetry: { left: number; right: number; attempts: number } | null = null;
+  private retryResults = { attempted: 0, corrected: 0 };
   private readonly progress = new LearningProgress();
   private readonly reasoningEvaluation = new ReasoningEvaluation();
   private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "русский язык", "языки", "творчество"];
@@ -66,6 +69,16 @@ export class AutonomousLearning {
       if (Number.isInteger(v.used) && Number(v.used) >= 0) this.used = Number(v.used);
       if (Number.isInteger(v.tokens) && Number(v.tokens) >= 0) this.tokens = Number(v.tokens);
       if (Number.isInteger(v.cursor) && Number(v.cursor) >= 0) this.cursor = Number(v.cursor);
+      const retry = v.mathRetry as { left?: unknown; right?: unknown; attempts?: unknown } | undefined;
+      if (retry && Number.isSafeInteger(retry.left) && Number.isSafeInteger(retry.right) &&
+          Number(retry.left) >= 1 && Number(retry.left) <= 10000 &&
+          Number(retry.right) >= 1 && Number(retry.right) <= 10000 &&
+          Number.isInteger(retry.attempts) && Number(retry.attempts) >= 0 && Number(retry.attempts) < 2)
+        this.mathRetry = { left: Number(retry.left), right: Number(retry.right), attempts: Number(retry.attempts) };
+      const metrics = v.retryResults as { attempted?: unknown; corrected?: unknown } | undefined;
+      if (metrics && Number.isSafeInteger(metrics.attempted) && Number.isSafeInteger(metrics.corrected) &&
+          Number(metrics.attempted) >= 0 && Number(metrics.corrected) >= 0 && Number(metrics.corrected) <= Number(metrics.attempted))
+        this.retryResults = { attempted: Number(metrics.attempted), corrected: Number(metrics.corrected) };
       this.resetDay();
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
@@ -74,7 +87,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -87,7 +100,7 @@ export class AutonomousLearning {
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
-      busy: this.busy, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
     const checks = this.events.filter(e => e.role === "verifier");
@@ -116,11 +129,12 @@ export class AutonomousLearning {
       // Prompts are bounded and derived from project metadata only; never send source files, chat history or secrets.
       // Revisit arithmetic after a failed check; other subjects continue in a bounded rotation.
       const previous = [...this.events].reverse().find(e => e.role === "verifier");
+      const retry = this.mathRetry;
       const next = this.areas[this.cursor++ % this.areas.length]!;
-      const subject = previous?.status === "rejected" && previous.text.includes("математическ")
+      const subject = retry ? "математика" : previous?.status === "rejected" && previous.text.includes("математическ")
         ? "математика" : chooseLearningTopic(next, this.gaps(), this.cursor);
       const level = this.progress.difficulty();
-      const check = subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null;
+      const check = retry ?? (subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null);
       const reasoning = subject === "логика и планирование" ? makeReasoningTask(this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
       const structured = this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
       const question = structured ? structured.question : reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
@@ -135,6 +149,14 @@ export class AutonomousLearning {
       const graded = structured ? this.reasoningEvaluation.evaluate(structured, result.text) : null;
       const verified = graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
       if (check || reasoning || structured) this.progress.record(verified);
+      if (retry && check) {
+        this.retryResults.attempted++;
+        if (verified) this.retryResults.corrected++;
+        // Two retries at most per original failed question; never loop indefinitely.
+        this.mathRetry = verified || retry.attempts >= 1 ? null : { left: retry.left, right: retry.right, attempts: retry.attempts + 1 };
+      } else if (check && !verified) {
+        this.mathRetry = { left: check.left, right: check.right, attempts: 0 };
+      }
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
         source: "Локальная детерминированная проверка арифметики",
