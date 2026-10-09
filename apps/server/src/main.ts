@@ -304,6 +304,7 @@ const server = createApp({
       recentToolWarnings: brain.toolReliabilityGuidance(),
       decisionGroups: brain.experienceLearningReport().decisionGroups,
       learningEnabled: learning.status().settings.enabled,
+      developmentGoal: learning.status().developmentGoal,
     });
     const recalled = brain.recallExperience(message);
     if (recalled.length) review.guidance.evidenceWarnings.unshift(
