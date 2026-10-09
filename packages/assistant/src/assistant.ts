@@ -43,6 +43,8 @@ export interface AssistantOptions {
   /** Supervisor hook: called before any non-"read" tool runs. No hook => such tools are denied. */
   approve?: (req: ApprovalRequest) => Promise<boolean> | boolean;
   maxSteps?: number;
+  /** Best-effort metadata-only observer; never receives raw arguments or tool outputs. */
+  onToolOutcome?: (event: { tool: string; status: ToolStatus; risk: Risk; elapsedMs: number }) => void;
   /** Optional queue used by the server to safely request user consent. */
   persona?: string;
 }
@@ -155,7 +157,10 @@ export class Assistant {
         opts.onEvent?.({ type: "tool", phase: "start", id: call.id, name: call.name, args: call.arguments.slice(0, 300) });
         const t0 = Date.now();
         const result = await this.runTool(call.name, call.arguments, signal);
-        opts.onEvent?.({ type: "tool", phase: "end", id: call.id, name: call.name, status: result.status, ms: Date.now() - t0 });
+        const elapsedMs = Date.now() - t0;
+        try { this.o.onToolOutcome?.({tool: call.name, status: result.status, risk: this.tools.get(call.name)?.risk ?? "read", elapsedMs}); }
+        catch (error) { this.log.warn("tool observer failed", error); }
+        opts.onEvent?.({ type: "tool", phase: "end", id: call.id, name: call.name, status: result.status, ms: elapsedMs });
         msgs.push({ role: "tool", tool_call_id: call.id, content: result.text });
       }
     }
