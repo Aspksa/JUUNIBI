@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { RecoveryTrials } from "./recovery-trials";
 import { analyzeToolFailures } from "./tool-failure-patterns";
 import { assessToolRecovery } from "./tool-recovery-evaluation";
 import { toolReliabilityGuidance } from "./tool-reliability-guidance";
@@ -44,6 +45,12 @@ export class BrainCore {
   confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();return result; }
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
+  private readonly recoveryTrials = new RecoveryTrials();
+  recoveryTrialReport(){return this.recoveryTrials.report();}
+  startRecoveryTrial(input:{tool:string;strategy:string;ownerConfirmed:boolean}){
+    const r=this.recoveryTrials.create(input?.tool,input?.strategy,input?.ownerConfirmed,this.toolObservations);
+    this.persist();return r;
+  }
   private toolObservations: {tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number;at:string}[]=[];
   toolOutcomeHistory(){return this.toolObservations.map(x=>({...x}));}
   toolFailurePatterns(){return analyzeToolFailures(this.toolObservations);}
@@ -54,6 +61,7 @@ export class BrainCore {
     if (!event || !/^[a-zA-Z0-9_-]{1,64}$/.test(event.tool) ||
        !["ok","error","denied"].includes(event.status) || !["read","write","danger"].includes(event.risk) ||
        !Number.isFinite(event.elapsedMs) || event.elapsedMs<0 || event.elapsedMs>3600000) return;
+    this.recoveryTrials.observe(event);
     this.toolObservations.unshift({...event,at:new Date().toISOString()});
     this.toolObservations=this.toolObservations.slice(0,100);
     this.persist();
@@ -102,7 +110,7 @@ export class BrainCore {
   flush() { return this.writeQueue; }
   private persist() {
     if (!this.storage) return;
-    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot(), revisions: this.revisions.snapshot(), toolObservations: this.toolObservations });
+    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot(), revisions: this.revisions.snapshot(), toolObservations: this.toolObservations, recoveryTrials: this.recoveryTrials.snapshot() });
     this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
   }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
@@ -119,6 +127,7 @@ export class BrainCore {
     this.logs = saved.logs as typeof this.logs;
     this.decisions.load((state as { decisions?: unknown }).decisions);
     this.revisions.load((state as { revisions?: unknown }).revisions);
+    this.recoveryTrials.load((state as {recoveryTrials?:unknown}).recoveryTrials);
     const observations = (state as {toolObservations?:unknown}).toolObservations;
     if (Array.isArray(observations)) this.toolObservations=observations.filter(e=>e&&typeof e==="object"&&/^[a-zA-Z0-9_-]{1,64}$/.test(e.tool)&&["ok","error","denied"].includes(e.status)&&["read","write","danger"].includes(e.risk)&&Number.isFinite(e.elapsedMs)&&e.elapsedMs>=0&&e.elapsedMs<=3600000&&typeof e.at==="string"&&!Number.isNaN(Date.parse(e.at))).slice(0,100);
   }
