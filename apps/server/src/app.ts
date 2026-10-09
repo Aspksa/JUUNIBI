@@ -335,7 +335,7 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "POST" && p === "/api/brain/plan-compare-34") {
           if (!deps.brain) return send(res,503,{error:"Мозг недоступен"});
           const body=await readJson(req);
-          return send(res,200,deps.brain.compare34StagePlans(body.plan,body.alternatives));
+          return send(res,200,deps.brain.compare34StagePlans(body.plan as import("./plan-25-audit").DraftPlan,body.alternatives as import("./plan-25-audit").DraftPlan[]));
         }
         if (req.method === "POST" && p === "/api/brain/plan-repair") {
           if (!deps.brain) return send(res,503,{error:"Мозг недоступен"});
