@@ -8,6 +8,7 @@ import type { SceneEngine } from "./scenes";
 import type { BrainCore } from "./brain";
 import type { PlanOption, PlanLimits } from "./plan-evaluator";
 import type { SequenceStep } from "./sequence-simulator";
+import type { DecisionBranch, DecisionEvent } from "./decision-tree";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
@@ -148,6 +149,11 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "POST" && p === "/api/learning/step") {
           if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
           return send(res, 200, await deps.learning.tick());
+        }
+        if (req.method === "POST" && p === "/api/brain/preview-decision-tree") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.previewDecisionTree(input.branches as DecisionBranch[], input.limits as PlanLimits, input.event as DecisionEvent | undefined));
         }
         if (req.method === "POST" && p === "/api/brain/suggest-sequence-repairs") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });

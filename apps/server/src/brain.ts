@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { evaluateDecisionTree, type DecisionBranch, type DecisionEvent } from "./decision-tree";
 import { simulateSequence, type SequenceStep } from "./sequence-simulator";
 import { suggestSequenceRepairs } from "./sequence-repair";
 import { evaluateOptions, type PlanLimits, type PlanOption } from "./plan-evaluator";
@@ -15,6 +16,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  previewDecisionTree(branches: DecisionBranch[], limits: PlanLimits, event?: DecisionEvent) { return evaluateDecisionTree(branches, limits, event); }
   previewSequence(steps: SequenceStep[], limits: PlanLimits) { return simulateSequence(steps, limits); }
   suggestRepairs(steps: SequenceStep[], limits: PlanLimits) { return suggestSequenceRepairs(steps, limits); }
   /** Simulate alternatives only. The selected plan is never executed or saved. */
