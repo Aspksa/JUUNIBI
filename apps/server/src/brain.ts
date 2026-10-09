@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assessKnowledgeImpact, type KnowledgeNode } from "./knowledge-impact";
 import { assessRevisionFreshness, type FreshnessRequest } from "./revision-freshness";
 import { RevisionHistory } from "./revision-history";
 import { reviewReasoningRevision, type ReasoningExample, type ReasoningRevision, type RevisionEvidence } from "./reasoning-revision";
@@ -36,6 +37,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  previewKnowledgeImpact(nodes: KnowledgeNode[], changedId: string) { return assessKnowledgeImpact(nodes, changedId); }
   previewReasoningRevision(examples: ReasoningExample[], claim: ReasoningRevision, evidence: RevisionEvidence[]) { return reviewReasoningRevision(examples, claim, evidence); }
   reviewOwnReasoning(claims: ReasoningClaim[], evidence: ReasoningEvidence[]) { return reviewReasoning(claims, evidence); }
   previewDecisionTree(branches: DecisionBranch[], limits: PlanLimits, event?: DecisionEvent) { return evaluateDecisionTree(branches, limits, event); }
