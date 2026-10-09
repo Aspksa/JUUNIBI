@@ -34,7 +34,7 @@ export function learningPanel(): HTMLElement {
       if (!response.ok) throw new Error("HTTP " + response.status);
       const data = await response.json() as {
         settings: { enabled: boolean; dailyLimit: number; mode: string; memory: boolean; reasoning: boolean; suggestCode: boolean };
-        used: number; tokens: number; events: { role: string; text: string; status: string; at: string }[];
+        used: number; tokens: number; diary: { questions: number; verified: number; rejected: number; pending: number; nextTopic: string; retention: string; note: string }; events: { role: string; text: string; status: string; at: string }[];
       };
       const toggle = el("button", { type: "button", textContent: data.settings.enabled ? "Приостановить обучение" : "Включить обучение" });
       toggle.addEventListener("click", async () => {
@@ -63,6 +63,10 @@ export function learningPanel(): HTMLElement {
       box.replaceChildren(el("h2", { textContent: "Обучение и технический чат" }),
         el("p", { textContent: "Режим: " + data.settings.mode + " · Запросы: " + data.used + "/" + data.settings.dailyLimit + " · Токены: " + data.tokens }),
         el("p", { textContent: "Результаты DeepSeek изолированы до независимой проверки; код не меняется автоматически." }),
+        section("Дневник развития",
+          el("p", { textContent: "Вопросов: " + data.diary.questions + " · Проверено: " + data.diary.verified + " · Ошибок: " + data.diary.rejected + " · Ожидают проверки: " + data.diary.pending }),
+          el("p", { textContent: "Следующая тема: " + data.diary.nextTopic }),
+          el("p", { cls: "muted", textContent: data.diary.note })),
         toggle, el("label", { textContent: "Запросов Cloud.ru в сутки (0–50)" }), limit, saveLimit, step, history);
     } catch { box.replaceChildren(el("p", { textContent: "Нет соединения с журналом обучения." })); }
   }
