@@ -1,4 +1,5 @@
 import type { ToolSpec } from "./llm";
+import type { DangerousActionPlan } from "./action-review";
 
 /** read: harmless; write: changes things; danger: irreversible/outward-facing. */
 export type Risk = "read" | "write" | "danger";
@@ -9,6 +10,8 @@ export interface Tool {
   /** JSON Schema of the arguments object. */
   parameters: { type: "object"; properties?: Record<string, unknown>; required?: string[] };
   risk: Risk;
+  /** Server-defined preflight plan; required for danger tools. */
+  actionPlan?: DangerousActionPlan;
   run(args: Record<string, unknown>): unknown | Promise<unknown>;
 }
 
