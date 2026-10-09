@@ -325,7 +325,7 @@ export function createApp(deps: AppDeps): http.Server {
           const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
           try {
             if (deps.brain) line({ type: "brain_review", review: deps.brain.classifyTask(msg) });
-            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line });
+            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line, ...(deps.brain ? { brainGuidance: deps.brain.classifyTask(msg) } : {}) });
             line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools, memory: r.memory });
           } catch (e) { line({ type: "error", message: ctl.signal.aborted ? "Остановлено" : (e as Error).message }); }
           return void res.end();
@@ -338,7 +338,7 @@ export function createApp(deps: AppDeps): http.Server {
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
-          const reply = await a.ask(msg, session, ctl.signal, history ? { history } : {});
+          const reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(deps.brain ? { brainGuidance: deps.brain.classifyTask(msg) } : {}) });
           return send(res, 200, deps.brain ? { ...reply, brainReview: deps.brain.classifyTask(msg) } : reply);
         }
         if (req.method === "POST" && p === "/api/feedback") {
