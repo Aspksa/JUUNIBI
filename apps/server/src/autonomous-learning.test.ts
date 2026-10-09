@@ -38,7 +38,7 @@ describe("autonomous learning", () => {
       await learner.tick();
       expect((await learner.tick())).toEqual({ ok: true, verified: true });
       const statuses = learner.status().events.filter(e => e.role === "verifier").map(e => e.status);
-      expect(statuses).toEqual(["pending", "pending", "verified"]);
+      expect(statuses).toEqual(["pending", "rejected", "verified"]);
     } finally { await rm(dir, { recursive: true, force: true }); }
   });
   it("promotes only independently correct arithmetic and respects memory setting", async () => {
