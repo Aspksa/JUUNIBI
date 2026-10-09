@@ -3,9 +3,11 @@ import { evaluateBrainV5 } from "./brain-v5-evaluation";
 import { evaluateBrainV6 } from "./brain-v6-engine";
 import { evaluateBrainV7 } from "./brain-v7-engine";
 import { searchVerifiedKnowledge } from "./brain-knowledge-search";
+import { inspectCognition, type CognitiveInput } from "./brain-v8-cognitive";
 
 /** Automatic read-only review used by both streaming and regular chat routes. */
-export function automaticBrainReview(input: UnifiedCycleInput) {
+export function automaticBrainReview(input: CognitiveInput) {
+  const cognition = inspectCognition(input);
   const cycle = runUnifiedBrainCycle(input);
   const diagnostics = evaluateBrainV5(input);
   const reviewV6 = evaluateBrainV6(input);
@@ -19,7 +21,7 @@ export function automaticBrainReview(input: UnifiedCycleInput) {
     (stage.id === "quality.answer_accuracy" || stage.id === "quality.before_after") && stage.state === "unknown"));
   const toolCautions = (input.recentToolWarnings ?? []).some(w => w.caution || w.denied > 0);
   return {
-    cycle: { ...cycle, diagnostics, reviewV6, reviewV7 },
+    cycle: { ...cycle, diagnostics, reviewV6, reviewV7, cognition },
     guidance: {
       needsPlanning: cycle.advice.planBeforeAnswer || arithmeticMismatch,
       needsEvidenceReview: cycle.advice.checkExternalEvidence || arithmeticMismatch || toolCautions,
