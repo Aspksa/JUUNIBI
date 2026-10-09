@@ -39,6 +39,7 @@ export class AutonomousLearning {
   private tokens = 0;
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
+  private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
   constructor(private readonly file: string, private readonly ask: (question: string, maxTokens: number) => Promise<{ text: string; tokens: number }>,
@@ -74,8 +75,18 @@ export class AutonomousLearning {
   }
   status() {
     this.resetDay();
-    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day,
+    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(),
       busy: this.busy, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+  }
+  diary() {
+    const checks = this.events.filter(e => e.role === "verifier");
+    const verified = checks.filter(e => e.status === "verified").length;
+    const rejected = checks.filter(e => e.status === "rejected").length;
+    const pending = checks.filter(e => e.status === "pending").length;
+    return { questions: this.events.filter(e => e.status === "question").length,
+      verified, rejected, pending,
+      nextTopic: this.areas[this.cursor % this.areas.length]!, retention: "не измерялась",
+      note: "Проверка одной арифметической задачи не доказывает освоение предмета; внешние знания остаются в карантине." };
   }
   async configure(input: unknown) {
     this.settings = validateSettings(input);
@@ -92,8 +103,11 @@ export class AutonomousLearning {
     try {
       const topics = this.topics().filter(t => typeof t === "string" && t.length <= 200).slice(0, 30);
       // Prompts are bounded and derived from project metadata only; never send source files, chat history or secrets.
-      const areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
-      const subject = areas[this.cursor++ % areas.length]!;
+      // Revisit arithmetic after a failed check; other subjects continue in a bounded rotation.
+      const previous = [...this.events].reverse().find(e => e.role === "verifier");
+      const next = this.areas[this.cursor++ % this.areas.length]!;
+      const subject = previous?.status === "rejected" && previous.text.includes("математическ")
+        ? "математика" : next;
       const check = subject === "математика" ? { left: 11 + (this.cursor % 11), right: 13 + (this.cursor % 7) } : null;
       const question = check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
