@@ -21,7 +21,28 @@ import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
 import { comparePublicEvidence } from "./evidence-comparison";
+/** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
+export interface ModuleControl {
+  list(): unknown;
+  isActive(name: string): boolean;
+  title(name: string): string;
+  detail(name: string): Promise<unknown>;
+  act(name: string, action: string): Promise<unknown>;
+  promptView(): unknown;
+  tools(): unknown;
+  setToolAllowed(tool: string, allowed: boolean): Promise<void>;
+  setAssistantAccess(name: string, allowed: boolean): Promise<unknown>;
+  track<T>(name: string, work: () => Promise<T>): Promise<T>;
+  manifests: {
+    list(): unknown;
+    preview(input: unknown): unknown;
+    install(input: unknown, sha256: unknown): Promise<unknown>;
+    remove(name: string): Promise<void>;
+    fetch(url: unknown): Promise<unknown>;
+  };
+}
 export interface AppDeps {
+  moduleControl?: ModuleControl;
   /** Long-term memory is available (and editable by the user) even before an API key is configured. */
   memory?: import("@juunibi/assistant").Memory;
   /** undefined while Cloud.ru is not configured; chat then answers 503 with instructions. */
@@ -109,12 +130,53 @@ export function createApp(deps: AppDeps): http.Server {
           await deps.saveCloud(b.apiKey.trim());
           return send(res, 200, deps.cloudStatus?.() ?? { configured: true });
         }
+        const mc = deps.moduleControl;
+        // A stopped module refuses its own endpoints, so stopping it really stops it.
+        if (mc) {
+          const owner = p.startsWith("/api/juunibi/scenes") ? "scenes"
+            : /^\/api\/(brain|learning|knowledge)(\/|$)/.test(p) ? "brain"
+            : /^\/api\/update\/(check|download|confirm-removals)$/.test(p) ? "updater" : null;
+          if (owner && !mc.isActive(owner)) return send(res, 503, { error: `Модуль «${mc.title(owner)}» остановлен. Запустите его на странице «Модули».` });
+        }
+        if (mc && p.startsWith("/api/modules/")) {
+          const rest = p.slice("/api/modules/".length);
+          if (req.method === "GET" && rest === "tools") return send(res, 200, mc.tools());
+          if (req.method === "GET" && rest === "assistant-view") { const view = JSON.stringify(mc.promptView()); return send(res, 200, { json: view, chars: view.length }); }
+          if (req.method === "GET" && rest === "manifests") return send(res, 200, mc.manifests.list());
+          if (req.method === "POST" && rest === "manifests/preview") {
+            const b = await readJson(req);
+            return send(res, 200, mc.manifests.preview(b.url !== undefined ? await mc.manifests.fetch(b.url) : b.manifest));
+          }
+          if (req.method === "POST" && rest === "manifests/install") {
+            const b = await readJson(req);
+            return send(res, 201, await mc.manifests.install(b.manifest, b.sha256));
+          }
+          const mm = /^manifests\/([a-z][a-z0-9-]{1,40})$/.exec(rest);
+          if (req.method === "DELETE" && mm) { await mc.manifests.remove(mm[1]!); return send(res, 200, { ok: true }); }
+          if (req.method === "POST" && rest === "tools/policy") {
+            const b = await readJson(req);
+            if (typeof b.tool !== "string" || typeof b.allowed !== "boolean") return send(res, 400, { error: "Укажите tool и allowed" });
+            await mc.setToolAllowed(b.tool, b.allowed);
+            return send(res, 200, mc.tools());
+          }
+          const am = /^([a-z][a-z0-9-]{1,40})\/access$/.exec(rest);
+          if (req.method === "POST" && am) {
+            const b = await readJson(req);
+            if (typeof b.allowed !== "boolean") return send(res, 400, { error: "Укажите allowed" });
+            return send(res, 200, await mc.setAssistantAccess(am[1]!, b.allowed));
+          }
+          const dm = /^([a-z][a-z0-9-]{1,40})$/.exec(rest);
+          if (req.method === "GET" && dm) return send(res, 200, await mc.detail(dm[1]!));
+          const xm = /^([a-z][a-z0-9-]{1,40})\/(start|stop|restart|enable|disable)$/.exec(rest);
+          if (req.method === "POST" && xm) return send(res, 200, await mc.act(xm[1]!, xm[2]!));
+          return send(res, 404, { error: "Не найдено" });
+        }
         if (req.method === "GET" && p === "/api/juunibi/scenes/stats") return send(res, 200, deps.scenes?.stats() ?? { error: "Сцены не подключены" });
         if (req.method === "POST" && p === "/api/juunibi/scenes/next") {
           if (!deps.scenes) return send(res, 503, {error:"Сцены не подключены"});
-          return send(res, 200, await deps.scenes.next());
+          return send(res, 200, mc ? await mc.track("scenes", () => deps.scenes!.next()) : await deps.scenes.next());
         }
-        if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
+        if (req.method === "GET" && p === "/api/modules") return send(res, 200, mc ? mc.list() : deps.modules());
         if (req.method === "GET" && p === "/api/memory/diagnostics") return send(res, 200, (deps.memory ?? a?.memory)?.embeddingDiagnostics() ?? { configured: false, mode: "unavailable" });
         if (req.method === "GET" && p === "/api/knowledge") return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.list() ?? { error: "Память знаний недоступна" });
         if (req.method === "POST" && p === "/api/knowledge/evidence/compare") {
@@ -156,7 +218,7 @@ export function createApp(deps: AppDeps): http.Server {
         }
         if (req.method === "POST" && p === "/api/learning/step") {
           if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
-          return send(res, 200, await deps.learning.tick());
+          return send(res, 200, mc ? await mc.track("brain", () => deps.learning!.tick()) : await deps.learning.tick());
         }
         if (req.method === "POST" && p === "/api/brain/rank-with-experience") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
@@ -281,7 +343,7 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
         if (req.method === "POST" && p === "/api/update/check") {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
-          return send(res, 200, await deps.updater.check());
+          return send(res, 200, mc ? await mc.track("updater", () => deps.updater!.check()) : await deps.updater.check());
         }
         if (req.method === "POST" && p === "/api/update/confirm-removals") {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
@@ -321,6 +383,7 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.approvals) return send(res, 404, { error: "Подтверждения недоступны" });
           return send(res, deps.approvals.decide(approvalMatch[1]!, approvalMatch[2] === "approve") ? 200 : 404, { ok: true });
         }
+        const brainOn = deps.brain && (!mc || mc.isActive("brain")) ? deps.brain : undefined;
         if (req.method === "POST" && p === "/api/chat/stream") {
           const b = await readJson(req, MAX_CHAT_BODY);
           const msg = typeof b.message === "string" ? b.message.trim() : "";
@@ -332,8 +395,8 @@ export function createApp(deps: AppDeps): http.Server {
           res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-accel-buffering": "no" });
           const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
           try {
-            if (deps.brain) line({ type: "brain_review", review: deps.brain.classifyTask(msg) });
-            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line, ...(deps.brain ? { brainGuidance: deps.brain.classifyTask(msg) } : {}) });
+            if (brainOn) line({ type: "brain_review", review: brainOn.classifyTask(msg) });
+            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line, ...(brainOn ? { brainGuidance: brainOn.classifyTask(msg) } : {}) });
             line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools, memory: r.memory });
           } catch (e) { line({ type: "error", message: ctl.signal.aborted ? "Остановлено" : (e as Error).message }); }
           return void res.end();
@@ -346,8 +409,8 @@ export function createApp(deps: AppDeps): http.Server {
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
-          const reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(deps.brain ? { brainGuidance: deps.brain.classifyTask(msg) } : {}) });
-          return send(res, 200, deps.brain ? { ...reply, brainReview: deps.brain.classifyTask(msg) } : reply);
+          const reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(brainOn ? { brainGuidance: brainOn.classifyTask(msg) } : {}) });
+          return send(res, 200, brainOn ? { ...reply, brainReview: brainOn.classifyTask(msg) } : reply);
         }
         if (req.method === "POST" && p === "/api/feedback") {
           const b = await readJson(req);

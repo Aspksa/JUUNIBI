@@ -45,6 +45,8 @@ export interface AssistantOptions {
   maxSteps?: number;
   /** Best-effort metadata-only observer; never receives raw arguments or tool outputs. */
   onToolOutcome?: (event: { tool: string; status: ToolStatus; risk: Risk; elapsedMs: number }) => void;
+  /** Owner policy that can only NARROW access: a tool it rejects is hidden from the model and refused if called. */
+  toolPolicy?: (tool: string) => boolean;
   /** Optional queue used by the server to safely request user consent. */
   persona?: string;
 }
@@ -147,7 +149,7 @@ export class Assistant {
 
     for (let step = 0; step < (this.o.maxSteps ?? 6); step++) {
       const r = await this.o.llm.chat(msgs, {
-        tools: this.tools.specs(), ...(signal ? { signal } : {}),
+        tools: this.tools.specs().filter((t) => this.o.toolPolicy?.(t.name) !== false), ...(signal ? { signal } : {}),
         ...(opts.onEvent ? { onText: (text: string) => opts.onEvent!({ type: "delta", text }) } : {}),
       });
       if (!r.toolCalls.length) { reply = r.content ?? ""; break; }
@@ -194,6 +196,7 @@ export class Assistant {
     } catch { return err("Ошибка: аргументы должны быть JSON-объектом."); }
     const invalid = validateToolArgs(tool.parameters, args);
     if (invalid) return err(`Ошибка: ${invalid.charAt(0).toLowerCase() + invalid.slice(1)}.`);
+    if (this.o.toolPolicy?.(name) === false) return { text: "Отказано: инструмент отключён владельцем в разделе «Модули».", status: "denied" };
     const preflight = reviewDangerousTool(tool);
     if (!preflight.valid) {
       this.log.warn(`tool ${name} denied by structured preflight: ${preflight.blockers.join("; ")}`);

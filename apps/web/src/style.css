@@ -787,3 +787,67 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .br-fold>summary{cursor:pointer;color:var(--muted);font-size:.88rem;padding:6px 0;width:fit-content}.br-fold>summary:hover{color:var(--fg)}.br-fold[open]>summary{margin-bottom:8px}
 .btn.sm{min-height:34px;padding:4px 14px;font-size:.88rem}
 @media (max-width:640px){.br-safety{grid-template-columns:1fr}.br-block{padding:16px}.br-field input[type=number]{width:100%}}
+
+/* =====================================================================
+   Modules page: toolbar, expandable cards, details, graph
+   ===================================================================== */
+.tag.off{color:var(--muted)}
+.mod-count.off{color:var(--muted)}
+.mod-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px}
+.mod-search{flex:1 1 240px;min-width:0;padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--fg);min-height:42px;font-size:.95rem}
+.mod-search:focus{outline:2px solid var(--brand);outline-offset:1px}
+.mod-toolbar .segmented{margin:0}
+.mod-tools-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex-basis:100%}
+.mod-stamp{margin-left:auto}
+.mod-filters{margin:0 0 12px}.mod-filters[hidden]{display:none}
+.mod-body{display:flex;flex-direction:column;gap:12px}
+.btn[aria-pressed=true]{background:color-mix(in srgb,var(--brand) 14%,var(--surface));border-color:color-mix(in srgb,var(--brand) 55%,transparent)}
+.mod-card{display:block;padding:0}
+.mod-card .mod-row{display:flex;align-items:center;gap:14px;padding:16px 18px}
+.mod-card.stopped{opacity:.82}.mod-card.stopped .mod-title strong{color:var(--muted)}
+.mod-card.manifest{border-style:dashed}
+.mod-card.open{border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+.mod-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;flex:none}
+.mod-error{margin:0;padding:8px 12px;border-radius:10px;font-size:.86rem;color:var(--danger);background:color-mix(in srgb,var(--danger) 9%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);overflow-wrap:anywhere}
+.mod-detail{display:flex;flex-direction:column;gap:14px;padding:4px 18px 18px;border-top:1px solid var(--line);margin-top:0;padding-top:16px}
+.mod-detail>p{margin:0}
+.mod-kv{display:grid;grid-template-columns:max-content 1fr;gap:8px 18px;align-items:center;font-size:.9rem}
+.mod-files,.mod-log,.mod-tools{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.mod-files li{display:flex;justify-content:space-between;gap:12px;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:.88rem}
+.mod-files code,.mod-hash{overflow-wrap:anywhere}
+.mod-log li{display:grid;grid-template-columns:110px 1fr;gap:10px;font-size:.84rem;padding:4px 0;border-bottom:1px solid var(--line)}
+.mod-log li.error span{color:var(--danger)}
+.mod-tools li{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--bg);padding:0 14px 10px}
+.mod-tools .set-row{border-top:0}
+.mod-tool-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.br-tile-value.bad{color:var(--danger)}
+.mod-json{margin:0;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);font:.8rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;max-height:320px;overflow:auto}
+.mod-preview{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--bg)}
+.mod-preview p{margin:0}.mod-confirm{display:flex;align-items:center;gap:10px;font-size:.9rem;cursor:pointer}
+.mod-preview .btn{align-self:flex-start}
+.br-form textarea{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%;font:.85rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;resize:vertical}
+.br-form input[type=url]{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%;min-height:42px}
+.mod-graph-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px;background:var(--bg);padding:4px}
+.mod-graph{display:block;max-width:none}
+.mod-graph .edge{fill:none;stroke:var(--line);stroke-width:1.6;transition:stroke .15s,opacity .15s}
+.mod-graph .edge{stroke:color-mix(in srgb,var(--muted) 45%,transparent)}
+.mod-graph .edge.on{stroke:var(--brand);stroke-width:2.2}.mod-graph .edge.on.down{stroke:var(--danger)}.mod-graph .edge.dim{opacity:.25}
+.mod-graph .arrow{fill:color-mix(in srgb,var(--muted) 70%,transparent)}
+.gnode{cursor:pointer;outline:none}
+.gnode rect{fill:var(--surface);stroke:var(--line);stroke-width:1.5;transition:stroke .15s,opacity .15s}
+.gnode .t1{fill:var(--fg);font-size:13px;font-weight:600}.gnode .t2{fill:var(--muted);font-size:11px}
+.gnode .dot{fill:var(--muted)}.gnode.started .dot{fill:var(--ok)}.gnode.pending .dot{fill:var(--brand)}.gnode.failed .dot{fill:var(--danger)}.gnode.stopped .dot{fill:var(--muted);opacity:.5}
+.gnode.stopped .t1{fill:var(--muted)}
+.gnode:hover rect,.gnode:focus-visible rect{stroke:var(--brand)}
+.gnode.sel rect{stroke:var(--brand);stroke-width:2.4}
+.gnode.down rect{stroke:var(--danger);stroke-width:2}
+.gnode.up rect{stroke:var(--muted);stroke-dasharray:5 4;stroke-width:2}
+.gnode.dim{opacity:.35}
+.mod-graph-note{margin:0 0 4px;min-height:2.6em}
+.mod-legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0}.mod-legend .sdot{margin-left:6px}
+.lg-down{margin-left:14px;padding-left:10px;border-left:2px solid var(--danger)}.lg-up{padding-left:10px;border-left:2px dashed var(--muted)}
+@media (max-width:640px){.mod-card .mod-row{flex-wrap:wrap}.mod-actions{justify-content:flex-start}.mod-log li{grid-template-columns:1fr}.mod-stamp{margin-left:0;flex-basis:100%}.mod-kv{grid-template-columns:1fr}}
+.mod-panel:empty{display:none}.mod-panel{margin-bottom:12px}
+.mod-graph{width:100%;height:auto;min-width:620px}
+.mod-card .mod-actions .btn.sm{padding:4px 12px}
+@media (max-width:640px){.mod-actions{flex:1 1 100%}.mod-card{margin-left:0!important}.mod-main{flex:1 1 100%}}
