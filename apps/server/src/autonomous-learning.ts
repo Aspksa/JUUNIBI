@@ -44,6 +44,8 @@ export class AutonomousLearning {
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
   /** Only independently checkable failed arithmetic is eligible for bounded retry. */
+  private logicRetry: { kind: "logic" | "transfer"; turn: number; attempts: number } | null = null;
+  private logicRetryResults = { attempted: 0, corrected: 0 };
   private mathRetry: { left: number; right: number; attempts: number } | null = null;
   private retryResults = { attempted: 0, corrected: 0 };
   private readonly progress = new LearningProgress();
@@ -87,7 +89,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -100,7 +102,7 @@ export class AutonomousLearning {
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
-      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
     const checks = this.events.filter(e => e.role === "verifier");
