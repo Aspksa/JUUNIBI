@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { reviewToolOutcome, type ToolOutcomeEvidence } from "./tool-outcome-review";
 import { classifyChatTask } from "./chat-task-triage";
 import { previewUnifiedThought, type UnifiedThoughtInput } from "./unified-thought";
 import { planKnowledgeRecheck, type RecheckPriority } from "./knowledge-recheck";
@@ -40,6 +41,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  reviewToolOutcome(input: ToolOutcomeEvidence) { return reviewToolOutcome(input); }
   previewThoughtCycle(input: UnifiedThoughtInput) { return previewUnifiedThought(input); }
   classifyTask(message: string) { return classifyChatTask(message); }
   /** Review a persisted task plan using actual saved steps; numeric estimates remain user supplied. */
