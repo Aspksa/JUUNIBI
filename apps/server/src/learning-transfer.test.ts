@@ -14,7 +14,9 @@ it("tests a different logic instance after correction and saves transfer metrics
   const questions:string[]=[];
   const ask=async(q:string)=>{
    questions.push(q);
-   return {text:questions.length===2?"incorrect":q===fresh.question?fresh.expected:initial.expected,tokens:5};
+   const number = /числу (\d+)/.exec(q)?.[1];
+   const answer = number ? (Number(number)%2===0 ? "ДА" : "НЕТ") : initial.expected;
+   return {text:questions.length===2?"incorrect":answer,tokens:5};
   };
   const learner=new AutonomousLearning(file,ask,()=>[]);
   await learner.configure({reasoning:false});
