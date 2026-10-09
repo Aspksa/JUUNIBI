@@ -72,11 +72,15 @@ export class CloudRuProvider implements LlmProvider {
         : {}),
     };
     let lastErr: unknown;
+    let streamed = false; // once text reached the caller, a retry would duplicate it
+    const onText = opts.onText ? (t: string) => { streamed = true; opts.onText!(t); } : undefined;
     for (let attempt = 0; attempt <= this.cfg.retries; attempt++) {
+      if (opts.signal?.aborted) throw new LlmError("Запрос отменён");
       if (attempt) await sleep(500 * 2 ** (attempt - 1));
       const ctl = new AbortController();
       let timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs);
-      opts.signal?.addEventListener("abort", () => ctl.abort(), { once: true });
+      const onAbort = () => ctl.abort();
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
       try {
         const res = await this.cfg.fetch(`${this.cfg.baseUrl}/chat/completions`, {
           method: "POST",
@@ -94,7 +98,7 @@ export class CloudRuProvider implements LlmProvider {
           throw new LlmError(`Cloud.ru вернул ${res.status}: ${text}`, res.status);
         }
         if (opts.onText && /text\/event-stream/i.test(res.headers.get("content-type") ?? "") && res.body) {
-          return await readStream(res.body, opts.onText, () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs); });
+          return await readStream(res.body, onText!, () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs); });
         }
         const parsed = parse(await res.json()); // server ignored `stream`: deliver the whole text at once
         if (opts.onText && parsed.content) opts.onText(parsed.content);
@@ -103,8 +107,10 @@ export class CloudRuProvider implements LlmProvider {
         if (e instanceof LlmError && e.status && e.status < 500 && e.status !== 429) throw this.safeError(e);
         if (opts.signal?.aborted) throw new LlmError("Запрос отменён");
         lastErr = e;
+        if (streamed) break;
       } finally {
         clearTimeout(timer);
+        opts.signal?.removeEventListener("abort", onAbort);
       }
     }
     throw this.safeError(lastErr instanceof LlmError ? lastErr : new LlmError(`Нет связи с Cloud.ru: ${(lastErr as Error)?.message ?? lastErr}`));

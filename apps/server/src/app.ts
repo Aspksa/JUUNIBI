@@ -290,8 +290,9 @@ export function createApp(deps: AppDeps): http.Server {
         }
         if (req.method === "POST" && p === "/api/update/download") {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
-          if (deps.updater.status().phase === "downloading" || deps.updater.status().phase === "testing") return send(res, 409, { error: "Обновление уже выполняется" });
-          void deps.updater.start();
+          // isBusy() and start() run in the same tick, so concurrent callers get a clean 409 instead of an unhandled rejection.
+          if (deps.updater.isBusy()) return send(res, 409, { error: "Обновление уже выполняется" });
+          deps.updater.start().catch(() => {});
           return send(res, 202, { ok: true });
         }
         const mem = deps.memory ?? a?.memory;
@@ -365,12 +366,18 @@ export function createApp(deps: AppDeps): http.Server {
       if (req.method !== "GET" && req.method !== "HEAD") return send(res, 405, { error: "Метод не поддерживается" });
       if (!deps.staticDir) return send(res, 404, { error: "Нет статики" });
       const root = path.resolve(deps.staticDir);
-      let file = path.resolve(root, "." + decodeURIComponent(p));
+      let decoded: string;
+      try { decoded = decodeURIComponent(p); } catch { return send(res, 400, { error: "Некорректный адрес" }); }
+      if (decoded.includes("\0")) return send(res, 400, { error: "Некорректный адрес" });
+      let file = path.resolve(root, "." + decoded);
       if (file !== root && !file.startsWith(root + path.sep)) return send(res, 403, { error: "Запрещено" });
       if (p.endsWith("/")) file = path.join(file, "index.html");
       let data: Buffer;
       try { data = await readFile(file); } catch { file = path.join(root, "index.html"); data = await readFile(file); }
-      res.writeHead(200, { "content-type": TYPES[path.extname(file)] ?? "application/octet-stream", "x-content-type-options": "nosniff" });
+      res.writeHead(200, {
+        "content-type": TYPES[path.extname(file)] ?? "application/octet-stream", "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'", "referrer-policy": "no-referrer",
+      });
       res.end(req.method === "HEAD" ? undefined : data);
     } catch (e) {
       const status = (e as { status?: number }).status ?? 500;

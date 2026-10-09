@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
@@ -30,11 +31,22 @@ function fileStore(file: string): StorageAdapter {
     async load() { try { return await readFile(file, "utf8"); } catch { return null; } },
     async save(data) {
       await mkdir(path.dirname(file), { recursive: true });
-      const tmp = file + ".tmp";
+      const tmp = file + "." + randomUUID() + ".tmp"; // unique per call: concurrent saves must not share a temp file
       await writeFile(tmp, data);
       await rename(tmp, file);
     },
   };
+}
+
+/** A damaged state file must not keep the whole server from starting: set it aside (never overwrite) and start empty. */
+async function loadOrQuarantine(name: string, file: string, load: () => Promise<void>) {
+  try { await load(); }
+  catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return;
+    const aside = file + ".corrupt-" + Date.now();
+    try { await rename(file, aside); } catch { /* nothing to move */ }
+    log.error(`Состояние «${name}» повреждено и перенесено в ${aside}; запуск с пустым состоянием`, (e as Error).message);
+  }
 }
 
 const log = new Logger("server", "info");
@@ -45,7 +57,7 @@ const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, 
 const updateTimer = setInterval(() => { void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e)); }, 15 * 60_000);
 void updater.check().catch((e) => log.warn("Не удалось проверить обновления", e));
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
-const MODEL = "deepseek-ai/DeepSeek-V4-Flash";
+const MODEL = process.env.CLOUDRU_MODEL?.trim() || "deepseek-ai/DeepSeek-V4-Flash";
 let activeModel: string | undefined;
 let cloudConfigured = false;
 let sceneLlm: CloudRuProvider | undefined;
@@ -73,9 +85,9 @@ const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.
 }, () => knowledge.gaps());
 const scenes = new SceneEngine(root, () => sceneLlm);
 await scenes.init();
-await brain.load();
-await learning.load();
-await knowledge.load();
+await loadOrQuarantine("мозг", path.join(dataDir, "brain.json"), () => brain.load());
+await loadOrQuarantine("обучение", path.join(dataDir, "autonomous-learning.json"), () => learning.load());
+await loadOrQuarantine("знания", path.join(dataDir, "verified-knowledge.json"), () => knowledge.load());
 interface ModuleInfo { name: string; title: string; deps: string[]; status: "started" | "pending" | "failed"; note: string }
 /** Real server components with their live state — shown on the Modules page and given to the assistant. */
 function moduleList(): ModuleInfo[] {
@@ -109,7 +121,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Говори по-русски естественно, тепло и точно. Обращение «Господин» используй умеренно, не в каждом предложении.",
     "Не выдавай художественный образ за реальное сознание или реальные чувства. Не обещай невыполненных действий. Перед публикациями, удалениями и иными существенными действиями проси разрешение.",
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
-  ].join("\\n");
+  ].join("\n");
   assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5) }) });
   assistant.tools.register({
     name: "brain_get_plans", risk: "read", description: "Прочитать планы задач.",
@@ -175,6 +187,7 @@ const hint = "Откройте раздел «Настройки» и укажи
 await kernel.start();
 
 const port = Number(process.env.PORT ?? 4173);
+if (!Number.isInteger(port) || port < 1 || port > 65535) { log.error("Некорректный PORT: " + process.env.PORT); process.exit(1); }
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
 const server = createApp({
   getAssistant: () => assistant,
@@ -194,6 +207,16 @@ const server = createApp({
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
 const learningTimer = setInterval(() => { if (cloudConfigured) void learning.tick(); }, 10 * 60_000);
-const shutdown = async () => { clearInterval(learningTimer); clearInterval(updateTimer); approvalGate.denyAll(); server.close(); await kernel.stop(); process.exit(0); };
+let stopping = false;
+const shutdown = async () => {
+  if (stopping) return;
+  stopping = true;
+  clearInterval(learningTimer); clearInterval(updateTimer); approvalGate.denyAll(); server.close();
+  // Let pending state writes finish so a stop never loses data.
+  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), auditQueue]);
+  await kernel.stop();
+  process.exit(0);
+};
+process.on("unhandledRejection", (reason) => log.error("Необработанная ошибка", reason));
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

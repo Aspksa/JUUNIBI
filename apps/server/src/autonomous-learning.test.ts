@@ -62,9 +62,12 @@ describe("autonomous learning", () => {
   });
   it("does not invoke the model when disabled", async () => {
     const ask = vi.fn();
-    const e = new AutonomousLearning("unused", ask, () => []);
-    await e.configure({ enabled: false });
-    expect(await e.tick()).toEqual({ skipped: "disabled" });
-    expect(ask).not.toHaveBeenCalled();
+    const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-learn-"));
+    try {
+      const e = new AutonomousLearning(path.join(dir, "learning.json"), ask, () => []);
+      await e.configure({ enabled: false });
+      expect(await e.tick()).toEqual({ skipped: "disabled" });
+      expect(ask).not.toHaveBeenCalled();
+    } finally { await rm(dir, { recursive: true, force: true }); }
   });
 });
