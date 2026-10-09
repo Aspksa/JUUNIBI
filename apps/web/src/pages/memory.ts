@@ -3,13 +3,14 @@ import { relTime } from "../chat/helpers";
 import { el, icon, iconButton } from "../dom";
 import { refreshMemory, type AppState } from "../state";
 import { KIND_LABEL, filterMemory, memoryCounts, type MemFilter } from "./models";
-import { btn, chip, emptyState, pageHead } from "./kit";
+import { btn, chip, emptyState } from "./kit";
 
 const UI = { filter: "all" as MemFilter, query: "", flash: "" };
 
-export function memoryPage(s: AppState): HTMLElement {
+/** Everything about the long-term memory without a page header: it is shown in a window on the Brain page. */
+export function memoryPanel(s: AppState): HTMLElement {
   const counts = memoryCounts(s.memory);
-  const root = el("div", { cls: "page" });
+  const root = el("div", { cls: "mem-panel" });
   const listHost = el("div", { cls: "mem-list" });
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Фильтр памяти" } });
   const flash = el("p", { cls: "flash", attrs: { role: "status" }, textContent: UI.flash });
@@ -69,8 +70,6 @@ export function memoryPage(s: AppState): HTMLElement {
 
   renderChips(); renderList();
   root.append(
-    pageHead("memory", "Память", "Всё, что помощница помнит о вас. Новые «уроки» она предлагает сама — работают они только после вашего «Принять». Проверенные факты и обучение — на странице «Мозг».",
-      el("div", { cls: "mem-stats" }, el("strong", { textContent: String(counts.active) }), el("span", { cls: "muted", textContent: "в памяти" }), counts.pending ? el("span", { cls: "tag warn", textContent: `${counts.pending} ждут` }) : null)),
     el("section", { cls: "pg-card" }, el("h2", { textContent: "Добавить вручную" }), form, flash),
     el("div", { cls: "mem-toolbar" }, search, chipsHost),
     listHost);
