@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chooseLearningTopic } from "./learning-priorities";
+import { LearningProgress } from "./learning-progress";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -40,6 +41,7 @@ export class AutonomousLearning {
   private tokens = 0;
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
+  private readonly progress = new LearningProgress();
   private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
@@ -51,6 +53,7 @@ export class AutonomousLearning {
     try {
       const v = JSON.parse(await readFile(this.file, "utf8")) as Record<string, unknown>;
       this.settings = validateSettings(v.settings);
+      this.progress.load(v.progress);
       if (Array.isArray(v.events)) this.events = v.events.filter((e): e is LearningEvent =>
         !!e && typeof e === "object" && typeof e.text === "string" && typeof e.at === "string" &&
         ["juunibi", "deepseek", "verifier"].includes(e.role) &&
@@ -67,7 +70,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot() });
     this.queue = this.queue.then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -78,7 +81,7 @@ export class AutonomousLearning {
   }
   status() {
     this.resetDay();
-    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(),
+    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(),
       busy: this.busy, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
@@ -111,7 +114,8 @@ export class AutonomousLearning {
       const next = this.areas[this.cursor++ % this.areas.length]!;
       const subject = previous?.status === "rejected" && previous.text.includes("математическ")
         ? "математика" : chooseLearningTopic(next, this.gaps(), this.cursor);
-      const check = subject === "математика" ? { left: 11 + (this.cursor % 11), right: 13 + (this.cursor % 7) } : null;
+      const level = this.progress.difficulty();
+      const check = subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null;
       const question = check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
       // Reserve before the network request, including failures, to prevent unlimited retries.
@@ -122,6 +126,7 @@ export class AutonomousLearning {
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "deepseek", text: redact(result.text), status: "unverified" });
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
       const verified = !!check && result.text.trim() === String(check.left * check.right);
+      if (check) this.progress.record(verified);
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
         source: "Локальная детерминированная проверка арифметики",
