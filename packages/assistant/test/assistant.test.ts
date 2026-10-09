@@ -24,7 +24,7 @@ describe("Assistant", () => {
     const run = vi.fn(() => "done");
     const mk = (approve?: () => boolean) => {
       const a = new Assistant({ llm: scripted(call("wipe"), say("ok")), log: quiet, ...(approve ? { approve } : {}) });
-      a.tools.register({ name: "wipe", description: "", risk: "danger", parameters: { type: "object" }, run });
+      a.tools.register({ name: "wipe", description: "", risk: "danger", actionPlan: { purpose: "Remove verified test data", expectedEffect: "Clears the disposable test files", recovery: "Restore disposable files from backups", checks: ["Confirm the intended test destination"] }, parameters: { type: "object" }, run });
       return a;
     };
     await mk().ask("x");

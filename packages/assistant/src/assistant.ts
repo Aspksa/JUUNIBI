@@ -3,6 +3,7 @@ import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
 import { ToolRegistry, type Risk } from "./tools";
 import { validateToolArgs } from "./security";
+import { reviewDangerousTool } from "./action-review";
 
 export interface ApprovalRequest { tool: string; args: Record<string, unknown>; risk: Risk; signal?: AbortSignal }
 export interface Turn {
@@ -188,6 +189,11 @@ export class Assistant {
     } catch { return err("Ошибка: аргументы должны быть JSON-объектом."); }
     const invalid = validateToolArgs(tool.parameters, args);
     if (invalid) return err(`Ошибка: ${invalid.charAt(0).toLowerCase() + invalid.slice(1)}.`);
+    const preflight = reviewDangerousTool(tool);
+    if (!preflight.valid) {
+      this.log.warn(`tool ${name} denied by structured preflight: ${preflight.blockers.join("; ")}`);
+      return { text: "Отказано: " + preflight.blockers.join("; "), status: "denied" };
+    }
     if (tool.risk !== "read") {
       const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk, ...(signal ? { signal } : {}) }) : false;
       this.log.info(`tool ${name} (${tool.risk}) ${ok ? "approved" : "denied"}`);
