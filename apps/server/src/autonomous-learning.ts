@@ -133,18 +133,18 @@ export class AutonomousLearning {
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
       const graded = structured ? this.reasoningEvaluation.evaluate(structured, result.text) : null;
       const verified = graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
-      if (check || reasoning) this.progress.record(verified);
+      if (check || reasoning || structured) this.progress.record(verified);
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
         source: "Локальная детерминированная проверка арифметики",
       });
-      const verificationText = reasoning ? (verified ? "Ответ на задачу с явным правилом проверен локально." : "Ответ на логическую задачу не прошёл проверку.") : check
+      const verificationText = graded ? (verified ? "Проверены все промежуточные шаги." : "Найдена ошибка на шаге " + graded.firstIncorrectStep) : reasoning ? (verified ? "Ответ на задачу с явным правилом проверен локально." : "Ответ на логическую задачу не прошёл проверку.") : check
         ? verified ? "Математический ответ проверен локальным вычислением; другие утверждения не проверены."
           : "Ответ не прошёл независимую математическую проверку."
         : "Ответ помещён в карантин. Независимая проверка источниками/тестами не выполнена; запись в активную память и изменение кода запрещены.";
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier",
         text: verificationText,
-        status: (check || reasoning) ? verified ? "verified" : "rejected" : "pending" });
+        status: (check || reasoning || structured) ? verified ? "verified" : "rejected" : "pending" });
       this.events = this.events.slice(-150);
       await this.save();
       return { ok: true, verified };
