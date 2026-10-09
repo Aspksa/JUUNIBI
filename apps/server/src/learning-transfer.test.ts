@@ -28,6 +28,11 @@ it("tests a different logic instance after correction and saves transfer metrics
   await restored.tick();
   expect(questions[6]).toBe(fresh.question);
   expect(restored.status().transferMetrics).toEqual({tested:1,successful:1});
+  expect(restored.status().pendingTransfer).toBe(1);
+  expect(restored.status().transferSeries.completed).toBe(0);
+  await restored.tick();
+  await restored.tick();
   expect(restored.status().pendingTransfer).toBe(0);
+  expect(restored.status().transferSeries).toEqual({completed:1,passed:1,activeCorrect:0,passRate:100});
  } finally { await rm(dir,{recursive:true,force:true}); }
 });
