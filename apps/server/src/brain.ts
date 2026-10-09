@@ -40,6 +40,33 @@ export class BrainCore {
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
   previewThoughtCycle(input: UnifiedThoughtInput) { return previewUnifiedThought(input); }
+  /** Review a persisted task plan using actual saved steps; numeric estimates remain user supplied. */
+  previewActivePlan(planId: string, input: Omit<UnifiedThoughtInput, "steps"> & {
+    estimates: { stepId: string; cost: number; duration: number; risk: number; benefit: number; requires: string[]; effects: { resource: string; delta: number }[] }[];
+  }) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    if (plan.status === "completed" || plan.status === "failed")
+      throw Object.assign(new Error("Недоступен пересмотр завершённого плана"), { status: 409 });
+    if (!input || !Array.isArray(input.estimates) || input.estimates.length !== plan.steps.length ||
+        new Set(input.estimates.map(e => e?.stepId)).size !== plan.steps.length ||
+        input.estimates.some(e => !e || !plan.steps.some(s => s.id === e.stepId)))
+      throw Object.assign(new Error("Оценки должны точно соответствовать шагам сохранённого плана"), { status: 400 });
+    const estimates = new Map(input.estimates.map(e => [e.stepId, e]));
+    const steps: SequenceStep[] = plan.steps.map((step, index) => {
+      const estimate = estimates.get(step.id)!;
+      return { id: "step_" + index, title: step.title, cost: estimate.cost,
+        duration: estimate.duration, risk: estimate.risk, benefit: estimate.benefit,
+        requires: estimate.requires, effects: estimate.effects,
+        after: index === 0 ? [] : ["step_" + (index - 1)] };
+    });
+    const { estimates: _estimates, ...review } = input;
+    const result = previewUnifiedThought({ ...review, steps });
+    return { planId: plan.id, goal: plan.goal, steps: plan.steps.map((step, index) => ({
+      id: step.id, title: step.title, simulatedId: "step_" + index, status: step.status
+    })), review: result, requiresApproval: true as const,
+      note: "Проверяется существующий план. Числовые оценки и свидетельства предоставлены вызывающей стороной; выполнение не запускается." };
+  }
   previewKnowledgeRecheck(nodes: KnowledgeNode[], changedId: string, priorities: RecheckPriority[]) { return planKnowledgeRecheck(nodes, changedId, priorities); }
   previewKnowledgeImpact(nodes: KnowledgeNode[], changedId: string) { return assessKnowledgeImpact(nodes, changedId); }
   previewReasoningRevision(examples: ReasoningExample[], claim: ReasoningRevision, evidence: RevisionEvidence[]) { return reviewReasoningRevision(examples, claim, evidence); }
