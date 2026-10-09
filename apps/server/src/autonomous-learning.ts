@@ -270,7 +270,13 @@ export class AutonomousLearning {
       return { ok: true, verified };
     } catch (cause) {
       const msg = cause instanceof Error ? cause.message : "";
-      this.lastError = /Cloud.ru status 401|Cloud.ru status 403/.test(msg) ? "Авторизация Cloud.ru отклонена" : /Cloud.ru status 429/.test(msg) ? "Превышен лимит запросов Cloud.ru" : /Cloud.ru status 5\d\d/.test(msg) ? "Сервер Cloud.ru временно недоступен" : /abort|timeout/i.test(msg) ? "Тайм-аут запроса Cloud.ru" : /Cloud.ru не настроен/.test(msg) ? "Ключ Cloud.ru отсутствует" : "Ошибка соединения или ответа Cloud.ru";
+      const status = /(?:Cloud\\.ru status|Cloud\\.ru вернул)\\s+(\\d{3})/.exec(msg)?.[1];
+      this.lastError = status === "401" || status === "403" ? "Авторизация Cloud.ru отклонена (HTTP " + status + ")" :
+        status === "429" ? "Превышен лимит запросов Cloud.ru (HTTP 429)" :
+        status && /^5\\d\\d$/.test(status) ? "Сервер Cloud.ru временно недоступен (HTTP " + status + ")" :
+        status ? "Cloud.ru отклонил запрос (HTTP " + status + ")" :
+        /abort|timeout/i.test(msg) ? "Тайм-аут запроса Cloud.ru" :
+        /Cloud.ru не настроен/.test(msg) ? "Ключ Cloud.ru отсутствует" : "Ошибка соединения или ответа Cloud.ru";
       this.lastOutcome = "error";
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier", text: this.lastError + "; запрос учтён в лимите.", status: "rejected" });
       this.events = this.events.slice(-150);
