@@ -71,7 +71,7 @@ describe("чтение", () => {
 
 describe("поиск", () => {
   it("находит строки, пропуская секреты, node_modules, бинарные и ссылки", async () => {
-    await symlink(outside, path.join(root, "link"));
+    if (process.platform !== "win32") await symlink(outside, path.join(root, "link"));
     const r = await searchText(root, "ЧАЙ");
     expect(r.hits.map((h) => h.path).sort()).toEqual(["a.txt", "sub/b.md"]);
     expect(r.hits.find((h) => h.path === "a.txt")).toMatchObject({ line: 2 });
