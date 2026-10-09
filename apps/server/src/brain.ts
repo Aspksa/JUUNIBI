@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { assessRevisionFreshness, type FreshnessRequest } from "./revision-freshness";
 import { RevisionHistory } from "./revision-history";
 import { reviewReasoningRevision, type ReasoningExample, type ReasoningRevision, type RevisionEvidence } from "./reasoning-revision";
 import { reviewReasoning, type ReasoningClaim, type ReasoningEvidence } from "./reasoning-review";
@@ -22,6 +23,7 @@ export class BrainCore {
   private mode: BrainMode = "chat";
   private readonly revisions = new RevisionHistory();
   revisionHistory() { return this.revisions.snapshot(); }
+  reviewRevisionFreshness(input: FreshnessRequest) { return assessRevisionFreshness(input, this.revisions.snapshot()); }
   proposeRevision(input:{claimId:string;previous:boolean;proposed:boolean;reason:string}) { const r=this.revisions.add(input);this.persist();return {...r,warnings:this.revisions.warnings(input.claimId,input.proposed)}; }
   resolveRevision(id:string,outcome:"accepted"|"rejected") { const r=this.revisions.resolve(id,outcome);this.persist();return r; }
   private readonly decisions = new DecisionMemory();

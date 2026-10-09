@@ -12,6 +12,7 @@ import type { DecisionBranch, DecisionEvent } from "./decision-tree";
 import type { LearningCase } from "./learning-repair-review";
 import type { ReasoningClaim, ReasoningEvidence } from "./reasoning-review";
 import type { ReasoningExample, ReasoningRevision, RevisionEvidence } from "./reasoning-revision";
+import type { FreshnessRequest } from "./revision-freshness";
 import type { RankingOption } from "./experience-ranking";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
@@ -158,6 +159,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
           return send(res, 200, deps.brain.rankDecisions(input.options as RankingOption[], input.enabled !== false));
+        }
+        if (req.method === "POST" && p === "/api/brain/review-revision-freshness") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.reviewRevisionFreshness(input as unknown as FreshnessRequest));
         }
         if (req.method === "GET" && p === "/api/brain/revision-history")
           return send(res, deps.brain ? 200 : 503, deps.brain?.revisionHistory() ?? { error: "Мозг недоступен" });
