@@ -26,7 +26,7 @@ export class KnowledgeLedger {
   list() { return this.items.map(x => ({ ...x })); }
   /** Explainable, derived edges; similarity never implies factual correctness. */
   graph() {
-    const words = (s: string) => new Set((s.toLowerCase().match(/[\\p{L}\\p{N}]{4,}/gu) ?? []).filter(w =>
+    const words = (s: string) => new Set((s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) ?? []).filter(w =>
       !["который", "этого", "после", "проверка", "знание"].includes(w)));
     const entries = this.items.filter(x => x.status === "verified").map(x => ({ id: x.id, topic: x.topic, words: words(x.topic + " " + x.claim) }));
     const edges: { from: string; to: string; shared: string[] }[] = [];
