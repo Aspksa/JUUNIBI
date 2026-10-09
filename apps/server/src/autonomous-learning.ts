@@ -48,8 +48,9 @@ export class AutonomousLearning {
   private logicRetryResults = { attempted: 0, corrected: 0 };
   private retention: { kind: "logic" | "transfer"; turn: number; dueCursor: number }[] = [];
   private retentionMetrics = { tested: 0, retained: 0 };
-  private transferChecks: { kind: "logic" | "transfer"; turn: number; dueCursor: number }[] = [];
+  private transferChecks: { kind: "logic" | "transfer"; turn: number; dueCursor: number; remaining?: number }[] = [];
   private transferMetrics = { tested: 0, successful: 0 };
+  private transferSeries = { completed: 0, passed: 0, activeCorrect: 0 };
   private mathRetry: { left: number; right: number; attempts: number } | null = null;
   private retryResults = { attempted: 0, corrected: 0 };
   private readonly progress = new LearningProgress();
@@ -89,7 +90,7 @@ export class AutonomousLearning {
         this.logicRetryResults={attempted:Number(lm.attempted),corrected:Number(lm.corrected)};
       if (Array.isArray(v.retention)) this.retention = v.retention.filter((x): x is {kind:"logic"|"transfer";turn:number;dueCursor:number} =>
         !!x && (x.kind==="logic"||x.kind==="transfer") && Number.isInteger(x.turn) && x.turn>=1 && x.turn<=10000 &&
-        Number.isInteger(x.dueCursor) && x.dueCursor>=1 && x.dueCursor<=1000000).slice(0,20);
+        Number.isInteger(x.dueCursor) && x.dueCursor>=1 && x.dueCursor<=1000000 && (x.remaining===undefined || (Number.isInteger(x.remaining) && x.remaining>=0 && x.remaining<=2))).slice(0,20);
       const rm=v.retentionMetrics as {tested?:unknown;retained?:unknown}|undefined;
       if(rm && Number.isSafeInteger(rm.tested)&&Number.isSafeInteger(rm.retained)&&Number(rm.tested)>=0&&Number(rm.retained)>=0&&Number(rm.retained)<=Number(rm.tested))
         this.retentionMetrics={tested:Number(rm.tested),retained:Number(rm.retained)};
@@ -100,6 +101,12 @@ export class AutonomousLearning {
       if (tm && Number.isSafeInteger(tm.tested) && Number.isSafeInteger(tm.successful) && Number(tm.tested)>=0 &&
           Number(tm.successful)>=0 && Number(tm.successful)<=Number(tm.tested))
         this.transferMetrics={tested:Number(tm.tested),successful:Number(tm.successful)};
+      const series=v.transferSeries as {completed?:unknown;passed?:unknown;activeCorrect?:unknown}|undefined;
+      if (series && Number.isSafeInteger(series.completed) && Number.isSafeInteger(series.passed) &&
+          Number.isSafeInteger(series.activeCorrect) && Number(series.completed)>=0 &&
+          Number(series.passed)>=0 && Number(series.passed)<=Number(series.completed) &&
+          Number(series.activeCorrect)>=0 && Number(series.activeCorrect)<=2)
+        this.transferSeries={completed:Number(series.completed),passed:Number(series.passed),activeCorrect:Number(series.activeCorrect)};
       const metrics = v.retryResults as { attempted?: unknown; corrected?: unknown } | undefined;
       if (metrics && Number.isSafeInteger(metrics.attempted) && Number.isSafeInteger(metrics.corrected) &&
           Number(metrics.attempted) >= 0 && Number(metrics.corrected) >= 0 && Number(metrics.corrected) <= Number(metrics.attempted))
@@ -112,7 +119,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, transferChecks: this.transferChecks, transferMetrics: this.transferMetrics, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, transferChecks: this.transferChecks, transferMetrics: this.transferMetrics, transferSeries: this.transferSeries, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -125,7 +132,7 @@ export class AutonomousLearning {
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
-      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, retentionMetrics: { ...this.retentionMetrics }, pendingRetention: this.retention.length, transferMetrics: { ...this.transferMetrics }, pendingTransfer: this.transferChecks.length, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, retentionMetrics: { ...this.retentionMetrics }, pendingRetention: this.retention.length, transferMetrics: { ...this.transferMetrics }, transferSeries: { ...this.transferSeries, passRate: this.transferSeries.completed ? Math.round(this.transferSeries.passed / this.transferSeries.completed * 100) : null }, pendingTransfer: this.transferChecks.length, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
     const checks = this.events.filter(e => e.role === "verifier");
@@ -196,6 +203,16 @@ export class AutonomousLearning {
         this.transferChecks = this.transferChecks.filter(x=>x!==transferDue);
         this.transferMetrics.tested++;
         if (verified) this.transferMetrics.successful++;
+        const remaining = transferDue.remaining ?? 0;
+        if (remaining > 0) {
+          if (verified) this.transferSeries.activeCorrect++;
+          const newTurn = transferDue.turn + 17 <= 10000 ? transferDue.turn + 17 : transferDue.turn - 17;
+          this.transferChecks.push({kind:transferDue.kind,turn:newTurn,dueCursor:this.cursor+1,remaining:remaining-1});
+        } else if (transferDue.remaining !== undefined) {
+          this.transferSeries.completed++;
+          if (this.transferSeries.activeCorrect + Number(verified) === 3) this.transferSeries.passed++;
+          this.transferSeries.activeCorrect=0;
+        }
       }
       if (due && reasoning) {
         this.retention = this.retention.filter(x=>x!==due);
@@ -207,7 +224,7 @@ export class AutonomousLearning {
         // A different deterministic case of the same rule, not a memorized answer.
         if (this.transferChecks.length < 20) {
           const newTurn = logicRetry.turn + 17 <= 10000 ? logicRetry.turn + 17 : logicRetry.turn - 17;
-          this.transferChecks.push({kind:logicRetry.kind,turn:newTurn,dueCursor:this.cursor+4});
+          this.transferChecks.push({kind:logicRetry.kind,turn:newTurn,dueCursor:this.cursor+4,remaining:2});
         }
       }
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
