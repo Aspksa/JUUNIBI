@@ -9,6 +9,7 @@ import type { BrainCore } from "./brain";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
+import { comparePublicEvidence } from "./evidence-comparison";
 export interface AppDeps {
   /** Long-term memory is available (and editable by the user) even before an API key is configured. */
   memory?: import("@juunibi/assistant").Memory;
@@ -105,6 +106,10 @@ export function createApp(deps: AppDeps): http.Server {
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, deps.modules());
         if (req.method === "GET" && p === "/api/memory/diagnostics") return send(res, 200, (deps.memory ?? a?.memory)?.embeddingDiagnostics() ?? { configured: false, mode: "unavailable" });
         if (req.method === "GET" && p === "/api/knowledge") return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.list() ?? { error: "Память знаний недоступна" });
+        if (req.method === "POST" && p === "/api/knowledge/evidence/compare") {
+          const b = await readJson(req);
+          return send(res, 200, await comparePublicEvidence(b.sources));
+        }
         if (req.method === "GET" && p === "/api/knowledge/graph")
           return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.graph() ?? { error: "Граф недоступен" });
         if (req.method === "POST" && p === "/api/knowledge/evidence") {
