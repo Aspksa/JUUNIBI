@@ -25,7 +25,7 @@ const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "home", label: "Главная", icon: "home" },
   { route: "memory", label: "Память", icon: "memory" },
   { route: "modules", label: "Модули", icon: "modules" },
-  { route: "brain", label: "Мозг", icon: "modules" },
+  { route: "brain", label: "Мозг", icon: "brain" },
   { route: "update", label: "Обновление", icon: "update" },
   { route: "settings", label: "Настройки", icon: "settings" },
 ];
@@ -126,7 +126,7 @@ kernel.register({
     let pageSig = "";
     const sigFor = (s: AppState): string => {
       switch (s.route) {
-        case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
+        case "home": return JSON.stringify([s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
         case "memory": return JSON.stringify(s.memory);
         case "modules": return ""; // the page loads and refreshes its own data
         case "brain": return "";

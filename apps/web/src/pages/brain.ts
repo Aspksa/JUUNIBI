@@ -51,7 +51,7 @@ function fold(summary: string, ...kids: Node[]): HTMLElement {
 /** Read-only dashboard: tasks are managed in the assistant chat, not through redundant buttons. */
 export function brainPage(): HTMLElement {
   const root = el("div", { cls: "page brain" },
-    pageHead("modules", "Мозг JUUNIBI", "Состояние помощницы, её планы и обучение."),
+    pageHead("brain", "Мозг JUUNIBI", "Состояние помощницы, её планы и обучение."),
     el("div", { cls: "br-safety", attrs: { role: "note" } },
       el("div", {}, el("strong", { textContent: "Выполняется само" }), el("span", { cls: "muted", textContent: "Только чтение: список модулей и поиск по памяти." })),
       el("div", {}, el("strong", { textContent: "Только с вашего подтверждения" }), el("span", { cls: "muted", textContent: "Создание планов и любые действия с последствиями." }))));
@@ -153,7 +153,7 @@ export function learningPanel(): HTMLElement {
 
 /** Owner-reviewed knowledge and spaced-repetition dashboard. No AI output is auto-approved. */
 export function knowledgePanel(): HTMLElement {
-  const root = block("Проверенные знания", null, empty("Загрузка…"));
+  const root = block("Реестр проверенных знаний", null, empty("Загрузка…"));
   const load = async () => {
     try {
       const r = await fetch("/api/knowledge");
@@ -170,10 +170,10 @@ export function knowledgePanel(): HTMLElement {
           el("div", { cls: "br-row" }, btn("Повторил — верно", () => void report(true), { small: true }), btn("Нужна проверка", () => void report(false), { small: true })));
       });
       root.replaceChildren(
-        el("header", { cls: "br-block-head" }, el("h2", { textContent: "Проверенные знания" }),
-          el("p", { cls: "muted", textContent: "Новые знания добавляются только с вашего подтверждения. Ответы модели сами фактами не становятся." })),
+        el("header", { cls: "br-block-head" }, el("h2", { textContent: "Реестр проверенных знаний" }),
+          el("p", { cls: "muted", textContent: "Факты, которые проверил тест или подтвердили вы. Это отдельный реестр: он не связан с разделом «Память», где хранится то, что помощница помнит о вас. Ответы модели сами фактами не становятся." })),
         ...(entries.length ? entries : [empty("Подтверждённых знаний пока нет.")]));
-    } catch { root.replaceChildren(...failed("Проверенные знания", "Реестр знаний недоступен.")); }
+    } catch { root.replaceChildren(...failed("Реестр проверенных знаний", "Реестр знаний недоступен.")); }
   };
   void load();
   return root;

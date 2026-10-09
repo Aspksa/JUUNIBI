@@ -4,7 +4,6 @@ import { app, decideApproval, persistPrefs, type Route } from "../state";
 import { groupLabel, type Chats, type ChatMsg, type Conversation } from "./chats";
 import { Composer } from "./composer";
 import type { ChatController } from "./controller";
-import { ACCENTS, swatchColor } from "../accents";
 import { COMMANDS, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
 import { fillMessage, msgSignature } from "./message";
 import { isSpeaking, speak, speechSupported, stopSpeaking } from "./voice";
@@ -16,7 +15,6 @@ interface Suggestion { title: string; sub: string; icon: IconName; text?: string
 const GENERIC: Suggestion[] = [
   { title: "Что ты умеешь?", sub: "Коротко о возможностях", icon: "chat", text: "Что ты умеешь? Расскажи коротко." },
   { title: "Покажи модули проекта", sub: "Состояние и связи", icon: "modules", text: "Покажи, какие модули есть в проекте JUUNIBI и в каком они состоянии." },
-  { title: "Запомни предпочтение", sub: "Пусть я знаю, как вам удобнее", icon: "memory", text: "Запомни: я предпочитаю тёмную тему и краткие ответы." },
   { title: "Разбери файл", sub: "Прикрепите текст или код", icon: "file", text: "Я прикреплю файл. Кратко объясни, что в нём." },
 ];
 const SHORTCUTS: [string, string][] = [
@@ -40,7 +38,6 @@ export class ChatView {
   private sideStatus!: HTMLElement;
   private readonly maxBtn: HTMLButtonElement;
   private readonly sheet: HTMLElement;
-  private readonly menu: HTMLElement;
   private readonly drop: HTMLElement;
   private readonly composer: Composer;
   private readonly frame: WindowFrame;
@@ -53,9 +50,6 @@ export class ChatView {
   private renamingId: string | null = null;
   private speakingId: string | null = null;
   private frameId = 0;
-  private technical = false;
-  private readonly technicalPane: HTMLElement;
-  private readonly switchChat: HTMLButtonElement;
   private lastConv: string | null = null;
   private onClose: () => void = () => {};
   private onNavigate: (r: Route) => void = () => {};
@@ -75,12 +69,9 @@ export class ChatView {
     // ---- header
     this.titleEl = el("div", { cls: "chat-title" });
     this.maxBtn = iconButton("maximize", "На весь экран", () => this.toggleMax());
-    const viewBtn = iconButton("view", "Вид: плотность и размер текста", (e) => { e.stopPropagation(); this.menu.hidden = !this.menu.hidden; if (!this.menu.hidden) this.renderMenu(); });
-    this.switchChat = iconButton("chat", "Переключить основной / технический чат", () => this.toggleTechnical());
+    const resetBtn = iconButton("refresh", "Сбросить положение окна", () => this.frame.reset());
     const head = el("header", { cls: "chat-head" }, iconButton("sidebar", "Показать/скрыть историю", () => this.toggleSide()), this.titleEl, el("span", { cls: "grow" }),
-      this.switchChat, iconButton("help", "Горячие клавиши и команды (Ctrl+/)", () => this.toggleSheet()), viewBtn, iconButton("plus", "Новый чат", () => this.newChat()), this.maxBtn, iconButton("x", "Закрыть чат", () => this.onClose()));
-    this.menu = el("div", { cls: "popover", hidden: true, attrs: { role: "dialog", "aria-label": "Настройки вида" } });
-    this.menu.addEventListener("click", (e) => e.stopPropagation());
+      iconButton("help", "Горячие клавиши и команды (Ctrl+/)", () => this.toggleSheet()), resetBtn, iconButton("plus", "Новый чат", () => this.newChat()), this.maxBtn, iconButton("x", "Закрыть чат", () => this.onClose()));
 
     // ---- thread
     this.approvals = el("div", { cls: "approvals" });
@@ -96,7 +87,6 @@ export class ChatView {
     this.sheet = el("div", { cls: "sheet", hidden: true, attrs: { role: "dialog", "aria-label": "Справка" } });
     this.drop = el("div", { cls: "drop-hint", hidden: true, textContent: "Отпустите, чтобы прикрепить текстовые файлы" });
 
-    this.technicalPane = el("div", { cls: "thread", hidden: true, attrs: { role: "log", "aria-label": "Технический диалог обучения" } });
     // ---- composer
     this.composer = new Composer({
       onSubmit: (text, files) => void this.sendText(text, files),
@@ -105,13 +95,12 @@ export class ChatView {
       onEditLast: () => this.editLast(),
     });
 
-    const main = el("section", { cls: "chat-main" }, head, this.menu, this.banner, el("div", { cls: "thread-wrap" }, ambient(), this.thread, this.technicalPane, this.toBottom), this.composer.root, this.sheet, this.drop);
+    const main = el("section", { cls: "chat-main" }, head, this.banner, el("div", { cls: "thread-wrap" }, ambient(), this.thread, this.toBottom), this.composer.root, this.sheet, this.drop);
     this.root = el("div", { cls: "chat-window", hidden: true, attrs: { role: "dialog", "aria-label": "Чат с JUUNIBI" } }, this.side, el("div", { cls: "side-scrim" }), main);
     (this.root.querySelector(".side-scrim") as HTMLElement).addEventListener("click", () => this.root.classList.remove("side-open"));
     this.root.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest("button.suggest") as HTMLButtonElement | null;
       if (b) { const go = b.dataset.go as Route | undefined; if (go) this.onNavigate(go); else if (b.dataset.text) void this.sendText(b.dataset.text); }
-      if (!(e.target as HTMLElement).closest(".popover")) this.menu.hidden = true;
     });
     this.root.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
@@ -130,44 +119,16 @@ export class ChatView {
     chats.store.subscribe(() => this.schedule());
     ctl.store.subscribe(() => this.schedule());
     app.subscribe(() => this.schedule());
-    setInterval(() => { if (!this.root.hidden) { this.sideList.dataset.sig = ""; this.schedule(); if (this.technical) void this.refreshTechnical(); } }, 30_000);
+    setInterval(() => { if (!this.root.hidden) { this.sideList.dataset.sig = ""; this.schedule(); } }, 30_000);
     this.schedule();
   }
 
-  private toggleTechnical() {
-    this.technical = !this.technical;
-    this.thread.hidden = this.technical;
-    this.technicalPane.hidden = !this.technical;
-    this.composer.root.hidden = this.technical;
-    this.switchChat.title = this.technical ? "Вернуться в основной чат" : "Открыть технический чат";
-    this.switchChat.setAttribute("aria-label", this.switchChat.title);
-    if (this.technical) void this.refreshTechnical();
-    this.schedule();
-  }
-  private async refreshTechnical() {
-    if (!this.technical || this.root.hidden) return;
-    try {
-      const r = await fetch("/api/learning");
-      if (!r.ok) throw new Error(String(r.status));
-      const data = await r.json() as { used: number; settings: { dailyLimit: number }; events: { role: string; text: string; status: string }[] };
-      this.technicalPane.replaceChildren(
-        el("div", { cls: "thread-inner" },
-          el("h3", { textContent: "Технический чат · " + data.used + "/" + data.settings.dailyLimit }),
-          el("p", { textContent: "Ответы DeepSeek остаются непроверенными до независимого подтверждения." }),
-          ...data.events.slice(-50).map(e => el("div", { cls: "pg-card" },
-            el("strong", { textContent: e.role === "juunibi" ? "JUUNIBI" : e.role === "deepseek" ? "DeepSeek" : "Проверка" }),
-            el("p", { textContent: e.text }),
-            el("small", { textContent: e.status })))));
-      this.technicalPane.scrollTop = this.technicalPane.scrollHeight;
-    } catch { this.technicalPane.replaceChildren(el("p", { textContent: "Технический журнал недоступен." })); }
-  }
   setHandlers(onClose: () => void, onNavigate: (r: Route) => void) { this.onClose = onClose; this.onNavigate = onNavigate; }
   focus() { this.composer.focus(); }
   resetPosition() { this.frame.reset(); }
   /** Esc: close the innermost transient thing first; "close" means nothing was open. */
   escape(): "handled" | "close" {
     if (!this.sheet.hidden) { this.sheet.hidden = true; return "handled"; }
-    if (!this.menu.hidden) { this.menu.hidden = true; return "handled"; }
     if (this.editingId) { this.editingId = null; this.schedule(); return "handled"; }
     if (document.activeElement === this.search && this.search.value) { this.search.value = ""; this.schedule(); return "handled"; }
     if (this.root.classList.contains("side-open")) { this.root.classList.remove("side-open"); return "handled"; }
@@ -275,33 +236,11 @@ export class ChatView {
     this.composer.loadDraft(conv?.id ?? null);
     this.composer.setState({ configured, busy });
     this.renderApprovals();
-    if (this.technical) { this.titleEl.setAttribute("aria-label", "Технический чат"); }
     this.renderSide(conv);
     this.renderThread(conv, busy);
     if (conv?.id !== this.lastConv) { this.lastConv = conv?.id ?? null; this.stick = true; this.editingId = null; }
   }
 
-  private renderMenu() {
-    const s = app.get();
-    const seg = <T extends string>(label: string, opts: [T, string][], value: T, set: (v: T) => void) =>
-      el("div", { cls: "pop-row" }, el("span", { textContent: label }), el("div", { cls: "segmented", attrs: { role: "radiogroup", "aria-label": label } }, ...opts.map(([v, t]) => {
-        const b = el("button", { type: "button", textContent: t, attrs: { role: "radio", "aria-checked": String(value === v) } });
-        b.addEventListener("click", () => { set(v); persistPrefs(app.get()); this.renderMenu(); });
-        return b;
-      })));
-    const accent = el("div", { cls: "pop-row" }, el("span", { textContent: "Акцентный цвет" }), el("div", { cls: "swatches", attrs: { role: "radiogroup", "aria-label": "Акцентный цвет" } }, ...ACCENTS.map((a) => {
-      const b = el("button", { type: "button", cls: "swatch", title: a.label, attrs: { role: "radio", "aria-checked": String(s.accent === a.id), "aria-label": a.label } });
-      b.style.background = swatchColor(a);
-      b.addEventListener("click", () => { app.set({ accent: a.id }); persistPrefs(app.get()); this.renderMenu(); });
-      return b;
-    })));
-    const reset = el("button", { type: "button", cls: "btn sm", textContent: "Сбросить положение окна" });
-    reset.addEventListener("click", () => { this.frame.reset(); this.menu.hidden = true; });
-    this.menu.replaceChildren(
-      seg("Плотность", [["comfortable", "Свободно"], ["compact", "Компактно"]], s.chatDensity, (v) => app.set({ chatDensity: v })),
-      seg("Текст", [["sm", "Мелкий"], ["md", "Обычный"], ["lg", "Крупный"]], s.chatFont, (v) => app.set({ chatFont: v })),
-      accent, reset);
-  }
 
   private renderApprovals() {
     const list = app.get().approvals;
@@ -361,13 +300,9 @@ export class ChatView {
     return row;
   }
 
+  /** Starter prompts only. Status nudges (updates, memory to approve) live on the Home page, not here. */
   private suggestions(): Suggestion[] {
-    const s = app.get();
-    const ctx: Suggestion[] = [];
-    if (s.update?.latest && s.update.localVersion !== "не определена" && s.update.localVersion !== s.update.latest.sha) ctx.push({ title: "Доступно обновление", sub: "Открыть раздел обновления", icon: "update", go: "update" });
-    const pending = s.memory.filter((m) => m.status === "pending").length;
-    if (pending) ctx.push({ title: `Подтвердить память (${pending})`, sub: "Новые уроки ждут вас", icon: "memory", go: "memory" });
-    return [...ctx, ...GENERIC].slice(0, 4);
+    return GENERIC;
   }
 
   private renderThread(conv: Conversation | undefined, busy: boolean) {
