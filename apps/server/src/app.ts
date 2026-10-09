@@ -149,6 +149,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.learning) return send(res, 503, { error: "Обучение недоступно" });
           return send(res, 200, await deps.learning.tick());
         }
+        if (req.method === "POST" && p === "/api/brain/suggest-sequence-repairs") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.suggestRepairs(input.steps as SequenceStep[], input.limits as PlanLimits));
+        }
         if (req.method === "POST" && p === "/api/brain/preview-sequence") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
