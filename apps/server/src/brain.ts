@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { previewUnifiedThought, type UnifiedThoughtInput } from "./unified-thought";
 import { planKnowledgeRecheck, type RecheckPriority } from "./knowledge-recheck";
 import { assessKnowledgeImpact, type KnowledgeNode } from "./knowledge-impact";
 import { assessRevisionFreshness, type FreshnessRequest } from "./revision-freshness";
@@ -38,6 +39,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  previewThoughtCycle(input: UnifiedThoughtInput) { return previewUnifiedThought(input); }
   previewKnowledgeRecheck(nodes: KnowledgeNode[], changedId: string, priorities: RecheckPriority[]) { return planKnowledgeRecheck(nodes, changedId, priorities); }
   previewKnowledgeImpact(nodes: KnowledgeNode[], changedId: string) { return assessKnowledgeImpact(nodes, changedId); }
   previewReasoningRevision(examples: ReasoningExample[], claim: ReasoningRevision, evidence: RevisionEvidence[]) { return reviewReasoningRevision(examples, claim, evidence); }
