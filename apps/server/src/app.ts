@@ -6,6 +6,7 @@ import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
 import type { BrainCore } from "./brain";
+import type { automaticBrainReview } from "./brain-v41-automatic";
 import type { PlanOption, PlanLimits } from "./plan-evaluator";
 import type { SequenceStep } from "./sequence-simulator";
 import type { DecisionBranch, DecisionEvent } from "./decision-tree";
@@ -67,6 +68,7 @@ export interface AppDeps {
   updater?: ProjectUpdater;
   scenes?: SceneEngine;
   brain?: BrainCore;
+  automaticBrainReview?: (message: string) => ReturnType<typeof automaticBrainReview>;
   learning?: AutonomousLearning;
   knowledge?: KnowledgeLedger;
   modules: () => unknown;
@@ -470,8 +472,9 @@ export function createApp(deps: AppDeps): http.Server {
           res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-accel-buffering": "no" });
           const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
           try {
-            if (brainOn) line({ type: "brain_review", review: brainOn.classifyTask(msg) });
-            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line, ...(brainOn ? { brainGuidance: brainOn.classifyTask(msg) } : {}) });
+            const review = brainOn && deps.automaticBrainReview ? deps.automaticBrainReview(msg) : undefined;
+            if (brainOn) line({ type: "brain_review", review: review?.cycle ?? brainOn.classifyTask(msg) });
+            const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line, ...(brainOn ? { brainGuidance: review?.guidance ?? brainOn.classifyTask(msg) } : {}) });
             line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools, memory: r.memory });
           } catch (e) { line({ type: "error", message: ctl.signal.aborted ? "Остановлено" : (e as Error).message }); }
           return void res.end();
@@ -484,8 +487,9 @@ export function createApp(deps: AppDeps): http.Server {
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
-          const reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(brainOn ? { brainGuidance: brainOn.classifyTask(msg) } : {}) });
-          return send(res, 200, brainOn ? { ...reply, brainReview: brainOn.classifyTask(msg) } : reply);
+          const review = brainOn && deps.automaticBrainReview ? deps.automaticBrainReview(msg) : undefined;
+          const reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(brainOn ? { brainGuidance: review?.guidance ?? brainOn.classifyTask(msg) } : {}) });
+          return send(res, 200, brainOn ? { ...reply, brainReview: review?.cycle ?? brainOn.classifyTask(msg) } : reply);
         }
         if (req.method === "POST" && p === "/api/feedback") {
           const b = await readJson(req);
