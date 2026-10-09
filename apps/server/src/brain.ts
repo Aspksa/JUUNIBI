@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { comparePlanVariants } from "./plan-34-comparison";
 import { proposePlanRepair } from "./plan-repair";
 import { auditDraftPlan, type DraftPlan } from "./plan-25-audit";
 import { RecoveryTrials } from "./recovery-trials";
@@ -36,6 +37,7 @@ export class BrainCore {
   private mode: BrainMode = "chat";
   audit25StagePlan(input:DraftPlan){return auditDraftPlan(input);}
   repairDraftPlan(input:DraftPlan){return proposePlanRepair(input);}
+  compare34StagePlans(input:DraftPlan,alternatives:DraftPlan[]){return comparePlanVariants(input,alternatives);}
   private readonly revisions = new RevisionHistory();
   revisionHistory() { return this.revisions.snapshot(); }
   reviewRevisionFreshness(input: FreshnessRequest) { return assessRevisionFreshness(input, this.revisions.snapshot()); }
