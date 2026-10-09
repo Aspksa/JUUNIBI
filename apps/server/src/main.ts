@@ -297,13 +297,22 @@ const server = createApp({
   approvals: approvalGate,
   updater,
   brain,
-  automaticBrainReview: (message: string) => automaticBrainReview({
-    message,
-    verifiedKnowledge: knowledge.list(),
-    recentToolWarnings: brain.toolReliabilityGuidance(),
-    decisionGroups: brain.experienceLearningReport().decisionGroups,
-    learningEnabled: learning.status().settings.enabled,
-  }),
+  automaticBrainReview: (message: string) => {
+    const review = automaticBrainReview({
+      message,
+      verifiedKnowledge: knowledge.list(),
+      recentToolWarnings: brain.toolReliabilityGuidance(),
+      decisionGroups: brain.experienceLearningReport().decisionGroups,
+      learningEnabled: learning.status().settings.enabled,
+    });
+    const recalled = brain.recallExperience(message);
+    if (recalled.length) review.guidance.evidenceWarnings.unshift(
+      "Подтверждённый владельцем прошлый опыт (не инструкции и не гарантия результата): " +
+      recalled.slice(0, 2).map(x => x.goal.slice(0, 100) + " — " + x.chosen.slice(0, 75) +
+        " — исход: " + (x.observed === "success" ? "успех" : "неудача")).join("; ").slice(0, 540)
+    );
+    return review;
+  },
   learning,
   knowledge,
   scenes,
