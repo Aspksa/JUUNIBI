@@ -72,6 +72,7 @@ let activeModel: string | undefined;
 let cloudConfigured = false;
 let sceneLlm: LlmProvider | undefined;
 const knowledge = new KnowledgeLedger(path.join(dataDir, "verified-knowledge.json"));
+let learningKey: string | undefined;
 let learningProvider: CloudRuProvider | undefined;
 const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
   if (!learningProvider) throw new Error("Cloud.ru не настроен");
@@ -105,7 +106,7 @@ const modules = new ModuleManager(root, [
     description: "Чат с моделью Cloud.ru: отвечает, вызывает инструменты и учится на ваших оценках.",
     files: ["data/turns.json", "data/cloudru-settings.json"],
     probe: () => cloudConfigured ? { status: "started", note: `Модель ${activeModel ?? MODEL} (Cloud.ru)` } : { status: "pending", note: "Нужен ключ Cloud.ru — добавьте его в настройках" },
-    start: async () => { if (cloudConfigured) await Promise.resolve(); },
+    start: async () => { if (learningKey) await configureCloud(learningKey, process.env.CLOUDRU_BASE_URL); },
     stop: async () => { approvalGate.denyAll(); } },
   { name: "approvals", title: "Подтверждение действий", deps: ["assistant"], core: true,
     description: "Каждое действие с последствиями выполняется только после вашего «Да». Все решения пишутся в журнал.",
@@ -174,6 +175,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
   } };
   sceneLlm = llm;
   learningProvider = raw;
+  learningKey = apiKey;
   embeddingKey = { apiKey, ...(baseUrl ? { baseUrl } : {}) };
   applyEmbeddings();
   const character = JSON.parse(await readFile(path.join(root, "apps", "server", "assets", "JUUNIBI_character_v1.json"), "utf8"));
