@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { reviewReasoning, type ReasoningClaim, type ReasoningEvidence } from "./reasoning-review";
 import { reviewLearningCase, type LearningCase } from "./learning-repair-review";
 import { DecisionMemory } from "./decision-memory";
 import { analyzeTaskPatterns } from "./task-patterns";
@@ -27,6 +28,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  reviewOwnReasoning(claims: ReasoningClaim[], evidence: ReasoningEvidence[]) { return reviewReasoning(claims, evidence); }
   previewDecisionTree(branches: DecisionBranch[], limits: PlanLimits, event?: DecisionEvent) { return evaluateDecisionTree(branches, limits, event); }
   previewSequence(steps: SequenceStep[], limits: PlanLimits) { return simulateSequence(steps, limits); }
   suggestRepairs(steps: SequenceStep[], limits: PlanLimits) { return suggestSequenceRepairs(steps, limits); }
