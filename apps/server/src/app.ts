@@ -11,6 +11,7 @@ import type { SequenceStep } from "./sequence-simulator";
 import type { DecisionBranch, DecisionEvent } from "./decision-tree";
 import type { LearningCase } from "./learning-repair-review";
 import type { ReasoningClaim, ReasoningEvidence } from "./reasoning-review";
+import type { ReasoningExample, ReasoningRevision, RevisionEvidence } from "./reasoning-revision";
 import type { RankingOption } from "./experience-ranking";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
@@ -157,6 +158,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
           return send(res, 200, deps.brain.rankDecisions(input.options as RankingOption[], input.enabled !== false));
+        }
+        if (req.method === "POST" && p === "/api/brain/preview-reasoning-revision") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.previewReasoningRevision(input.examples as ReasoningExample[], input.claim as unknown as ReasoningRevision, input.evidence as RevisionEvidence[]));
         }
         if (req.method === "POST" && p === "/api/brain/review-reasoning") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
