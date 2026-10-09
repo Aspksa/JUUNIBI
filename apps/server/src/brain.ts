@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DecisionMemory } from "./decision-memory";
 import { evaluateDecisionTree, type DecisionBranch, type DecisionEvent } from "./decision-tree";
 import { simulateSequence, type SequenceStep } from "./sequence-simulator";
 import { suggestSequenceRepairs } from "./sequence-repair";
@@ -13,6 +14,10 @@ export interface BrainPlan { id: string; goal: string; createdAt: string; status
 export interface BrainStorage { load(): Promise<string | null>; save(data: string): Promise<void> }
 export class BrainCore {
   private mode: BrainMode = "chat";
+  private readonly decisions = new DecisionMemory();
+  decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
+  recordDecision(input: {goal:string;chosen:string;reason:string;predictedSuccess:boolean}) { const result=this.decisions.record(input);this.persist();return result; }
+  confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();return result; }
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
@@ -25,7 +30,7 @@ export class BrainCore {
   flush() { return this.writeQueue; }
   private persist() {
     if (!this.storage) return;
-    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs });
+    const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot() });
     this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
   }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
@@ -40,6 +45,7 @@ export class BrainCore {
     if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2)) && (s.lastError === undefined || (typeof s.lastError === "string" && s.lastError.length <= 300))))) throw new Error("Некорректные планы");
     this.plans = (saved.plans as BrainPlan[]).map(p => ({ ...p, status: p.status === "running" ? "planned" : p.status, steps: p.steps.map(s => ({ ...s, status: s.status === "active" ? "pending" : s.status })) }));
     this.logs = saved.logs as typeof this.logs;
+    this.decisions.load((state as { decisions?: unknown }).decisions);
   }
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
