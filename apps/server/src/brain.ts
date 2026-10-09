@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { RecoveryTrials } from "./recovery-trials";
+import { rankRecoveryStrategies } from "./recovery-strategy-ranking";
 import { analyzeToolFailures } from "./tool-failure-patterns";
 import { assessToolRecovery } from "./tool-recovery-evaluation";
 import { toolReliabilityGuidance } from "./tool-reliability-guidance";
@@ -47,6 +48,7 @@ export class BrainCore {
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   private readonly recoveryTrials = new RecoveryTrials();
   recoveryTrialReport(){return this.recoveryTrials.report();}
+  recoveryStrategyRanking(tool:string){return rankRecoveryStrategies(this.recoveryTrials.snapshot(),tool);}
   startRecoveryTrial(input:{tool:string;strategy:string;ownerConfirmed:boolean}){
     const r=this.recoveryTrials.create(input?.tool,input?.strategy,input?.ownerConfirmed,this.toolObservations);
     this.persist();return r;
