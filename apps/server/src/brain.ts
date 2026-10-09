@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DecisionMemory } from "./decision-memory";
+import { analyzeTaskPatterns } from "./task-patterns";
 import { rankWithExperience, type RankingOption } from "./experience-ranking";
 import { evaluateDecisionTree, type DecisionBranch, type DecisionEvent } from "./decision-tree";
 import { simulateSequence, type SequenceStep } from "./sequence-simulator";
@@ -17,8 +18,9 @@ export class BrainCore {
   private mode: BrainMode = "chat";
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
+  taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
   rankDecisions(options: RankingOption[], enabled = true) { return { ranked: rankWithExperience(options, this.decisions.snapshot(), enabled), requiresApproval: true as const }; }
-  recordDecision(input: {goal:string;chosen:string;reason:string;predictedSuccess:boolean}) { const result=this.decisions.record(input);this.persist();return result; }
+  recordDecision(input: {goal:string;chosen:string;reason:string;predictedSuccess:boolean;taskType?:string}) { const result=this.decisions.record(input);this.persist();return result; }
   confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();return result; }
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
