@@ -4,7 +4,7 @@ describe("Brain 7.0 safe knowledge suggestions", () => {
     try {
       const ledger=new KnowledgeLedger(path.join(dir,"knowledge.json"));
       const values=[[41,22],[29,17],[17,19],[14,16]];
-      for(const [a,b] of values)ledger.addVerified({topic:"математика",claim:`${a} × ${b} = ${a*b}`,source:"Локальный арифметический тест",evidence:"deterministic-test"});
+      for(const [a,b] of values as [number,number][])ledger.addVerified({topic:"математика",claim:`${a} × ${b} = ${a*b}`,source:"Локальный арифметический тест",evidence:"deterministic-test"});
       expect(ledger.list()).toHaveLength(4);
       expect(ledger.suggestedLinks()).toHaveLength(6);
       expect(ledger.suggestedLinks().every(x=>x.verified===false&&x.relation==="same-operation")).toBe(true);
@@ -12,6 +12,7 @@ describe("Brain 7.0 safe knowledge suggestions", () => {
       expect(ledger.graph().edges).toHaveLength(0);
       const extra=ledger.addVerified({topic:"русский язык",claim:"Подлежащее обозначает предмет речи",source:"Проверил пользователь",evidence:"owner-confirmed"});
       expect(ledger.gaps()).toEqual([expect.objectContaining({id:extra.id,topic:"русский язык",count:1})]);
+      await ledger.flush();
     } finally {await rm(dir,{recursive:true,force:true});}
   });
   it("groups unconnected entries of the same topic into one diagnostic", async () => {
@@ -23,6 +24,7 @@ describe("Brain 7.0 safe knowledge suggestions", () => {
       ledger.review(a.id,false);
       expect(ledger.gaps()).toEqual([expect.objectContaining({id:a.id,priority:2,count:1}),expect.objectContaining({id:b.id,priority:1,count:1})]);
       expect(ledger.suggestedLinks()).toHaveLength(0);
+      await ledger.flush();
     }finally{await rm(dir,{recursive:true,force:true});}
   });
 });
