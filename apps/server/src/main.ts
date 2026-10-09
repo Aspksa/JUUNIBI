@@ -326,12 +326,19 @@ server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
 
 const reminderTimer = setInterval(() => { void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e)); }, 20_000);
 void organizer.tick().catch(() => {});
-const learningTimer = setInterval(() => { if (cloudConfigured && modules.isActive("brain") && modules.isActive("assistant")) void modules.track("brain", () => learning.tick()).catch(() => {}); }, 10 * 60_000);
+const runLearning = () => {
+  if (!cloudConfigured || !modules.isActive("brain") || !modules.isActive("assistant")) return;
+  void modules.track("brain", () => learning.tick()).then(result => {
+    if (result && "ok" in result && result.ok === false) log.warn("Обучение: сбой обращения к Cloud.ru", learning.status().lastError);
+  }).catch(e => log.warn("Не удалось выполнить обучение", e instanceof Error ? e.message : "unknown"));
+};
+const initialLearningTimer = setTimeout(runLearning, 3000);
+const learningTimer = setInterval(runLearning, 10 * 60_000);
 let stopping = false;
 const shutdown = async () => {
   if (stopping) return;
   stopping = true;
-  clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
+  clearTimeout(initialLearningTimer); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
   // Let pending state writes finish so a stop never loses data.
   await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue]);
   await kernel.stop();
