@@ -75,7 +75,7 @@ export class AutonomousLearning {
   }
   private save() {
     const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
-    this.queue = this.queue.then(async () => {
+    this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
       await writeFile(tmp, raw, { mode: 0o600 });
@@ -83,6 +83,7 @@ export class AutonomousLearning {
     });
     return this.queue;
   }
+  flush() { return this.queue; }
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
@@ -151,7 +152,7 @@ export class AutonomousLearning {
     } catch {
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier", text: "Ошибка запроса Cloud.ru; запрос учтён в лимите.", status: "rejected" });
       this.events = this.events.slice(-150);
-      await this.save();
+      await this.save().catch(() => {});
       return { ok: false };
     } finally { this.busy = false; }
   }

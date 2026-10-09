@@ -66,7 +66,7 @@ export class KnowledgeLedger {
     };
     this.items.push(item);
     this.items = this.items.slice(-500);
-    void this.save();
+    this.save().catch(() => {});
     return item;
   }
   review(id: string, correct: boolean) {
@@ -76,13 +76,13 @@ export class KnowledgeLedger {
     item.status = correct ? "verified" : "needs-review";
     const hours = correct ? Math.min(24 * 30, 24 * 2 ** Math.min(item.reviewCount, 5)) : 24;
     item.nextReviewAt = new Date(Date.now() + hours * 3600000).toISOString();
-    void this.save();
+    this.save().catch(() => {});
     return { ...item };
   }
   flush() { return this.writes; }
   private save() {
     const data = JSON.stringify(this.items);
-    this.writes = this.writes.then(async () => {
+    this.writes = this.writes.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.filename), { recursive: true });
       const tmp = this.filename + ".tmp";
       await writeFile(tmp, data, { mode: 0o600 });

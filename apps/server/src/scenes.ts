@@ -39,7 +39,7 @@ export class SceneEngine {
     for(let attempt=0;attempt<5;attempt++){
       const response=await llm.chat([{role:"system",content:'Создай ОДНО новое кинематографичное действие перед речью двенадцатихвостой лисицы. На русском, 1–3 предложения, без имени и прямой речи, не более 12 хвостов. Верни только JSON с полями text, category, emotion, duration_seconds.'},{role:"user",content:"Избегай повторения этих примеров: "+existing.slice(-80).join(" | ").slice(0,10000)}]);
       try {
-        const proposal=JSON.parse((response.content??"").replace(/^\\s*```(?:json)?|\\s*```\\s*$/g,"").trim());
+        const proposal=JSON.parse((response.content??"").replace(/^\s*```(?:json)?|\s*```\s*$/g,"").trim());
         const text=String(proposal.text??"").trim();
         if(text.length<55||text.length>600||/juunibi|джууниби|[«»]/i.test(text)||!/[а-яё]/i.test(text))continue;
         if(existing.some(x=>this.normalized(x)===this.normalized(text)||this.similar(x,text)>0.42))continue;

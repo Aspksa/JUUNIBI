@@ -30,6 +30,7 @@ export class ProjectUpdater {
   }
   constructor(private readonly root: string) {}
   private folder() { return path.join(this.root, ".updates"); }
+  isBusy() { return this.busy; }
   status() { return { ...this.state, latest: this.latest, localVersion: this.localVersion() }; }
   private localVersion(): string {
     try {
@@ -47,15 +48,16 @@ export class ProjectUpdater {
   }
   async start() {
     if (this.busy) throw new Error("Обновление уже выполняется");
+    // Claim the slot and switch the phase synchronously, before any await, so concurrent callers see it.
     this.busy = true;
     this.operationId = randomUUID();
-    await mkdir(this.folder(), {recursive:true});
-    await rm(path.join(this.folder(), "ready.json"), {force:true});
-    await writeFile(path.join(this.folder(), "events.jsonl"), "");
-    await this.emit("update_check_started", "", "checking");
     this.state = { phase: "downloading", percent: 0, downloadedFiles: 0, totalFiles: 0, downloadedBytes: 0, totalBytes: 0, message: "Подключение к GitHub", pendingRemovals: [], removalsConfirmed: false };
-    await rm(path.join(this.folder(), "removals-confirmed.json"), { force: true });
     try {
+      await mkdir(this.folder(), {recursive:true});
+      await rm(path.join(this.folder(), "ready.json"), {force:true});
+      await writeFile(path.join(this.folder(), "events.jsonl"), "");
+      await this.emit("update_check_started", "", "checking");
+      await rm(path.join(this.folder(), "removals-confirmed.json"), { force: true });
       await this.check();
       const sha = this.latest!.sha;
       const tree = await this.getJson(API + "/git/trees/" + sha + "?recursive=1");
@@ -127,7 +129,7 @@ export class ProjectUpdater {
       this.state.phase = "error";
       this.state.error = e instanceof Error ? e.message : String(e);
       this.state.message = "Не удалось подготовить обновление";
-      await rm(path.join(this.folder(), "ready.json"), { force: true });
+      await rm(path.join(this.folder(), "ready.json"), { force: true }).catch(() => {});
     } finally { this.busy = false; }
   }
   /** Files installed by the previous release that the new tree no longer contains. Only ever files WE installed. */
@@ -155,7 +157,7 @@ export class ProjectUpdater {
   }
   private async run(cwd: string, command: string, args: string[]) {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(command, args, { cwd, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
+      const child = spawn(command, args, { cwd, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"], timeout: 900_000 });
       let output = "";
       const capture = (chunk: Buffer) => { output = (output + chunk.toString("utf8")).slice(-32_000); };
       child.stdout?.on("data", capture);

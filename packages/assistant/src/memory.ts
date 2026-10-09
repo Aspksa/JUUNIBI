@@ -116,7 +116,9 @@ export class Memory {
     const entry: MemoryEntry = { id: crypto.randomUUID(), kind, text: clean, status, score: 0, createdAt: Date.now(), mentions: 1 };
     this.entries.push(entry);
     if (this.entries.length > MAX_ENTRIES) {
-      const drop = [...this.entries].sort((a, b) => a.score - b.score || a.createdAt - b.createdAt)[0]!;
+      // Never evict the record being added; prefer pending proposals over approved knowledge.
+      const drop = this.entries.filter((e) => e !== entry)
+        .sort((a, b) => Number(a.status === "active") - Number(b.status === "active") || a.score - b.score || a.createdAt - b.createdAt)[0]!;
       this.entries = this.entries.filter((e) => e !== drop);
     }
     await this.persist();

@@ -2,14 +2,20 @@
 // Usage: node scripts/launch.mjs [--dev] [--no-open] [--skip-checks] [--port N]
 import { spawn, spawnSync } from "node:child_process";
 import { applyPreparedUpdate } from "./apply-update.mjs";
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import net from "node:net";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-await applyPreparedUpdate(root);
+try { await applyPreparedUpdate(root); }
+catch (e) {
+  // A failed (already rolled back) or damaged update must not block every later start: set it aside and run the current version.
+  console.error(`\n\x1b[33m[!] Обновление не установлено: ${e?.message ?? e}. Запускается текущая версия.\x1b[0m`);
+  const ready = path.join(root, ".updates", "ready.json");
+  try { if (existsSync(ready)) renameSync(ready, path.join(root, ".updates", `ready.failed-${Date.now()}.json`)); } catch { /* keep going */ }
+}
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined; };
