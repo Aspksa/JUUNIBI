@@ -1,11 +1,13 @@
 /** Pure helpers behind the Modules and Memory pages (tested in test/page-models.test.ts). */
 import type { MemoryItem, ModuleInfo } from "../api";
+import type { IconName } from "../dom";
 
 // ---------- modules ----------
 export type ModStatus = "started" | "pending" | "failed" | "stopped";
 export interface ModView {
   name: string; title: string; note: string; deps: string[]; status: ModStatus; depth: number;
   kind: "builtin" | "manifest"; error: string; enabled: boolean; running: boolean; core: boolean; dependents: string[]; assistantBlocked: boolean;
+  uptimeSec: number; errors24h: number; lastMs: number | null;
 }
 const norm = (s: string): ModStatus => (s === "started" || s === "failed" || s === "stopped" ? s : "pending");
 
@@ -28,6 +30,7 @@ export function buildModules(list: ModuleInfo[]): { items: ModView[]; counts: Re
     name: m.name, title: m.title || m.name, note: m.note ?? "", deps: m.deps, status: norm(m.status), depth: walk(m.name, new Set()),
     kind: m.kind === "manifest" ? "manifest" : "builtin", error: m.error ?? "", enabled: m.enabled !== false, running: m.running !== false,
     core: !!m.core, dependents: m.dependents ?? [], assistantBlocked: !!m.assistantBlocked,
+    uptimeSec: m.uptimeSec ?? 0, errors24h: m.errors24h ?? 0, lastMs: m.lastMs ?? null,
   } as ModView, i }))
     .sort((a, b) => a.view.depth - b.view.depth || a.i - b.i).map((x) => x.view);
   const counts = { started: 0, pending: 0, failed: 0, stopped: 0 };
@@ -95,4 +98,35 @@ export function filterMemory(items: MemoryItem[], filter: MemFilter, query: stri
     .filter((m) => (filter === "all" ? true : filter === "pending" ? m.status === "pending" : m.kind === filter))
     .filter((m) => !q || m.text.toLowerCase().includes(q))
     .sort((a, b) => Number(b.status === "pending") - Number(a.status === "pending") || (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+// ---------- module tiles ----------
+/** Short names and icons for the tiles. Unknown (future) modules fall back to their own title and a neutral icon. */
+const MODULE_META: Record<string, { short: string; icon: IconName; what: string }> = {
+  brain: { short: "Мозг", icon: "brain", what: "Планы и обучение" },
+  memory: { short: "Память", icon: "memory", what: "Что помнит помощница" },
+  assistant: { short: "Помощница", icon: "chat", what: "Чат с моделью" },
+  approvals: { short: "Допуск", icon: "shield", what: "Ваше «Да» на действия" },
+  scenes: { short: "Сцены", icon: "scenes", what: "Образы и реплики" },
+  updater: { short: "Обновления", icon: "update", what: "Проверка GitHub" },
+};
+export function moduleMeta(m: Pick<ModView, "name" | "title" | "kind">): { short: string; icon: IconName; what: string } {
+  const known = MODULE_META[m.name];
+  if (known) return known;
+  const short = m.title.length > 14 ? m.title.slice(0, 13).trimEnd() + "…" : m.title;
+  return { short, icon: m.kind === "manifest" ? "puzzle" : "modules", what: "" };
+}
+/** Share of each status for the stacked health bar; empty statuses are omitted and the shares add up to 100. */
+export function statusShares(counts: Record<ModStatus, number>): { status: ModStatus; count: number; pct: number }[] {
+  const order: ModStatus[] = ["started", "pending", "failed", "stopped"];
+  const total = order.reduce((n, s) => n + counts[s], 0);
+  if (!total) return [];
+  const rows = order.filter((s) => counts[s] > 0).map((s) => ({ status: s, count: counts[s], pct: Math.floor((100 * counts[s]) / total) }));
+  let rest = 100 - rows.reduce((n, r) => n + r.pct, 0);
+  for (let i = 0; rest > 0; i = (i + 1) % rows.length, rest--) rows[i]!.pct++;
+  return rows;
+}
+/** "3 ч 20 мин" in the shortest useful form for a tile. */
+export function shortUptime(sec: number): string {
+  return sec < 60 ? "только что" : sec < 3600 ? `${Math.floor(sec / 60)} мин` : sec < 86400 ? `${Math.floor(sec / 3600)} ч` : `${Math.floor(sec / 86400)} д`;
 }

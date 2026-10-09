@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MemoryItem, ModuleInfo } from "../src/api";
-import { buildModules, filterMemory, filterModules, impactOf, layoutGraph, memoryCounts, needsOf } from "../src/pages/models";
+import { buildModules, filterMemory, filterModules, impactOf, layoutGraph, memoryCounts, moduleMeta, needsOf, shortUptime, statusShares } from "../src/pages/models";
 
 const mod = (name: string, deps: string[] = [], status = "started"): ModuleInfo => ({ name, deps, status });
 describe("buildModules", () => {
@@ -76,5 +76,34 @@ describe("module search, impact and graph", () => {
     expect(g.width).toBeGreaterThan(by.c!.x + by.c!.w - 1);
     expect(g.height).toBeGreaterThan(by.b!.y + by.b!.h - 1);
     expect(layoutGraph([])).toMatchObject({ nodes: [], edges: [], width: 32, height: 32 });
+  });
+});
+
+describe("module tiles", () => {
+  it("known modules get a short name and their own icon; unknown ones fall back safely", () => {
+    const m = (name: string, title: string, kind: "builtin" | "manifest" = "builtin") => moduleMeta({ name, title, kind });
+    expect(m("brain", "Мозг JUUNIBI")).toMatchObject({ short: "Мозг", icon: "brain" });
+    expect(m("approvals", "Подтверждение действий").short.length).toBeLessThanOrEqual(10);
+    expect(m("scenes", "Сцены и реплики").icon).toBe("scenes");
+    expect(m("future", "Очень длинное название модуля").short).toBe("Очень длинное…");
+    expect(m("future", "Короткое").short).toBe("Короткое");
+    expect(m("w", "Погода", "manifest").icon).toBe("puzzle");
+    expect(m("future", "X").icon).toBe("modules");
+  });
+  it("every built-in module has a distinct icon (tiles must be told apart at a glance)", () => {
+    const icons = ["brain", "memory", "assistant", "approvals", "scenes", "updater"].map((n) => moduleMeta({ name: n, title: n, kind: "builtin" }).icon);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
+  it("statusShares always adds up to 100 and omits empty statuses", () => {
+    expect(statusShares({ started: 0, pending: 0, failed: 0, stopped: 0 })).toEqual([]);
+    for (const c of [{ started: 4, pending: 1, failed: 0, stopped: 1 }, { started: 1, pending: 1, failed: 1, stopped: 1 }, { started: 7, pending: 0, failed: 0, stopped: 0 }, { started: 1, pending: 2, failed: 0, stopped: 4 }]) {
+      const rows = statusShares(c);
+      expect(rows.reduce((n, r) => n + r.pct, 0)).toBe(100);
+      expect(rows.every((r) => r.count > 0)).toBe(true);
+    }
+    expect(statusShares({ started: 3, pending: 0, failed: 1, stopped: 0 }).map((r) => r.status)).toEqual(["started", "failed"]);
+  });
+  it("shortUptime picks the shortest useful unit", () => {
+    expect([shortUptime(5), shortUptime(150), shortUptime(7300), shortUptime(200000)]).toEqual(["только что", "2 мин", "2 ч", "2 д"]);
   });
 });

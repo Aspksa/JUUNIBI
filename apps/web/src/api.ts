@@ -12,7 +12,7 @@ export interface MemoryItem { id: string; kind: string; text: string; status: "a
 export interface ModuleInfo {
   name: string; deps: string[]; status: string; title?: string; note?: string;
   kind?: "builtin" | "manifest"; error?: string; enabled?: boolean; running?: boolean; core?: boolean;
-  dependents?: string[]; assistantBlocked?: boolean;
+  dependents?: string[]; assistantBlocked?: boolean; uptimeSec?: number; errors24h?: number; lastMs?: number | null;
 }
 export interface ModuleToolInfo { name: string; risk: "read" | "write" | "danger"; description: string; module: string; allowed: boolean; calls24h: number; errors24h: number; denied24h: number }
 export interface ModuleDetail extends ModuleInfo {

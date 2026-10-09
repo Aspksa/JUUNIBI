@@ -99,6 +99,17 @@ describe("ModuleManager", () => {
       expect((await m.detail("scenes")).health!.errors24h).toBe(1);
     } finally { await done(); }
   });
+  it("в списке есть краткая сводка здоровья для плитки", async () => {
+    let t = 5_000_000;
+    const { m, done } = await setup({}, { now: () => t });
+    try {
+      t += 125_000; m.fail("scenes", "сбой"); await m.track("scenes", async () => { t += 40; });
+      const item = m.list().find(x => x.name === "scenes")!;
+      expect(item).toMatchObject({ uptimeSec: 125, errors24h: 1, lastMs: 40 });
+      await m.act("scenes", "stop");
+      expect(m.list().find(x => x.name === "scenes")!.uptimeSec).toBe(0);
+    } finally { await done(); }
+  });
   it("promptView — ровно подмножество полей, которое видит помощница", async () => {
     const { m, done } = await setup();
     try { expect(Object.keys(m.promptView()[0]!).sort()).toEqual(["deps", "name", "note", "status", "title"]); }
