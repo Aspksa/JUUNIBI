@@ -17,6 +17,6 @@ it("stops at the first failed step, preserving previous results",()=>{
 it("rejects out-of-order, unknown and circular dependencies",()=>{
  expect(simulateSequence([b,a],limits).blockers).toContain("Не завершён шаг: a");
  expect(()=>simulateSequence([a,{...b,after:["missing"]}],limits)).toThrow();
- expect(()=>simulateSequence([{...a,after:["b"]},b],limits)).toThrow;
+ expect(simulateSequence([{...a,after:["b"]},b],limits).failedAt).toBe("a");
  expect(()=>simulateSequence([a,a],limits)).toThrow();
 });
