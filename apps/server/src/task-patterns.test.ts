@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { analyzeTaskPatterns } from "./task-patterns";
 import type { DecisionRecord } from "./decision-memory";
 const item=(taskType:string,observed:"success"|"failure"|undefined,i:number):DecisionRecord=>({
- id:String(i),at:"2026-10-09",goal:"test",chosen:"plan",reason:"test",predictedSuccess:true,taskType,observed
+ id:String(i),at:"2026-10-09",goal:"test",chosen:"plan",reason:"test",predictedSuccess:true,taskType,...(observed === undefined ? {} : {observed})
 });
 it("detects repeated confirmed failures only in their category",()=>{
  const records=[item("planning","failure",1),item("planning","failure",2),item("planning","failure",3),
