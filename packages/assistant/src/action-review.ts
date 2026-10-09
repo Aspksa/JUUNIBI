@@ -1,10 +1,23 @@
-import type { Risk } from "./tools";
-export interface ActionReview { tool:string; risk:Risk; purpose:string; expectedEffect:string; rollback:string; validated:boolean }
-/** Explicit, server-rechecked, single-invocation plan. Never counts as permission. */
-export function checkActionReview(review:unknown,tool:string,args:Record<string,unknown>,risk:Risk) {
- if(risk!=="danger")return {required:false,valid:true,reason:"",requiresApproval:risk!=="read"};
- const r=review as Partial<ActionReview>|undefined;
- const valid=!!r&&r.tool===tool&&r.risk===risk&&r.validated===true&&
- [r.purpose,r.expectedEffect,r.rollback].every(x=>typeof x==="string"&&x.trim().length>=8&&x.length<=500);
- return {required:true,valid,reason:valid?"":"Для опасного действия требуется структурированный план с целью, эффектом и восстановлением",requiresApproval:true};
+import type { Tool } from "./tools";
+
+/** Trusted tool registration metadata, never supplied by the chat model. */
+export interface DangerousActionPlan {
+  purpose: string;
+  expectedEffect: string;
+  recovery: string;
+  checks: string[];
+}
+
+/** Fail closed: dangerous tools require a declared plan before approval is requested. */
+export function reviewDangerousTool(tool: Tool) {
+  if (tool.risk !== "danger") return { valid: true, blockers: [] as string[], requiresApproval: tool.risk !== "read" };
+  const plan = tool.actionPlan;
+  const bounded = (x: unknown) => typeof x === "string" && x.trim().length >= 8 && x.length <= 500;
+  const blockers: string[] = [];
+  if (!plan || !bounded(plan.purpose)) blockers.push("Отсутствует цель опасной операции");
+  if (!plan || !bounded(plan.expectedEffect)) blockers.push("Не описаны последствия операции");
+  if (!plan || !bounded(plan.recovery)) blockers.push("Не указан план восстановления или объяснение необратимости");
+  if (!plan || !Array.isArray(plan.checks) || plan.checks.length < 1 || plan.checks.length > 10 ||
+      !plan.checks.every(bounded)) blockers.push("Не заданы обязательные проверки");
+  return { valid: blockers.length === 0, blockers, requiresApproval: true as const };
 }
