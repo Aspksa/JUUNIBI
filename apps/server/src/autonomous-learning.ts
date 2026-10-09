@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { chooseLearningTopic } from "./learning-priorities";
 import { LearningProgress } from "./learning-progress";
+import { ReasoningEvaluation } from "./reasoning-evaluation";
 import { makeReasoningTask, checkReasoningAnswer } from "./reasoning-assessment";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -43,6 +44,7 @@ export class AutonomousLearning {
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
   private readonly progress = new LearningProgress();
+  private readonly reasoningEvaluation = new ReasoningEvaluation();
   private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "языки", "творчество"];
   private busy = false;
   private queue: Promise<void> = Promise.resolve();
@@ -55,6 +57,7 @@ export class AutonomousLearning {
       const v = JSON.parse(await readFile(this.file, "utf8")) as Record<string, unknown>;
       this.settings = validateSettings(v.settings);
       this.progress.load(v.progress);
+      this.reasoningEvaluation.load(v.reasoningEvaluation);
       if (Array.isArray(v.events)) this.events = v.events.filter((e): e is LearningEvent =>
         !!e && typeof e === "object" && typeof e.text === "string" && typeof e.at === "string" &&
         ["juunibi", "deepseek", "verifier"].includes(e.role) &&
@@ -71,7 +74,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -82,7 +85,7 @@ export class AutonomousLearning {
   }
   status() {
     this.resetDay();
-    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(),
+    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
       busy: this.busy, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
@@ -118,7 +121,8 @@ export class AutonomousLearning {
       const level = this.progress.difficulty();
       const check = subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null;
       const reasoning = subject === "логика и планирование" ? makeReasoningTask(this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
-      const question = reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
+      const structured = this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
+      const question = structured ? structured.question : reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
       // Reserve before the network request, including failures, to prevent unlimited retries.
       this.used++;
@@ -127,19 +131,20 @@ export class AutonomousLearning {
       this.tokens += Math.max(0, Math.ceil(result.tokens));
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "deepseek", text: redact(result.text), status: "unverified" });
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
-      const verified = reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
-      if (check || reasoning) this.progress.record(verified);
+      const graded = structured ? this.reasoningEvaluation.evaluate(structured, result.text) : null;
+      const verified = graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
+      if (check || reasoning || structured) this.progress.record(verified);
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
         source: "Локальная детерминированная проверка арифметики",
       });
-      const verificationText = reasoning ? (verified ? "Ответ на задачу с явным правилом проверен локально." : "Ответ на логическую задачу не прошёл проверку.") : check
+      const verificationText = graded ? (verified ? "Проверены все промежуточные шаги." : "Найдена ошибка на шаге " + graded.firstIncorrectStep) : reasoning ? (verified ? "Ответ на задачу с явным правилом проверен локально." : "Ответ на логическую задачу не прошёл проверку.") : check
         ? verified ? "Математический ответ проверен локальным вычислением; другие утверждения не проверены."
           : "Ответ не прошёл независимую математическую проверку."
         : "Ответ помещён в карантин. Независимая проверка источниками/тестами не выполнена; запись в активную память и изменение кода запрещены.";
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier",
         text: verificationText,
-        status: (check || reasoning) ? verified ? "verified" : "rejected" : "pending" });
+        status: (check || reasoning || structured) ? verified ? "verified" : "rejected" : "pending" });
       this.events = this.events.slice(-150);
       await this.save();
       return { ok: true, verified };
