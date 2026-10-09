@@ -15,6 +15,7 @@ import type { ReasoningExample, ReasoningRevision, RevisionEvidence } from "./re
 import type { FreshnessRequest } from "./revision-freshness";
 import type { KnowledgeNode } from "./knowledge-impact";
 import type { RecheckPriority } from "./knowledge-recheck";
+import type { UnifiedThoughtInput } from "./unified-thought";
 import type { RankingOption } from "./experience-ranking";
 import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
@@ -161,6 +162,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);
           return send(res, 200, deps.brain.rankDecisions(input.options as RankingOption[], input.enabled !== false));
+        }
+        if (req.method === "POST" && p === "/api/brain/preview-thought-cycle") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.previewThoughtCycle(input as unknown as UnifiedThoughtInput));
         }
         if (req.method === "POST" && p === "/api/brain/preview-knowledge-recheck") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
