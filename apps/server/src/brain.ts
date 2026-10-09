@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { planKnowledgeRecheck, type RecheckPriority } from "./knowledge-recheck";
 import { assessKnowledgeImpact, type KnowledgeNode } from "./knowledge-impact";
 import { assessRevisionFreshness, type FreshnessRequest } from "./revision-freshness";
 import { RevisionHistory } from "./revision-history";
@@ -37,6 +38,7 @@ export class BrainCore {
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   history() { return this.logs.map(e => ({ ...e })); }
+  previewKnowledgeRecheck(nodes: KnowledgeNode[], changedId: string, priorities: RecheckPriority[]) { return planKnowledgeRecheck(nodes, changedId, priorities); }
   previewKnowledgeImpact(nodes: KnowledgeNode[], changedId: string) { return assessKnowledgeImpact(nodes, changedId); }
   previewReasoningRevision(examples: ReasoningExample[], claim: ReasoningRevision, evidence: RevisionEvidence[]) { return reviewReasoningRevision(examples, claim, evidence); }
   reviewOwnReasoning(claims: ReasoningClaim[], evidence: ReasoningEvidence[]) { return reviewReasoning(claims, evidence); }
