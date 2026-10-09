@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { analyzeToolFailures } from "./tool-failure-patterns";
+import { analyzeExperience } from "./experience-learning-report";
 import { reviewToolOutcome, type ToolOutcomeEvidence } from "./tool-outcome-review";
 import { classifyChatTask } from "./chat-task-triage";
 import { previewUnifiedThought, type UnifiedThoughtInput } from "./unified-thought";
@@ -44,6 +45,7 @@ export class BrainCore {
   private toolObservations: {tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number;at:string}[]=[];
   toolOutcomeHistory(){return this.toolObservations.map(x=>({...x}));}
   toolFailurePatterns(){return analyzeToolFailures(this.toolObservations);}
+  experienceLearningReport(){return analyzeExperience(this.toolObservations,this.decisions.snapshot());}
   observeToolOutcome(event:{tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number}){
     if (!event || !/^[a-zA-Z0-9_-]{1,64}$/.test(event.tool) ||
        !["ok","error","denied"].includes(event.status) || !["read","write","danger"].includes(event.risk) ||
