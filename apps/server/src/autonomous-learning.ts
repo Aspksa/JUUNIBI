@@ -44,6 +44,8 @@ export class AutonomousLearning {
   private day = new Date().toISOString().slice(0, 10);
   private cursor = 0;
   /** Only independently checkable failed arithmetic is eligible for bounded retry. */
+  private logicRetry: { kind: "logic" | "transfer"; turn: number; attempts: number } | null = null;
+  private logicRetryResults = { attempted: 0, corrected: 0 };
   private mathRetry: { left: number; right: number; attempts: number } | null = null;
   private retryResults = { attempted: 0, corrected: 0 };
   private readonly progress = new LearningProgress();
@@ -75,6 +77,12 @@ export class AutonomousLearning {
           Number(retry.right) >= 1 && Number(retry.right) <= 10000 &&
           Number.isInteger(retry.attempts) && Number(retry.attempts) >= 0 && Number(retry.attempts) < 2)
         this.mathRetry = { left: Number(retry.left), right: Number(retry.right), attempts: Number(retry.attempts) };
+      const logic = v.logicRetry as {kind?:unknown;turn?:unknown;attempts?:unknown}|undefined;
+      if (logic && (logic.kind === "logic" || logic.kind === "transfer") && Number.isInteger(logic.turn) && Number(logic.turn)>=1 && Number(logic.turn)<=10000 && Number.isInteger(logic.attempts) && Number(logic.attempts)>=0 && Number(logic.attempts)<2)
+        this.logicRetry={kind:logic.kind,turn:Number(logic.turn),attempts:Number(logic.attempts)};
+      const lm=v.logicRetryResults as {attempted?:unknown;corrected?:unknown}|undefined;
+      if (lm && Number.isSafeInteger(lm.attempted) && Number.isSafeInteger(lm.corrected) && Number(lm.attempted)>=0 && Number(lm.corrected)>=0 && Number(lm.corrected)<=Number(lm.attempted))
+        this.logicRetryResults={attempted:Number(lm.attempted),corrected:Number(lm.corrected)};
       const metrics = v.retryResults as { attempted?: unknown; corrected?: unknown } | undefined;
       if (metrics && Number.isSafeInteger(metrics.attempted) && Number.isSafeInteger(metrics.corrected) &&
           Number(metrics.attempted) >= 0 && Number(metrics.corrected) >= 0 && Number(metrics.corrected) <= Number(metrics.attempted))
@@ -87,7 +95,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retryResults: this.retryResults, progress: this.progress.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -100,7 +108,7 @@ export class AutonomousLearning {
   status() {
     this.resetDay();
     return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
-      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
+      busy: this.busy, retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
     const checks = this.events.filter(e => e.role === "verifier");
@@ -130,13 +138,14 @@ export class AutonomousLearning {
       // Revisit arithmetic after a failed check; other subjects continue in a bounded rotation.
       const previous = [...this.events].reverse().find(e => e.role === "verifier");
       const retry = this.mathRetry;
+      const logicRetry = retry ? null : this.logicRetry;
       const next = this.areas[this.cursor++ % this.areas.length]!;
-      const subject = retry ? "математика" : previous?.status === "rejected" && previous.text.includes("математическ")
+      const subject = retry ? "математика" : logicRetry ? "логика и планирование" : previous?.status === "rejected" && previous.text.includes("математическ")
         ? "математика" : chooseLearningTopic(next, this.gaps(), this.cursor);
       const level = this.progress.difficulty();
       const check = retry ?? (subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null);
-      const reasoning = subject === "логика и планирование" ? makeReasoningTask(this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
-      const structured = this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
+      const reasoning = logicRetry ? makeReasoningTask(logicRetry.kind, logicRetry.turn) : subject === "логика и планирование" ? makeReasoningTask(this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
+      const structured = !logicRetry && this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
       const question = structured ? structured.question : reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
       // Reserve before the network request, including failures, to prevent unlimited retries.
@@ -156,6 +165,13 @@ export class AutonomousLearning {
         this.mathRetry = verified || retry.attempts >= 1 ? null : { left: retry.left, right: retry.right, attempts: retry.attempts + 1 };
       } else if (check && !verified) {
         this.mathRetry = { left: check.left, right: check.right, attempts: 0 };
+      }
+      if (logicRetry && reasoning) {
+        this.logicRetryResults.attempted++;
+        if (verified) this.logicRetryResults.corrected++;
+        this.logicRetry = verified || logicRetry.attempts >= 1 ? null : { ...logicRetry, attempts: logicRetry.attempts + 1 };
+      } else if (!retry && reasoning && !structured && !verified) {
+        this.logicRetry = { kind: reasoning.kind, turn: Math.min(10000, this.cursor), attempts: 0 };
       }
       if (verified && check && this.settings.memory) await this.onVerifiedMath?.({
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
