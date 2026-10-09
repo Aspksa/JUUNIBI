@@ -1,5 +1,6 @@
 import { api } from "../api";
 import { el, icon, short, type IconName } from "../dom";
+import { pageHead } from "./kit";
 import { app, checkUpdate, downloadUpdate, type AppState } from "../state";
 import {
   buildUpdateModel, filterFiles, groupFiles,
@@ -154,8 +155,7 @@ export function updatePage(s: AppState): HTMLElement {
   const m = buildUpdateModel(s.update, s.updateEvents);
   const hasNew = !!s.update?.latest && s.update.localVersion !== s.update.latest.sha;
   return el("div", { cls: "page upd" },
-    el("h1", { textContent: "Обновление" }),
-    el("p", { cls: "muted lead", textContent: "Файлы скачиваются и проверяются во временной папке; работающая версия не трогается, пока всё не пройдёт проверку." }),
+    pageHead("update", "Обновление", "Файлы скачиваются и проверяются во временной папке; работающая версия не трогается, пока всё не пройдёт проверку."),
     hero(s, m), stepper(m.steps), ...resultCards(s, m),
     changes(m, hasNew), logPanel(s),
     s.updateError ? el("p", { cls: "bad", textContent: s.updateError }) : null);

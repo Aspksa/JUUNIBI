@@ -69,7 +69,7 @@ export function memoryPage(s: AppState): HTMLElement {
 
   renderChips(); renderList();
   root.append(
-    pageHead("memory", "Память", "Всё, что помощница помнит о вас. Новые «уроки» она предлагает сама — работают они только после вашего «Принять».",
+    pageHead("memory", "Память", "Всё, что помощница помнит о вас. Новые «уроки» она предлагает сама — работают они только после вашего «Принять». Проверенные факты и обучение — на странице «Мозг».",
       el("div", { cls: "mem-stats" }, el("strong", { textContent: String(counts.active) }), el("span", { cls: "muted", textContent: "в памяти" }), counts.pending ? el("span", { cls: "tag warn", textContent: `${counts.pending} ждут` }) : null)),
     el("section", { cls: "pg-card" }, el("h2", { textContent: "Добавить вручную" }), form, flash),
     el("div", { cls: "mem-toolbar" }, search, chipsHost),
