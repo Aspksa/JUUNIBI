@@ -110,6 +110,8 @@ export function createApp(deps: AppDeps): http.Server {
           const b = await readJson(req);
           return send(res, 200, await comparePublicEvidence(b.sources));
         }
+        if (req.method === "GET" && p === "/api/knowledge/gaps")
+          return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.gaps() ?? { error: "Пробелы недоступны" });
         if (req.method === "GET" && p === "/api/knowledge/graph")
           return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.graph() ?? { error: "Граф недоступен" });
         if (req.method === "POST" && p === "/api/knowledge/evidence") {
