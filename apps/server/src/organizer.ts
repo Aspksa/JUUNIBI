@@ -4,21 +4,32 @@ import path from "node:path";
 
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string }
 /** How a reminder repeats: every day, Monday to Friday, or every week on the same weekday. */
-export type Repeat = "daily" | "weekdays" | "weekly";
-export const REPEATS: Repeat[] = ["daily", "weekdays", "weekly"];
+export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days";
+export const REPEATS: Repeat[] = ["daily", "weekdays", "weekly", "monthly", "every3days"];
 export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string }
 const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_DONE_REMINDERS = 100;
 const YEAR = 366 * 86_400_000;
 const bad = (message: string, status = 400) => Object.assign(new Error(message), { status });
 const repeatOf = (v: unknown): Repeat | undefined => {
   if (v === undefined || v === null || v === "" || v === "none") return undefined;
-  if (!REPEATS.includes(v as Repeat)) throw bad("Повтор: daily, weekdays, weekly или none");
+  if (!REPEATS.includes(v as Repeat)) throw bad("Повтор: daily, weekdays, weekly, monthly, every3days или none");
   return v as Repeat;
 };
 /** The first occurrence of a repeating reminder strictly after `now`, keeping the local time of day of `at`. */
 export function nextOccurrence(at: number, repeat: Repeat, now: number): number {
   const d = new Date(at);
-  const step = () => d.setDate(d.getDate() + (repeat === "weekly" ? 7 : 1));
+  const originalDay = d.getDate();
+  let elapsed = 0;
+  const step = () => {
+    if (repeat === "monthly") {
+      const month = d.getMonth() + 1;
+      d.setDate(1);
+      d.setMonth(month);
+      const lastDay = new Date(d.getFullYear(), d.getMonth()+1,0).getDate();
+      d.setDate(Math.min(originalDay,lastDay));
+    } else d.setDate(d.getDate() + (repeat==="weekly"?7:repeat==="every3days"?3:1));
+    if (++elapsed > 400) throw bad("Не удалось вычислить следующее напоминание");
+  };
   const ok = () => repeat !== "weekdays" || (d.getDay() !== 0 && d.getDay() !== 6);
   do step(); while (d.getTime() <= now || !ok());
   return d.getTime();
@@ -124,6 +135,26 @@ export class Organizer {
       estimatedMinutes:open.reduce((sum,n)=>sum+(n.estimateMinutes??0),0),
       suggested:ordered.slice(0,10).map(n=>({id:n.id,text:n.text,score:score(n),reason:due(n)<now?"Просрочено":due(n)<end.getTime()?"Срок сегодня":n.priority==="high"?"Высокий приоритет":"Очередь задач"})),
       advisoryOnly:true as const };
+  }
+  /** Calendar, statistics and deterministic Brain-compatible recommendations: no network, no side effects. */
+  insights(month: string, now = this.now()) {
+    if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw bad("Месяц: YYYY-MM");
+    const [year, m] = month.split("-").map(Number);
+    const begin = new Date(year!,m!-1,1).getTime(), end = new Date(year!,m!,1).getTime();
+    const items = [
+      ...this.notes.filter(n=>n.kind==="todo"&&n.dueAt&&Date.parse(n.dueAt)>=begin&&Date.parse(n.dueAt)<end)
+        .map(n=>({id:n.id,text:n.text,at:n.dueAt!,kind:"todo" as const,done:n.done})),
+      ...this.reminders.filter(r=>Date.parse(r.at)>=begin&&Date.parse(r.at)<end)
+        .map(r=>({id:r.id,text:r.text,at:r.at,kind:"reminder" as const,done:r.status==="done"}))
+    ].sort((a,b)=>a.at.localeCompare(b.at));
+    const todos=this.notes.filter(n=>n.kind==="todo"), finished=todos.filter(n=>n.done);
+    const overdue=todos.filter(n=>!n.done&&n.dueAt&&Date.parse(n.dueAt)<now);
+    const completedThisMonth=finished.filter(n=>n.completedAt&&Date.parse(n.completedAt)>=begin&&Date.parse(n.completedAt)<end).length;
+    const plan=this.planToday(now);
+    return {month,items,statistics:{all:todos.length,completed:finished.length,open:todos.length-finished.length,
+      overdue:overdue.length,completedThisMonth,completionPercent:todos.length?Math.round(100*finished.length/todos.length):0},
+      brainRecommendations:plan.suggested.slice(0,5).map(x=>({...x,evidence:"Срок и приоритет задачи",source:"local-task-metrics" as const})),
+      advisoryOnly:true as const};
   }
   async setDone(id: string, done: boolean): Promise<Note> {
     const n = this.notes.find((x) => x.id === id);
