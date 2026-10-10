@@ -27,6 +27,55 @@ export function tasksPage(): HTMLElement {
   let detailId: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
+  const missionsHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Mission Control"}});
+  const missionTitle = el("input",{type:"text",maxLength:500,cls:"mem-input",placeholder:"Название новой миссии",attrs:{"aria-label":"Название новой миссии"}});
+  const missionDescription = el("input",{type:"text",maxLength:1000,cls:"mem-input",placeholder:"Цель миссии (необязательно)",attrs:{"aria-label":"Описание миссии"}});
+  const refreshMissions = async () => {
+    const response=await api.missions();
+    const header=el("h2",{textContent:"Mission Control · Достигни цели"});
+    const help=el("p",{cls:"muted small",textContent:"Создавай миссии, добавляй этапы и отмечай выполненные дела. JUUNIBI предложит следующий доступный этап по подтверждённому прогрессу."});
+    const form=el("form",{cls:"tasks-add"},el("div",{cls:"tasks-add-row"},missionTitle,missionDescription,btn("Создать миссию",()=>{}, {primary:true,icon:"plus"})));
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      if(!missionTitle.value.trim())return;
+      const created=await api.addMission(missionTitle.value.trim(),missionDescription.value.trim());
+      if(!created.ok){showToast(created.error.message);return;}
+      missionTitle.value="";missionDescription.value="";
+      void refreshMissions();
+    });
+    if(!response.ok){missionsHost.replaceChildren(header,help,form,el("p",{cls:"muted",textContent:response.error.message}));return;}
+    const cards=response.value.map(m=>{
+      const stageText=el("input",{type:"text",maxLength:500,cls:"mem-input",placeholder:"Новый этап",attrs:{"aria-label":"Этап миссии "+m.title}});
+      const stageForm=el("form",{cls:"tasks-add-row"},stageText,btn("Добавить этап",()=>{}, {small:true}));
+      stageForm.addEventListener("submit",async e=>{
+        e.preventDefault();
+        if(!stageText.value.trim())return;
+        const result=await api.addMissionStage(m.id,stageText.value.trim());
+        if(!result.ok)showToast(result.error.message);else{stageText.value="";void load();}
+      });
+      const status=el("select",{cls:"mem-select",attrs:{"aria-label":"Статус миссии "+m.title}},
+        ...([["active","В работе"],["paused","Пауза"],["complete","Завершена"]] as const).map(([value,label])=>el("option",{value,textContent:label})));
+      status.value=m.status;
+      status.addEventListener("change",async()=>{
+        const result=await api.changeMissionStatus(m.id,status.value as "active"|"paused"|"complete");
+        if(!result.ok)showToast(result.error.message);
+        void refreshMissions();
+      });
+      const stages=el("ul",{cls:"org-list"},...m.stages.map(t=>{
+        const check=el("input",{type:"checkbox",checked:t.done,attrs:{"aria-label":"Выполнить этап "+t.text}});
+        check.addEventListener("change",()=>void act(()=>api.setTodoDone(t.id,check.checked),"Этап обновлён"));
+        return el("li",{cls:"org-row"},check,el("span",{cls:"grow",textContent:t.text}));
+      }));
+      return el("div",{cls:"tasks-mission-card"},
+        el("div",{cls:"tasks-mission-head"},el("h3",{textContent:m.title}),status),
+        el("p",{cls:"muted small",textContent:m.description||"Личная цель"}),
+        el("div",{cls:"tasks-mission-metrics"},el("strong",{textContent:m.percent+"%"}),el("span",{textContent:m.done+" из "+m.total+" этапов · Заблокировано: "+m.blocked})),
+        el("progress",{max:"100",value:String(m.percent),attrs:{"aria-label":"Прогресс миссии "+m.title}}),
+        m.next?el("p",{cls:"tasks-mission-next",textContent:"Следующий шаг: "+m.next.text+" · "+m.next.reason}):el("p",{cls:"muted small",textContent:m.total?"Все этапы завершены или ожидают зависимостей":"Добавь первый этап"}),
+        stages,m.status==="active"?stageForm:null);
+    });
+    missionsHost.replaceChildren(header,help,form,...(cards.length?cards:[el("p",{cls:"muted",textContent:"Миссий пока нет. Создай первую цель."})]));
+  };
   const planHost = el("section", { cls:"pg-card",attrs:{"aria-label":"План дня"} }, el("p",{cls:"muted",textContent:"План дня загружается…"}));
 
   const month = el("input", { type:"month",value:new Date().toISOString().slice(0,7),cls:"mem-select",attrs:{"aria-label":"Месяц календаря"} });
@@ -91,6 +140,7 @@ export function tasksPage(): HTMLElement {
     const r = await api.organizer();
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     render();
+    void refreshMissions();
     void renderInsights();
     void loadBlocks();
     const plan = await api.taskPlan();
@@ -250,6 +300,7 @@ export function tasksPage(): HTMLElement {
     pageHead("check", "Дела", "Дела, заметки и напоминания. Напоминания срабатывают, пока JUUNIBI запущен."),
     el("section", { cls: "pg-card" }, form),
     planHost,
+    missionsHost,
     el("section",{cls:"pg-card"},el("label",{textContent:"Месяц календаря"}),month),
     calendarHost,
     blocksHost,
