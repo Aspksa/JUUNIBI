@@ -77,7 +77,12 @@ if (Number(process.versions.node.split(".")[0]) < 20) fail(`Нужен Node.js 2
 
 if (!existsSync(bin("vite", "bin", "vite.js"))) {
   const lock = existsSync(path.join(root, "package-lock.json"));
-  run("Установка зависимостей", "npm", [lock ? "ci" : "install", "--no-audit", "--no-fund"], { shell: true });
+  const npmArgs = [lock ? "ci" : "install", "--no-audit", "--no-fund"];
+  if (process.platform === "win32") {
+    // Windows .cmd wrappers require cmd.exe; invoke it explicitly, not spawn(shell:true).
+    // All command arguments here are fixed literals, never user-supplied text.
+    run("Установка зависимостей", process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `npm ${npmArgs.join(" ")}`]);
+  } else run("Установка зависимостей", "npm", npmArgs);
 }
 
 const PKGS = ["packages/core", "packages/assistant", "apps/server", "apps/web"];
@@ -93,7 +98,7 @@ run("Сборка сервера", process.execPath, [path.join(root, "scripts",
 if (!dev) run("Сборка веба", process.execPath, [bin("vite", "bin", "vite.js"), "build"], { cwd: web });
 
 if (!existsSync(path.join(root, ".env"))) {
-  console.log("\n\x1b[33m[!] Файл .env не найден: помощник будет выключен. Скопируйте .env.example в .env и впишите ключ Cloud.ru.\x1b[0m");
+  console.log("\n\x1b[33m[!] Файл .env не найден. Cloud.ru можно настроить через приложение или переменные окружения; без ключа чат недоступен.\x1b[0m");
 }
 
 const port = await findPort(wantPort);
