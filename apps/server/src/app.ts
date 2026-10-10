@@ -457,11 +457,13 @@ export function createApp(deps: AppDeps): http.Server {
         if (deps.organizer && p.startsWith("/api/organizer")) {
           const o = deps.organizer;
           if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders() });
+          if (req.method === "GET" && p === "/api/organizer/plan") return send(res, 200, o.planToday());
           if (req.method === "POST" && p === "/api/organizer/notes") { const b = await readJson(req); return send(res, 201, await o.addNote(b.kind ?? "note", b.text)); }
           if (req.method === "POST" && p === "/api/organizer/reminders") { const b = await readJson(req); return send(res, 201, await o.addReminder(b.text, b.at, b.repeat)); }
-          const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss))?$/.exec(p);
+          const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss|plan))?$/.exec(p);
           if (om) {
             const [, kind, id, action] = om;
+            if (req.method === "POST" && kind === "notes" && action === "plan") { const b = await readJson(req); return send(res, 200, await o.updateTask(id!, b)); }
             if (req.method === "PATCH" && !action) { const b = await readJson(req); return send(res, 200, kind === "notes" ? await o.editNote(id!, b.text) : await o.editReminder(id!, { text: b.text, at: b.at, repeat: b.repeat })); }
             if (req.method === "DELETE" && !action) { if (kind === "notes") await o.removeNote(id!); else await o.removeReminder(id!); return send(res, 200, { ok: true }); }
             if (req.method === "POST" && kind === "notes" && action === "done") { const b = await readJson(req); if (typeof b.done !== "boolean") return send(res, 400, { error: "Укажите done: true или false" }); return send(res, 200, await o.setDone(id!, b.done)); }
