@@ -42,11 +42,11 @@ export function tasksPage(): HTMLElement {
       el("p",{cls:"muted small",textContent:`Выполнено: ${stats.completed} из ${stats.all} (${stats.completionPercent}%) · За месяц: ${stats.completedThisMonth} · Просрочено: ${stats.overdue}`}),
       el("ul",{cls:"org-list"},...[...days.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([day,entries])=>
         el("li",{cls:"org-row"},el("span",{cls:"br-tag",textContent:day}),
-          el("span",{cls:"grow",textContent:entries.map(x=>(x.done?"✓ ":"")+x.text).join(" · ").slice(0,450)}))),
+          el("span",{cls:"grow",textContent:entries.map(x=>(x.done?"✓ ":"")+x.text).join(" · ").slice(0,450)})))),
       el("h3",{textContent:"Рекомендации JUUNIBI · Brain"}),
       el("p",{cls:"muted small",textContent:"Основаны на реальных сроках и приоритетах. Дела не меняются автоматически."}),
       el("ul",{cls:"org-list"},...brainRecommendations.map(x=>
-        el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason}))))));
+        el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})))));
   };
   month.addEventListener("change",()=>void renderInsights());
   const load = async () => {
