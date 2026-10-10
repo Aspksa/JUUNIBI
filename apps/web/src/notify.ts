@@ -35,18 +35,31 @@ function chime() {
   }
 }
 
-/** Shows a toast (and a system notification when the owner allowed it) once per due reminder. */
-export function announceDue(due: { id: string; text: string }[], open: () => void): void {
+/** What the owner can do right from a reminder: put it off, or open «Дела». */
+export interface DueActions { open(): void; snooze(id: string, minutes: number | "tomorrow"): void }
+
+/**
+ * Shows a toast (and a system notification when the owner allowed it) once per due reminder, with «Отложить» buttons.
+ * In quiet hours nothing is shown or played: the reminders wait and come together when the quiet hours end.
+ */
+export function announceDue(due: { id: string; text: string }[], act: DueActions, quiet = false): void {
+  if (quiet) return;
   const known = seen();
   const fresh = unannounced(due, known) as { id: string; text: string }[];
   if (!fresh.length) return;
   for (const d of fresh) known.add(d.id);
   remember(known);
   let system = false;
-  for (const d of fresh.slice(0, 3)) {
-    showToast("Напоминание: " + d.text, { action: { label: "Открыть", run: open }, ms: 15000 });
-    try { if (typeof Notification !== "undefined" && Notification.permission === "granted") { new Notification("JUUNIBI", { body: d.text }); system = true; } } catch { /* not supported */ }
+  if (fresh.length > 3) {
+    // a pile after the night or a long pause: one toast instead of a column of them
+    showToast(`Напоминаний: ${fresh.length}. Первое — ${fresh[0]!.text}`, { action: { label: "Открыть", run: act.open }, ms: 20000 });
+  } else for (const d of fresh) {
+    showToast("Напоминание: " + d.text, { ms: 20000, actions: [
+      { label: "10 мин", run: () => act.snooze(d.id, 10) }, { label: "1 ч", run: () => act.snooze(d.id, 60) },
+      { label: "Завтра", run: () => act.snooze(d.id, "tomorrow") }, { label: "Открыть", run: act.open },
+    ] });
   }
+  try { if (typeof Notification !== "undefined" && Notification.permission === "granted") { new Notification("JUUNIBI", { body: fresh.length > 3 ? `Напоминаний: ${fresh.length}` : fresh.map((d) => d.text).join("\n") }); system = true; } } catch { /* not supported */ }
   // the system notification makes its own sound; without it (the phone over http) buzz and chime
   if (!system) chime();
 }

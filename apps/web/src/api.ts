@@ -42,16 +42,29 @@ export interface AssistantSettings {
 export type SearchProvider = "duckduckgo" | "brave";
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days" | "yearly";
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string;
-  repeat?: Repeat; rolled?: number; auto?: "brief" }
+  repeat?: Repeat; rolled?: number; auto?: "brief" | "evening" | "week"; streak?: number }
 /** «Жизнь проекта»: figures about the project's history (server: project-stats.ts). */
 export interface ProjectMetric { id: string; group: string; emoji: string; title: string; hint: string; value: string; detail: string; kind?: "hours" | "calendar" | "spark" | "list"; series?: number[]; list?: string[] }
 export interface ProjectStatsData { generatedAt: string; head: string; commits: number; groups: { id: string; title: string }[]; metrics: ProjectMetric[]; source?: "git" | "github" | "saved" }
 /** What the "Дела" automation does by itself (server: Organizer.automation). */
-export interface Automation { brief: boolean; briefTime: string; rollOverdue: boolean; dueReminder: "off" | "15" | "60" | "morning"; workdays: boolean }
-export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; source?: string }
+export interface Automation {
+  brief: boolean; briefTime: string; rollOverdue: boolean; dueReminder: "off" | "15" | "60" | "morning"; workdays: boolean;
+  evening: boolean; eveningTime: string; quiet: boolean; quietFrom: string; quietTo: string;
+  stuckAfter: number; holidayWarn: boolean; weekly: boolean; goalNudge: number; chatPromises: boolean; dayHours: number; streaks: boolean;
+  rules: AutoRule[];
+}
+/** «Если — то» (server: AutoRule). */
+export interface AutoRule { id: string; match: "tag" | "word" | "important"; value: string; action: "before" | "weekday" | "important"; minutes?: number; weekday?: number; time?: string }
+/** One line of «Что сделала автоматика». */
+export interface AutoLogEntry { id: string; at: string; kind: "roll" | "remind" | "brief" | "evening" | "week" | "quiet" | "arrange" | "move" | "rule"; text: string; undo?: unknown; undone?: boolean }
+export interface DayLoad { day: string; capacity: number; planned: number; over: boolean; count: number; work: boolean; move: { id: string; text: string; minutes: number }[] }
+export interface ArrangePlan { day: string; window: { from: string; to: string }; placed: { id: string; text: string; start: string; minutes: number; reason: string }[]; left: number; applied: number }
+export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; source?: string; rule?: string }
 export interface Brief {
   now: string; due: { id: string; text: string; at: string }[]; today: { id: string; text: string; at: string }[];
   openTodos: { count: number; first: { id: string; text: string }[] }; plansRunning: number; memoryPending: number; modulesFailed: string[]; updateAvailable: boolean; attention: number;
+  /** Quiet hours now: reminders are shown without sound and gathered for the morning. */
+  quiet?: boolean;
 }
 export interface QualityReport {
   totals: { turns: number; rated: number; up: number; down: number; unrated: number; satisfaction: number | null };
@@ -158,7 +171,7 @@ export const api = {
   memoryExpiry: (id: string, until: number | null) => attemptAsync(() => call<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/expiry`, post({ until }))),
   memoryExport: () => attemptAsync(() => call<unknown>("/api/memory/export")),
   memoryImport: (data: unknown) => attemptAsync(() => call<{ added: number; duplicates: number; skipped: number }>("/api/memory/import", post(data))),
-  missions: () => attemptAsync(() => call<{id:string;title:string;description:string;status:"active"|"paused"|"complete";total:number;done:number;percent:number;blocked:number;next:{id:string;text:string;reason:string}|null;stages:{id:string;text:string;done:boolean;parentId:string|null;priority:string}[]}[]>("/api/organizer/missions")),
+  missions: () => attemptAsync(() => call<{id:string;title:string;description:string;status:"active"|"paused"|"complete";total:number;done:number;percent:number;blocked:number;idleDays?:number;next:{id:string;text:string;reason:string}|null;stages:{id:string;text:string;done:boolean;parentId:string|null;priority:string}[]}[]>("/api/organizer/missions")),
   addMission: (title:string,description:string) => attemptAsync(() => call<{id:string;title:string}>("/api/organizer/missions",post({title,description}))),
   addMissionStage: (id:string,text:string) => attemptAsync(() => call<Note>(`/api/organizer/missions/${encodeURIComponent(id)}/stages`,post({text}))),
   changeMissionStatus: (id:string,status:"active"|"paused"|"complete") => attemptAsync(() => call<{id:string;status:string}>(`/api/organizer/missions/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})})),
@@ -166,12 +179,20 @@ export const api = {
   taskInsights: (month: string) => attemptAsync(() => call<{
     month:string;
     items:{id:string;text:string;at:string;kind:"todo"|"reminder";done:boolean}[];
+    heavyDays?:string[];
     statistics:{all:number;completed:number;open:number;overdue:number;completedThisMonth:number;completionPercent:number};
     brainRecommendations:{id:string;text:string;score:number;reason:string;evidence:string;source:string}[];
     advisoryOnly:boolean;
   }>(`/api/organizer/insights?month=${encodeURIComponent(month)}`)),
   timeBlocks: (day:string) => attemptAsync(() => call<{day:string;workingMinutes:number;plannedMinutes:number;remainingMinutes:number;blocks:{id:string;text:string;start:string;end:string;minutes:number}[];note:string;advisoryOnly:boolean}>(`/api/organizer/time-blocks?day=${encodeURIComponent(day)}`)),
-  snoozeReminder: (id:string,minutes:number) => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
+  autoLog: () => attemptAsync(() => call<AutoLogEntry[]>("/api/organizer/log")),
+  undoAuto: (id: string) => attemptAsync(() => call<AutoLogEntry>(`/api/organizer/log/${encodeURIComponent(id)}/undo`, post({}))),
+  dayLoad: (day: string) => attemptAsync(() => call<DayLoad>(`/api/organizer/load?day=${encodeURIComponent(day)}`)),
+  arrangeDay: (day: string, apply = false, ids?: string[]) => attemptAsync(() => call<ArrangePlan>("/api/organizer/arrange", post({ day, apply, ...(ids ? { ids } : {}) }))),
+  moveTasks: (ids: string[], to: "tomorrow" | "workday") => attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to }))),
+  runEvening: () => attemptAsync(() => call<Note>("/api/organizer/evening", post({}))),
+  runWeek: () => attemptAsync(() => call<Note>("/api/organizer/week", post({}))),
+  snoozeReminder: (id:string,minutes:number|"tomorrow") => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
   updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none"}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
   automation: () => attemptAsync(() => call<Automation>("/api/organizer/automation")),

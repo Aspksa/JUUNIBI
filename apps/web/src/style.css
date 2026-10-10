@@ -1500,3 +1500,79 @@ html[data-radius=round] :is(.pg-card,.chat-window,.mod-sheet){border-radius:28px
 html[data-radius=round] :is(.set-sub,.choice-card,.theme-card,.set-stat,.set-checks li,.beh-quick li,.set-details,.set-search,.set-results,.conn,.set-badge,.set-area,.beh-field input,.key-field,.chat-preview,.mtile){border-radius:20px!important}
 html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){border-radius:999px!important}
 .set-row.stack .theme-cards{width:100%;margin-bottom:0}
+/* smart automation: hero extras, load bar, stuck to-dos, «Разложить день», tabbed «Автоматика», chat promises */
+.tasks-hero.evening{background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,#7b6cff 20%,transparent) 0%,transparent 55%),radial-gradient(90% 120% at 100% 100%,color-mix(in srgb,var(--brand) 10%,transparent) 0%,transparent 60%),var(--surface)}
+.tasks-hero.evening .tasks-hero-ic{color:#9d90ff;background:color-mix(in srgb,#7b6cff 18%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,#7b6cff 40%,transparent)}
+.tasks-hero-note{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;font-size:.88rem;background:color-mix(in srgb,var(--danger) 10%,transparent);border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);animation:tasks-rise .3s ease both}
+.tasks-hero-note svg{color:var(--danger);flex:none}
+.tasks-hero-note,.tasks-load-top{flex-wrap:wrap}
+.tasks-hero-note .grow,.tasks-load-top .grow{min-width:min(220px,100%)}
+.tasks-hero-note.short{background:color-mix(in srgb,var(--brand) 10%,transparent);border-color:color-mix(in srgb,var(--brand) 30%,transparent)}.tasks-hero-note.short svg{color:var(--brand)}
+.tasks-load{display:grid;gap:6px;max-width:520px;font-size:.85rem;color:var(--muted)}
+.tasks-load-top{display:flex;align-items:center;gap:8px}
+.tasks-load-bar{height:8px;border-radius:999px;background:color-mix(in srgb,var(--fg) 10%,transparent);overflow:hidden}
+.tasks-load-bar i{display:block;height:100%;width:calc(var(--p,0)*1%);border-radius:inherit;background:linear-gradient(90deg,var(--ok,#3c9),var(--brand));transition:width .6s cubic-bezier(.3,1,.4,1)}
+.tasks-load.full .tasks-load-bar i{background:linear-gradient(90deg,var(--brand),#f0a030)}
+.tasks-load.over{color:var(--danger)}.tasks-load.over .tasks-load-bar i{background:linear-gradient(90deg,#f0a030,var(--danger));animation:tasks-pulse 1.6s ease-in-out infinite}
+.tasks-week{padding:12px 16px;margin:0 0 12px;border-color:color-mix(in srgb,#7b6cff 35%,var(--line));animation:tasks-rise .35s ease both}
+.tasks-week .tasks-brief-head svg{color:#9d90ff}
+.tasks-week-lines{margin:8px 0 0;padding:0 0 0 18px;display:grid;gap:4px;font-size:.9rem;line-height:1.5}
+.tasks-streak{font-weight:600;color:#f0802a}
+.org-row.stuck{border-color:color-mix(in srgb,#f0a030 45%,var(--line))}
+.tasks-stuck{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:4px 0 8px 34px;padding:8px 10px;border-radius:12px;background:color-mix(in srgb,#f0a030 10%,transparent);border:1px dashed color-mix(in srgb,#f0a030 50%,transparent);animation:tasks-rise .3s ease both}
+.tasks-stuck .grow{min-width:180px}
+.tasks-arrange-start{margin-top:10px}
+.tasks-arrange{display:flex;flex-direction:column;gap:8px;margin-top:10px;padding:10px 12px;border:1px dashed color-mix(in srgb,var(--brand) 45%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--brand) 6%,transparent);animation:tasks-rise .3s ease both}
+.tasks-arrange:not(:has(ol)){flex-direction:row;align-items:center}
+.tasks-arrange.error p{color:var(--danger)}
+.tasks-arrange p{margin:0}
+.tasks-arrange-list{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.tasks-arrange-list label{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:8px;cursor:pointer;font-size:.9rem}
+.tasks-arrange-list label:hover{background:var(--hover)}
+.tasks-arrange-list .grow{display:flex;flex-direction:column;min-width:0}
+.tasks-arrange-list small{font-size:.76rem}
+.tasks-calendar-day.heavy{box-shadow:inset 0 -3px 0 color-mix(in srgb,#f0a030 80%,transparent)}
+.tasks-calendar-legend .heavy::before{background:#f0a030;height:3px;border-radius:2px;vertical-align:3px}
+.tasks-goal-nudge{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;background:color-mix(in srgb,#f0a030 10%,transparent)}
+.tasks-goal.idle{border-color:color-mix(in srgb,#f0a030 40%,var(--line))}
+/* «Автоматика»: scenario tabs */
+.tasks-auto-tabs{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 4px}
+.tasks-auto-tab{position:relative;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);font:inherit;font-size:.8rem;cursor:pointer;transition:background .15s,color .15s,border-color .15s,transform .1s}
+.tasks-auto-tab:hover{color:var(--fg);border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+.tasks-auto-tab:active{transform:scale(.96)}
+.tasks-auto-tab[aria-selected=true]{background:var(--brand);border-color:var(--brand);color:var(--accent-fg,#111)}
+.tasks-auto-dot{width:6px;height:6px;border-radius:50%;background:color-mix(in srgb,var(--fg) 25%,transparent)}
+.tasks-auto-tab.on .tasks-auto-dot{background:var(--ok,#3c9);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok,#3c9) 20%,transparent)}
+.tasks-auto-tab[aria-selected=true] .tasks-auto-dot{background:currentColor;box-shadow:none}
+.tasks-auto-body{display:flex;flex-direction:column;animation:tasks-rise .25s ease both}
+.tasks-auto-body>.row{margin-top:8px;flex-wrap:wrap}
+.tasks-auto-body .tasks-auto-row+.tasks-auto-row{border-top:1px solid var(--line)}
+.tasks-time{width:auto;flex:none}
+.tasks-time-range{display:inline-flex;align-items:center;gap:4px;flex:none}
+.tasks-auto-row:has(.tasks-time-range){flex-wrap:wrap}
+.tasks-auto-row:has(.tasks-time-range)>.grow{flex:1 1 70%}
+.tasks-auto-row>.tasks-time-range{flex-direction:row;align-items:center;margin-left:44px}
+.tasks-page input.tasks-switch{width:34px;height:20px;border-radius:999px;border:0;background:color-mix(in srgb,var(--fg) 20%,transparent);position:relative;display:block}
+.tasks-page input.tasks-switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;margin:0;border:0;border-radius:50%;background:#fff;transform:none;transition:left .18s cubic-bezier(.3,1.4,.5,1);box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.tasks-page input.tasks-switch:checked{background:var(--brand)}
+.tasks-page input.tasks-switch:checked::after{left:16px;transform:none}
+.tasks-rules{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:4px}
+.tasks-rules li{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:10px;background:color-mix(in srgb,var(--brand) 7%,transparent);font-size:.88rem}
+.tasks-rule-form{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.tasks-rule-form .mem-input{flex:1 1 120px;min-width:0}
+.tasks-rule-form [hidden]{display:none!important}
+.tasks-rule-word{font-size:.8rem;font-weight:600;color:var(--muted)}
+.tasks-auto-log{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:2px;max-height:none}
+.tasks-auto-log li{display:flex;align-items:center;gap:8px;padding:6px 4px;border-top:1px solid var(--line);font-size:.86rem}
+.tasks-auto-log li:first-child{border-top:0}
+.tasks-auto-log li.undone>.grow>span:first-child{text-decoration:line-through;color:var(--muted)}
+.tasks-log-ic{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:8px;background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--brand);font-size:.8rem}
+/* chat: «В дела?» under the owner's message */
+.promise-card{display:flex;align-items:center;gap:8px;margin:6px 0 0 auto;max-width:min(460px,100%);padding:8px 10px;border-radius:12px;border:1px dashed color-mix(in srgb,var(--brand) 50%,var(--line));background:color-mix(in srgb,var(--brand) 7%,transparent);font-size:.86rem;animation:tasks-rise .3s ease both}
+.promise-card>svg{color:var(--brand);flex:none}
+.promise-card .grow{min-width:0;overflow-wrap:anywhere}
+/* toasts with several buttons (a reminder) */
+.toast.multi{flex-direction:column;align-items:stretch}
+.toast-actions{display:flex;flex-wrap:wrap;gap:6px}
+@keyframes tasks-pulse{0%,100%{opacity:1}50%{opacity:.65}}
+@media (prefers-reduced-motion:reduce){.tasks-load-bar i,.tasks-auto-body,.tasks-stuck,.tasks-arrange,.tasks-week,.promise-card,.tasks-hero-note{animation:none;transition:none}}

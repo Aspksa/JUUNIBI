@@ -35,6 +35,9 @@ export interface TaskView {
   notes: Note[];
   /** Today's morning brief written by the automation, shown apart from the notes. */
   brief?: Note;
+  /** Today's evening summary and the latest weekly review (kept for Sunday and Monday). */
+  evening?: Note;
+  week?: Note;
   /** Subtasks shown under their to-do (only while not searching). */
   children: Record<string, Note[]>;
   finished: { todos: Note[]; reminders: Reminder[] };
@@ -86,6 +89,10 @@ export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter
   };
   const brief = org.notes.find((n) => n.auto === "brief");
   if (brief && localDay(brief.createdAt) === todayKey) view.brief = brief;
+  const evening = org.notes.find((n) => n.auto === "evening");
+  if (evening && localDay(evening.createdAt) === todayKey) view.evening = evening;
+  const week = org.notes.find((n) => n.auto === "week");
+  if (week && now.getTime() - Date.parse(week.createdAt) < 36 * 3_600_000) view.week = week;
   for (const it of timed) {
     const key = localDay(it.at);
     // a to-do is overdue once its moment has passed; a planned reminder fires by itself, so it stays in its day
@@ -147,4 +154,28 @@ export function daySummary(notes: Note[], now = new Date()): { done: Note[]; ope
 export function tomorrowSameTime(iso: string, now = new Date()): string {
   const d = new Date(iso), t = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, d.getHours(), d.getMinutes());
   return t.toISOString();
+}
+
+/**
+ * The line in the day card when there is no brief yet, by the time of day: before the brief time it says when it comes,
+ * later in the day it offers to make one now, and in the evening it sums up the day and looks at tomorrow.
+ */
+export function heroFallback(o: { now: Date; brief: boolean; briefTime: string; evening: boolean; eveningTime: string; dayOff: boolean;
+  done: number; left: number; tomorrow: number; tomorrowFirst?: string }): { text: string; evening: boolean } {
+  const mins = o.now.getHours() * 60 + o.now.getMinutes();
+  const at = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h! * 60 + m!; };
+  const eve = Math.min(o.evening ? at(o.eveningTime) : 18 * 60, 18 * 60);
+  if (mins >= eve || o.now.getHours() < 5) {
+    const day = o.done || o.left ? `Сегодня сделано: ${o.done}` + (o.left ? `, не успели: ${o.left}.` : ".") : o.dayOff ? "Спокойный день без дел." : "Сегодня дел со сроком не было.";
+    const next = o.tomorrow ? ` Завтра дел: ${o.tomorrow}${o.tomorrowFirst ? `, первое — ${o.tomorrowFirst}` : ""}.` : " На завтра дел пока нет.";
+    return { text: day + next + (o.left ? " Остаток можно перенести на завтра в «Итоге дня»." : ""), evening: true };
+  }
+  if (!o.brief) return { text: "Утренняя сводка выключена: включите её в «Автоматике», вкладка «Утро».", evening: false };
+  if (mins < at(o.briefTime)) return { text: `Сводка появится в ${o.briefTime}. Нажмите ↻, чтобы составить её сейчас.`, evening: false };
+  return { text: o.dayOff ? "Выходной. Нажмите ↻, если хотите короткую сводку на сегодня." : "Сводку на сегодня ещё не составляли. Нажмите ↻, и она появится.", evening: false };
+}
+
+/** To-dos moved by the automation at least `after` times (0 = never stuck). */
+export function stuckTodos(notes: Note[], after: number): Note[] {
+  return after ? notes.filter((n) => n.kind === "todo" && !n.done && (n.rolled ?? 0) >= after) : [];
 }

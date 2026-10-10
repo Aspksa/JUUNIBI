@@ -199,6 +199,7 @@ async function briefData() {
     memoryPending: (await memory.list("pending")).length,
     modulesFailed: modules.list().filter((m) => m.status === "failed").map((m) => m.name),
     updateAvailable: !!up.latest && up.localVersion !== "не определена" && up.localVersion !== up.latest.sha,
+    quiet: organizer.isQuiet(),
   });
 }
 let assistant: Assistant | undefined;
