@@ -84,15 +84,28 @@ export type SettingsPatch = { [K in Exclude<keyof AssistantSettings, "webSearch"
   & { webSearch?: { provider?: SearchProvider; braveKey?: string } };
 export interface Status { assistant: boolean; model?: string; hint?: string }
 
+export interface MobileStatus {
+  enabled: boolean; running: boolean; port: number; error: string | null;
+  addresses: { ip: string; iface: string }[];
+  code: string | null; codeExpiresAt: string | null;
+  devices: { id: string; name: string; pairedAt: string; lastSeen: string }[];
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers: { "content-type": "application/json" } });
   const body = await res.json().catch(() => ({}));
+  // A phone whose access was revoked (or turned off) gets the pairing page again.
+  if (res.status === 401 && (body as { pair?: boolean }).pair) location.reload();
   if (!res.ok) throw Object.assign(new Error((body as { error?: string }).error ?? `Ошибка ${res.status}`), { body });
   return body as T;
 }
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export const api = {
+  mobile: () => attemptAsync(() => call<MobileStatus>("/api/mobile")),
+  mobileEnable: (enabled: boolean) => attemptAsync(() => call<MobileStatus>("/api/mobile", post({ enabled }))),
+  mobileNewCode: () => attemptAsync(() => call<MobileStatus>("/api/mobile/code", post({}))),
+  mobileRevoke: (id?: string) => attemptAsync(() => call<MobileStatus>(id ? `/api/mobile/devices/${encodeURIComponent(id)}` : "/api/mobile/devices", { method: "DELETE" })),
   brainStatus: () => attemptAsync(() => call<BrainStatus>("/api/brain")),
   brainMode: (mode: BrainStatus["mode"]) => attemptAsync(() => call<BrainStatus>("/api/brain/mode", post({ mode }))),
   brainPlan: (goal:string, steps:string[]) => attemptAsync(() => call<BrainPlan>("/api/brain/plans", post({ goal, steps }))),

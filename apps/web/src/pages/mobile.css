@@ -1,0 +1,26 @@
+/* «Мобильное приложение» page. Kept separate so it does not touch the shared stylesheet. */
+.mob-page .mob-first{border-top:0;padding-top:0}
+.mob-state{display:flex;align-items:center;gap:10px;margin:10px 0 0;color:var(--muted)}
+.mob-pair{display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start}
+.mob-qr-box{display:flex;flex-direction:column;align-items:center;gap:12px;width:244px}
+.mob-qr{display:block;width:220px;height:220px;padding:8px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line)}
+.mob-code{display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
+.mob-code strong{font:600 1.6rem/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.12em}
+.mob-steps{min-width:0}
+.mob-steps ol{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:10px}
+.mob-steps code{font:.92rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:1px 6px;border-radius:6px;background:var(--surface-2);overflow-wrap:anywhere}
+.mob-net{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.mob-net select{max-width:100%;min-height:38px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg)}
+.mob-hint{display:flex;gap:8px;align-items:flex-start;margin:16px 0 0}.mob-hint svg{flex:none;margin-top:2px}
+.mob-devices{list-style:none;margin:0;padding:0}
+.mob-devices li{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.mob-devices li:first-child{border-top:0;padding-top:0}
+.mob-devices small{display:block}
+.mob-dev-icon{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:var(--surface-2);color:var(--brand)}
+.mob-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.mob-safety{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px;color:var(--muted)}
+@media (max-width:640px){
+  .mob-pair{grid-template-columns:1fr}
+  .mob-qr-box{width:100%}
+  .mob-devices li{flex-wrap:wrap}.mob-devices li .btn{margin-left:48px}
+}

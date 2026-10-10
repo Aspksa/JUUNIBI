@@ -8,6 +8,6 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": { "@juunibi/core": "*", "@juunibi/assistant": "*" },
+  "dependencies": { "@juunibi/core": "*", "@juunibi/assistant": "*", "qrcode-generator": "^2.0.4" },
   "devDependencies": { "@types/node": "^22.0.0", "esbuild": "^0.24.0", "typescript": "^5.6.0", "vitest": "^2.1.0" }
 }

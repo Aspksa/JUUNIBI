@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
 import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGate, type StorageAdapter, type LlmProvider } from "@juunibi/assistant";
-import { createApp } from "./app";
+import { createApp, type AppDeps } from "./app";
+import { DEFAULT_LAN_PORT, MobileAccess } from "./mobile-access";
 import { ProjectUpdater } from "./updater";
 import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
@@ -64,6 +65,13 @@ const log = new Logger("server", "info");
 const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
+const lanPort = Number(process.env.JUUNIBI_LAN_PORT ?? DEFAULT_LAN_PORT);
+/** «Мобильное приложение»: the same app for phones on the home Wi-Fi, behind pairing (off by default). */
+const mobile = new MobileAccess(path.join(dataDir, "mobile.json"), {
+  port: Number.isInteger(lanPort) && lanPort > 0 && lanPort < 65536 ? lanPort : DEFAULT_LAN_PORT,
+  makeServer: (gate) => createApp(appDeps, gate),
+  log,
+});
 const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, "brain.json")));
 /** Background check according to the owner's choice (off / hourly / daily); the 15-minute tick only decides whether it is time. */
 const checkUpdates = () => {
@@ -105,7 +113,7 @@ await loadOrQuarantine("обучение", path.join(dataDir, "autonomous-learni
 await loadOrQuarantine("знания", path.join(dataDir, "verified-knowledge.json"), () => knowledge.load());
 /** What the assistant (and the Modules page's "what the assistant sees" view) gets: one shared source of truth. */
 function moduleList() { return modules.promptView(); }
-const BUILTIN_MODULES = ["brain", "memory", "assistant", "approvals", "scenes", "updater"];
+const BUILTIN_MODULES = ["brain", "memory", "assistant", "approvals", "scenes", "updater", "mobile"];
 const manifests = new ManifestStore(path.join(dataDir, "module-manifests.json"), () => BUILTIN_MODULES);
 const modules = new ModuleManager(root, [
   { name: "brain", title: "Мозг JUUNIBI", deps: ["memory", "assistant", "approvals"],
@@ -139,6 +147,12 @@ const modules = new ModuleManager(root, [
     probe: () => { const up = updater.status(); return up.phase === "error" ? { status: "failed", note: up.error ?? "Ошибка обновления" } : { status: "started", note: `Источник github.com/Aspksa/JUUNIBI · этап: ${up.phase}` }; },
     start: async () => { await updater.check(); },
     busy: () => (updater.isBusy() ? "Идёт подготовка обновления — дождитесь её завершения." : null) },
+  { name: "mobile", title: "Мобильное приложение", deps: [],
+    description: "JUUNIBI на телефоне через домашний Wi-Fi. Доступ выключен, пока вы его не включите; телефоны подключаются только по коду с этого компьютера.",
+    files: ["data/mobile.json"],
+    probe: () => { const m = mobile.status(); return m.error ? { status: "failed", note: m.error } : { status: "started", note: m.running ? `Доступ по Wi-Fi открыт, порт ${m.port} · устройств: ${m.devices.length}` : "Доступ по Wi-Fi выключен" }; },
+    start: () => mobile.resume(),
+    stop: () => mobile.pause() },
 ], path.join(dataDir, "modules.json"), {
   manifests: () => manifests.list(),
   tools: () => assistant?.tools.list().map(({ name, risk, description }) => ({ name, risk, description })) ?? [],
@@ -169,6 +183,7 @@ const evals = new EvalService(evalHistory, {
 });
 const openable = new OpenableUrls();
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
+await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
 /** Start-of-day data, shared by the assistant tool and the Home page. */
 async function briefData() {
@@ -297,7 +312,7 @@ await kernel.start();
 const port = Number(process.env.PORT ?? 4173);
 if (!Number.isInteger(port) || port < 1 || port > 65535) { log.error("Некорректный PORT: " + process.env.PORT); process.exit(1); }
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
-const server = createApp({
+const appDeps: AppDeps = {
   getAssistant: () => (modules.isActive("assistant") ? assistant : undefined),
   cloudStatus: () => ({ configured: cloudConfigured, model: chatModel() }),
   cloudModels: async () => { if (!learningProvider) throw Object.assign(new Error("Сначала укажите ключ Cloud.ru"), { status: 409 }); return learningProvider.listModels(); },
@@ -345,9 +360,12 @@ const server = createApp({
   },
   staticDir,
   configured: { model: MODEL, hint },
-});
+  mobile,
+};
+const server = createApp(appDeps);
 checkUpdates();
 server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
+if (modules.isActive("mobile")) void mobile.resume();
 
 const reminderTimer = setInterval(() => { void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e)); }, 20_000);
 void organizer.tick().catch(() => {});
@@ -372,9 +390,9 @@ let stopping = false;
 const shutdown = async (exitCode = 0) => {
   if (stopping) return;
   stopping = true;
-  clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
+  clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close(); void mobile.pause();
   // Let pending state writes finish so a stop never loses data.
-  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue,
+  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), mobile.flush(), auditQueue,
     // Queued memory suggestions get a short grace period; a stuck model call must not block the stop.
     Promise.race([assistant?.idle(), new Promise((resolve) => setTimeout(resolve, 5000).unref())])]);
   await kernel.stop();

@@ -37,6 +37,7 @@ const ICONS = {
   edit: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
   menu: "M4 6h16M4 12h16M4 18h16",
+  phone: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2",
   x: "M6 6l12 12M18 6L6 18",
   maximize: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
   minimize: "M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5",
