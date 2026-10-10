@@ -14,6 +14,8 @@ export interface UpdateStatus {
   latest: null | { sha: string; version: string; description: string; date: string; channel?: "fresh" | "stable"; tag?: string; ci?: UpdateCi; changes?: UpdateChangeNote[]; changesTotal?: number };
   reusedFiles?: number; treeBytes?: number; checks?: UpdateCheckStep[]; logTail?: string;
   config?: UpdateConfig; rollbackPending?: boolean;
+  /** Personal GitHub token in use ("env" = from .env) and the end of a rate limit, if any. */
+  github?: { token: "none" | "saved" | "env"; rateLimitedUntil: number | null };
   /** Why the newest version cannot be installed yet (CI not green); null/absent = it can. */
   blocked?: string | null;
   /** Work that a restart would interrupt. */
@@ -119,7 +121,7 @@ export const api = {
   updateConfirmRemovals: () => attemptAsync(() => call<UpdateStatus>("/api/update/confirm-removals", post({}))),
   updateDownload: () => attemptAsync(() => call<{ok:boolean}>("/api/update/download", post({}))),
   updateCancel: () => attemptAsync(() => call<UpdateStatus>("/api/update/cancel", post({}))),
-  updateSettings: (patch: Partial<UpdateConfig>) => attemptAsync(() => call<UpdateStatus>("/api/update/settings", post(patch))),
+  updateSettings: (patch: Partial<UpdateConfig> & { githubToken?: string }) => attemptAsync(() => call<UpdateStatus>("/api/update/settings", post(patch))),
   updateHistory: () => attemptAsync(() => call<UpdateHistory>("/api/update/history")),
   updateRollback: (cancel = false) => attemptAsync(() => call<UpdateStatus>("/api/update/rollback", post({ cancel }))),
   updateInstallNow: (force = false) => attemptAsync(() => call<{ restarting: boolean }>("/api/update/install-now", post({ force }))),

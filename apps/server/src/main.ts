@@ -77,9 +77,11 @@ const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, 
 const checkUpdates = () => {
   const every = { off: 0, hourly: 60 * 60_000, daily: 24 * 60 * 60_000 }[updater.getConfig().autoCheck];
   if (!every || !modules.isActive("updater") || updater.isBusy() || Date.now() - updater.lastCheckedAt() < every) return;
-  void modules.track("updater", () => updater.check(false)).catch((e) => log.warn("Не удалось проверить обновления", e));
+  void modules.track("updater", () => updater.check(false)).catch(logUpdateCheckFailure);
 };
 const updateTimer = setInterval(checkUpdates, 15 * 60_000);
+/** One readable line: a GitHub limit or a network problem is expected, not a crash worth a stack trace. */
+function logUpdateCheckFailure(e: unknown) { log.warn(`Не удалось проверить обновления: ${e instanceof Error ? e.message : String(e)}`); }
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
 const MODEL = process.env.CLOUDRU_MODEL?.trim() || DEFAULT_CHAT_MODEL;
 /** The chat model chosen in Settings (CLOUDRU_MODEL is only its default). */
@@ -145,7 +147,7 @@ const modules = new ModuleManager(root, [
     description: "Проверяет GitHub, скачивает и проверяет обновления. Устанавливает их только при следующем запуске.",
     files: [".updates/events.jsonl", ".updates/installed.json", ".updates/ready.json"],
     probe: () => { const up = updater.status(); return up.phase === "error" ? { status: "failed", note: up.error ?? "Ошибка обновления" } : { status: "started", note: `Источник github.com/Aspksa/JUUNIBI · этап: ${up.phase}` }; },
-    start: async () => { await updater.check(); },
+    start: async () => { await updater.check(false).catch(logUpdateCheckFailure); }, // a GitHub limit must not mark the module as failed
     busy: () => (updater.isBusy() ? "Идёт подготовка обновления — дождитесь её завершения." : null) },
   { name: "mobile", title: "Мобильное приложение", deps: [],
     description: "JUUNIBI на телефоне через домашний Wi-Fi. Доступ выключен, пока вы его не включите; телефоны подключаются только по коду с этого компьютера.",

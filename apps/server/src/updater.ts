@@ -63,6 +63,17 @@ const blankState = (): UpdateState => ({
   reusedFiles: 0, treeBytes: 0, checks: freshChecks(), pendingRemovals: [], removalsConfirmed: false,
 });
 const DEFAULT_CONFIG: UpdateConfig = { channel: "fresh", autoCheck: "hourly" };
+/** An automatic check (startup, timer) is skipped when the last one is this recent, even across restarts. */
+const AUTO_CHECK_MIN_MS = 30 * 60_000;
+/** Small API answers kept with their ETag: GitHub does not count a 304 "not modified" against the rate limit. */
+const CACHE_MAX_ENTRIES = 40;
+const CACHE_MAX_BODY = 200_000;
+interface CheckCache {
+  checkedAt?: number; rateLimitUntil?: number; latest?: LatestInfo | null; channel?: Channel;
+  /** A ZIP install already compared with this commit's tree (do not download the tree again). */
+  adoptTried?: string;
+  etags?: Record<string, { etag: string; body: string; at: number }>;
+}
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Variables that could carry secrets are not handed to the downloaded code that runs during the checks. */
@@ -105,14 +116,26 @@ export class ProjectUpdater {
   private config: UpdateConfig = { ...DEFAULT_CONFIG };
   private rollbackPending = false;
   private readonly requireCi: boolean;
-  private readonly token: string;
+  private token: string;
+  private readonly envToken: string;
+  private cache: CheckCache = {};
   private readonly retryDelays: number[];
 
   private readonly runner: UpdaterOptions["runner"];
   constructor(private readonly root: string, opts: UpdaterOptions = {}) {
     this.runner = opts.runner;
     this.requireCi = opts.requireCi ?? process.env.JUUNIBI_UPDATE_REQUIRE_CI !== "0";
-    this.token = (opts.token ?? process.env.GITHUB_TOKEN ?? "").trim();
+    this.envToken = (opts.token ?? process.env.GITHUB_TOKEN ?? "").trim();
+    let saved = "";
+    try { saved = readFileSync(path.join(this.folder(), "github-token"), "utf8").trim(); } catch { /* none saved */ }
+    this.token = saved || this.envToken;
+    try {
+      const c = JSON.parse(readFileSync(path.join(this.folder(), "check-cache.json"), "utf8")) as CheckCache;
+      if (c && typeof c === "object") this.cache = c;
+    } catch { /* first run */ }
+    // What was learned before a restart still counts: no re-check right after every start, no requests while limited.
+    if (Number.isFinite(this.cache.rateLimitUntil)) this.rateLimitUntil = this.cache.rateLimitUntil!;
+    if (Number.isFinite(this.cache.checkedAt)) this.checkedAt = this.cache.checkedAt!;
     this.retryDelays = opts.retryDelaysMs ?? [1000, 3000];
     try {
       const c = JSON.parse(readFileSync(path.join(this.folder(), "config.json"), "utf8")) as Partial<UpdateConfig>;
@@ -120,6 +143,24 @@ export class ProjectUpdater {
       if (c.autoCheck === "off" || c.autoCheck === "hourly" || c.autoCheck === "daily") this.config.autoCheck = c.autoCheck;
     } catch { /* defaults */ }
     this.rollbackPending = existsSync(path.join(this.folder(), "rollback-request.json"));
+    if (this.cache.latest && this.cache.channel === this.config.channel) this.latest = this.cache.latest;
+    else this.checkedAt = 0;
+  }
+
+  private cacheWrite: Promise<void> = Promise.resolve();
+  private saveCache() {
+    const data = JSON.stringify({ ...this.cache, checkedAt: this.checkedAt, rateLimitUntil: this.rateLimitUntil, latest: this.latest, channel: this.config.channel });
+    this.cacheWrite = this.cacheWrite.catch(() => {}).then(async () => {
+      await mkdir(this.folder(), { recursive: true });
+      const file = path.join(this.folder(), "check-cache.json");
+      const tmp = file + "." + randomUUID().slice(0, 8) + ".tmp";
+      await writeFile(tmp, data); await rename(tmp, file);
+    }).catch(() => { /* the cache only saves requests */ });
+    return this.cacheWrite;
+  }
+  /** Rate-limit state and whether a personal token is in use (the token itself never leaves the server). */
+  githubAccess() {
+    return { token: this.token ? (this.token === this.envToken ? "env" : "saved") : "none", rateLimitedUntil: Date.now() < this.rateLimitUntil ? this.rateLimitUntil : null };
   }
 
   private folder() { return path.join(this.root, ".updates"); }
@@ -135,7 +176,7 @@ export class ProjectUpdater {
   getConfig(): UpdateConfig { return { ...this.config }; }
   lastCheckedAt() { return this.checkedAt; }
   status() {
-    return { ...this.state, latest: this.latest, localVersion: this.localVersion(), config: this.getConfig(), rollbackPending: this.rollbackPending, blocked: this.blocked() };
+    return { ...this.state, latest: this.latest, localVersion: this.localVersion(), config: this.getConfig(), rollbackPending: this.rollbackPending, blocked: this.blocked(), github: this.githubAccess() };
   }
   private localVersion(): string {
     try { return requireMarker(this.root); } catch { return UNKNOWN_VERSION; }
@@ -158,6 +199,16 @@ export class ProjectUpdater {
     const p = (patch && typeof patch === "object" ? patch : {}) as Record<string, unknown>;
     const next = { ...this.config };
     if (p.channel !== undefined) { if (p.channel !== "fresh" && p.channel !== "stable") throw Object.assign(new Error("Канал: fresh или stable"), { status: 400 }); next.channel = p.channel; }
+    if (p.githubToken !== undefined) {
+      const t = typeof p.githubToken === "string" ? p.githubToken.trim() : null;
+      if (t === null || (t && !/^[A-Za-z0-9_]{20,255}$/.test(t))) throw Object.assign(new Error("Токен GitHub выглядит неверно (ожидается ghp_… или github_pat_…)"), { status: 400 });
+      await mkdir(this.folder(), { recursive: true });
+      const tokenFile = path.join(this.folder(), "github-token");
+      if (t) await writeFile(tokenFile, t + "\n", { mode: 0o600 }); else await rm(tokenFile, { force: true });
+      this.token = t || this.envToken;
+      this.rateLimitUntil = 0; // a new token comes with its own, larger limit
+      await this.saveCache();
+    }
     if (p.autoCheck !== undefined) { if (p.autoCheck !== "off" && p.autoCheck !== "hourly" && p.autoCheck !== "daily") throw Object.assign(new Error("Автопроверка: off, hourly или daily"), { status: 400 }); next.autoCheck = p.autoCheck; }
     if (this.busy && next.channel !== this.config.channel) throw Object.assign(new Error("Дождитесь окончания подготовки обновления"), { status: 409 });
     const channelChanged = next.channel !== this.config.channel;
@@ -171,7 +222,7 @@ export class ProjectUpdater {
   }
 
   async check(force = true) {
-    if (!force && (this.busy || (this.latest && Date.now() - this.checkedAt < 60_000) || Date.now() < this.rateLimitUntil)) return this.status();
+    if (!force && (this.busy || (this.latest && Date.now() - this.checkedAt < AUTO_CHECK_MIN_MS) || Date.now() < this.rateLimitUntil)) return this.status();
     let target: { sha: string; message: string; date: string; tag?: string };
     if (this.config.channel === "stable") {
       let rel: any;
@@ -195,6 +246,7 @@ export class ProjectUpdater {
       changes: notes.items, changesTotal: notes.total,
     };
     this.checkedAt = Date.now();
+    await this.saveCache();
     return this.status();
   }
 
@@ -203,7 +255,8 @@ export class ProjectUpdater {
    * version: the marker is written so no update that changes nothing is offered. Best effort.
    */
   private async adoptIfIdentical(sha: string) {
-    if (this.localVersion() !== UNKNOWN_VERSION) return;
+    if (this.localVersion() !== UNKNOWN_VERSION || this.cache.adoptTried === sha) return;
+    this.cache.adoptTried = sha; // the whole tree is a big request: compare with each commit only once
     try {
       const tree = await this.getJson(API + "/git/trees/" + sha + "?recursive=1");
       if (tree.truncated || !Array.isArray(tree.tree)) return;
@@ -489,21 +542,34 @@ export class ProjectUpdater {
 
   private async getJson(url: string, signal?: AbortSignal): Promise<any> {
     if (Date.now() < this.rateLimitUntil) throw new GitHubError(this.rateLimitMessage(), 429);
-    const headers: Record<string, string> = { ...HEADERS, ...(this.token ? { authorization: "Bearer " + this.token } : {}) };
+    const cached = this.cache.etags?.[url];
+    const headers: Record<string, string> = { ...HEADERS, ...(this.token ? { authorization: "Bearer " + this.token } : {}), ...(cached ? { "if-none-match": cached.etag } : {}) };
     const response = await fetchTimed(url, { headers }, 20000, signal);
+    if (response.status === 304 && cached) { cached.at = Date.now(); return JSON.parse(cached.body); }
     if (!response.ok) {
-      if ((response.status === 403 || response.status === 429) && response.headers.get("x-ratelimit-remaining") === "0") {
+      const remaining = response.headers.get("x-ratelimit-remaining");
+      const retryAfter = Number(response.headers.get("retry-after"));
+      if ((response.status === 403 || response.status === 429) && (remaining === "0" || retryAfter > 0 || response.status === 429)) {
         const reset = Number(response.headers.get("x-ratelimit-reset"));
-        this.rateLimitUntil = Number.isFinite(reset) && reset > 0 ? reset * 1000 : Date.now() + 10 * 60_000;
+        this.rateLimitUntil = retryAfter > 0 ? Date.now() + retryAfter * 1000 : Number.isFinite(reset) && reset > 0 ? reset * 1000 : Date.now() + 10 * 60_000;
+        await this.saveCache();
         throw new GitHubError(this.rateLimitMessage(), 429);
       }
       throw new GitHubError("GitHub API: HTTP " + response.status, response.status);
     }
-    return response.json();
+    const text = await response.text();
+    const etag = response.headers.get("etag");
+    if (etag && text.length <= CACHE_MAX_BODY && !url.includes("/git/trees/")) {
+      const etags = this.cache.etags ??= {};
+      etags[url] = { etag, body: text, at: Date.now() };
+      const keys = Object.keys(etags);
+      if (keys.length > CACHE_MAX_ENTRIES) for (const k of keys.sort((a, b) => etags[a]!.at - etags[b]!.at).slice(0, keys.length - CACHE_MAX_ENTRIES)) delete etags[k];
+    }
+    return JSON.parse(text);
   }
   private rateLimitMessage() {
     const at = new Date(this.rateLimitUntil).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-    return `Лимит запросов GitHub исчерпан — повторите после ${at}. Можно указать GITHUB_TOKEN в .env, чтобы лимит стал выше.`;
+    return `Лимит запросов GitHub исчерпан — повторите после ${at}.${this.token ? "" : " Чтобы лимит стал выше, добавьте токен GitHub в разделе «Обновление»."}`;
   }
 }
 function gitHash(buf: Buffer) {
