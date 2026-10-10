@@ -1,4 +1,5 @@
 import importlib.util
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -27,7 +28,7 @@ class SQLiteArchiveTests(unittest.TestCase):
             self.assertEqual(second,{"tasks":1,"events":1,"awards":1,"records":1})
             self.assertEqual((root/"organizer.json").read_bytes(),original)
             self.assertTrue(Path(str(db)+".bak").exists())
-            with sqlite3.connect(db) as conn:
+            with closing(sqlite3.connect(db)) as conn:
                 self.assertEqual(json.loads(conn.execute("SELECT payload FROM tasks").fetchone()[0])["text"],"Зарядка")
                 self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0],"ok")
 
@@ -39,7 +40,7 @@ class SQLiteArchiveTests(unittest.TestCase):
             (root/"organizer.json").write_text("{invalid",encoding="utf-8")
             with self.assertRaises(json.JSONDecodeError):
                 module.migrate(root,db)
-            with sqlite3.connect(db) as conn:
+            with closing(sqlite3.connect(db)) as conn:
                 self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0],"ok")
 
 if __name__ == "__main__":
