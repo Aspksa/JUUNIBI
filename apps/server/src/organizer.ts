@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
+export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string }
 /** How a reminder repeats: every day, Monday to Friday, or every week on the same weekday. */
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days";
@@ -49,19 +50,21 @@ const text = (v: unknown, label: string) => {
 /** Notes, to-do items and reminders kept by the owner and (with approval) by the assistant. */
 export class Organizer {
   private notes: Note[] = [];
+  private missions: Mission[] = [];
   private reminders: Reminder[] = [];
   private writes: Promise<void> = Promise.resolve();
   constructor(private readonly file: string, private readonly now: () => number = Date.now) {}
 
   async load() {
     try {
-      const raw = JSON.parse(await readFile(this.file, "utf8")) as { notes?: unknown; reminders?: unknown };
+      const raw = JSON.parse(await readFile(this.file, "utf8")) as { notes?: unknown; reminders?: unknown; missions?: unknown };
+      if (Array.isArray(raw.missions)) this.missions = raw.missions.filter((m): m is Mission => !!m && typeof m.id === "string" && typeof m.title === "string" && typeof m.description === "string" && typeof m.createdAt === "string" && ["active","paused","complete"].includes(m.status)).slice(-100);
       if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= MAX_TEXT && typeof n.done === "boolean" && typeof n.createdAt === "string").slice(-MAX_NOTES);
       if (Array.isArray(raw.reminders)) this.reminders = raw.reminders.filter((r): r is Reminder => !!r && typeof r.id === "string" && typeof r.text === "string" && r.text.length <= MAX_TEXT && !Number.isNaN(Date.parse(r.at)) && ["scheduled", "due", "done"].includes(r.status) && (r.repeat === undefined || REPEATS.includes(r.repeat))).slice(-MAX_REMINDERS);
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   private save() {
-    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders });
+    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions });
     this.writes = this.writes.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + "." + randomUUID() + ".tmp";
@@ -72,6 +75,47 @@ export class Organizer {
   }
   flush() { return this.writes; }
 
+  /** Read-only Mission Control. Existing tasks remain the canonical progress source. */
+  missionBoard() {
+    return this.missions.map(m => {
+      const tasks = this.notes.filter(n => n.kind === "todo" && n.project === m.id);
+      const done = tasks.filter(n => n.done).length;
+      const open = tasks.filter(n => !n.done);
+      const blocked = open.filter(n => n.parentId && this.notes.some(p => p.id === n.parentId && !p.done));
+      const available = open.filter(n => !blocked.some(b => b.id === n.id));
+      const priority = (n: Note) => n.priority === "high" ? 2 : n.priority === "normal" ? 1 : 0;
+      available.sort((a,b)=>priority(b)-priority(a)||(a.dueAt??"9999").localeCompare(b.dueAt??"9999"));
+      const next = available[0];
+      return { ...m, total:tasks.length, done, percent:tasks.length?Math.round(done*100/tasks.length):0,
+        blocked:blocked.length, next:next ? {id:next.id,text:next.text,reason:next.dueAt?"Ближайший срок и приоритет":"Доступный этап"} : null,
+        stages:tasks.map(t=>({id:t.id,text:t.text,done:t.done,parentId:t.parentId??null,priority:t.priority??"normal"})) };
+    });
+  }
+  async addMission(title: unknown, description: unknown = ""): Promise<Mission> {
+    const name = text(title,"Название миссии");
+    if (this.missions.length >= 100) throw bad("Достигнут лимит миссий",409);
+    if (this.missions.some(m=>m.title.toLowerCase()===name.toLowerCase())) throw bad("Миссия с таким названием уже существует",409);
+    if (typeof description !== "string" || description.length > 1000) throw bad("Описание до 1000 символов");
+    const mission: Mission = {id:randomUUID(),title:name,description:description.trim(),createdAt:new Date(this.now()).toISOString(),status:"active"};
+    this.missions.push(mission);
+    await this.save();
+    return {...mission};
+  }
+  async updateMission(id:string,status:unknown): Promise<Mission> {
+    const mission=this.missions.find(m=>m.id===id);
+    if (!mission) throw bad("Миссия не найдена",404);
+    if (!["active","paused","complete"].includes(String(status))) throw bad("Некорректный статус");
+    mission.status=status as Mission["status"];
+    await this.save();
+    return {...mission};
+  }
+  async addMissionStage(id:string,description:unknown):Promise<Note>{
+    const mission=this.missions.find(m=>m.id===id);
+    if (!mission) throw bad("Миссия не найдена",404);
+    if (mission.status!=="active") throw bad("Миссия приостановлена",409);
+    const stage=await this.addNote("todo",description);
+    return this.updateTask(stage.id,{project:id});
+  }
   // ---------- notes and to-dos ----------
   listNotes(): Note[] { return this.notes.map((n) => ({ ...n })); }
   async addNote(kind: unknown, body: unknown): Promise<Note> {
@@ -203,6 +247,40 @@ export class Organizer {
     if (rep) { r.repeat = rep; if (rep === "monthly") r.repeatDay = new Date(at).getDate(); else delete r.repeatDay; } else { delete r.repeat; delete r.repeatDay; }
     await this.save();
     return { ...r };
+  }
+  /** Snoozes a fired one-off occurrence, never silently shifts its repeating series. */
+  async snoozeReminder(id: string, minutes: unknown): Promise<Reminder> {
+    if (!Number.isInteger(minutes) || ![5, 10, 15, 30, 60, 1440].includes(Number(minutes))) throw bad("Отложить можно на 5, 10, 15, 30, 60 минут или сутки");
+    const r = this.reminders.find(x => x.id === id);
+    if (!r) throw bad("Напоминание не найдено", 404);
+    if (r.status !== "due") throw bad("Отложить можно только сработавшее напоминание", 409);
+    r.at = new Date(this.now() + Number(minutes) * 60_000).toISOString();
+    r.status = "scheduled";
+    delete r.firedAt;
+    await this.save();
+    return { ...r };
+  }
+  /** Suggest a finite working-day schedule without modifying the task list or promising external calendar availability. */
+  timeBlocks(day: string, startHour = 9, endHour = 18) {
+    if (!/^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(day)) throw bad("День: YYYY-MM-DD");
+    const d = new Date(day + "T12:00:00");
+    if (Number.isNaN(d.getTime()) || [d.getFullYear(), d.getMonth()+1, d.getDate()].join("-") !== day.split("-").map(Number).join("-")) throw bad("Недопустимая дата");
+    if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || startHour < 0 || endHour > 24 || endHour <= startHour) throw bad("Неверные рабочие часы");
+    const minutes = (endHour-startHour)*60;
+    const tasks = this.notes.filter(n=>n.kind==="todo"&&!n.done && !n.parentId);
+    const ordered = [...tasks].sort((a,b)=>(b.priority==="high"?2:b.priority==="normal"?1:0)-(a.priority==="high"?2:a.priority==="normal"?1:0) || (a.dueAt??"9999").localeCompare(b.dueAt??"9999"));
+    let used = 0;
+    const blocks: { id:string; text:string; start:string; end:string; minutes:number }[] = [];
+    for (const task of ordered) {
+      const duration = task.estimateMinutes ?? 30;
+      if (used + duration > minutes) continue;
+      const from = new Date(d); from.setHours(startHour, used, 0, 0);
+      const to = new Date(from.getTime()+duration*60_000);
+      blocks.push({id:task.id,text:task.text,start:from.toISOString(),end:to.toISOString(),minutes:duration});
+      used += duration;
+    }
+    return {day, workingMinutes:minutes, plannedMinutes:used, remainingMinutes:minutes-used, blocks,
+      note:"Предложение по задачам; занятость внешнего календаря не проверялась", advisoryOnly:true as const};
   }
   async dismissReminder(id: string): Promise<Reminder> {
     const r = this.reminders.find((x) => x.id === id);

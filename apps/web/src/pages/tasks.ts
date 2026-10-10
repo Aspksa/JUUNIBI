@@ -27,33 +27,122 @@ export function tasksPage(): HTMLElement {
   let detailId: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
+  const missionsHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Mission Control"}});
+  const missionTitle = el("input",{type:"text",maxLength:500,cls:"mem-input",placeholder:"Название новой миссии",attrs:{"aria-label":"Название новой миссии"}});
+  const missionDescription = el("input",{type:"text",maxLength:1000,cls:"mem-input",placeholder:"Цель миссии (необязательно)",attrs:{"aria-label":"Описание миссии"}});
+  const refreshMissions = async () => {
+    const response=await api.missions();
+    const header=el("h2",{textContent:"Mission Control · Достигни цели"});
+    const help=el("p",{cls:"muted small",textContent:"Создавай миссии, добавляй этапы и отмечай выполненные дела. JUUNIBI предложит следующий доступный этап по подтверждённому прогрессу."});
+    const form=el("form",{cls:"tasks-add"},el("div",{cls:"tasks-add-row"},missionTitle,missionDescription,btn("Создать миссию",()=>{}, {primary:true,icon:"plus"})));
+    form.addEventListener("submit",async e=>{
+      e.preventDefault();
+      if(!missionTitle.value.trim())return;
+      const created=await api.addMission(missionTitle.value.trim(),missionDescription.value.trim());
+      if(!created.ok){showToast(created.error.message);return;}
+      missionTitle.value="";missionDescription.value="";
+      void refreshMissions();
+    });
+    if(!response.ok){missionsHost.replaceChildren(header,help,form,el("p",{cls:"muted",textContent:response.error.message}));return;}
+    const cards=response.value.map(m=>{
+      const stageText=el("input",{type:"text",maxLength:500,cls:"mem-input",placeholder:"Новый этап",attrs:{"aria-label":"Этап миссии "+m.title}});
+      const stageForm=el("form",{cls:"tasks-add-row"},stageText,btn("Добавить этап",()=>{}, {small:true}));
+      stageForm.addEventListener("submit",async e=>{
+        e.preventDefault();
+        if(!stageText.value.trim())return;
+        const result=await api.addMissionStage(m.id,stageText.value.trim());
+        if(!result.ok)showToast(result.error.message);else{stageText.value="";void load();}
+      });
+      const status=el("select",{cls:"mem-select",attrs:{"aria-label":"Статус миссии "+m.title}},
+        ...([["active","В работе"],["paused","Пауза"],["complete","Завершена"]] as const).map(([value,label])=>el("option",{value,textContent:label})));
+      status.value=m.status;
+      status.addEventListener("change",async()=>{
+        const result=await api.changeMissionStatus(m.id,status.value as "active"|"paused"|"complete");
+        if(!result.ok)showToast(result.error.message);
+        void refreshMissions();
+      });
+      const stages=el("ul",{cls:"org-list"},...m.stages.map(t=>{
+        const check=el("input",{type:"checkbox",checked:t.done,attrs:{"aria-label":"Выполнить этап "+t.text}});
+        check.addEventListener("change",()=>void act(()=>api.setTodoDone(t.id,check.checked),"Этап обновлён"));
+        return el("li",{cls:"org-row"},check,el("span",{cls:"grow",textContent:t.text}));
+      }));
+      return el("div",{cls:"tasks-mission-card"},
+        el("div",{cls:"tasks-mission-head"},el("h3",{textContent:m.title}),status),
+        el("p",{cls:"muted small",textContent:m.description||"Личная цель"}),
+        el("div",{cls:"tasks-mission-metrics"},el("strong",{textContent:m.percent+"%"}),el("span",{textContent:m.done+" из "+m.total+" этапов · Заблокировано: "+m.blocked})),
+        el("progress",{max:"100",value:String(m.percent),attrs:{"aria-label":"Прогресс миссии "+m.title}}),
+        m.next?el("p",{cls:"tasks-mission-next",textContent:"Следующий шаг: "+m.next.text+" · "+m.next.reason}):el("p",{cls:"muted small",textContent:m.total?"Все этапы завершены или ожидают зависимостей":"Добавь первый этап"}),
+        stages,m.status==="active"?stageForm:null);
+    });
+    missionsHost.replaceChildren(header,help,form,...(cards.length?cards:[el("p",{cls:"muted",textContent:"Миссий пока нет. Создай первую цель."})]));
+  };
   const planHost = el("section", { cls:"pg-card",attrs:{"aria-label":"План дня"} }, el("p",{cls:"muted",textContent:"План дня загружается…"}));
 
   const month = el("input", { type:"month",value:new Date().toISOString().slice(0,7),cls:"mem-select",attrs:{"aria-label":"Месяц календаря"} });
   const calendarHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Календарь и продуктивность"}});
+  let selectedDay = new Date().toLocaleDateString("sv-SE");
+  const selectedHost = el("div",{cls:"tasks-selected-day"});
+  const renderSelectedDay = () => {
+    selectedHost.replaceChildren(el("h3",{textContent:"Выбранный день: "+selectedDay}),
+      el("p",{cls:"muted small",textContent:"Перенесите дело на этот день — укажите его в списке ниже."}));
+    if (!data) return;
+    const due = data.notes.filter(n=>n.kind==="todo"&&!n.done&&n.dueAt?.startsWith(selectedDay));
+    const options = data.notes.filter(n=>n.kind==="todo"&&!n.done);
+    const task = el("select",{cls:"mem-select",attrs:{"aria-label":"Дело для переноса"}},
+      el("option",{value:"",textContent:"Выберите дело"}),...options.map(n=>el("option",{value:n.id,textContent:n.text.slice(0,90)})));
+    selectedHost.append(el("p",{cls:"muted small",textContent:due.length?"На этот день назначено: "+due.map(n=>n.text).join("; "):"На этот день пока нет дел"}),task,
+      btn("Перенести на этот день",()=>{if(!task.value)return;const original=data!.notes.find(n=>n.id===task.value);const hours=original?.dueAt?new Date(original.dueAt).toTimeString().slice(0,5):"10:00";const iso=fromLocal(selectedDay+"T"+hours);if(iso)void act(()=>api.updateTask(task.value,{dueAt:iso}),"Дело перенесено");},{small:true,primary:true}));
+  };
+  const blocksHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Свободное время"}});
+  const loadBlocks = async () => {
+    const r=await api.timeBlocks(selectedDay);
+    if(!r.ok){blocksHost.replaceChildren(el("p",{cls:"muted",textContent:"План времени недоступен"}));return;}
+    const v=r.value;
+    blocksHost.replaceChildren(el("h2",{textContent:"План свободного времени · "+selectedDay}),
+      el("p",{cls:"muted small",textContent:`Рабочий период: 09:00–18:00 · В плане: ${v.plannedMinutes} мин · Осталось: ${v.remainingMinutes} мин`}),
+      el("p",{cls:"muted small",textContent:v.note}),
+      el("ul",{cls:"org-list"},...v.blocks.map(b=>el("li",{cls:"org-row"},el("span",{cls:"br-tag",textContent:new Date(b.start).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}),el("span",{cls:"grow",textContent:b.text}),el("span",{cls:"muted small",textContent:b.minutes+" мин"})))));
+  };
   const renderInsights = async () => {
     const r = await api.taskInsights(month.value);
     if (!r.ok) { calendarHost.replaceChildren(el("p",{cls:"muted",textContent:"Календарь временно недоступен"})); return; }
     const {statistics:stats, items,brainRecommendations} = r.value;
     const days = new Map<string, typeof items>();
     for(const item of items){const day=item.at.slice(0,10);days.set(day,[...(days.get(day)??[]),item]);}
+    const [year, mon] = month.value.split("-").map(Number);
+    const first = new Date(year!,mon!-1,1);
+    const cells: HTMLElement[] = [];
+    for (let i=0;i<(first.getDay()+6)%7;i++) cells.push(el("div",{cls:"tasks-calendar-empty"}));
+    for (let day=1;day<=new Date(year!,mon!,0).getDate();day++) {
+      const date = month.value+"-"+String(day).padStart(2,"0");
+      const entries = days.get(date) ?? [];
+      const cell = el("button",{type:"button",cls:"tasks-calendar-day"+(date===new Date().toLocaleDateString("sv-SE")?" today":""),
+        attrs:{"aria-label":date+": "+entries.length+" записей"},
+      },el("strong",{textContent:String(day)}),...entries.slice(0,3).map(x=>el("span",{cls:"tasks-calendar-event"+(x.done?" done":""),textContent:(x.kind==="reminder"?"◷ ":"✓ ")+x.text.slice(0,28)})),
+      ...(entries.length>3?[el("small",{textContent:"Ещё "+(entries.length-3)})]:[]));
+      cell.addEventListener("click",()=>{selectedDay=date;renderSelectedDay();void loadBlocks();});
+      cells.push(cell);
+    }
     calendarHost.replaceChildren(
       el("h2",{textContent:"Календарь · "+month.value}),
-      el("p",{cls:"muted small",textContent:`Выполнено: ${stats.completed} из ${stats.all} (${stats.completionPercent}%) · За месяц: ${stats.completedThisMonth} · Просрочено: ${stats.overdue}`}),
-      el("ul",{cls:"org-list"},...[...days.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([day,entries])=>
-        el("li",{cls:"org-row"},el("span",{cls:"br-tag",textContent:day}),
-          el("span",{cls:"grow",textContent:entries.map(x=>(x.done?"✓ ":"")+x.text).join(" · ").slice(0,450)})))),
+      el("div",{cls:"tasks-stat-strip"},
+        ...([["Выполнено",String(stats.completed)],["В работе",String(stats.open)],["Просрочено",String(stats.overdue)],["Готовность",stats.completionPercent+"%"]] as const).map(([label,value])=>el("div",{cls:"tasks-stat"},el("span",{textContent:label}),el("strong",{textContent:value})))),
+      el("div",{cls:"tasks-calendar-weekdays"},...["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map(x=>el("span",{textContent:x}))),
+      el("div",{cls:"tasks-calendar-grid"},...cells),
+      selectedHost,
       el("h3",{textContent:"Рекомендации JUUNIBI · Brain"}),
-      el("p",{cls:"muted small",textContent:"Основаны на реальных сроках и приоритетах. Дела не меняются автоматически."}),
-      el("ul",{cls:"org-list"},...brainRecommendations.map(x=>
-        el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})))));
+      el("p",{cls:"muted small",textContent:"Приоритеты и сроки из данных дел. Рекомендации не изменяют расписание автоматически."}),
+      el("ul",{cls:"org-list"},...brainRecommendations.map(x=>el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})))));
+    renderSelectedDay();
   };
   month.addEventListener("change",()=>void renderInsights());
   const load = async () => {
     const r = await api.organizer();
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     render();
+    void refreshMissions();
     void renderInsights();
+    void loadBlocks();
     const plan = await api.taskPlan();
     if (plan.ok) {
       const v = plan.value;
@@ -167,6 +256,8 @@ export function tasksPage(): HTMLElement {
       el("span", { cls: "org-ic", attrs: { "aria-hidden": "true" } }, icon("clock", 16)),
       el("span", { cls: "grow", textContent: r.text }), ...tags,
       r.status === "due" ? btn("Готово", () => void act(() => api.dismissReminder(r.id)), { small: true, primary: true }) : null,
+      r.status === "due" ? btn("Через 10 мин", () => void act(() => api.snoozeReminder(r.id,10),"Отложено на 10 минут"), {small:true}) : null,
+      r.status === "due" ? btn("Через час", () => void act(() => api.snoozeReminder(r.id,60),"Отложено на час"), {small:true}) : null,
       r.status === "scheduled" ? iconButton("edit", "Изменить напоминание: " + r.text, () => { editing = r.id; render(); }, "icon-btn sm") : null,
       iconButton("trash", r.repeat ? "Удалить повторяющееся напоминание" : "Удалить напоминание", () => {
         if (!r.repeat || confirm("Удалить повторяющееся напоминание? Оно больше не сработает.")) void act(() => api.removeReminder(r.id), "Удалено");
@@ -209,8 +300,10 @@ export function tasksPage(): HTMLElement {
     pageHead("check", "Дела", "Дела, заметки и напоминания. Напоминания срабатывают, пока JUUNIBI запущен."),
     el("section", { cls: "pg-card" }, form),
     planHost,
+    missionsHost,
     el("section",{cls:"pg-card"},el("label",{textContent:"Месяц календаря"}),month),
     calendarHost,
+    blocksHost,
     el("div", { cls: "mem-toolbar" }, search, chipsHost, perm),
     listHost);
 }
