@@ -14,7 +14,18 @@ export const DEFAULT_TITLE = "Новый чат";
 const KEY = "juunibi:chats:v1";
 const MAX_CONVERSATIONS = 100;
 const MAX_MESSAGES = 300;
-const uid = () => crypto.randomUUID();
+/**
+ * crypto.randomUUID exists only in secure contexts (https or localhost). The phone opens JUUNIBI over plain
+ * http on the home network, so fall back to a v4 UUID built from getRandomValues, which works everywhere.
+ */
+export function uid(c: Pick<Crypto, "getRandomValues"> & { randomUUID?: () => string } = crypto): string {
+  if (typeof c.randomUUID === "function") return c.randomUUID();
+  const b = c.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const strings = (x: unknown): string[] | undefined => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string") : undefined);

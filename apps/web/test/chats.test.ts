@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { groupLabel, titleFrom } from "../src/chat/chats";
+import { groupLabel, titleFrom, uid } from "../src/chat/chats";
+import { webcrypto } from "node:crypto";
 
 describe("titleFrom", () => {
   it("collapses whitespace and truncates with an ellipsis", () => {
@@ -21,5 +22,14 @@ describe("groupLabel", () => {
     expect(groupLabel(day(5), now)).toBe("Предыдущие 7 дней");
     expect(groupLabel(day(20), now)).toBe("Предыдущие 30 дней");
     expect(groupLabel(day(90), now)).toBe("Ранее");
+  });
+});
+
+describe("uid", () => {
+  it("works without crypto.randomUUID (phone on plain http)", () => {
+    const insecure = { getRandomValues: <T extends ArrayBufferView | null>(a: T) => webcrypto.getRandomValues(a as Uint8Array) as T };
+    const ids = new Set(Array.from({ length: 50 }, () => uid(insecure)));
+    expect(ids.size).toBe(50);
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
