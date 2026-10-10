@@ -177,7 +177,22 @@ function settingsCard(s: AppState): HTMLElement | null {
   };
   return el("section", { cls: "upd-settings" }, el("h2", { textContent: "Настройки обновления" }),
     field("Канал", "channel", [["fresh", "Свежий (последние изменения)"], ["stable", "Стабильный (только выпуски)"]], "Свежий — каждая версия, прошедшая проверки; стабильный — только помеченные выпуски."),
-    field("Автопроверка", "autoCheck", [["hourly", "Каждый час"], ["daily", "Раз в сутки"], ["off", "Выключена"]], "JUUNIBI сам смотрит, есть ли новая версия, и показывает отметку в меню. Ничего не скачивается без вашего согласия."));
+    field("Автопроверка", "autoCheck", [["hourly", "Каждый час"], ["daily", "Раз в сутки"], ["off", "Выключена"]], "JUUNIBI сам смотрит, есть ли новая версия, и показывает отметку в меню. Ничего не скачивается без вашего согласия."),
+    tokenField(s));
+}
+
+/** Without a token GitHub allows 60 requests an hour per network; a personal token raises it to 5000. */
+function tokenField(s: AppState): HTMLElement {
+  const g = s.update?.github;
+  const input = el("input", { type: "password", autocomplete: "off", spellcheck: false, placeholder: g?.token === "saved" ? "Токен сохранён — вставьте новый, чтобы заменить" : "ghp_… или github_pat_…", attrs: { "aria-label": "Токен GitHub" } });
+  const until = g?.rateLimitedUntil ? new Date(g.rateLimitedUntil).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+  const hint = g?.token === "env" ? "Используется GITHUB_TOKEN из .env." : g?.token === "saved" ? "Токен сохранён на этом компьютере и никуда не отправляется, кроме GitHub." :
+    "Необязательно. Без токена GitHub даёт около 60 проверок в час на вашу сеть. Подойдёт токен без прав (public repositories, read-only).";
+  return el("div", { cls: "upd-field" },
+    el("span", {}, el("strong", { textContent: "Токен GitHub" }), el("small", { cls: "muted", textContent: hint + (until ? ` Сейчас лимит исчерпан до ${until}.` : "") })),
+    el("div", { cls: "row" }, input,
+      button("Сохранить", () => { const v = input.value.trim(); if (v) void saveUpdateConfig({ githubToken: v }); }),
+      g?.token === "saved" ? button("Удалить", () => void saveUpdateConfig({ githubToken: "" })) : null));
 }
 
 const KIND_TEXT: Record<string, string> = { install: "Установлена", rollback: "Откат", failed: "Не установлена (откат)", startup_failed: "Не запустилась (возвращена прежняя)" };

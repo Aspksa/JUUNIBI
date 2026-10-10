@@ -100,7 +100,7 @@ export async function cancelUpdate() {
   const r = await api.updateCancel();
   if (r.ok) app.set({ update: r.value, updateError: "" }); else app.set({ updateError: r.error.message });
 }
-export async function saveUpdateConfig(patch: Partial<NonNullable<UpdateStatus["config"]>>) {
+export async function saveUpdateConfig(patch: Partial<NonNullable<UpdateStatus["config"]>> & { githubToken?: string }) {
   const r = await api.updateSettings(patch);
   if (r.ok) app.set({ update: r.value, updateError: "" }); else app.set({ updateError: r.error.message });
   if (r.ok && patch.channel) void checkUpdate(); // the other channel may have a different newest version
