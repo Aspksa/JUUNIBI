@@ -27,11 +27,19 @@ export function tasksPage(): HTMLElement {
   let detailId: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
+  const planHost = el("section", { cls:"pg-card",attrs:{"aria-label":"План дня"} }, el("p",{cls:"muted",textContent:"План дня загружается…"}));
 
   const load = async () => {
     const r = await api.organizer();
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     render();
+    const plan = await api.taskPlan();
+    if (plan.ok) {
+      const v = plan.value;
+      planHost.replaceChildren(el("h2",{textContent:"План дня · рекомендовано"}),
+        el("p",{cls:"muted small",textContent:`Открыто: ${v.total} · Просрочено: ${v.overdue} · Оценка: ${v.estimatedMinutes} мин`}),
+        el("ul",{cls:"org-list"},...v.suggested.map(x=>el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})) )));
+    } else planHost.replaceChildren(el("p",{cls:"muted",textContent:"План дня временно недоступен"}));
   };
   /** Runs a change, reports a failure, reloads the list and the reminder badge on Home. */
   const act = async (run: () => Promise<{ ok: boolean; error?: { message: string } }>, ok?: string) => {
@@ -179,6 +187,7 @@ export function tasksPage(): HTMLElement {
   return el("div", { cls: "page tasks-page" },
     pageHead("check", "Дела", "Дела, заметки и напоминания. Напоминания срабатывают, пока JUUNIBI запущен."),
     el("section", { cls: "pg-card" }, form),
+    planHost,
     el("div", { cls: "mem-toolbar" }, search, chipsHost, perm),
     listHost);
 }
