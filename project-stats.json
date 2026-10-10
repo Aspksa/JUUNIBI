@@ -1,0 +1,1944 @@
+{
+ "version": 1,
+ "generatedAt": "2026-10-10T14:41:05.177Z",
+ "head": "56650c91086e7dd7393afadfc3a2359bd84bc0ac",
+ "commits": 206,
+ "groups": [
+  {
+   "id": "anatomy",
+   "title": "Анатомия файлов"
+  },
+  {
+   "id": "mind",
+   "title": "Интеллект и возможности"
+  },
+  {
+   "id": "life",
+   "title": "Жизнь и история"
+  },
+  {
+   "id": "care",
+   "title": "Надёжность и скорость"
+  },
+  {
+   "id": "fun",
+   "title": "Секретные и забавные рекорды"
+  },
+  {
+   "id": "code",
+   "title": "Код под микроскопом"
+  }
+ ],
+ "metrics": [
+  {
+   "id": "words_added",
+   "group": "anatomy",
+   "emoji": "📜",
+   "title": "Сколько слов родилось",
+   "hint": "Все добавленные слова",
+   "value": "345 468",
+   "detail": "за 206 коммитов",
+   "kind": "line",
+   "series": [
+    5003,
+    53084,
+    90786,
+    90786,
+    90786,
+    103156,
+    112000,
+    123202,
+    146246,
+    179670,
+    188751,
+    189878,
+    189878,
+    189878,
+    189878,
+    189878,
+    189878,
+    205748,
+    217196,
+    256348,
+    273336,
+    281512,
+    291247,
+    345468
+   ]
+  },
+  {
+   "id": "words_removed",
+   "group": "anatomy",
+   "emoji": "✂️",
+   "title": "Сколько слов исчезло",
+   "hint": "Удалённые слова",
+   "value": "43 666",
+   "detail": "13% от родившихся",
+   "ring": 0.126
+  },
+  {
+   "id": "words_rewritten",
+   "group": "anatomy",
+   "emoji": "🔄",
+   "title": "Переписанная история",
+   "hint": "Сколько слов заменили",
+   "value": "43 398",
+   "detail": "слова, ушедшие ради новых",
+   "kind": "spark",
+   "series": [
+    1,
+    2805,
+    7931,
+    0,
+    0,
+    1926,
+    636,
+    502,
+    3218,
+    3535,
+    426,
+    55,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2349,
+    2611,
+    6829,
+    4916,
+    77,
+    1824,
+    3757
+   ]
+  },
+  {
+   "id": "files_born",
+   "group": "anatomy",
+   "emoji": "🍼",
+   "title": "Новорождённые файлы",
+   "hint": "Создано за период",
+   "value": "321",
+   "detail": "за неделю: 321",
+   "kind": "line",
+   "series": [
+    24,
+    54,
+    83,
+    83,
+    83,
+    94,
+    107,
+    145,
+    175,
+    204,
+    236,
+    239,
+    239,
+    239,
+    239,
+    239,
+    239,
+    253,
+    258,
+    283,
+    291,
+    296,
+    301,
+    321
+   ]
+  },
+  {
+   "id": "files_graveyard",
+   "group": "anatomy",
+   "emoji": "💀",
+   "title": "Кладбище файлов",
+   "hint": "Сколько удалено",
+   "value": "2",
+   "detail": "prod-calendar.ts, prod-calendar.test.ts",
+   "kind": "spark",
+   "series": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "giant",
+   "group": "anatomy",
+   "emoji": "🏋️",
+   "title": "Файл-гигант",
+   "hint": "Самый большой файл",
+   "value": "1 614 строк",
+   "detail": "apps/web/src/style.css",
+   "kind": "spark",
+   "series": [
+    1614,
+    1082,
+    963,
+    961,
+    692,
+    678,
+    632,
+    476
+   ],
+   "labels": [
+    "style.css",
+    "organizer.ts",
+    "tasks.ts",
+    "achievements.ts",
+    "app.ts",
+    "settings.ts",
+    "updater.ts",
+    "memory.ts"
+   ]
+  },
+  {
+   "id": "tiny",
+   "group": "anatomy",
+   "emoji": "🐜",
+   "title": "Самый маленький",
+   "hint": "Минимум строк",
+   "value": "5 строк",
+   "detail": "apps/server/src/learning-priorities.ts",
+   "kind": "spark",
+   "series": [
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "labels": [
+    "learning-priorities.ts",
+    "index.ts",
+    "vite.config.ts",
+    "build-server.mjs",
+    "brain-v6-arithmetic.ts",
+    "index.ts",
+    "contrast.ts",
+    "chat-task-triage.ts"
+   ]
+  },
+  {
+   "id": "oldtimer",
+   "group": "anatomy",
+   "emoji": "🏚️",
+   "title": "Старожил проекта",
+   "hint": "Дольше всех без изменений",
+   "value": "2 дня",
+   "detail": ".gitattributes",
+   "kind": "spark",
+   "series": [
+    11,
+    14,
+    11,
+    0,
+    0,
+    4,
+    12,
+    35,
+    32,
+    29,
+    31,
+    4,
+    0,
+    0,
+    0,
+    0,
+    0,
+    26,
+    13,
+    30,
+    7,
+    1,
+    11,
+    48
+   ]
+  },
+  {
+   "id": "hot",
+   "group": "anatomy",
+   "emoji": "🔥",
+   "title": "Горячий файл",
+   "hint": "Чаще всего редактировали",
+   "value": "63 правки",
+   "detail": "apps/server/src/app.ts",
+   "kind": "spark",
+   "series": [
+    63,
+    47,
+    37,
+    34,
+    33,
+    32,
+    29,
+    26
+   ],
+   "labels": [
+    "app.ts",
+    "main.ts",
+    "style.css",
+    "brain.ts",
+    "README.md",
+    "main.ts",
+    "api.ts",
+    "assistant.ts"
+   ]
+  },
+  {
+   "id": "grown",
+   "group": "anatomy",
+   "emoji": "🌱",
+   "title": "Самый выросший",
+   "hint": "Максимальный прирост строк",
+   "value": "+6 244",
+   "detail": "apps/server/assets/JUUNIBI_365_cinematic_actions.json",
+   "kind": "spark",
+   "series": [
+    6244,
+    4942,
+    1614,
+    1082,
+    963,
+    961,
+    692,
+    678
+   ],
+   "labels": [
+    "JUUNIBI_365_cinematic_actions.json",
+    "JUUNIBI_452_phrases.json",
+    "style.css",
+    "organizer.ts",
+    "tasks.ts",
+    "achievements.ts",
+    "app.ts",
+    "settings.ts"
+   ]
+  },
+  {
+   "id": "languages",
+   "group": "anatomy",
+   "emoji": "🎨",
+   "title": "Языки проекта",
+   "hint": "Строки по типам файлов",
+   "value": "63% ts",
+   "detail": "всего 41 989 строк",
+   "kind": "split",
+   "series": [
+    26482,
+    11332,
+    2068,
+    1314,
+    294
+   ],
+   "labels": [
+    "ts",
+    "json",
+    "css",
+    "mjs",
+    "py"
+   ]
+  },
+  {
+   "id": "avg_file",
+   "group": "anatomy",
+   "emoji": "📏",
+   "title": "Средний файл",
+   "hint": "Строк в файле кода",
+   "value": "102 строки",
+   "detail": "медиана: 47",
+   "kind": "spark",
+   "series": [
+    158,
+    52,
+    52,
+    22,
+    8,
+    4
+   ],
+   "labels": [
+    "до 50 строк",
+    "до 100 строк",
+    "до 200 строк",
+    "до 400 строк",
+    "до 800 строк",
+    "больше 800 строк"
+   ]
+  },
+  {
+   "id": "folders",
+   "group": "anatomy",
+   "emoji": "🗂️",
+   "title": "Папки",
+   "hint": "Сколько разных папок",
+   "value": "20",
+   "detail": "файлов в среднем: 16",
+   "kind": "spark",
+   "series": [
+    170,
+    85,
+    34,
+    11,
+    8,
+    8,
+    2,
+    1
+   ],
+   "labels": [
+    "apps/server",
+    "apps/web",
+    "packages/assistant",
+    "packages/core",
+    "корень",
+    "scripts",
+    ".github",
+    "docs"
+   ]
+  },
+  {
+   "id": "docs",
+   "group": "anatomy",
+   "emoji": "📝",
+   "title": "Документация",
+   "hint": "Строки в файлах .md",
+   "value": "260 строк",
+   "detail": "2 файла, 1% всех строк",
+   "ring": 0.006
+  },
+  {
+   "id": "data",
+   "group": "anatomy",
+   "emoji": "🗃️",
+   "title": "Данные",
+   "hint": "Файлы JSON",
+   "value": "0,4 МБ",
+   "detail": "13 файлов, 16% веса",
+   "ring": 0.164
+  },
+  {
+   "id": "brain",
+   "group": "mind",
+   "emoji": "🧠",
+   "title": "Рост мозга",
+   "hint": "Изменения файлов логики",
+   "value": "11 671 строка",
+   "detail": "24% всех правок",
+   "ring": 0.236
+  },
+  {
+   "id": "abilities",
+   "group": "mind",
+   "emoji": "🧩",
+   "title": "Новые способности",
+   "hint": "Добавленные модули",
+   "value": "88",
+   "detail": "за неделю: 88",
+   "kind": "line",
+   "series": [
+    6,
+    17,
+    17,
+    17,
+    17,
+    19,
+    21,
+    39,
+    50,
+    59,
+    75,
+    76,
+    76,
+    76,
+    76,
+    76,
+    76,
+    80,
+    80,
+    82,
+    84,
+    85,
+    86,
+    88
+   ]
+  },
+  {
+   "id": "library",
+   "group": "mind",
+   "emoji": "📚",
+   "title": "Библиотека знаний",
+   "hint": "Объём базы знаний",
+   "value": "—",
+   "detail": "считает работающий JUUNIBI"
+  },
+  {
+   "id": "links",
+   "group": "mind",
+   "emoji": "🔗",
+   "title": "Новые связи",
+   "hint": "Рост графа знаний",
+   "value": "—",
+   "detail": "считает работающий JUUNIBI"
+  },
+  {
+   "id": "memory",
+   "group": "mind",
+   "emoji": "💭",
+   "title": "Развитие памяти",
+   "hint": "Новые функции памяти",
+   "value": "30 коммитов",
+   "detail": "файлов памяти: 6",
+   "kind": "spark",
+   "series": [
+    0,
+    1,
+    1,
+    0,
+    0,
+    5,
+    12,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    4,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "tools",
+   "group": "mind",
+   "emoji": "🦾",
+   "title": "Новые инструменты",
+   "hint": "Подключённые действия",
+   "value": "16",
+   "detail": "инструментов у помощницы",
+   "kind": "dots",
+   "series": [
+    16
+   ]
+  },
+  {
+   "id": "guards",
+   "group": "mind",
+   "emoji": "🛡️",
+   "title": "Защитные механизмы",
+   "hint": "Новые проверки",
+   "value": "221",
+   "detail": "проверок входных данных в коде",
+   "kind": "spark",
+   "series": [
+    196,
+    13,
+    7,
+    5
+   ],
+   "labels": [
+    "server",
+    "assistant",
+    "web",
+    "core"
+   ]
+  },
+  {
+   "id": "organs",
+   "group": "mind",
+   "emoji": "⚙️",
+   "title": "Внутренние органы",
+   "hint": "Активные подсистемы",
+   "value": "147",
+   "detail": "файлов кода в 4 частях",
+   "kind": "split",
+   "series": [
+    71,
+    59,
+    10,
+    7
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "age",
+   "group": "mind",
+   "emoji": "🦊",
+   "title": "Возраст JUUNIBI",
+   "hint": "Дней с первого коммита",
+   "value": "2 дня",
+   "detail": "с 8 октября 2026 г.",
+   "kind": "line",
+   "series": [
+    2,
+    72,
+    77,
+    77,
+    77,
+    87,
+    109,
+    124,
+    140,
+    149,
+    165,
+    169,
+    169,
+    169,
+    169,
+    169,
+    169,
+    179,
+    183,
+    193,
+    197,
+    198,
+    199,
+    206
+   ]
+  },
+  {
+   "id": "experiments",
+   "group": "mind",
+   "emoji": "🧪",
+   "title": "Эксперименты",
+   "hint": "Проверенные изменения",
+   "value": "108",
+   "detail": "последний: #154",
+   "kind": "line",
+   "series": [
+    1,
+    4,
+    9,
+    9,
+    9,
+    11,
+    12,
+    27,
+    43,
+    51,
+    67,
+    71,
+    71,
+    71,
+    71,
+    71,
+    71,
+    81,
+    85,
+    95,
+    99,
+    100,
+    101,
+    108
+   ]
+  },
+  {
+   "id": "pages",
+   "group": "mind",
+   "emoji": "🖼️",
+   "title": "Экраны интерфейса",
+   "hint": "Файлы страниц",
+   "value": "29",
+   "detail": "за неделю: 29",
+   "kind": "line",
+   "series": [
+    0,
+    0,
+    6,
+    6,
+    6,
+    9,
+    9,
+    9,
+    10,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    14,
+    19,
+    20,
+    21,
+    22,
+    30
+   ]
+  },
+  {
+   "id": "endpoints",
+   "group": "mind",
+   "emoji": "🔌",
+   "title": "Точки API",
+   "hint": "Адреса, на которые отвечает сервер",
+   "value": "143",
+   "detail": "GET 57, POST 79, DELETE 5, PATCH 2",
+   "kind": "split",
+   "series": [
+    79,
+    57,
+    5,
+    2
+   ],
+   "labels": [
+    "POST",
+    "GET",
+    "DELETE",
+    "PATCH"
+   ]
+  },
+  {
+   "id": "russian_ui",
+   "group": "mind",
+   "emoji": "🗣️",
+   "title": "Русская речь",
+   "hint": "Русские фразы в интерфейсе",
+   "value": "2 075",
+   "detail": "12% строк интерфейса по-русски",
+   "ring": 0.124
+  },
+  {
+   "id": "chat_code",
+   "group": "mind",
+   "emoji": "💬",
+   "title": "Код чата",
+   "hint": "Строк в окне чата",
+   "value": "1 453 строки",
+   "detail": "11 файлов, 14% интерфейса",
+   "ring": 0.139
+  },
+  {
+   "id": "async",
+   "group": "mind",
+   "emoji": "⏳",
+   "title": "Ожидания",
+   "hint": "Сколько раз код ждёт ответа (await)",
+   "value": "709",
+   "detail": "сеть, диск, модель",
+   "kind": "spark",
+   "series": [
+    481,
+    132,
+    91,
+    5
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "night",
+   "group": "life",
+   "emoji": "🌙",
+   "title": "Ночные обновления",
+   "hint": "Изменения после полуночи",
+   "value": "6",
+   "detail": "3% коммитов с 00 до 06",
+   "ring": 0.029
+  },
+  {
+   "id": "best_day",
+   "group": "life",
+   "emoji": "☀️",
+   "title": "Самый продуктивный день",
+   "hint": "Максимум изменений",
+   "value": "94 коммита",
+   "detail": "9 октября 2026 г.",
+   "kind": "spark",
+   "series": [
+    75,
+    94,
+    33
+   ],
+   "labels": [
+    "8 окт.",
+    "9 окт.",
+    "10 окт."
+   ]
+  },
+  {
+   "id": "record",
+   "group": "life",
+   "emoji": "🏆",
+   "title": "Рекорд разработки",
+   "hint": "Крупнейший коммит",
+   "value": "6 244 строки",
+   "detail": "feat: import original JUUNIBI character and scene datasets",
+   "kind": "spark",
+   "series": [
+    6244,
+    4942,
+    2836,
+    2595,
+    2213,
+    1555,
+    1473,
+    1307
+   ],
+   "labels": [
+    "feat: import original JUUNIBI character…",
+    "feat: import original JUUNIBI character…",
+    "feat: личная помощница — память, инстру…",
+    "Дела: «Дела и достижения» — 60 показате…",
+    "web: left menu, floating avatar, ChatGP…",
+    "feat(update): безопасность, откат и уст…",
+    "feat(modules): управление модулями, дет…",
+    "Дела: умная автоматика — итог дня, обзо…"
+   ]
+  },
+  {
+   "id": "streak",
+   "group": "life",
+   "emoji": "🔥",
+   "title": "Серия активности",
+   "hint": "Дней подряд с коммитами",
+   "value": "4 дня",
+   "detail": "текущая: 3",
+   "kind": "spark",
+   "series": [
+    1,
+    1,
+    1
+   ],
+   "labels": [
+    "8 окт.",
+    "9 окт.",
+    "10 окт."
+   ]
+  },
+  {
+   "id": "hours",
+   "group": "life",
+   "emoji": "🕰️",
+   "title": "Часы развития",
+   "hint": "Когда чаще обновляется",
+   "value": "22:00",
+   "detail": "пик по времени автора",
+   "kind": "hours",
+   "series": [
+    6,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    10,
+    17,
+    8,
+    11,
+    7,
+    13,
+    9,
+    10,
+    5,
+    8,
+    11,
+    9,
+    1,
+    4,
+    34,
+    37,
+    5
+   ]
+  },
+  {
+   "id": "upheaval",
+   "group": "life",
+   "emoji": "🌪️",
+   "title": "День переворота",
+   "hint": "Максимум переписанного кода",
+   "value": "−1 749",
+   "detail": "10 октября 2026 г.",
+   "kind": "spark",
+   "series": [
+    945,
+    1030,
+    1749
+   ],
+   "labels": [
+    "8 окт.",
+    "9 окт.",
+    "10 окт."
+   ]
+  },
+  {
+   "id": "hardest",
+   "group": "life",
+   "emoji": "🛠️",
+   "title": "Самый трудный модуль",
+   "hint": "Чаще всего исправлялся",
+   "value": "23 исправления",
+   "detail": "apps/server/src",
+   "kind": "spark",
+   "series": [
+    23,
+    13,
+    11,
+    6,
+    5,
+    5,
+    4,
+    3
+   ],
+   "labels": [
+    "apps/server/src",
+    "packages/assistant/src",
+    "packages/assistant/test",
+    "scripts",
+    "apps/web/src",
+    ".",
+    "apps/server/test",
+    "apps/web/test"
+   ]
+  },
+  {
+   "id": "calendar",
+   "group": "life",
+   "emoji": "🗓️",
+   "title": "История по дням",
+   "hint": "Календарь активности",
+   "value": "3 из 35",
+   "detail": "активных дней за 5 недель",
+   "kind": "calendar",
+   "series": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    75,
+    94,
+    33
+   ]
+  },
+  {
+   "id": "week",
+   "group": "life",
+   "emoji": "📈",
+   "title": "Рост за неделю",
+   "hint": "Сравнение с предыдущей",
+   "value": "+206",
+   "detail": "206 коммитов против 0 неделей раньше",
+   "kind": "spark",
+   "series": [
+    0,
+    206
+   ],
+   "labels": [
+    "прошлая неделя",
+    "эта неделя"
+   ]
+  },
+  {
+   "id": "birthday",
+   "group": "life",
+   "emoji": "🎂",
+   "title": "День рождения",
+   "hint": "Годовщина создания",
+   "value": "8 окт.",
+   "detail": "через 363 дня исполнится 1 год",
+   "ring": 0.005
+  },
+  {
+   "id": "weekend",
+   "group": "life",
+   "emoji": "🛋️",
+   "title": "Выходные",
+   "hint": "Коммиты в субботу и воскресенье",
+   "value": "37",
+   "detail": "18% всех коммитов",
+   "kind": "spark",
+   "series": [
+    0,
+    0,
+    0,
+    75,
+    94,
+    33,
+    4
+   ],
+   "labels": [
+    "пн",
+    "вт",
+    "ср",
+    "чт",
+    "пт",
+    "сб",
+    "вс"
+   ]
+  },
+  {
+   "id": "gap",
+   "group": "life",
+   "emoji": "⏱️",
+   "title": "Перерыв",
+   "hint": "Обычная пауза между коммитами",
+   "value": "4 мин",
+   "detail": "медиана пауз",
+   "kind": "spark",
+   "series": [
+    118,
+    50,
+    21,
+    9,
+    4,
+    3
+   ],
+   "labels": [
+    "до 5 мин",
+    "до 15 мин",
+    "до 30 мин",
+    "до 60 мин",
+    "до 180 мин",
+    "больше 180 мин"
+   ]
+  },
+  {
+   "id": "subject_len",
+   "group": "life",
+   "emoji": "✍️",
+   "title": "Длина подписей",
+   "hint": "Символов в названии коммита",
+   "value": "64",
+   "detail": "самое длинное: 156",
+   "kind": "spark",
+   "series": [
+    1,
+    8,
+    85,
+    88,
+    18,
+    6
+   ],
+   "labels": [
+    "до 20",
+    "до 40",
+    "до 60",
+    "до 80",
+    "до 100",
+    "больше 100"
+   ]
+  },
+  {
+   "id": "russian_commits",
+   "group": "life",
+   "emoji": "📮",
+   "title": "Коммиты по-русски",
+   "hint": "Названия на русском",
+   "value": "24%",
+   "detail": "50 из 206",
+   "ring": 0.243
+  },
+  {
+   "id": "tempo",
+   "group": "life",
+   "emoji": "⚡",
+   "title": "Темп",
+   "hint": "Коммитов в активный день",
+   "value": "51,5",
+   "detail": "4 активных дня",
+   "kind": "line",
+   "series": [
+    75,
+    94,
+    33,
+    4
+   ]
+  },
+  {
+   "id": "bugs",
+   "group": "care",
+   "emoji": "🐛",
+   "title": "Охота на ошибки",
+   "hint": "Подтверждённые исправления",
+   "value": "43",
+   "detail": "21% коммитов",
+   "ring": 0.209
+  },
+  {
+   "id": "urgent",
+   "group": "care",
+   "emoji": "🚨",
+   "title": "Аварийные обновления",
+   "hint": "Срочные исправления",
+   "value": "42",
+   "detail": "исправления меньше чем через час",
+   "kind": "spark",
+   "series": [
+    0,
+    22,
+    0,
+    0,
+    0,
+    1,
+    9,
+    0,
+    1,
+    2,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    2,
+    1,
+    2,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "rescued",
+   "group": "care",
+   "emoji": "🧯",
+   "title": "Спасённые установки",
+   "hint": "Успешные откаты",
+   "value": "—",
+   "detail": "считает работающий JUUNIBI"
+  },
+  {
+   "id": "green",
+   "group": "care",
+   "emoji": "💚",
+   "title": "Зелёные проверки",
+   "hint": "Доля успешного CI",
+   "value": "84%",
+   "detail": "76 из 90 запусков",
+   "ring": 0.844
+  },
+  {
+   "id": "build",
+   "group": "care",
+   "emoji": "🚀",
+   "title": "Скорость сборки",
+   "hint": "Средняя длительность",
+   "value": "74 с",
+   "detail": "проверка на Windows и Linux",
+   "kind": "spark",
+   "series": [
+    71,
+    63,
+    87,
+    67,
+    90,
+    87,
+    92,
+    58,
+    58,
+    90
+   ]
+  },
+  {
+   "id": "weight",
+   "group": "care",
+   "emoji": "📦",
+   "title": "Вес программы",
+   "hint": "Изменение размера",
+   "value": "2,5 МБ",
+   "detail": "+2 590 КБ за неделю",
+   "kind": "line",
+   "series": [
+    598,
+    820,
+    905,
+    1072,
+    1480,
+    1564,
+    1564,
+    1564,
+    1680,
+    1997,
+    2151,
+    2590
+   ]
+  },
+  {
+   "id": "startup",
+   "group": "care",
+   "emoji": "💨",
+   "title": "Ускорение запуска",
+   "hint": "До и после",
+   "value": "—",
+   "detail": "считает работающий JUUNIBI"
+  },
+  {
+   "id": "tests",
+   "group": "care",
+   "emoji": "🔍",
+   "title": "Глубина проверок",
+   "hint": "Число тестов",
+   "value": "720",
+   "detail": "в 139 файлах",
+   "kind": "spark",
+   "series": [
+    375,
+    202,
+    113,
+    19,
+    11
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "scripts",
+    "core"
+   ]
+  },
+  {
+   "id": "cleanup",
+   "group": "care",
+   "emoji": "🧹",
+   "title": "Генеральная уборка",
+   "hint": "Удалённый устаревший код",
+   "value": "114 строк",
+   "detail": "в коммитах про уборку",
+   "kind": "spark",
+   "series": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    113,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "integrity",
+   "group": "care",
+   "emoji": "🔐",
+   "title": "Контроль целостности",
+   "hint": "Проверенные файлы",
+   "value": "319",
+   "detail": "файлов под контролем версий",
+   "kind": "split",
+   "series": [
+    282,
+    13,
+    6,
+    4,
+    3
+   ],
+   "labels": [
+    "ts",
+    "json",
+    "mjs",
+    "css",
+    "py"
+   ]
+  },
+  {
+   "id": "test_share",
+   "group": "care",
+   "emoji": "🧫",
+   "title": "Код тестов",
+   "hint": "Доля строк в тестах",
+   "value": "28%",
+   "detail": "8 130 строк тестов на 20 685 строк кода",
+   "ring": 0.282
+  },
+  {
+   "id": "test_files",
+   "group": "care",
+   "emoji": "🧪",
+   "title": "Тестовые файлы",
+   "hint": "Сколько файлов с тестами",
+   "value": "139",
+   "detail": "на 147 файлов кода",
+   "kind": "line",
+   "series": [
+    1,
+    6,
+    12,
+    12,
+    12,
+    18,
+    29,
+    49,
+    67,
+    81,
+    97,
+    99,
+    99,
+    99,
+    99,
+    99,
+    99,
+    109,
+    114,
+    125,
+    129,
+    130,
+    132,
+    140
+   ]
+  },
+  {
+   "id": "any",
+   "group": "care",
+   "emoji": "🧷",
+   "title": "Слабые типы",
+   "hint": "Сколько раз написано any",
+   "value": "8",
+   "detail": "чем меньше, тем надёжнее",
+   "kind": "spark",
+   "series": [
+    4,
+    2,
+    2,
+    0
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "todo",
+   "group": "care",
+   "emoji": "📌",
+   "title": "Отложенные дела",
+   "hint": "TODO и FIXME в коде",
+   "value": "0",
+   "detail": "заметки «доделать потом»",
+   "kind": "spark",
+   "series": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "catches",
+   "group": "care",
+   "emoji": "🪂",
+   "title": "Страховки",
+   "hint": "Перехваченные ошибки (catch)",
+   "value": "222",
+   "detail": "места, где сбой не роняет программу",
+   "kind": "spark",
+   "series": [
+    141,
+    42,
+    32,
+    7
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "king",
+   "group": "fun",
+   "emoji": "👑",
+   "title": "Король изменений",
+   "hint": "Самый редактируемый модуль",
+   "value": "124 коммита",
+   "detail": "apps/server/src",
+   "kind": "spark",
+   "series": [
+    124,
+    65,
+    40,
+    36,
+    33,
+    26,
+    26,
+    19
+   ],
+   "labels": [
+    "apps/server/src",
+    "apps/web/src",
+    "packages/assistant/src",
+    ".",
+    "packages/assistant/test",
+    "apps/server/test",
+    "apps/web/test",
+    "scripts"
+   ]
+  },
+  {
+   "id": "ancient",
+   "group": "fun",
+   "emoji": "🦖",
+   "title": "Древнейший код",
+   "hint": "Старейшие неизменные строки",
+   "value": "7 798",
+   "detail": "26% кода живёт с 8 окт.",
+   "ring": 0.258
+  },
+  {
+   "id": "ghosts",
+   "group": "fun",
+   "emoji": "👻",
+   "title": "Призраки прошлого",
+   "hint": "Удалённые старые функции",
+   "value": "9",
+   "detail": "send, rate, memoryPage",
+   "kind": "dots",
+   "series": [
+    9
+   ]
+  },
+  {
+   "id": "leap",
+   "group": "fun",
+   "emoji": "🧬",
+   "title": "Эволюционный скачок",
+   "hint": "Резкий рост проекта",
+   "value": "+17 193",
+   "detail": "8 октября 2026 г.",
+   "kind": "spark",
+   "series": [
+    17193,
+    11337,
+    13079
+   ],
+   "labels": [
+    "8 окт.",
+    "9 окт.",
+    "10 окт."
+   ]
+  },
+  {
+   "id": "frozen",
+   "group": "fun",
+   "emoji": "🧊",
+   "title": "Замороженные файлы",
+   "hint": "Давно не менялись",
+   "value": "0",
+   "detail": "из 319, без правок больше недели",
+   "ring": 0
+  },
+  {
+   "id": "big_bang",
+   "group": "fun",
+   "emoji": "🧨",
+   "title": "Большой взрыв",
+   "hint": "Самое масштабное обновление",
+   "value": "50 файлов",
+   "detail": "feat: личная помощница — память, инструменты, проактивность, качество…",
+   "kind": "spark",
+   "series": [
+    50,
+    26,
+    26,
+    25,
+    24,
+    23,
+    21,
+    20
+   ],
+   "labels": [
+    "feat: личная помощница — память, инстру…",
+    "Add personal assistant: Cloud.ru provid…",
+    "web: left menu, floating avatar, ChatGP…",
+    "Свои инструкции, страница «Дела», повто…",
+    "Core, web app and portable launchers (.…",
+    "Дела: автоматика — сводка, автоперенос,…",
+    "Дела: «Дела и достижения» — 60 показате…",
+    "chat: tool steps & memory, slash comman…"
+   ]
+  },
+  {
+   "id": "universe",
+   "group": "fun",
+   "emoji": "🌌",
+   "title": "Вселенная зависимостей",
+   "hint": "Связи между модулями",
+   "value": "392",
+   "detail": "импортов в 147 файлах",
+   "kind": "spark",
+   "series": [
+    211,
+    148,
+    23,
+    10
+   ],
+   "labels": [
+    "web",
+    "server",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "rare",
+   "group": "fun",
+   "emoji": "💎",
+   "title": "Редкие достижения",
+   "hint": "Необычные рекорды",
+   "value": "9 из 10",
+   "detail": "Полиглот: 4 языка, Сто PR",
+   "ring": 0.9,
+   "kind": "list",
+   "list": [
+    "✓ Первый коммит",
+    "✓ Ночная сова",
+    "✓ Марафонец: 3 дня подряд",
+    "✓ Сто коммитов",
+    "✓ Десять тысяч строк",
+    "✓ Большой взрыв: 50 файлов разом",
+    "· Чистюля: удалено больше, чем добавлено",
+    "✓ Тестировщик: 300 тестов",
+    "✓ Полиглот: 4 языка",
+    "✓ Сто PR"
+   ]
+  },
+  {
+   "id": "tree",
+   "group": "fun",
+   "emoji": "🌳",
+   "title": "Дерево поколений",
+   "hint": "История версий и веток",
+   "value": "108 PR",
+   "detail": "веток: 137, выпусков: 0",
+   "kind": "split",
+   "series": [
+    108,
+    137,
+    0
+   ],
+   "labels": [
+    "PR",
+    "ветки",
+    "выпуски"
+   ]
+  },
+  {
+   "id": "book",
+   "group": "fun",
+   "emoji": "📖",
+   "title": "Книга жизни",
+   "hint": "Автоматическая хроника",
+   "value": "8 глав",
+   "detail": "от рождения до сегодня",
+   "kind": "list",
+   "list": [
+    "8 окт. · Рождение: Initial commit",
+    "10 окт. · #148 Дела: умная автоматика — итог дня, обзор недели, тихие часы…",
+    "10 окт. · #149 Обновление: страница не дёргается, проверка проходит на Win…",
+    "10 окт. · #150 Дела: «Дела и достижения» — 60 показателей, награды 12 уров…",
+    "11 окт. · #151 Дела: рыжие лисьи хвосты, стрелки прогресса и прогноз недели",
+    "11 окт. · #152 Дела: интерактивный симулятор будущей нагрузки",
+    "11 окт. · #153 Органайзер: резервный снимок и восстановление повреждённых …",
+    "11 окт. · #154 Memory 5.0: первый SQLite-архив истории и достижений"
+   ]
+  },
+  {
+   "id": "emoji",
+   "group": "fun",
+   "emoji": "😀",
+   "title": "Эмодзи в коде",
+   "hint": "Сколько эмодзи в исходниках",
+   "value": "247",
+   "detail": "🦊 👑 🏆 🔥 👍",
+   "kind": "spark",
+   "series": [
+    18,
+    6,
+    6,
+    6,
+    6,
+    5,
+    5,
+    5
+   ],
+   "labels": [
+    "🦊",
+    "👑",
+    "🏆",
+    "🔥",
+    "👍",
+    "🌌",
+    "💎",
+    "👎"
+   ]
+  },
+  {
+   "id": "longest_line",
+   "group": "fun",
+   "emoji": "📐",
+   "title": "Самая длинная строка",
+   "hint": "Символов в одной строке",
+   "value": "885",
+   "detail": "apps/server/src/autonomous-learning.ts",
+   "kind": "spark",
+   "series": [
+    9599,
+    9680,
+    5612,
+    2264,
+    986,
+    764
+   ],
+   "labels": [
+    "до 40",
+    "до 80",
+    "до 120",
+    "до 160",
+    "до 200",
+    "больше 200"
+   ]
+  },
+  {
+   "id": "longest_name",
+   "group": "fun",
+   "emoji": "🐍",
+   "title": "Самое длинное имя",
+   "hint": "Имя функции или переменной",
+   "value": "26 букв",
+   "detail": "compareCognitiveExperiment",
+   "kind": "spark",
+   "series": [
+    26,
+    26,
+    25,
+    24,
+    24,
+    23,
+    23,
+    23
+   ],
+   "labels": [
+    "compareCognitiveExperiment",
+    "SpawnOptionsWithStdioTuple",
+    "recallConfirmedExperience",
+    "evaluateExperienceRecall",
+    "CLOUDRU_DEFAULT_BASE_URL",
+    "DEFAULT_EMBEDDING_MODEL",
+    "summarizeChatExperience",
+    "searchVerifiedKnowledge"
+   ]
+  },
+  {
+   "id": "fav_word",
+   "group": "fun",
+   "emoji": "🔤",
+   "title": "Любимое слово",
+   "hint": "Чаще всего в названиях коммитов",
+   "value": "проверка",
+   "detail": "6 раз",
+   "kind": "spark",
+   "series": [
+    6,
+    4,
+    4,
+    3,
+    3,
+    3,
+    3,
+    2
+   ],
+   "labels": [
+    "проверка",
+    "страница",
+    "календарь",
+    "исправления",
+    "этапов",
+    "настройки",
+    "телефоне",
+    "плитками"
+   ]
+  },
+  {
+   "id": "magic",
+   "group": "fun",
+   "emoji": "🔮",
+   "title": "Магия хешей",
+   "hint": "Слова в номерах коммитов",
+   "value": "0",
+   "detail": "пока ни одного",
+   "kind": "dots",
+   "series": [
+    0
+   ]
+  },
+  {
+   "id": "functions",
+   "group": "code",
+   "emoji": "🧮",
+   "title": "Функции",
+   "hint": "Объявленные функции и стрелки",
+   "value": "3 951",
+   "detail": "в среднем 27 на файл",
+   "kind": "spark",
+   "series": [
+    2006,
+    1701,
+    199,
+    45
+   ],
+   "labels": [
+    "web",
+    "server",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "classes",
+   "group": "code",
+   "emoji": "🏛️",
+   "title": "Классы",
+   "hint": "Объявления class",
+   "value": "44",
+   "detail": "большие подсистемы с состоянием",
+   "kind": "dots",
+   "series": [
+    44
+   ]
+  },
+  {
+   "id": "types",
+   "group": "code",
+   "emoji": "📐",
+   "title": "Типы",
+   "hint": "Интерфейсы и псевдонимы типов",
+   "value": "340",
+   "detail": "interface: 251, type: 89",
+   "kind": "split",
+   "series": [
+    251,
+    89
+   ],
+   "labels": [
+    "interface",
+    "type"
+   ]
+  },
+  {
+   "id": "exports",
+   "group": "code",
+   "emoji": "📤",
+   "title": "Экспорты",
+   "hint": "Что видно другим модулям",
+   "value": "793",
+   "detail": "58% объявлений верхнего уровня",
+   "ring": 0.583
+  },
+  {
+   "id": "comments",
+   "group": "code",
+   "emoji": "💬",
+   "title": "Комментарии",
+   "hint": "Строки-пояснения в коде",
+   "value": "1 331 строка",
+   "detail": "5% непустых строк",
+   "ring": 0.046
+  },
+  {
+   "id": "blank",
+   "group": "code",
+   "emoji": "🌫️",
+   "title": "Воздух",
+   "hint": "Пустые строки",
+   "value": "1 569 строк",
+   "detail": "5% всех строк кода",
+   "ring": 0.051
+  },
+  {
+   "id": "css_rules",
+   "group": "code",
+   "emoji": "🖌️",
+   "title": "Стили",
+   "hint": "Правила CSS",
+   "value": "2 294",
+   "detail": "переменных оформления: 33",
+   "kind": "spark",
+   "series": [
+    1758,
+    391,
+    119,
+    26
+   ],
+   "labels": [
+    "style.css",
+    "achievements.css",
+    "nav.css",
+    "mobile.css"
+   ]
+  },
+  {
+   "id": "colors",
+   "group": "code",
+   "emoji": "🌈",
+   "title": "Палитра",
+   "hint": "Разные цвета в коде",
+   "value": "170",
+   "detail": "#fff #3c9 #f0a030",
+   "kind": "swatches",
+   "list": [
+    "#fff",
+    "#3c9",
+    "#f0a030",
+    "#1a1306",
+    "#facc15",
+    "#f97316",
+    "#000",
+    "#fde68a",
+    "#0d0d0d",
+    "#7b6cff",
+    "#fb7185",
+    "#e0a43a",
+    "#d9a441",
+    "#2b2417",
+    "#0d0c10",
+    "#a8a29e",
+    "#2dd4bf",
+    "#ececec",
+    "#6fcf97",
+    "#111",
+    "#f43f5e",
+    "#fbbf24",
+    "#e0e7ff",
+    "#a5b4fc"
+   ]
+  },
+  {
+   "id": "regex",
+   "group": "code",
+   "emoji": "🧵",
+   "title": "Регулярные выражения",
+   "hint": "Поиск по шаблону",
+   "value": "332",
+   "detail": "разбор дат, команд и текста",
+   "kind": "spark",
+   "series": [
+    212,
+    95,
+    25,
+    0
+   ],
+   "labels": [
+    "server",
+    "web",
+    "assistant",
+    "core"
+   ]
+  },
+  {
+   "id": "deps",
+   "group": "code",
+   "emoji": "📦",
+   "title": "Зависимости",
+   "hint": "Пакеты npm",
+   "value": "16",
+   "detail": "для работы: 5, для разработки: 11",
+   "kind": "split",
+   "series": [
+    5,
+    11
+   ],
+   "labels": [
+    "для работы",
+    "для разработки"
+   ]
+  }
+ ]
+}
