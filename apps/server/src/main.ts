@@ -78,6 +78,15 @@ let cloudConfigured = false;
 let sceneLlm: LlmProvider | undefined;
 const knowledge = new KnowledgeLedger(path.join(dataDir, "verified-knowledge.json"));
 let learningKey: string | undefined;
+/** After a Cloud.ru outage (5xx, 429, time-out) background learning pauses so it never competes with the chat for a struggling service. */
+const CLOUD_PAUSE_MS = 15 * 60_000;
+let cloudPausedUntil = 0;
+let learningDeferred: NodeJS.Timeout | undefined;
+function noteCloudFailure(message: string) {
+  if (!/HTTP 5\d\d|HTTP 429|вернул (?:5\d\d|429)|недоступен|тайм-аут|timeout|abort/i.test(message)) return;
+  if (Date.now() >= cloudPausedUntil) log.warn(`Cloud.ru не отвечает: фоновое обучение приостановлено на ${CLOUD_PAUSE_MS / 60_000} мин`);
+  cloudPausedUntil = Date.now() + CLOUD_PAUSE_MS;
+}
 let learningProvider: CloudRuProvider | undefined;
 const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
   if (!learningProvider) throw new Error("Cloud.ru не настроен");
@@ -136,6 +145,7 @@ const modules = new ModuleManager(root, [
 await loadOrQuarantine("модули", path.join(dataDir, "modules.json"), () => modules.load());
 await loadOrQuarantine("манифесты", path.join(dataDir, "module-manifests.json"), () => manifests.load());
 const memory = new Memory(durableMemoryStore(path.join(dataDir, "memory.json")));
+await memory.setVectorStore(fileStore(path.join(dataDir, "memory-vectors.json")));
 const settings = new AssistantSettingsStore(path.join(dataDir, "assistant-settings.json"));
 await loadOrQuarantine("настройки помощницы", path.join(dataDir, "assistant-settings.json"), () => settings.load());
 let embeddingKey: { apiKey: string; baseUrl?: string } | undefined;
@@ -176,7 +186,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
   const llm: LlmProvider = { chat: async (messages, opts) => {
     const t0 = Date.now();
     try { const r = await raw.chat(messages, opts); modules.ok("assistant", Date.now() - t0); return r; }
-    catch (e) { if (!opts?.signal?.aborted) modules.fail("assistant", (e as Error).message); throw e; }
+    catch (e) { if (!opts?.signal?.aborted) { modules.fail("assistant", (e as Error).message); noteCloudFailure((e as Error).message); } throw e; }
   } };
   sceneLlm = llm;
   learningProvider = raw;
@@ -339,8 +349,17 @@ const reminderTimer = setInterval(() => { void organizer.tick().catch((e) => log
 void organizer.tick().catch(() => {});
 const runLearning = () => {
   if (!cloudConfigured || !modules.isActive("brain") || !modules.isActive("assistant")) return;
+  if (Date.now() < cloudPausedUntil) return; // Cloud.ru is failing: background learning waits instead of adding load
+  if (assistant?.isAnswering()) { // the user is waiting for a reply: learn a bit later
+    if (!learningDeferred) learningDeferred = setTimeout(() => { learningDeferred = undefined; runLearning(); }, 60_000);
+    return;
+  }
   void modules.track("brain", () => learning.tick()).then(result => {
-    if (result && "ok" in result && result.ok === false) log.warn("Обучение: сбой обращения к Cloud.ru", learning.status().lastError);
+    if (result && "ok" in result && result.ok === false) {
+      const error = learning.status().lastError ?? "";
+      log.warn("Обучение: сбой обращения к Cloud.ru", error);
+      noteCloudFailure(error);
+    }
   }).catch(e => log.warn("Не удалось выполнить обучение", e instanceof Error ? e.message : "unknown"));
 };
 const initialLearningTimer = setTimeout(runLearning, 3000);
@@ -349,7 +368,7 @@ let stopping = false;
 const shutdown = async (exitCode = 0) => {
   if (stopping) return;
   stopping = true;
-  clearTimeout(initialLearningTimer); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
+  clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
   // Let pending state writes finish so a stop never loses data.
   await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue,
     // Queued memory suggestions get a short grace period; a stuck model call must not block the stop.

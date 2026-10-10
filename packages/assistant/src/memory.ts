@@ -8,7 +8,17 @@ export class MemoryAdapter implements StorageAdapter {
   async save(d: string) { this.data = d; }
 }
 
-export interface EmbeddingProvider { embed(text: string): Promise<number[]> }
+export interface EmbeddingProvider {
+  embed(text: string): Promise<number[]>;
+  /** Stable identity (model + endpoint). Saved vectors are reused only for the same id. */
+  readonly id?: string;
+}
+/** Cheap content fingerprint: a saved vector is reused only while the entry text is unchanged. */
+const textKey = (text: string) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36) + ":" + text.length;
+};
 export type MemoryKind = "fact" | "preference" | "lesson";
 export interface MemoryEntry {
   id: string;
@@ -62,7 +72,10 @@ export class Memory {
   private entries: MemoryEntry[] = [];
   private ready: Promise<void>;
   private writing: Promise<void> = Promise.resolve();
-  private readonly vectors = new Map<string, number[]>();
+  private readonly vectors = new Map<string, { key: string; v: number[] }>();
+  private vectorStore: StorageAdapter | undefined;
+  private vectorCache: { provider?: string; items?: Record<string, { key: string; v: number[] }> } | null = null;
+  private vectorSave: ReturnType<typeof setTimeout> | undefined;
   private embedding: EmbeddingProvider | undefined;
   private embeddingChecks = 0;
   private embeddingFailures = 0;
@@ -74,12 +87,49 @@ export class Memory {
   /** After this many failures in a row semantic search is skipped for a while, so a wrong model name never slows every reply. */
   static readonly BREAKER_FAILS = 3;
   static readonly BREAKER_PAUSE_MS = 10 * 60_000;
+  /** Semantic search may delay a reply at most this long; slower work finishes in the background and is cached. */
+  static readonly CHAT_EMBED_BUDGET_MS = 3000;
   embeddingDiagnostics() {
     const paused = this.pausedUntil > this.clock();
     return { configured: !!this.embedding, checks: this.embeddingChecks, failures: this.embeddingFailures, paused,
       ...(paused ? { pausedUntil: this.pausedUntil } : {}), mode: this.embedding ? (paused ? "lexical" : "hybrid") : "lexical" };
   }
-  setEmbeddingProvider(provider?: EmbeddingProvider) { this.embedding = provider; this.vectors.clear(); this.failStreak = 0; this.pausedUntil = 0; }
+  setEmbeddingProvider(provider?: EmbeddingProvider) {
+    this.embedding = provider; this.vectors.clear(); this.failStreak = 0; this.pausedUntil = 0;
+    this.restoreVectors();
+  }
+  /** Keeps computed vectors on disk, so the first reply after a restart does not wait for dozens of embedding requests. */
+  async setVectorStore(store: StorageAdapter) {
+    this.vectorStore = store;
+    try {
+      const raw = await store.load();
+      const parsed = raw ? JSON.parse(raw) : null;
+      this.vectorCache = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch { this.vectorCache = null; }
+    this.restoreVectors();
+  }
+  private restoreVectors() {
+    const cache = this.vectorCache;
+    if (!this.embedding?.id || !cache || cache.provider !== this.embedding.id || !cache.items || typeof cache.items !== "object") return;
+    for (const [id, item] of Object.entries(cache.items).slice(0, MAX_ENTRIES)) {
+      if (item && typeof item.key === "string" && Array.isArray(item.v) && item.v.length > 0 && item.v.length <= 4096 && item.v.every(Number.isFinite))
+        this.vectors.set(id, { key: item.key, v: item.v });
+    }
+  }
+  private rememberVector(id: string, text: string, v: number[]) {
+    this.vectors.set(id, { key: textKey(text), v });
+    if (!this.vectorStore || !this.embedding?.id || this.vectorSave) return;
+    const provider = this.embedding.id;
+    this.vectorSave = setTimeout(() => {
+      this.vectorSave = undefined;
+      if (this.embedding?.id !== provider) return;
+      const live = new Set(this.entries.map(e => e.id));
+      const items = Object.fromEntries([...this.vectors].filter(([id]) => live.has(id)));
+      this.vectorCache = { provider, items };
+      void this.vectorStore!.save(JSON.stringify(this.vectorCache)).catch(() => {});
+    }, 2000);
+    (this.vectorSave as { unref?: () => void }).unref?.();
+  }
   /** Try the embedding provider once, bypassing the pause; used by the "check connection" button. */
   async probeEmbedding(): Promise<{ ok: boolean; dims?: number; ms: number; error?: string }> {
     const t0 = this.clock();
@@ -262,16 +312,20 @@ export class Memory {
   async searchHybrid(query: string, k = 5): Promise<MemoryEntry[]> {
     const lexical = await this.search(query, 20);
     if (!this.embedding || !query.trim() || k <= 0 || this.pausedUntil > this.clock()) return lexical.slice(0, Math.max(0, k));
-    try {
-      this.embeddingChecks++;
-      const q = await this.embedding.embed(query);
-      const valid = (v: number[]) => v.length > 0 && v.length <= 4096 && v.every(Number.isFinite);
+    this.embeddingChecks++;
+    const embedding = this.embedding;
+    const valid = (v: number[]) => v.length > 0 && v.length <= 4096 && v.every(Number.isFinite);
+    let gotQuery = false;
+    const semantic = (async () => {
+      const q = await embedding.embed(query);
+      gotQuery = true;
       if (!valid(q)) return lexical.slice(0, k);
       const recent = (await this.list("active")).filter(e => !e.supersededBy && (e.expiresAt === undefined || e.expiresAt > Date.now()) && e.score > -3).slice(-20);
       const active = [...new Map([...lexical, ...recent].map(e => [e.id, e])).values()];
       const ranked = await Promise.all(active.map(async e => {
-        let v = this.vectors.get(e.id);
-        if (!v) { v = await this.embedding!.embed(e.text); if (valid(v)) this.vectors.set(e.id, v); }
+        const cached = this.vectors.get(e.id);
+        let v = cached && cached.key === textKey(e.text) ? cached.v : undefined;
+        if (!v) { v = await embedding.embed(e.text); if (valid(v)) this.rememberVector(e.id, e.text, v); }
         if (!v || !valid(v) || v.length !== q.length) return { e, score: -1 };
         const dot = v.reduce((n, x, i) => n + x * q[i]!, 0);
         const na = Math.hypot(...v), nb = Math.hypot(...q);
@@ -279,17 +333,30 @@ export class Memory {
         return { e, score: similarity };
       }));
       const lexicalRanks = new Map(lexical.map((e, i) => [e.id, i]));
-      const result = ranked.filter(x => x.score > 0.15 || lexicalRanks.has(x.e.id))
+      return ranked.filter(x => x.score > 0.15 || lexicalRanks.has(x.e.id))
         .sort((a, b) => (b.score + (lexicalRanks.has(b.e.id) ? 0.2 / (1 + lexicalRanks.get(b.e.id)!) : 0)) -
           (a.score + (lexicalRanks.has(a.e.id) ? 0.2 / (1 + lexicalRanks.get(a.e.id)!) : 0)))
         .slice(0, Math.min(20, Math.floor(k))).map(x => copyEntry(x.e));
-      this.failStreak = 0;
-      return result;
-    } catch {
+    })();
+    const failed = () => {
       this.embeddingFailures++;
       if (++this.failStreak >= Memory.BREAKER_FAILS) this.pausedUntil = this.clock() + Memory.BREAKER_PAUSE_MS;
       return lexical.slice(0, Math.min(20, Math.floor(k)));
-    }
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const slow = new Promise<"slow">((resolve) => { timer = setTimeout(() => resolve("slow"), Memory.CHAT_EMBED_BUDGET_MS); });
+    try {
+      const result = await Promise.race([semantic, slow]);
+      if (result === "slow") {
+        // Too slow for a waiting user: answer by keywords now; vectors that arrive later are kept for next time.
+        semantic.catch(() => {});
+        return gotQuery ? lexical.slice(0, Math.min(20, Math.floor(k))) : failed();
+      }
+      this.failStreak = 0;
+      return result;
+    } catch {
+      return failed();
+    } finally { clearTimeout(timer); }
   }
   /** Explicitly propose a new version; it stays pending until approved. */
   async proposeRevision(oldId: string, newText: string): Promise<MemoryEntry | null> {

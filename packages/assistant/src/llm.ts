@@ -11,6 +11,10 @@ export interface ChatOptions {
   tools?: ToolSpec[]; signal?: AbortSignal; temperature?: number; maxTokens?: number;
   /** If set, the provider streams and calls this with each text fragment as it arrives. */
   onText?: (text: string) => void;
+  /** Per-call override: how long to wait for the first byte (and between streamed chunks). */
+  timeoutMs?: number;
+  /** Per-call override: extra attempts after a 429/5xx/timeout. */
+  retries?: number;
 }
 
 /** Any chat model backend. Cloud.ru is one implementation; tests use a scripted one. */
@@ -75,11 +79,13 @@ export class CloudRuProvider implements LlmProvider {
     let lastErr: unknown;
     let streamed = false; // once text reached the caller, a retry would duplicate it
     const onText = opts.onText ? (t: string) => { streamed = true; opts.onText!(t); } : undefined;
-    for (let attempt = 0; attempt <= this.cfg.retries; attempt++) {
+    const timeoutMs = opts.timeoutMs ?? this.cfg.timeoutMs;
+    const retries = opts.retries ?? this.cfg.retries;
+    for (let attempt = 0; attempt <= retries; attempt++) {
       if (opts.signal?.aborted) throw new LlmError("Запрос отменён");
       if (attempt) await sleep(500 * 2 ** (attempt - 1));
       const ctl = new AbortController();
-      let timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs);
+      let timer = setTimeout(() => ctl.abort(), timeoutMs);
       const onAbort = () => ctl.abort();
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       try {
@@ -99,7 +105,7 @@ export class CloudRuProvider implements LlmProvider {
           throw new LlmError(`Cloud.ru вернул ${res.status}: ${text}`, res.status);
         }
         if (opts.onText && /text\/event-stream/i.test(res.headers.get("content-type") ?? "") && res.body) {
-          return await readStream(res.body, onText!, () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), this.cfg.timeoutMs); });
+          return await readStream(res.body, onText!, () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), timeoutMs); });
         }
         const parsed = parse(await res.json()); // server ignored `stream`: deliver the whole text at once
         if (opts.onText && parsed.content) opts.onText(parsed.content);
@@ -114,6 +120,10 @@ export class CloudRuProvider implements LlmProvider {
         opts.signal?.removeEventListener("abort", onAbort);
       }
     }
+    if (lastErr instanceof LlmError && lastErr.status && lastErr.status >= 500)
+      throw new LlmError(`Cloud.ru временно недоступен (HTTP ${lastErr.status}). Попробуйте чуть позже.`, lastErr.status);
+    if (!(lastErr instanceof LlmError) && /abort/i.test(String((lastErr as Error)?.name ?? "") + String((lastErr as Error)?.message ?? "")))
+      throw new LlmError(`Cloud.ru недоступен: нет ответа за ${Math.round(timeoutMs / 1000)} с (тайм-аут). Попробуйте чуть позже.`);
     throw this.safeError(lastErr instanceof LlmError ? lastErr : new LlmError(`Нет связи с Cloud.ru: ${(lastErr as Error)?.message ?? lastErr}`));
   }
 
