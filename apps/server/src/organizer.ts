@@ -6,7 +6,7 @@ export interface Note { id: string; kind: "note" | "todo"; text: string; done: b
 /** How a reminder repeats: every day, Monday to Friday, or every week on the same weekday. */
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days";
 export const REPEATS: Repeat[] = ["daily", "weekdays", "weekly", "monthly", "every3days"];
-export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string }
+export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; repeatDay?: number }
 const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_DONE_REMINDERS = 100;
 const YEAR = 366 * 86_400_000;
 const bad = (message: string, status = 400) => Object.assign(new Error(message), { status });
@@ -16,9 +16,9 @@ const repeatOf = (v: unknown): Repeat | undefined => {
   return v as Repeat;
 };
 /** The first occurrence of a repeating reminder strictly after `now`, keeping the local time of day of `at`. */
-export function nextOccurrence(at: number, repeat: Repeat, now: number): number {
+export function nextOccurrence(at: number, repeat: Repeat, now: number, anchorDay?: number): number {
   const d = new Date(at);
-  const originalDay = d.getDate();
+  const originalDay = anchorDay ?? d.getDate();
   let elapsed = 0;
   const step = () => {
     if (repeat === "monthly") {
@@ -186,7 +186,7 @@ export class Organizer {
     const rep = repeatOf(repeat);
     const ms = alignStart(this.when(at), rep);
     if (this.reminders.filter((r) => r.status !== "done").length >= MAX_REMINDERS) throw bad(`Достигнут предел: ${MAX_REMINDERS} активных напоминаний`, 409);
-    const r: Reminder = { id: randomUUID(), text: t, at: new Date(ms).toISOString(), createdAt: new Date(this.now()).toISOString(), status: "scheduled", ...(rep ? { repeat: rep } : {}) };
+    const r: Reminder = { id: randomUUID(), text: t, at: new Date(ms).toISOString(), createdAt: new Date(this.now()).toISOString(), status: "scheduled", ...(rep ? { repeat: rep, ...(rep === "monthly" ? { repeatDay: new Date(ms).getDate() } : {}) } : {}) };
     this.reminders.push(r);
     await this.save();
     return { ...r };
@@ -200,7 +200,7 @@ export class Organizer {
     const rep = patch.repeat === undefined ? r.repeat : repeatOf(patch.repeat);
     const at = new Date(alignStart(patch.at === undefined ? Date.parse(r.at) : this.when(patch.at), rep)).toISOString();
     r.text = t; r.at = at;
-    if (rep) r.repeat = rep; else delete r.repeat;
+    if (rep) { r.repeat = rep; if (rep === "monthly") r.repeatDay = new Date(at).getDate(); else delete r.repeatDay; } else { delete r.repeat; delete r.repeatDay; }
     await this.save();
     return { ...r };
   }
@@ -232,7 +232,7 @@ export class Organizer {
       const copy: Reminder = { id: randomUUID(), text: r.text, at: r.at, createdAt: firedAt, status: "due", firedAt, seriesId: r.id };
       this.reminders.push(copy);
       fired.push({ ...copy });
-      r.at = new Date(nextOccurrence(Date.parse(r.at), r.repeat, now)).toISOString();
+      r.at = new Date(nextOccurrence(Date.parse(r.at), r.repeat, now, r.repeatDay)).toISOString();
     }
     if (fired.length) { this.pruneDone(); await this.save(); }
     return fired;
