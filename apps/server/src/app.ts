@@ -458,6 +458,7 @@ export function createApp(deps: AppDeps): http.Server {
           const o = deps.organizer;
           if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders() });
           if (req.method === "GET" && p === "/api/organizer/plan") return send(res, 200, o.planToday());
+          if (req.method === "GET" && p === "/api/organizer/insights") { const month = url.searchParams.get("month") ?? new Date().toISOString().slice(0,7); return send(res, 200, o.insights(month)); }
           if (req.method === "POST" && p === "/api/organizer/notes") { const b = await readJson(req); return send(res, 201, await o.addNote(b.kind ?? "note", b.text)); }
           if (req.method === "POST" && p === "/api/organizer/reminders") { const b = await readJson(req); return send(res, 201, await o.addReminder(b.text, b.at, b.repeat)); }
           const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss|plan))?$/.exec(p);
