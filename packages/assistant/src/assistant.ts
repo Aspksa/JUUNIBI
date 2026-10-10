@@ -96,6 +96,8 @@ export class Assistant {
   private summariesReady: Promise<void> = Promise.resolve();
   private summaryWork: Promise<void> = Promise.resolve();
   private memoryWork: Promise<void> = Promise.resolve();
+  private activeAsks = 0;
+  private askWaiters: (() => void)[] = [];
   private readonly summaryRetryAfter = new Map<string, number>();
 
   constructor(private readonly o: AssistantOptions) {
@@ -172,6 +174,14 @@ export class Assistant {
   }
 
   async ask(text: string, session = "default", signal?: AbortSignal, opts: AskOptions = {}): Promise<AskResult> {
+    this.activeAsks++;
+    try { return await this.answer(text, session, signal, opts); }
+    finally { if (--this.activeAsks === 0) for (const wake of this.askWaiters.splice(0)) wake(); }
+  }
+  /** Background model calls wait for this so they never compete with a reply the user is waiting for. */
+  private chatIdle(): Promise<void> { return this.activeAsks ? new Promise((resolve) => this.askWaiters.push(resolve)) : Promise.resolve(); }
+
+  private async answer(text: string, session: string, signal: AbortSignal | undefined, opts: AskOptions): Promise<AskResult> {
     const mem = await this.memory.context(text, 1500);
     const prefs = this.o.prefs?.() ?? { suggestions: "smart", summaries: false };
     const all = Array.isArray(opts.history)
@@ -241,6 +251,7 @@ export class Assistant {
     if (prefs.suggestions !== "off") {
       this.memoryWork = this.memoryWork.catch(() => {}).then(async () => {
         try {
+          await this.chatIdle();
           const proposed = await this.memory.suggestFromUserText(text);
           if (proposed.length) {
             if (prefs.suggestions === "smart") await this.checkPreferenceRevision(proposed[0]!);
