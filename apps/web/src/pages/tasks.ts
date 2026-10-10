@@ -46,13 +46,30 @@ export function describeQuick(p: QuickParsed, now = new Date()): string {
 }
 
 /** The quick-entry result with the date and repeat picked by hand. */
-function withWhen(p: QuickParsed, iso: string | null, rep: string): QuickParsed {
+export function withWhen(p: QuickParsed, iso: string | null, rep: string): QuickParsed {
   const { at: _a, repeat: _r, ...rest } = p;
   const out: QuickParsed = { ...rest };
   if (iso) out.at = iso;
   if (rep !== "none") out.repeat = rep as Repeat;
   return out;
 }
+
+/** Saves a parsed quick entry: a reminder, a note, or a to-do with its due date, importance and project. */
+export async function saveQuick(p: QuickParsed): Promise<{ ok: boolean; error?: { message: string } }> {
+  if (p.kind === "reminder") return api.addReminder(p.text, p.at!, p.repeat);
+  if (p.kind === "note") return api.addNote("note", p.text);
+  const r = await api.addNote("todo", p.text);
+  if (!r.ok || (!p.at && !p.priority && !p.project)) return r;
+  return api.updateTask(r.value.id, { ...(p.at ? { dueAt: p.dateOnly ? endOfDay(p.at) : p.at } : {}), ...(p.priority ? { priority: p.priority } : {}), ...(p.project ? { project: p.project } : {}) });
+}
+/** The toast after `saveQuick`. */
+export function savedText(p: QuickParsed): string {
+  if (p.kind === "reminder") return "Напоминание: " + whenLabel(p.at!, false) + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : "");
+  if (p.kind === "note") return "Заметка добавлена";
+  return p.at ? "Дело добавлено: срок " + whenLabel(p.at, !!p.dateOnly) : "Дело добавлено";
+}
+/** Opens the page already filtered by `q` (a search result from Ctrl+K). */
+export function searchTasksFor(q: string) { UI.query = q; UI.filter = "all"; }
 
 export interface TasksDeps { go(r: Route): void; openChat(): void }
 
@@ -147,17 +164,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       p = withWhen(p, iso, repeat.value);
     }
     add.disabled = true;
-    let ok: boolean;
-    if (p.kind === "reminder") {
-      ok = await act(() => api.addReminder(p.text, p.at!, p.repeat), "Напоминание: " + whenLabel(p.at!, false) + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : ""));
-    } else if (p.kind === "note") ok = await act(() => api.addNote("note", p.text), "Заметка добавлена");
-    else {
-      ok = await act(async () => {
-        const r = await api.addNote("todo", p.text);
-        if (!r.ok || (!p.at && !p.priority && !p.project)) return r;
-        return api.updateTask(r.value.id, { ...(p.at ? { dueAt: p.dateOnly ? endOfDay(p.at) : p.at } : {}), ...(p.priority ? { priority: p.priority } : {}), ...(p.project ? { project: p.project } : {}) });
-      }, p.at ? "Дело добавлено: срок " + whenLabel(p.at, !!p.dateOnly) : "Дело добавлено");
-    }
+    const ok = await act(() => saveQuick(p), savedText(p));
     add.disabled = false;
     if (ok) { text.value = ""; manualWhen = false; syncQuick(); text.focus(); }
   });
