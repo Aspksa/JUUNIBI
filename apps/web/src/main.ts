@@ -5,7 +5,7 @@ import { Avatar } from "./avatar";
 import { Chats } from "./chat/chats";
 import { ChatController } from "./chat/controller";
 import { ChatView } from "./chat/view";
-import { el, icon } from "./dom";
+import { el, icon, settleAnimations } from "./dom";
 import { Menu, openConnection } from "./nav/menu";
 import { NAV_ITEMS, itemForDigit } from "./nav/model";
 import { closePalette, openPalette, paletteOpen, setPaletteFallback } from "./nav/palette";
@@ -165,7 +165,7 @@ kernel.register({
         : settingsPage(s, chats);
       const scroll = pageHost.scrollTop;
       pageHost.replaceChildren(page);
-      if (!changedRoute) pageHost.scrollTop = scroll;
+      if (!changedRoute) { pageHost.scrollTop = scroll; settleAnimations(page); }
       if (s.route === "update") animateFlight(pageHost, s);
     };
 

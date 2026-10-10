@@ -111,3 +111,18 @@ export function iconButton(name: IconName, label: string, onClick: (e: MouseEven
 }
 
 export const short = (v?: string | null) => (v && /^[0-9a-f]{40}$/.test(v) ? v.slice(0, 8) : v ?? "…");
+
+/**
+ * A page that is rebuilt in place (the update page redraws on every event) must not replay its animations:
+ * entrance effects jump to their end, and endless ones (spinners, pulses) keep their phase, because all
+ * of them are pinned to the start of the document timeline instead of the moment the element appeared.
+ */
+export function settleAnimations(root: Element) {
+  if (typeof root.getAnimations !== "function") return;
+  for (const a of root.getAnimations({ subtree: true })) {
+    try {
+      if (a.effect?.getComputedTiming().iterations === Infinity) a.startTime = 0;
+      else a.finish();
+    } catch { /* an animation that cannot be finished just plays */ }
+  }
+}

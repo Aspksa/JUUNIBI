@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { ProjectUpdater, rollbackTarget, type HistoryItem } from "../src/updater";
+import { ProjectUpdater, failureTail, rollbackTarget, type HistoryItem } from "../src/updater";
 
 const oldFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = oldFetch; vi.restoreAllMocks(); });
@@ -308,5 +308,29 @@ describe("Обновление проекта", () => {
         expect((await u.cancelRollback()).rollbackPending).toBe(false);
       } finally { await rm(root, { recursive: true, force: true }); }
     });
+  });
+});
+
+describe("журнал упавшей проверки", () => {
+  it("показывает упавший тест, даже если после него прошли тесты другой части", () => {
+    const log = [
+      " \x1b[31m❯\x1b[39m src/organizer.test.ts (12 tests | 1 failed) 6623ms",
+      "\x1b[31m   ×\x1b[31m правка и повторы > старые напоминания 5025ms",
+      " FAIL  src/organizer.test.ts > правка и повторы > старые напоминания",
+      "Error: Test timed out in 5000ms.",
+      "npm error Lifecycle script `test` failed with error:",
+      "npm error command C:\\WINDOWS\\system32\\cmd.exe /d /s /c vitest run",
+      ...Array.from({ length: 30 }, (_, i) => ` ✓ test/web-${i}.test.ts (3 tests) 20ms`),
+    ].join("\r\n");
+    const tail = failureTail(log);
+    expect(tail).toContain("FAIL  src/organizer.test.ts");
+    expect(tail).toContain("Test timed out in 5000ms");
+    expect(tail).toContain("web-29.test.ts");
+    expect(tail).not.toContain("\x1b[");
+  });
+  it("без признаков ошибки — просто конец вывода", () => {
+    const tail = failureTail(Array.from({ length: 40 }, (_, i) => "line " + i).join("\n"));
+    expect(tail.split("\n")).toHaveLength(25);
+    expect(tail).toContain("line 39");
   });
 });

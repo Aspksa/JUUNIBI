@@ -76,6 +76,20 @@ interface CheckCache {
 }
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * What the page shows when a check fails: the lines naming the failure (a failed test, its error) first,
+ * then the end of the output. The plain end alone often shows only the next workspace's passing tests.
+ */
+export function failureTail(output: string): string {
+  // eslint-disable-next-line no-control-regex
+  const lines = output.replace(/\x1b\[[0-9;]*m/g, "").split(/\r?\n/).map((l) => l.trimEnd()).filter(Boolean);
+  const key = lines.filter((l) => /(^|\s)(FAIL|×|✖|not ok)\s|Error:|error TS\d+|Test timed out|failed with error/.test(l));
+  const unique = [...new Set(key)].slice(0, 15);
+  const tail = lines.slice(-12);
+  const out = unique.length ? [...unique, "…", ...tail.filter((l) => !unique.includes(l))] : lines.slice(-25);
+  return out.join("\n").slice(-3000);
+}
+
 /** Variables that could carry secrets are not handed to the downloaded code that runs during the checks. */
 function scrubbedEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
@@ -530,7 +544,7 @@ export class ProjectUpdater {
         this.child = null;
         if (code === 0) return resolve();
         if (this.abort?.signal.aborted) return reject(new Error("cancelled"));
-        this.state.logTail = output.split(/\r?\n/).filter(Boolean).slice(-25).join("\n").slice(-3000);
+        this.state.logTail = failureTail(output);
         try {
           const log = path.join(this.folder(), "test-output.log");
           await writeFile(log, output, { mode: 0o600 });

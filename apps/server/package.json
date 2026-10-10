@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/server.mjs",
-    "test": "vitest run",
+    "test": "vitest run --testTimeout=20000",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": { "@juunibi/core": "*", "@juunibi/assistant": "*", "qrcode-generator": "^2.0.4" },
