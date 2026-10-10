@@ -11,6 +11,7 @@ import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
 import { tasksPage } from "./pages/tasks";
+import { mobilePage } from "./pages/mobile";
 import {
   app, BRAIN_TILE_ROUTES, dismissSuggestion, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
   type AppState, type Route, type Theme,
@@ -29,6 +30,7 @@ const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "tasks", label: "Дела", icon: "check" },
   { route: "modules", label: "Модули", icon: "modules" },
   { route: "brain", label: "Мозг", icon: "brain" },
+  { route: "mobile", label: "Мобильное приложение", icon: "phone" },
   { route: "update", label: "Обновление", icon: "update" },
   { route: "settings", label: "Настройки", icon: "settings" },
 ];
@@ -131,7 +133,7 @@ kernel.register({
       switch (s.route) {
         case "home": return JSON.stringify([s.brief, s.repeatSuggestions, s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
         case "memory": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
-        case "modules": case "tasks": return ""; // the page loads and refreshes its own data
+        case "modules": case "tasks": case "mobile": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
         case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
@@ -148,6 +150,7 @@ kernel.register({
             dismissSuggestion })
         : BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
         : s.route === "tasks" ? tasksPage()
+        : s.route === "mobile" ? mobilePage()
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()
         : s.route === "update" ? updatePage(s)

@@ -27,6 +27,7 @@ import type { Brief, Organizer } from "./organizer";
 import type { EvalService } from "./evals";
 import { buildQualityReport } from "./quality";
 import { repeatedRequests } from "./suggestions";
+import { qrSvg, type MobileAccess } from "./mobile-access";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
   list(): unknown;
@@ -80,6 +81,8 @@ export interface AppDeps {
   learning?: AutonomousLearning;
   knowledge?: KnowledgeLedger;
   modules: () => unknown;
+  /** «Мобильное приложение»: access from a phone over the home Wi-Fi (managed only from this computer). */
+  mobile?: MobileAccess;
   staticDir?: string;
   configured: { model?: string; hint?: string };
 }
@@ -89,13 +92,19 @@ const MAX_CHAT_BODY = 700 * 1024; // chat requests may carry attached text files
 const MAX_CHAT_MESSAGE = 100_000;
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
-  ".svg": "image/svg+xml", ".json": "application/json", ".png": "image/png", ".ico": "image/x-icon",
+  ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".ico": "image/x-icon",
 };
 
 /** Only loopback Host values are accepted: blocks DNS-rebinding against a local server. */
 export function hostAllowed(host: string | undefined): boolean {
   if (!host) return false;
   return /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+}
+/** The LAN side of the app: its own Host rule, and pairing before anything else (see mobile-access.ts). */
+export interface LanGate {
+  hostAllowed(host: string | undefined): boolean;
+  /** true when the request was answered by the gate itself. */
+  intercept(req: http.IncomingMessage, res: http.ServerResponse, url: URL): Promise<boolean>;
 }
 /** State-changing requests must come from our own origin (CSRF guard). */
 export function originAllowed(origin: string | undefined, host: string | undefined): boolean {
@@ -126,7 +135,7 @@ function readJson(req: http.IncomingMessage, limit = MAX_BODY): Promise<Record<s
   });
 }
 
-export function createApp(deps: AppDeps): http.Server {
+export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
   const send = (res: http.ServerResponse, status: number, body: unknown, type = "application/json") => {
     res.writeHead(status, {
       "content-type": type, "cache-control": "no-store", "x-content-type-options": "nosniff", connection: "close",
@@ -145,9 +154,10 @@ export function createApp(deps: AppDeps): http.Server {
 
   return http.createServer(async (req, res) => {
     try {
-      if (!hostAllowed(req.headers.host)) return send(res, 403, { error: "Недопустимый Host" });
+      if (!(lan ? lan.hostAllowed(req.headers.host) : hostAllowed(req.headers.host))) return send(res, 403, { error: "Недопустимый Host" });
       const url = new URL(req.url ?? "/", "http://localhost");
       const p = url.pathname;
+      if (lan && await lan.intercept(req, res, url)) return;
 
       if (p.startsWith("/api/")) {
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
@@ -167,6 +177,27 @@ export function createApp(deps: AppDeps): http.Server {
           return send(res, 200, deps.cloudStatus?.() ?? { configured: true });
         }
         const mc = deps.moduleControl;
+        if (deps.mobile && (p === "/api/mobile" || p.startsWith("/api/mobile/"))) {
+          if (mc && !mc.isActive("mobile")) return send(res, 503, { error: `Модуль «${mc.title("mobile")}» остановлен. Запустите его на странице «Модули».` });
+          const m = deps.mobile;
+          if (req.method === "GET" && p === "/api/mobile") return send(res, 200, m.status());
+          if (req.method === "POST" && p === "/api/mobile") {
+            const b = await readJson(req);
+            if (typeof b.enabled !== "boolean") return send(res, 400, { error: "Укажите enabled" });
+            await m.setEnabled(b.enabled);
+            return send(res, 200, m.status());
+          }
+          if (req.method === "GET" && p === "/api/mobile/qr.svg") {
+            const link = m.pairUrl(url.searchParams.get("ip") ?? "");
+            if (!link) return send(res, 404, { error: "Доступ выключен или адрес не найден" });
+            return send(res, 200, qrSvg(link), "image/svg+xml");
+          }
+          if (req.method === "POST" && p === "/api/mobile/code") { m.newCode(); return send(res, 200, m.status()); }
+          if (req.method === "DELETE" && p === "/api/mobile/devices") { await m.revokeAll(); return send(res, 200, m.status()); }
+          const dm = /^\/api\/mobile\/devices\/([0-9a-f-]{36})$/.exec(p);
+          if (req.method === "DELETE" && dm) { await m.revoke(dm[1]!); return send(res, 200, m.status()); }
+          return send(res, 404, { error: "Не найдено" });
+        }
         // A stopped module refuses its own endpoints, so stopping it really stops it.
         if (mc) {
           const owner = p.startsWith("/api/juunibi/scenes") ? "scenes"
