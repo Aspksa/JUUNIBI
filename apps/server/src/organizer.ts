@@ -248,9 +248,14 @@ export class Organizer {
         catch { throw error; }
       }
       if (!(error instanceof SyntaxError)) throw error;
-      const backup = await readFile(this.file + ".bak", "utf8");
-      JSON.parse(backup);
-      return backup;
+      try {
+        const backup = await readFile(this.file + ".bak", "utf8");
+        JSON.parse(backup);
+        return backup;
+      } catch {
+        // Preserve the original parse error: an absent backup is not a first launch.
+        throw error;
+      }
     }
   }
 
