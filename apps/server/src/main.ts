@@ -351,7 +351,9 @@ const shutdown = async (exitCode = 0) => {
   stopping = true;
   clearTimeout(initialLearningTimer); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
   // Let pending state writes finish so a stop never loses data.
-  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue]);
+  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue,
+    // Queued memory suggestions get a short grace period; a stuck model call must not block the stop.
+    Promise.race([assistant?.idle(), new Promise((resolve) => setTimeout(resolve, 5000).unref())])]);
   await kernel.stop();
   process.exit(exitCode);
 };
