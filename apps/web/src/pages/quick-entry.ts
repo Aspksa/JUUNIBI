@@ -156,3 +156,23 @@ export function taskTextFrom(content: string, selection = ""): string {
   const sentence = /^.+?[.!?…](?=\s|$)/.exec(line)?.[0] ?? line;
   return sentence.replace(/[.…]+$/, "").slice(0, 200).trim();
 }
+
+const PROMISE = /(?<![\p{L}])(надо|нужно|не\s+забыть|не\s+забудь|обещал[аи]?|должен|должна|собираюсь|планирую)(?![\p{L}])/iu;
+/**
+ * A promise in a chat message («завтра надо позвонить маме», «в пятницу нужно сдать отчёт»): a sentence with «надо»,
+ * «нужно», «не забыть»… and a date or time. Returns it as a to-do, or null. A request to the assistant («напомни…») is
+ * left to the assistant itself.
+ */
+export function findPromise(message: string, now = new Date()): QuickParsed | null {
+  const sentences = message.replace(/\s+/g, " ").split(/(?<=[.!?…;])\s+|\n/);
+  for (const raw of sentences) {
+    const s = raw.trim();
+    if (!s || s.length > 200 || /^напомни/i.test(s) || /\?\s*$/.test(s) || !PROMISE.test(s)) continue;
+    const p = parseQuick(s, now, "todo");
+    if (!p.at) continue;
+    const text = p.text.replace(new RegExp("^(?:(?:мне|нам|я|ещё|еще|а|и|так)\\s+)*" + PROMISE.source + "[,:]?\\s*", "iu"), "").replace(/[.!…;]+$/, "").trim();
+    if (text.length < 3) continue;
+    return { ...p, text: text[0]!.toUpperCase() + text.slice(1) };
+  }
+  return null;
+}

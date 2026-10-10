@@ -5,7 +5,7 @@ import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
 import { formatBytes, stepLabel } from "./helpers";
 import { speechSupported } from "./voice";
-import { toTasksButton } from "./to-tasks";
+import { promiseCard, toTasksButton } from "./to-tasks";
 
 export interface MsgCtx {
   convId: string; streaming: boolean; isLast: boolean; busy: boolean; editing: boolean; speaking: boolean;
@@ -57,6 +57,8 @@ function fillUser(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
   if (!c.busy) actions.append(iconButton("edit", "Изменить сообщение", () => c.onEdit(m.id), "icon-btn sm"));
   if (m.content.trim()) actions.append(iconButton("memory", "Запомнить это", () => c.onRemember(m.content), "icon-btn sm"), toTasksButton(m.content, () => root));
   root.append(actions);
+  const promise = m.content.trim() ? promiseCard(m.id, m.content, m.at) : null;
+  if (promise) root.append(promise);
 }
 
 function stepsBlock(steps: Step[]): HTMLElement {

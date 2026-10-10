@@ -191,7 +191,13 @@ kernel.register({
     }));
 
     void refreshStatus(); void refreshUpdate(); void refreshEvents(); void refreshMemory(); void refreshModules(); void refreshSettings(); void refreshBrief(); void refreshSuggestions();
-    ctx.onStop(app.select((s) => s.brief?.due.map((d) => d.id).join(",") ?? "", () => { const due = app.get().brief?.due ?? []; if (due.length) announceDue(due, () => go("tasks")); }));
+    ctx.onStop(app.select((s) => (s.brief?.quiet ? "q:" : "") + (s.brief?.due.map((d) => d.id).join(",") ?? ""), () => {
+      const b = app.get().brief;
+      if (b?.due.length) announceDue(b.due, { open: () => go("tasks"), snooze: (id, m) => void api.snoozeReminder(id, m).then((r) => {
+        showToast(r.ok ? (m === "tomorrow" ? "Напомню завтра утром" : `Напомню через ${m === 60 ? "час" : m + " минут"}`) : r.error.message, { ms: 3000 });
+        void refreshBrief();
+      }) }, !!b.quiet);
+    }));
     let tick = 0;
     const poll = setInterval(() => {
       tick++;

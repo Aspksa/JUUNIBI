@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Organizer, nextOccurrence } from "./organizer";
+import { DEFAULT_AUTOMATION, Organizer, nextOccurrence } from "./organizer";
 import { isWorkday } from "@juunibi/core";
 import { parseSteps } from "./task-helpers";
 
@@ -126,7 +126,7 @@ describe("автоматизация дел", () => {
   it("настройки автоматики сохраняются и проверяются", async () => {
     const { o, file, done } = await setup(local(10, 12, 7));
     try {
-      expect(o.getAutomation()).toEqual({ brief: true, briefTime: "09:00", rollOverdue: true, dueReminder: "15", workdays: true });
+      expect(o.getAutomation()).toEqual(DEFAULT_AUTOMATION);
       await o.setAutomation({ briefTime: "08:30", dueReminder: "morning" });
       await expect(o.setAutomation({ briefTime: "25:00" })).rejects.toMatchObject({ status: 400 });
       await expect(o.setAutomation({ dueReminder: "5" })).rejects.toMatchObject({ status: 400 });
