@@ -1,6 +1,6 @@
 import { Store, attempt } from "@juunibi/core";
 import { ACCENT_IDS, type AccentId } from "./accents";
-import { api, type AssistantSettings, type Brief, type RepeatSuggestion, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateStatus } from "./api";
+import { api, type AssistantSettings, type Brief, type RepeatSuggestion, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateHistory, type UpdateStatus } from "./api";
 
 export type Route = "home" | "memory" | "notes" | "reminders" | "quality" | "modules" | "brain" | "update" | "settings";
 export const ROUTES: Route[] = ["home", "memory", "notes", "reminders", "quality", "modules", "brain", "update", "settings"];
@@ -14,6 +14,11 @@ export interface AppState {
   assistantSettings: AssistantSettings | null; brief: Brief | null; repeatSuggestions: RepeatSuggestion[];
   approvals: ApprovalItem[];
   update: UpdateStatus | null; updateEvents: UpdateEvent[]; updateError: string;
+  updateHistory: UpdateHistory | null;
+  /** "": normal; otherwise the server is being restarted by the launcher to install an update or a rollback. */
+  updateRestarting: "" | "install" | "rollback";
+  /** Work that a restart would interrupt, shown for confirmation before "install now". */
+  updateWarnings: string[];
   theme: Theme; showScenes: boolean;
   chatOpen: boolean; chatMax: boolean; chatDensity: "comfortable" | "compact"; chatFont: "sm" | "md" | "lg"; accent: AccentId;
 }
@@ -26,7 +31,7 @@ const pick = <T extends string>(v: unknown, ok: readonly T[], d: T): T => (ok.in
 export const app = new Store<AppState>({
   route: routeFromHash(), navOpen: false,
   status: null, memory: [], modules: [], approvals: [], assistantSettings: null, brief: null, repeatSuggestions: [],
-  update: null, updateEvents: [], updateError: "",
+  update: null, updateEvents: [], updateError: "", updateHistory: null, updateRestarting: "", updateWarnings: [],
   theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false,
   chatOpen: false, chatMax: saved.chatMax === true,
   chatDensity: pick(saved.chatDensity, ["comfortable", "compact"], "comfortable"), chatFont: pick(saved.chatFont, ["sm", "md", "lg"], "md"), accent: pick(saved.accent, ACCENT_IDS, "gold"),
@@ -85,3 +90,49 @@ export async function downloadUpdate() {
   const r = await api.updateDownload();
   if (!r.ok) app.set({ updateError: r.error.message }); else void refreshUpdate();
 }
+export async function refreshHistory() {
+  const r = await api.updateHistory();
+  if (r.ok && JSON.stringify(r.value) !== JSON.stringify(app.get().updateHistory)) app.set({ updateHistory: r.value });
+}
+export async function cancelUpdate() {
+  const r = await api.updateCancel();
+  if (r.ok) app.set({ update: r.value, updateError: "" }); else app.set({ updateError: r.error.message });
+}
+export async function saveUpdateConfig(patch: Partial<NonNullable<UpdateStatus["config"]>>) {
+  const r = await api.updateSettings(patch);
+  if (r.ok) app.set({ update: r.value, updateError: "" }); else app.set({ updateError: r.error.message });
+  if (r.ok && patch.channel) void checkUpdate(); // the other channel may have a different newest version
+}
+/** Plans or cancels a rollback to the previous version; it is carried out when JUUNIBI starts the next time. */
+export async function requestRollback(cancel = false) {
+  const r = await api.updateRollback(cancel);
+  if (r.ok) app.set({ update: r.value, updateError: "" }); else app.set({ updateError: r.error.message });
+  void refreshHistory();
+}
+/** Waits for the launcher to restart the server, then reloads the page so the new interface is loaded. */
+function watchRestart(kind: "install" | "rollback") {
+  const started = Date.now();
+  let wentDown = false;
+  const tick = async () => {
+    const r = await api.updateStatus();
+    if (!r.ok) wentDown = true;
+    else if (wentDown || Date.now() - started > 20_000) { location.reload(); return; }
+    if (Date.now() - started > 5 * 60_000) {
+      app.set({ updateRestarting: "", updateError: "Перезапуск занял слишком много времени. Посмотрите окно JUUNIBI — там написана причина." });
+      return;
+    }
+    setTimeout(() => void tick(), 1500);
+  };
+  app.set({ updateRestarting: kind, updateError: "", updateWarnings: [] });
+  setTimeout(() => void tick(), 1200);
+}
+/** Installs a prepared update (or a planned rollback) right now: the launcher restarts JUUNIBI. */
+export async function installNow(force = false) {
+  const kind = app.get().update?.rollbackPending && app.get().update?.phase !== "ready" ? "rollback" : "install";
+  const r = await api.updateInstallNow(force);
+  if (r.ok) return watchRestart(kind);
+  const warnings = (r.error as Error & { body?: { warnings?: string[] } }).body?.warnings;
+  if (warnings?.length) app.set({ updateWarnings: warnings, updateError: "" });
+  else app.set({ updateError: r.error.message, updateWarnings: [] });
+}
+export function dismissInstallWarning() { app.set({ updateWarnings: [] }); }

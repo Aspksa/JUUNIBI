@@ -126,3 +126,32 @@ describe("grouping and filters", () => {
   });
   it("formatBytes", () => { expect(formatBytes(5)).toBe("5 Б"); expect(formatBytes(1536)).toBe("1.5 КБ"); expect(formatBytes(5 * 1048576)).toBe("5.0 МБ"); });
 });
+
+describe("откат и блокировка по CI", () => {
+  const completed = (sha = SHA_B) => ev("update_completed", { sha, backup_relative_path: ".updates/backups/x" });
+  it("после успешной установки показывает «установлено»", () => {
+    const m = buildUpdateModel(status({ localVersion: SHA_B }), [manifest(), ev("update_prepared"), completed()]);
+    expect(m.installed).toMatchObject({ ok: true, kind: "install", sha: SHA_B });
+  });
+  it("откат после неудачного запуска новее установки и показывается как неудача", () => {
+    const m = buildUpdateModel(status({ localVersion: SHA_A }), [manifest(), ev("update_prepared"), completed(), ev("rollback_done", { reason: "startup_failed", message: "Сервер не ответил" })]);
+    expect(m.installed).toMatchObject({ ok: false, kind: "startup_failed", message: "Сервер не ответил" });
+  });
+  it("ручной откат — успех с отдельной подписью", () => {
+    const m = buildUpdateModel(status({ localVersion: SHA_A }), [manifest(), ev("update_prepared"), completed(), ev("rollback_done", { reason: "rollback" })]);
+    expect(m.installed).toMatchObject({ ok: true, kind: "rollback" });
+    expect(m.steps.find((x) => x.id === "install")?.detail).toBe("Откат выполнен");
+  });
+  it("откат при сбое установки остаётся неудачей установки", () => {
+    const m = buildUpdateModel(status(), [manifest(), ev("update_prepared"), ev("update_failed", { message: "хеш" }), ev("rollback_done", { reason: "install_failed" })]);
+    expect(m.installed).toMatchObject({ ok: false, kind: "failed", message: "хеш" });
+  });
+  it("версия, у которой CI не пройден, блокирует скачивание и объясняет почему", () => {
+    const blocked = "Автоматические проверки (CI) этой версии не пройдены";
+    const m = buildUpdateModel(status({ blocked, latest: { sha: SHA_B, version: "bbbbbbbb", description: "x", date: "", ci: "failure" } }), []);
+    expect(m).toMatchObject({ blocked, ci: "failure", action: "download" });
+    expect(buildUpdateModel(status({ localVersion: SHA_B, blocked }), []).blocked).toBe(""); // nothing new -> nothing blocked
+    expect(buildUpdateModel(status({ phase: "ready", blocked }), []).blocked).toBe("");
+  });
+});
+

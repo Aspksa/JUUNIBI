@@ -10,6 +10,13 @@ const upd = (o: object) => ({ phase: "idle", localVersion: "a".repeat(40), lates
 
 describe("Требует внимания: каждый повод ровно один раз", () => {
   it("пусто, когда всё в порядке", () => { expect(ids(state({}))).toEqual([]); });
+  it("обновление: текст зависит от готовности, отката и результата CI, строка всегда одна", () => {
+    const text = (o: object) => buildAttention(state({ update: upd(o) }), deps()).map((a) => a.text);
+    expect(text({ phase: "ready" })[0]).toMatch(/можно установить/);
+    expect(text({ rollbackPending: true })[0]).toMatch(/откат/);
+    expect(text({ blocked: "CI ещё идёт" })[0]).toMatch(/ещё не пройдены/);
+    expect(text({})[0]).toMatch(/Доступна новая версия/);
+  });
   it("нет ключа — одна строка и переход в настройки", () => {
     const d = deps();
     const items = buildAttention(state({ status: { assistant: false } as AppState["status"] }), d);

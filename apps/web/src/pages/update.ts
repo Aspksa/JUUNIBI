@@ -1,9 +1,11 @@
 import { api } from "../api";
 import { el, icon, short, type IconName } from "../dom";
 import { pageHead } from "./kit";
-import { app, checkUpdate, downloadUpdate, type AppState } from "../state";
+import { plural } from "./brain-model";
+import { app, cancelUpdate, checkUpdate, dismissInstallWarning, downloadUpdate, installNow, requestRollback, saveUpdateConfig, type AppState } from "../state";
+import type { UpdateCi, UpdateConfig } from "../api";
 import {
-  buildUpdateModel, filterFiles, groupFiles,
+  buildUpdateModel, filterFiles, formatBytes, groupFiles,
   type Change, type FileRow, type FileState, type Filter, type Step, type UpdateModel,
 } from "./update-model";
 
@@ -26,33 +28,69 @@ function button(label: string, run: () => void, o: { primary?: boolean; disabled
   return b;
 }
 
+const CI_TEXT: Record<UpdateCi, string> = { success: "проверки пройдены", pending: "проверки ещё идут", failure: "проверки не пройдены", none: "проверок нет", unknown: "проверки не определены" };
+const CI_TONE: Record<UpdateCi, string> = { success: "ok", pending: "warn", failure: "bad", none: "warn", unknown: "warn" };
+
 function hero(s: AppState, m: UpdateModel): HTMLElement {
   const u = s.update;
   const hasLatest = !!u?.latest;
   const differs = hasLatest && u!.localVersion !== u!.latest!.sha;
+  const restarting = s.updateRestarting;
   const actions: HTMLElement[] = [];
-  if (m.action === "check") actions.push(button("Проверить обновления", () => void checkUpdate(), { primary: true }));
-  if (m.action === "download") { actions.push(button("Скачать и проверить", () => void downloadUpdate(), { primary: true })); actions.push(button("Проверить снова", () => void checkUpdate())); }
-  if (m.action === "busy") actions.push(button("Выполняется…", () => {}, { primary: true, disabled: true, busy: true }));
+  if (!restarting) {
+    if (m.action === "check") actions.push(button("Проверить обновления", () => void checkUpdate(), { primary: true }));
+    if (m.action === "download") {
+      const go = button("Скачать и проверить", () => void downloadUpdate(), { primary: true, disabled: !!m.blocked });
+      if (m.blocked) go.title = m.blocked;
+      actions.push(go, button("Проверить снова", () => void checkUpdate()));
+    }
+    if (m.action === "busy") {
+      actions.push(button("Выполняется…", () => {}, { primary: true, disabled: true, busy: true }));
+      if (u?.phase === "downloading" || u?.phase === "testing") actions.push(button("Отменить", () => void cancelUpdate()));
+    }
+    if (m.action === "restart") {
+      const warn = u?.activity ?? [];
+      const confirm = s.updateWarnings.length ? s.updateWarnings : [];
+      actions.push(button("Установить сейчас", () => void installNow(false), { primary: true }));
+      if (warn.length && !confirm.length) actions.push(el("span", { cls: "muted upd-hint", textContent: "Сейчас: " + warn.join(", ") + " — перезапуск это прервёт." }));
+    }
+  }
   const versions = hasLatest ? el("div", { cls: "upd-versions" },
     el("span", { cls: "upd-ver" }, el("small", { textContent: "Установлена" }), el("code", { textContent: short(u!.localVersion) })),
     differs ? el("span", { cls: "upd-arrow", textContent: "→", attrs: { "aria-hidden": "true" } }) : null,
-    differs ? el("span", { cls: "upd-ver new" }, el("small", { textContent: "Новая" }), el("code", { textContent: short(u!.latest!.sha) })) : null) : null;
+    differs ? el("span", { cls: "upd-ver new" }, el("small", { textContent: u!.latest!.tag ? "Выпуск" : "Новая" }), el("code", { textContent: u!.latest!.tag ?? short(u!.latest!.sha) })) : null,
+    differs && m.ci ? el("span", { cls: `upd-ci ${CI_TONE[m.ci]}`, title: "Результат автоматических проверок проекта на GitHub" }, "CI: " + CI_TEXT[m.ci]) : null) : null;
   const meta = [u?.latest?.date ? new Date(u.latest.date).toLocaleString("ru-RU", { dateStyle: "long", timeStyle: "short" }) : "", "github.com/Aspksa/JUUNIBI"].filter(Boolean).join(" · ");
 
-  const next = m.action === "restart"
-    ? el("div", { cls: "upd-next" }, el("strong", { textContent: "Что дальше" }),
-        el("ol", {}, el("li", { textContent: "Закройте JUUNIBI." }), el("li", {}, "Запустите снова через ", el("code", { textContent: "JUUNIBI.bat" }), " или ", el("code", { textContent: "npm start" }), "."),
-          el("li", { textContent: "Установка пройдёт сама: резервная копия, проверка файлов, проверка запуска. При сбое всё откатится." })))
+  const next = m.action === "restart" && !restarting
+    ? el("div", { cls: "upd-next" }, el("strong", { textContent: "Что будет" }),
+        el("ol", {}, el("li", { textContent: "JUUNIBI сам перезапустится (несколько секунд), страница обновится." }),
+          el("li", { textContent: "Установка: резервная копия, замена только изменённых файлов, проверка запуска. Если новая версия не запустится, вернётся прежняя." }),
+          el("li", {}, "Запущено не через лаунчер? Закройте JUUNIBI и откройте снова через ", el("code", { textContent: "JUUNIBI.bat" }), " или ", el("code", { textContent: "npm start" }), ".")))
+    : null;
+  const confirmBlock = s.updateWarnings.length && !restarting
+    ? el("div", { cls: "upd-card warn", attrs: { role: "alert" } }, icon("alert", 22),
+        el("div", { cls: "grow" }, el("strong", { textContent: "Перезапуск прервёт текущую работу" }),
+          el("ul", { cls: "upd-removals" }, ...s.updateWarnings.map((w) => el("li", { textContent: w }))),
+          el("div", { cls: "row upd-actions" }, button("Всё равно установить", () => void installNow(true), { primary: true }), button("Подождать", () => dismissInstallWarning()))))
+    : null;
+  const progress = restarting
+    ? el("div", { cls: "upd-restart" }, spinner("sm"), el("span", { textContent: restarting === "rollback" ? "Возвращаем прежнюю версию… Страница обновится сама." : "Устанавливаем обновление… Страница обновится сама." }))
+    : null;
+  const saved = u && (u.reusedFiles ?? 0) > 0 && u.treeBytes && u.phase !== "idle"
+    ? el("p", { cls: "muted upd-saved", textContent: `${u.reusedFiles} ${plural(u.reusedFiles ?? 0, ["файл", "файла", "файлов"])} без изменений уже на диске — не скачиваются (экономия ${formatBytes(Math.max(0, u.treeBytes - u.totalBytes))}).` })
     : null;
 
-  return el("section", { cls: `upd-hero tone-${m.tone}` },
-    el("div", { cls: "upd-hero-icon" }, m.tone === "busy" ? spinner("lg") : icon(HERO_ICON[m.tone], 28)),
+  return el("section", { cls: `upd-hero tone-${restarting ? "busy" : m.tone}` },
+    el("div", { cls: "upd-hero-icon" }, m.tone === "busy" || restarting ? spinner("lg") : icon(HERO_ICON[m.tone], 28)),
     el("div", { cls: "upd-hero-main" },
-      el("h2", { textContent: m.headline }), m.sub ? el("p", { cls: "upd-sub", textContent: m.sub }) : null,
-      versions, el("p", { cls: "upd-meta", textContent: meta }), next,
+      el("h2", { textContent: restarting ? "Идёт установка" : m.headline }), !restarting && m.sub ? el("p", { cls: "upd-sub", textContent: m.sub }) : null,
+      versions, el("p", { cls: "upd-meta", textContent: meta }),
+      m.blocked ? el("p", { cls: "upd-blocked", textContent: m.blocked }) : null,
+      next, confirmBlock, progress,
       actions.length ? el("div", { cls: "row upd-actions" }, ...actions) : null,
       u?.phase === "downloading" ? progressBar(u.percent, `${u.percent}% · ${u.downloadedFiles} из ${u.totalFiles} файлов`) : null,
+      saved,
       u?.phase === "downloading" || u?.phase === "testing" ? lane(m) : null));
 }
 
@@ -83,9 +121,11 @@ function resultCards(s: AppState, m: UpdateModel): HTMLElement[] {
   const i = m.installed;
   if (i) {
     const when = new Date(i.at).toLocaleString("ru-RU", { dateStyle: "medium", timeStyle: "short" });
+    const title = i.kind === "rollback" ? "Выполнен откат на предыдущую версию" : i.kind === "startup_failed" ? "Новая версия не запустилась — возвращена прежняя"
+      : i.ok ? (i.healthy === false ? "Установлено, но проверка запуска не пройдена" : "Обновление установлено") : "Установка не удалась — выполнен откат";
     out.push(el("section", { cls: `upd-card ${i.ok && i.healthy !== false ? "ok" : "danger"}` }, icon(i.ok ? "circleCheck" : "alert", 22),
-      el("div", {}, el("strong", { textContent: i.ok ? (i.healthy === false ? "Установлено, но проверка запуска не пройдена" : "Обновление установлено") : "Установка не удалась — выполнен откат" }),
-        el("p", { cls: "muted", textContent: i.ok ? `${i.sha ? short(i.sha) + " · " : ""}${when}${i.healthy ? " · проверка запуска пройдена" : ""}` : `${when} · ${i.message}` }),
+      el("div", {}, el("strong", { textContent: title }),
+        el("p", { cls: "muted", textContent: i.ok && i.kind === "install" ? `${i.sha ? short(i.sha) + " · " : ""}${when}${i.healthy ? " · проверка запуска пройдена" : ""}` : `${when}${i.message ? " · " + i.message : ""}` }),
         i.ok && i.backup ? el("p", { cls: "muted" }, "Резервная копия: ", el("code", { textContent: i.backup })) : null)));
   }
   const removals = s.update?.pendingRemovals ?? [];
@@ -97,6 +137,71 @@ function resultCards(s: AppState, m: UpdateModel): HTMLElement[] {
         el("ul", { cls: "upd-removals" }, ...removals.slice(0, 40).map((r) => el("li", {}, el("code", { textContent: r })))),
         removals.length > 40 ? el("p", { cls: "muted", textContent: `…и ещё ${removals.length - 40}` }) : null, confirm)));
   }
+  return out;
+}
+
+
+const CHECK_MARK: Record<string, string> = { todo: "·", active: "", done: "✓", error: "✕" };
+/** Install / types / tests / build as they actually ran, with the end of the log when one failed. */
+function checksCard(s: AppState): HTMLElement | null {
+  const u = s.update;
+  const checks = u?.checks ?? [];
+  if (!u || !checks.length || !(u.phase === "testing" || u.phase === "ready" || u.phase === "error") || checks.every((c) => c.status === "todo")) return null;
+  return el("section", { cls: "upd-checks" }, el("h2", { textContent: "Проверки во временной папке" }),
+    el("ul", { cls: "upd-check-list" }, ...checks.map((c) => el("li", { cls: `upd-check ${c.status}` },
+      c.status === "active" ? spinner("sm") : el("span", { cls: "chk", textContent: CHECK_MARK[c.status] }), el("span", { textContent: c.title })))),
+    u.phase === "error" && u.logTail ? el("details", { open: true }, el("summary", { textContent: "Что вывела проверка" }), el("pre", { cls: "upd-logtail", textContent: u.logTail })) : null);
+}
+
+/** Titles of the commits between the installed and the new version. */
+function whatsNew(s: AppState, hasNew: boolean): HTMLElement | null {
+  const l = s.update?.latest;
+  if (!hasNew || !l?.changes?.length) return null;
+  const more = (l.changesTotal ?? 0) - l.changes.length;
+  return el("section", { cls: "upd-news" }, el("h2", { textContent: "Что нового" }),
+    el("ul", { cls: "upd-news-list" }, ...l.changes.map((c) => el("li", {},
+      el("span", { textContent: c.title }),
+      c.pr ? el("a", { href: `https://github.com/Aspksa/JUUNIBI/pull/${c.pr}`, target: "_blank", rel: "noopener noreferrer", cls: "upd-pr", textContent: `#${c.pr}` }) : null))),
+    more > 0 ? el("p", { cls: "muted", textContent: `…и ещё ${more} ${plural(more, ["изменение", "изменения", "изменений"])}` }) : null);
+}
+
+function settingsCard(s: AppState): HTMLElement | null {
+  const c = s.update?.config;
+  if (!c) return null;
+  const busy = s.update?.phase === "downloading" || s.update?.phase === "testing";
+  const field = <K extends keyof UpdateConfig>(label: string, key: K, options: [UpdateConfig[K], string][], hint: string) => {
+    const sel = el("select", { attrs: { "aria-label": label } }, ...options.map(([v, t]) => el("option", { value: String(v), textContent: t, selected: v === c[key] })));
+    sel.disabled = busy && key === "channel";
+    sel.addEventListener("change", () => void saveUpdateConfig({ [key]: sel.value } as Partial<UpdateConfig>));
+    return el("label", { cls: "upd-field" }, el("span", {}, el("strong", { textContent: label }), el("small", { cls: "muted", textContent: hint })), sel);
+  };
+  return el("section", { cls: "upd-settings" }, el("h2", { textContent: "Настройки обновления" }),
+    field("Канал", "channel", [["fresh", "Свежий (последние изменения)"], ["stable", "Стабильный (только выпуски)"]], "Свежий — каждая версия, прошедшая проверки; стабильный — только помеченные выпуски."),
+    field("Автопроверка", "autoCheck", [["hourly", "Каждый час"], ["daily", "Раз в сутки"], ["off", "Выключена"]], "JUUNIBI сам смотрит, есть ли новая версия, и показывает отметку в меню. Ничего не скачивается без вашего согласия."));
+}
+
+const KIND_TEXT: Record<string, string> = { install: "Установлена", rollback: "Откат", failed: "Не установлена (откат)", startup_failed: "Не запустилась (возвращена прежняя)" };
+function historyCard(s: AppState): HTMLElement[] {
+  const h = s.updateHistory;
+  const out: HTMLElement[] = [];
+  if (s.update?.rollbackPending) {
+    out.push(el("section", { cls: "upd-card warn", attrs: { role: "group" } }, icon("alert", 22),
+      el("div", { cls: "grow" }, el("strong", { textContent: "Откат на предыдущую версию запланирован" }),
+        el("p", { cls: "muted", textContent: "Он выполнится при перезапуске JUUNIBI. Ваши данные, ключи и настройки не затрагиваются." }),
+        el("div", { cls: "row upd-actions" },
+          s.updateRestarting ? null : button("Откатить сейчас", () => void installNow(false), { primary: true }),
+          s.updateRestarting ? null : button("Отменить откат", () => void requestRollback(true))))));
+  }
+  if (!h || !h.items.length) return out;
+  const can = h.canRollback && !s.update?.rollbackPending && s.update?.phase !== "downloading" && s.update?.phase !== "testing" ? h.canRollback : null;
+  out.push(el("section", { cls: "upd-history" }, el("h2", { textContent: "История обновлений" }),
+    can ? el("div", { cls: "upd-rollback" }, el("span", { textContent: `Можно вернуться на версию ${can.from ? short(can.from) : "до обновления"}.` }),
+      button("Откатить на предыдущую версию", () => void requestRollback(false))) : null,
+    el("ul", { cls: "upd-history-list" }, ...h.items.slice(0, 10).map((it) => el("li", { cls: `h-${it.kind}` },
+      el("time", { textContent: new Date(it.at).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) }),
+      el("strong", { textContent: KIND_TEXT[it.kind] ?? it.kind }),
+      el("code", { textContent: short(it.kind === "rollback" ? it.to : it.kind === "install" ? it.to : it.to || it.from) }),
+      it.message ? el("em", { cls: "muted", textContent: it.message }) : null)))));
   return out;
 }
 
@@ -156,8 +261,8 @@ export function updatePage(s: AppState): HTMLElement {
   const hasNew = !!s.update?.latest && s.update.localVersion !== s.update.latest.sha;
   return el("div", { cls: "page upd" },
     pageHead("update", "Обновление", "Файлы скачиваются и проверяются во временной папке; работающая версия не трогается, пока всё не пройдёт проверку."),
-    hero(s, m), stepper(m.steps), ...resultCards(s, m),
-    changes(m, hasNew), logPanel(s),
+    hero(s, m), stepper(m.steps), ...resultCards(s, m), ...historyCard(s),
+    checksCard(s), whatsNew(s, hasNew), changes(m, hasNew), settingsCard(s), logPanel(s),
     s.updateError ? el("p", { cls: "bad", textContent: s.updateError }) : null);
 }
 

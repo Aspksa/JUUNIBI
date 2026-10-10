@@ -943,3 +943,36 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .toast span{flex:1;overflow-wrap:anywhere}
 @media (max-width:640px){.brain .mod-grid{grid-template-columns:repeat(2,1fr)}}
 .set-row.stack>span>small{display:block;margin-top:2px}
+
+/* update centre: CI badge, checks, news, settings, history */
+.upd-ci{align-self:center;padding:3px 10px;border-radius:999px;font-size:.76rem;border:1px solid var(--line);background:var(--bg);color:var(--muted)}
+.upd-ci.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}
+.upd-ci.warn{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
+.upd-ci.bad{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+.upd-blocked{margin:0;padding:10px 14px;border-radius:12px;font-size:.88rem;background:color-mix(in srgb,var(--brand) 10%,transparent);border:1px solid color-mix(in srgb,var(--brand) 40%,var(--line))}
+.upd-hint{font-size:.82rem;align-self:center}
+.upd-saved{margin:0;font-size:.8rem}
+.upd-restart{display:flex;align-items:center;gap:10px;font-size:.92rem}
+.upd-checks,.upd-news,.upd-settings,.upd-history{margin:0 0 18px;padding:16px 18px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.upd-checks h2,.upd-news h2,.upd-settings h2,.upd-history h2{margin:0 0 10px;font-size:1.05rem}
+.upd-check-list{list-style:none;margin:0;padding:0;display:flex;gap:8px;flex-wrap:wrap}
+.upd-check{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;font-size:.84rem;border:1px solid var(--line);background:var(--bg);color:var(--muted)}
+.upd-check.done{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+.upd-check.error{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+.upd-check.active{color:var(--text);border-color:color-mix(in srgb,var(--brand) 55%,var(--line))}
+.upd-checks details{margin-top:12px}.upd-checks summary{cursor:pointer;color:var(--muted);font-size:.86rem}
+.upd-logtail{margin:8px 0 0;max-height:240px;overflow:auto;padding:12px;border-radius:12px;background:var(--bg);border:1px solid var(--line);font:.76rem/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.upd-news-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:.9rem}
+.upd-news-list li{display:flex;gap:10px;align-items:baseline;justify-content:space-between}
+.upd-pr{flex:none;font-size:.78rem;color:var(--brand);text-decoration:none}.upd-pr:hover{text-decoration:underline}
+.upd-field{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid var(--line)}
+.upd-field:first-of-type{border-top:0}
+.upd-field>span{display:flex;flex-direction:column;gap:2px;min-width:0}.upd-field small{font-size:.78rem;max-width:56ch}
+.upd-field select{flex:none;max-width:260px}
+.upd-rollback{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;border-radius:12px;background:var(--bg);border:1px solid var(--line);font-size:.9rem}
+.upd-history-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:.86rem}
+.upd-history-list li{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.upd-history-list time{color:var(--muted);font-size:.78rem;min-width:9.5em}
+.upd-history-list code{font-size:.8rem;padding:1px 6px;border-radius:6px;background:var(--surface-2)}
+.upd-history-list .h-failed strong,.upd-history-list .h-startup_failed strong{color:var(--danger)}
+@media (max-width:640px){.upd-field{flex-direction:column;align-items:stretch}.upd-field select{max-width:none}}

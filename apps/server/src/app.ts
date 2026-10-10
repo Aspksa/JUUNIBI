@@ -66,6 +66,10 @@ export interface AppDeps {
   assistant?: Assistant | undefined;
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
+  /** Ends the process so the launcher installs a prepared update. Returns false when not started by the launcher. */
+  restart?: () => boolean;
+  /** Human-readable list of work that a restart would interrupt (beyond running chats and open approvals). */
+  activity?: () => string[];
   scenes?: SceneEngine;
   brain?: BrainCore;
   automaticBrainReview?: (message: string) => ReturnType<typeof automaticBrainReview>;
@@ -127,6 +131,14 @@ export function createApp(deps: AppDeps): http.Server {
     res.end(typeof body === "string" ? body : JSON.stringify(body));
   };
 
+  let chatsInFlight = 0;
+  /** What a restart would interrupt right now. */
+  const interruptions = (): string[] => [
+    ...(chatsInFlight ? ["идёт ответ помощницы"] : []),
+    ...((deps.approvals?.list().length ?? 0) ? [`ждут решения действия: ${deps.approvals!.list().length}`] : []),
+    ...(deps.activity?.() ?? []),
+  ];
+
   return http.createServer(async (req, res) => {
     try {
       if (!hostAllowed(req.headers.host)) return send(res, 403, { error: "Недопустимый Host" });
@@ -150,7 +162,7 @@ export function createApp(deps: AppDeps): http.Server {
         if (mc) {
           const owner = p.startsWith("/api/juunibi/scenes") ? "scenes"
             : /^\/api\/(brain|learning|knowledge)(\/|$)/.test(p) ? "brain"
-            : /^\/api\/update\/(check|download|confirm-removals)$/.test(p) ? "updater" : null;
+            : /^\/api\/update\/(check|download|cancel|settings|rollback|install-now|confirm-removals)$/.test(p) ? "updater" : null;
           if (owner && !mc.isActive(owner)) return send(res, 503, { error: `Модуль «${mc.title(owner)}» остановлен. Запустите его на странице «Модули».` });
         }
         if (mc && p.startsWith("/api/modules/")) {
@@ -388,7 +400,35 @@ export function createApp(deps: AppDeps): http.Server {
             () => deps.modules(), async (query) => mem ? (await mem.search(query, 8)).map(item => item.text) : []));
         }
         if (req.method === "GET" && p === "/api/update/events") return send(res, 200, await deps.updater?.events() ?? []);
-        if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater?.status() ?? { error: "Модуль обновления недоступен" });
+        if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater ? { ...deps.updater.status(), activity: interruptions() } : { error: "Модуль обновления недоступен" });
+        if (req.method === "GET" && p === "/api/update/history") return send(res, 200, deps.updater ? await deps.updater.history() : { items: [], canRollback: null, rollbackPending: false });
+        if (req.method === "POST" && p === "/api/update/settings") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          await deps.updater.setConfig(await readJson(req));
+          return send(res, 200, deps.updater.status());
+        }
+        if (req.method === "POST" && p === "/api/update/cancel") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          try { return send(res, 200, deps.updater.cancel()); } catch (e) { return send(res, 409, { error: (e as Error).message }); }
+        }
+        if (req.method === "POST" && p === "/api/update/rollback") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          const b = await readJson(req);
+          return send(res, 200, b.cancel === true ? await deps.updater.cancelRollback() : await deps.updater.requestRollback());
+        }
+        if (req.method === "POST" && p === "/api/update/install-now") {
+          if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
+          const st = deps.updater.status();
+          if (deps.updater.isBusy()) return send(res, 409, { error: "Подготовка обновления ещё идёт" });
+          if (st.phase !== "ready" && !st.rollbackPending) return send(res, 409, { error: "Нет подготовленного обновления или отката" });
+          if (!deps.restart) return send(res, 409, { error: "JUUNIBI запущен без лаунчера: закройте и откройте его снова вручную" });
+          const warnings = interruptions();
+          const b = await readJson(req);
+          // Work in progress is only interrupted after the person has seen the warning and confirmed it.
+          if (warnings.length && b.force !== true) return send(res, 409, { error: "Перезапуск прервёт текущую работу", warnings });
+          if (!deps.restart()) return send(res, 409, { error: "JUUNIBI запущен без лаунчера: закройте и откройте его снова вручную" });
+          return send(res, 202, { restarting: true });
+        }
         if (req.method === "POST" && p === "/api/update/check") {
           if (!deps.updater) return send(res, 503, { error: "Модуль обновления недоступен" });
           return send(res, 200, mc ? await mc.track("updater", () => deps.updater!.check()) : await deps.updater.check());
@@ -475,12 +515,14 @@ export function createApp(deps: AppDeps): http.Server {
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-accel-buffering": "no" });
           const line = (o: unknown) => { if (!res.writableEnded && !res.destroyed) res.write(JSON.stringify(o) + "\n"); };
+          chatsInFlight++;
           try {
             const review = brainOn && deps.automaticBrainReview ? deps.automaticBrainReview(msg) : undefined;
             if (brainOn) line({ type: "brain_review", review: review?.cycle ?? brainOn.classifyTask(msg) });
             const r = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), onEvent: line, ...(brainOn ? { brainGuidance: review?.guidance ?? brainOn.classifyTask(msg) } : {}) });
             line({ type: "done", turnId: r.turnId, reply: r.reply, tools: r.tools, memory: r.memory });
           } catch (e) { line({ type: "error", message: ctl.signal.aborted ? "Остановлено" : (e as Error).message }); }
+          finally { chatsInFlight--; }
           return void res.end();
         }
         if (req.method === "POST" && p === "/api/chat") {
@@ -492,7 +534,10 @@ export function createApp(deps: AppDeps): http.Server {
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
           const review = brainOn && deps.automaticBrainReview ? deps.automaticBrainReview(msg) : undefined;
-          const reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(brainOn ? { brainGuidance: review?.guidance ?? brainOn.classifyTask(msg) } : {}) });
+          chatsInFlight++;
+          let reply: Awaited<ReturnType<Assistant["ask"]>>;
+          try { reply = await a.ask(msg, session, ctl.signal, { ...(history ? { history } : {}), ...(brainOn ? { brainGuidance: review?.guidance ?? brainOn.classifyTask(msg) } : {}) }); }
+          finally { chatsInFlight--; }
           return send(res, 200, brainOn ? { ...reply, brainReview: review?.cycle ?? brainOn.classifyTask(msg) } : reply);
         }
         if (req.method === "POST" && p === "/api/feedback") {
