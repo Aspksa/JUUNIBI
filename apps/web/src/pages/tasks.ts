@@ -206,6 +206,8 @@ export function tasksPage(): HTMLElement {
       el("span", { cls: "org-ic", attrs: { "aria-hidden": "true" } }, icon("clock", 16)),
       el("span", { cls: "grow", textContent: r.text }), ...tags,
       r.status === "due" ? btn("Готово", () => void act(() => api.dismissReminder(r.id)), { small: true, primary: true }) : null,
+      r.status === "due" ? btn("Через 10 мин", () => void act(() => api.snoozeReminder(r.id,10),"Отложено на 10 минут"), {small:true}) : null,
+      r.status === "due" ? btn("Через час", () => void act(() => api.snoozeReminder(r.id,60),"Отложено на час"), {small:true}) : null,
       r.status === "scheduled" ? iconButton("edit", "Изменить напоминание: " + r.text, () => { editing = r.id; render(); }, "icon-btn sm") : null,
       iconButton("trash", r.repeat ? "Удалить повторяющееся напоминание" : "Удалить напоминание", () => {
         if (!r.repeat || confirm("Удалить повторяющееся напоминание? Оно больше не сработает.")) void act(() => api.removeReminder(r.id), "Удалено");
