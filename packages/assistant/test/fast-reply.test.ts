@@ -17,7 +17,7 @@ describe("immediate chat reply", () => {
    return {content:"{}",toolCalls:[]};
   })};
   const assistant = new Assistant({llm});
-  const answer = await assistant.ask("Мне нравится этот проект и его возможности");
+  const answer = await assistant.ask("Я постоянно использую тёмную тему");
   expect(answer.reply).toBe("Основной ответ");
   await entered;
   expect(count).toBe(2);
