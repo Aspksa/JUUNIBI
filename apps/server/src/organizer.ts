@@ -86,7 +86,7 @@ export class Organizer {
     const next = { ...n };
     if ("priority" in patch) {
       if (!["low", "normal", "high"].includes(String(patch.priority))) throw bad("Недопустимый приоритет");
-      next.priority = patch.priority as Note["priority"];
+      next.priority = patch.priority as "low" | "normal" | "high";
     }
     if ("project" in patch) {
       if (patch.project === null || patch.project === "") delete next.project;
