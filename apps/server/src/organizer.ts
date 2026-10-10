@@ -138,7 +138,7 @@ export class Organizer {
   }
   /** Calendar, statistics and deterministic Brain-compatible recommendations: no network, no side effects. */
   insights(month: string, now = this.now()) {
-    if (!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw bad("Месяц: YYYY-MM");
+    if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month)) throw bad("Месяц: YYYY-MM");
     const [year, m] = month.split("-").map(Number);
     const begin = new Date(year!,m!-1,1).getTime(), end = new Date(year!,m!,1).getTime();
     const items = [
