@@ -236,6 +236,7 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
           el("span", { cls: "ach-tail-ic", attrs: { "aria-hidden": "true" }, textContent: t.emoji }),
           el("span", { cls: "grow" }, el("b", { textContent: t.title }), el("small", { textContent: ` · ${t.pattern}` }),
             el("span", { cls: "ach-tail-bar" }, el("i")), el("small", { cls: "muted", textContent: t.next ? `Сделано ${t.done}; до узора «${["Спит", "Искра", "Узор", "Сияние", "Пламя", "Звёздный узор"][t.level + 1]}» ещё ${t.next - t.done}` : `Сделано ${t.done}: высший узор` })),
+          el("span", { cls: "ach-tail-next", attrs: { "aria-label": t.next ? `Прогресс ${Math.round(t.progress * 100)} процентов, до следующего уровня ${Math.max(0, t.next - t.done)} дел` : "Максимальный уровень" } }, el("span", { textContent: t.next ? "↗" : "★" }), el("small", { textContent: t.next ? `${Math.round(t.progress * 100)}%` : "MAX" })),
           el("span", { cls: "ach-tail-lv", textContent: String(t.level) }));
         r.style.setProperty("--p", String(Math.round(t.progress * 100)));
         r.addEventListener("click", () => { tail = t.id; renderBody(); });
