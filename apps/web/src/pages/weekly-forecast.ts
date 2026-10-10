@@ -13,3 +13,13 @@ export function forecastWeek(notes: Note[], start: Date, dailyCapacityMinutes = 
     return { day, planned, capacity, count: pending.length, overload: planned > capacity, excess: Math.max(0, planned-capacity) };
   });
 }
+
+/** Hypothetical scenario, never writes to the planner. A positive delta adds new work every weekday. */
+export function simulateWeek(days: readonly ForecastDay[], addedMinutesPerWorkday: number): { baseline: number; projected: number; extra: number; overloadedDays: number; days: ForecastDay[] } {
+  const delta = Number.isFinite(addedMinutesPerWorkday) ? Math.max(0, Math.min(1440, Math.round(addedMinutesPerWorkday))) : 0;
+  const projected = days.map(d => {
+    const planned = d.planned + (d.capacity > 0 ? delta : 0);
+    return { ...d, planned, overload: planned > d.capacity, excess: Math.max(0, planned - d.capacity) };
+  });
+  return { baseline: days.reduce((n,d)=>n+d.planned,0), projected: projected.reduce((n,d)=>n+d.planned,0), extra: projected.reduce((n,d)=>n+d.planned,0)-days.reduce((n,d)=>n+d.planned,0), overloadedDays: projected.filter(d=>d.overload).length, days: projected };
+}
