@@ -204,6 +204,40 @@ export class Organizer {
     await this.save();
     return { ...r };
   }
+  /** Snoozes a fired one-off occurrence, never silently shifts its repeating series. */
+  async snoozeReminder(id: string, minutes: unknown): Promise<Reminder> {
+    if (!Number.isInteger(minutes) || ![5, 10, 15, 30, 60, 1440].includes(Number(minutes))) throw bad("Отложить можно на 5, 10, 15, 30, 60 минут или сутки");
+    const r = this.reminders.find(x => x.id === id);
+    if (!r) throw bad("Напоминание не найдено", 404);
+    if (r.status !== "due") throw bad("Отложить можно только сработавшее напоминание", 409);
+    r.at = new Date(this.now() + Number(minutes) * 60_000).toISOString();
+    r.status = "scheduled";
+    delete r.firedAt;
+    await this.save();
+    return { ...r };
+  }
+  /** Suggest a finite working-day schedule without modifying the task list or promising external calendar availability. */
+  timeBlocks(day: string, startHour = 9, endHour = 18) {
+    if (!/^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(day)) throw bad("День: YYYY-MM-DD");
+    const d = new Date(day + "T12:00:00");
+    if (Number.isNaN(d.getTime()) || [d.getFullYear(), d.getMonth()+1, d.getDate()].join("-") !== day.split("-").map(Number).join("-")) throw bad("Недопустимая дата");
+    if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || startHour < 0 || endHour > 24 || endHour <= startHour) throw bad("Неверные рабочие часы");
+    const minutes = (endHour-startHour)*60;
+    const tasks = this.notes.filter(n=>n.kind==="todo"&&!n.done && !n.parentId);
+    const ordered = [...tasks].sort((a,b)=>(b.priority==="high"?2:b.priority==="normal"?1:0)-(a.priority==="high"?2:a.priority==="normal"?1:0) || (a.dueAt??"9999").localeCompare(b.dueAt??"9999"));
+    let used = 0;
+    const blocks: { id:string; text:string; start:string; end:string; minutes:number }[] = [];
+    for (const task of ordered) {
+      const duration = task.estimateMinutes ?? 30;
+      if (used + duration > minutes) continue;
+      const from = new Date(d); from.setHours(startHour, used, 0, 0);
+      const to = new Date(from.getTime()+duration*60_000);
+      blocks.push({id:task.id,text:task.text,start:from.toISOString(),end:to.toISOString(),minutes:duration});
+      used += duration;
+    }
+    return {day, workingMinutes:minutes, plannedMinutes:used, remainingMinutes:minutes-used, blocks,
+      note:"Предложение по задачам; занятость внешнего календаря не проверялась", advisoryOnly:true as const};
+  }
   async dismissReminder(id: string): Promise<Reminder> {
     const r = this.reminders.find((x) => x.id === id);
     if (!r) throw bad("Напоминание не найдено", 404);

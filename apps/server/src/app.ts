@@ -458,10 +458,11 @@ export function createApp(deps: AppDeps): http.Server {
           const o = deps.organizer;
           if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders() });
           if (req.method === "GET" && p === "/api/organizer/plan") return send(res, 200, o.planToday());
+          if (req.method === "GET" && p === "/api/organizer/time-blocks") return send(res, 200, o.timeBlocks(url.searchParams.get("day") ?? new Date().toISOString().slice(0,10)));
           if (req.method === "GET" && p === "/api/organizer/insights") { const month = url.searchParams.get("month") ?? new Date().toISOString().slice(0,7); return send(res, 200, o.insights(month)); }
           if (req.method === "POST" && p === "/api/organizer/notes") { const b = await readJson(req); return send(res, 201, await o.addNote(b.kind ?? "note", b.text)); }
           if (req.method === "POST" && p === "/api/organizer/reminders") { const b = await readJson(req); return send(res, 201, await o.addReminder(b.text, b.at, b.repeat)); }
-          const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss|plan))?$/.exec(p);
+          const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss|plan|snooze))?$/.exec(p);
           if (om) {
             const [, kind, id, action] = om;
             if (req.method === "POST" && kind === "notes" && action === "plan") { const b = await readJson(req); return send(res, 200, await o.updateTask(id!, b)); }
@@ -469,6 +470,7 @@ export function createApp(deps: AppDeps): http.Server {
             if (req.method === "DELETE" && !action) { if (kind === "notes") await o.removeNote(id!); else await o.removeReminder(id!); return send(res, 200, { ok: true }); }
             if (req.method === "POST" && kind === "notes" && action === "done") { const b = await readJson(req); if (typeof b.done !== "boolean") return send(res, 400, { error: "Укажите done: true или false" }); return send(res, 200, await o.setDone(id!, b.done)); }
             if (req.method === "POST" && kind === "reminders" && action === "dismiss") return send(res, 200, await o.dismissReminder(id!));
+            if (req.method === "POST" && kind === "reminders" && action === "snooze") { const b = await readJson(req); return send(res, 200, await o.snoozeReminder(id!, b.minutes)); }
           }
           return send(res, 404, { error: "Не найдено" });
         }

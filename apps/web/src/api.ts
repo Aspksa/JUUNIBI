@@ -142,6 +142,8 @@ export const api = {
     brainRecommendations:{id:string;text:string;score:number;reason:string;evidence:string;source:string}[];
     advisoryOnly:boolean;
   }>(`/api/organizer/insights?month=${encodeURIComponent(month)}`)),
+  timeBlocks: (day:string) => attemptAsync(() => call<{day:string;workingMinutes:number;plannedMinutes:number;remainingMinutes:number;blocks:{id:string;text:string;start:string;end:string;minutes:number}[];note:string;advisoryOnly:boolean}>(`/api/organizer/time-blocks?day=${encodeURIComponent(day)}`)),
+  snoozeReminder: (id:string,minutes:number) => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
   updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
   addNote: (kind: "note" | "todo", text: string) => attemptAsync(() => call<Note>("/api/organizer/notes", post({ kind, text }))),
