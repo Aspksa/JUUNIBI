@@ -95,14 +95,18 @@ export class ChatController {
     let finished = false;
     try {
       await streamChat({ message: userText, history, session: convId }, ctl.signal, (e) => {
-        if (e.type === "delta") { text += e.text; this.chats.patch(convId, reply.id, { content: text }); }
+        // "Обдумываю ответ" stays visible while the model reasons and closes as soon as it answers or calls a tool.
+        const thought = () => { if (steps.some((st) => st.name === "thinking" && st.status === "running")) { steps = steps.map((st) => (st.name === "thinking" && st.status === "running" ? { ...st, status: "ok" as const } : st)); this.chats.patch(convId, reply.id, { steps }); } };
+        if (e.type === "delta") { thought(); text += e.text; this.chats.patch(convId, reply.id, { content: text }); }
+        else if (e.type === "thinking") { steps = [...steps, { id: "thinking-" + steps.length, name: "thinking", status: "running" }]; this.chats.patch(convId, reply.id, { steps }); }
         else if (e.type === "tool") {
-          if (e.phase === "start") steps = [...steps, { id: e.id, name: e.name, status: "running" }];
+          if (e.phase === "start") { thought(); steps = [...steps, { id: e.id, name: e.name, status: "running" }]; }
           else steps = steps.map((st) => (st.id === e.id ? { ...st, status: e.status, ms: e.ms } : st));
           this.chats.patch(convId, reply.id, { steps });
         }
         else if (e.type === "done") {
           finished = true;
+          thought();
           const patch: Partial<ChatMsg> = { turnId: e.turnId, tools: e.tools, ...(e.memory?.length ? { memoryUsed: e.memory } : {}) };
           if (!text && e.reply) patch.content = e.reply; // server returned a reply without deltas
           this.chats.patch(convId, reply.id, patch);

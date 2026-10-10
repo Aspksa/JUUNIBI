@@ -21,6 +21,8 @@ export interface Turn {
 export type ToolStatus = "ok" | "error" | "denied";
 export type AskEvent =
   | { type: "delta"; text: string }
+  /** The model is reasoning before it answers (sent once per model call). */
+  | { type: "thinking" }
   | { type: "tool"; phase: "start"; id: string; name: string; args: string }
   | { type: "tool"; phase: "end"; id: string; name: string; status: ToolStatus; ms: number };
 export interface AskOptions {
@@ -223,13 +225,26 @@ export class Assistant {
       ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
     let reply: string | null = null;
+    // The automatic brain review already ran for this message, so its tool would only add a model round trip;
+    // the other brain tools are offered only when the review says the task needs planning.
+    const toolAllowed = (name: string) => this.o.toolPolicy?.(name) !== false &&
+      !(guidance && name.startsWith("brain_") && (name === "brain_v4_unified_review" || !guidance.needsPlanning));
+    const t0 = Date.now();
+    let firstTextAt = 0, calls = 0, model: string | undefined;
 
     for (let step = 0; step < (this.o.maxSteps ?? 6); step++) {
+      let thinking = false;
+      calls++;
       const r = await this.o.llm.chat(msgs, {
-        tools: this.tools.specs().filter((t) => this.o.toolPolicy?.(t.name) !== false), ...(signal ? { signal } : {}),
+        tools: this.tools.specs().filter((t) => toolAllowed(t.name)), ...(signal ? { signal } : {}),
         timeoutMs: this.o.chatTimeoutMs ?? CHAT_TIMEOUT_MS, retries: this.o.chatRetries ?? CHAT_RETRIES,
-        ...(opts.onEvent ? { onText: (text: string) => opts.onEvent!({ type: "delta", text }) } : {}),
+        ...(opts.onEvent ? {
+          onText: (text: string) => { firstTextAt ||= Date.now(); opts.onEvent!({ type: "delta", text }); },
+          onReasoning: () => { if (!thinking) { thinking = true; opts.onEvent!({ type: "thinking" }); } },
+        } : {}),
       });
+      model = r.model ?? model;
+      if (r.content) firstTextAt ||= Date.now();
       if (!r.toolCalls.length) { reply = r.content ?? ""; break; }
       msgs.push({ role: "assistant", content: r.content, tool_calls: r.toolCalls });
       for (const call of r.toolCalls) {
@@ -245,6 +260,11 @@ export class Assistant {
       }
     }
     reply ??= "Не удалось завершить задачу за отведённое число шагов.";
+    if (!opts.ephemeral) {
+      const sec = (ms: number) => (ms / 1000).toFixed(1);
+      this.log.info(`ответ за ${sec(Date.now() - t0)} с: первый текст через ${firstTextAt ? sec(firstTextAt - t0) + " с" : "—"}, ` +
+        `запросов к модели ${calls}${used.length ? ", инструменты: " + used.join(", ") : ""}${model ? ", запасная модель " + model : ""}`);
+    }
     // The running summary is refreshed only after the reply, so it never competes with it for Cloud.ru.
     if (prefs.summaries && older.length && !opts.ephemeral) this.queueSummary(session, older);
 

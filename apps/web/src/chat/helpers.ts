@@ -83,7 +83,7 @@ export function withFiles(text: string, files: Attachment[] | undefined): string
 }
 
 // ---------- tool steps ----------
-const STEP_LABELS: Record<string, string> = {
+const STEP_LABELS: Record<string, string> = { thinking: "Обдумываю ответ",
   list_modules: "Смотрю модули проекта", search_memory: "Ищу в памяти", remember: "Предлагаю запомнить", get_time: "Узнаю время",
   list_files: "Смотрю папку", read_file: "Читаю файл", search_files: "Ищу в файлах", write_file: "Записываю файл",
   web_search: "Ищу в справочнике", web_read: "Читаю статью", list_notes: "Смотрю заметки", add_note: "Добавляю заметку", complete_todo: "Отмечаю дело",

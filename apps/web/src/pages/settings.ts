@@ -52,6 +52,25 @@ function behaviorSection(s: AppState): HTMLElement {
     return r.ok;
   };
 
+  // chat model, fallback and reasoning
+  const listId = "cloud-models";
+  const options = el("datalist", { id: listId });
+  const chatModel = el("input", { type: "text", value: cfg.chat.model, spellcheck: false, attrs: { "aria-label": "Модель чата", list: listId } });
+  const fallback = el("input", { type: "text", value: cfg.chat.fallbackModel, placeholder: "Не задана", spellcheck: false, attrs: { "aria-label": "Запасная модель", list: listId } });
+  const modelsNote = el("p", { cls: "muted small", attrs: { role: "status" } });
+  const loadModels = btn("Загрузить список моделей", async () => {
+    loadModels.disabled = true; modelsNote.textContent = "Запрашиваю список у Cloud.ru…";
+    const r = await api.cloudModels();
+    loadModels.disabled = false;
+    if (!r.ok) { modelsNote.textContent = r.error.message; return; }
+    options.replaceChildren(...r.value.models.map((id) => el("option", { value: id })));
+    modelsNote.textContent = r.value.models.length ? `Доступно моделей: ${r.value.models.length}. Начните вводить имя, чтобы выбрать.` : "Cloud.ru не вернул ни одной модели.";
+  }, { small: true });
+  const saveChat = btn("Сохранить модели", () => void save({ chat: { model: chatModel.value.trim(), fallbackModel: fallback.value.trim(), reasoning: cfg.chat.reasoning } }, "Модели сохранены."), { small: true, primary: true });
+  const chatSub = el("div", { cls: "beh-sub" },
+    el("label", { cls: "beh-field" }, el("span", { textContent: "Модель чата (Cloud.ru)" }), chatModel),
+    el("label", { cls: "beh-field" }, el("span", { textContent: "Запасная модель: используется один раз, если основная не отвечает" }), fallback),
+    options, el("div", { cls: "row" }, saveChat, loadModels), modelsNote);
   // semantic memory search
   const model = el("input", { type: "text", value: cfg.embeddings.model, spellcheck: false, attrs: { "aria-label": "Модель эмбеддингов" } });
   const probe = el("p", { cls: "muted small", attrs: { role: "status" } });
@@ -89,6 +108,9 @@ function behaviorSection(s: AppState): HTMLElement {
 
   return section("Поведение помощницы",
     el("p", { cls: "muted small", textContent: "Настройки хранятся на этом компьютере. Они только ограничивают или настраивают помощницу: записи в память и действия по-прежнему требуют вашего подтверждения." }),
+    el("div", { cls: "set-row stack" }, el("span", {}, el("strong", { textContent: "Модель" }), el("small", { cls: "muted", textContent: "Если Cloud.ru отвечает ошибкой 503, попробуйте другую модель или задайте запасную." })), chatSub),
+    toggle("Размышления модели", "Модель сначала обдумывает ответ (пока видно «Обдумываю ответ»). Выключите, чтобы отвечала быстрее; работает не на всех моделях Cloud.ru.", cfg.chat.reasoning,
+      (v) => save({ chat: { model: cfg.chat.model, fallbackModel: cfg.chat.fallbackModel, reasoning: v } })),
     toggle("Поиск по смыслу", "Память ищется не только по словам, но и по значению. При сбоях сам переключается на поиск по словам.", cfg.embeddings.enabled, (v) => save({ embeddings: { enabled: v, model: cfg.embeddings.model } })), search,
     el("div", { cls: "set-row stack" }, el("span", {}, el("strong", { textContent: "Предлагать запомнить" }), el("small", { cls: "muted", textContent: "Любое предложение попадает в «Ждут решения» и работает только после вашего «Принять»." })), modes),
     toggle("Сводка длинных бесед", "Начало долгого разговора сжимается в краткое содержание, чтобы помощница не теряла нить.", cfg.summaries, (v) => save({ summaries: v })),
