@@ -270,10 +270,10 @@ export class AutonomousLearning {
       return { ok: true, verified };
     } catch (cause) {
       const msg = cause instanceof Error ? cause.message : "";
-      const status = /(?:Cloud\\.ru status|Cloud\\.ru вернул)\\s+(\\d{3})/.exec(msg)?.[1];
+      const status = /Cloud[.]ru (?:status|вернул) +([0-9]{3})/.exec(msg)?.[1];
       this.lastError = status === "401" || status === "403" ? "Авторизация Cloud.ru отклонена (HTTP " + status + ")" :
         status === "429" ? "Превышен лимит запросов Cloud.ru (HTTP 429)" :
-        status && /^5\\d\\d$/.test(status) ? "Сервер Cloud.ru временно недоступен (HTTP " + status + ")" :
+        status && /^5[0-9][0-9]$/.test(status) ? "Сервер Cloud.ru временно недоступен (HTTP " + status + ")" :
         status ? "Cloud.ru отклонил запрос (HTTP " + status + ")" :
         /abort|timeout/i.test(msg) ? "Тайм-аут запроса Cloud.ru" :
         /Cloud.ru не настроен/.test(msg) ? "Ключ Cloud.ru отсутствует" : "Ошибка соединения или ответа Cloud.ru";
