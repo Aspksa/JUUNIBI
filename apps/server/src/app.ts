@@ -24,6 +24,7 @@ import { checkPublicEvidence } from "./public-evidence";
 import { comparePublicEvidence } from "./evidence-comparison";
 import { publicSettings, type AssistantSettingsStore } from "./assistant-settings";
 import type { Brief, Organizer } from "./organizer";
+import type { Achievements } from "./achievements";
 import type { EvalService } from "./evals";
 import { buildQualityReport } from "./quality";
 import { repeatedRequests } from "./suggestions";
@@ -54,6 +55,8 @@ export interface AppDeps {
   settings?: AssistantSettingsStore;
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
+  /** «Дела и достижения»: figures, awards, records, the time machine. */
+  achievements?: Achievements;
   /** «Жизнь проекта»: figures about the project's history for the «Обновление» page. */
   projectStats?: { get(force?: boolean): Promise<unknown> };
   /** Breaks a to-do or goal into steps with the model; undefined while Cloud.ru is not configured. */
@@ -495,6 +498,16 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if (deps.updater.isBusy()) return send(res, 409, { error: "Обновление уже выполняется" });
           deps.updater.start().catch(() => {});
           return send(res, 202, { ok: true });
+        }
+        if (deps.achievements && p.startsWith("/api/achievements")) {
+          const ach = deps.achievements;
+          try {
+            if (req.method === "GET" && p === "/api/achievements") return send(res, 200, await ach.refresh());
+            if (req.method === "GET" && p === "/api/achievements/day") return send(res, 200, ach.day(url.searchParams.get("day") ?? ""));
+            if (req.method === "POST" && p === "/api/achievements/seen") { const b = await readJson(req); await ach.seen(b.ids); return send(res, 200, { ok: true }); }
+            if (req.method === "POST" && p === "/api/achievements/title") { const b = await readJson(req); return send(res, 200, await ach.setTitle(b.id ?? null)); }
+          } catch (e) { return send(res, (e as { status?: number }).status ?? 500, { error: (e as Error).message }); }
+          return send(res, 404, { error: "Не найдено" });
         }
         if (deps.organizer && p.startsWith("/api/organizer")) {
           const o = deps.organizer;

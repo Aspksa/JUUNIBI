@@ -7,7 +7,7 @@ import type { Chats } from "../chat/chats";
 import type { ChatController } from "../chat/controller";
 import { el, icon, iconButton, type IconName } from "../dom";
 import { buildModules } from "../pages/models";
-import { BRAIN_TILE_ROUTES, app, persistPrefs, type AppState, type Route, type Theme } from "../state";
+import { BRAIN_TILE_ROUTES, SUB_ROUTES, app, persistPrefs, type AppState, type Route, type Theme } from "../state";
 import {
   arrange, badges, cleanPrefs, hotkeyLabel, loadPrefs, move, placeBefore, recentChats, savePrefs, todayLine, toggleHidden, visibleItems,
   UNHIDEABLE, type NavBadge, type NavId, type NavItem, type NavPrefs,
@@ -42,7 +42,7 @@ export class Menu {
 
   private isActive(n: NavItem, s: AppState): boolean {
     if (n.id === "chat") return s.chatOpen;
-    return (n.route === s.route || (n.id === "brain" && !!BRAIN_TILE_ROUTES[s.route]));
+    return (n.route === s.route || n.route === SUB_ROUTES[s.route] || (n.id === "brain" && !!BRAIN_TILE_ROUTES[s.route]));
   }
   private counters(s: AppState) {
     return badges({ brief: s.brief, memory: s.memory, modulesFailed: buildModules(s.modules).counts.failed, updateAvailable: updateAvailable(s), unread: this.d.ctl.store.get().unread, approvals: s.approvals.length });

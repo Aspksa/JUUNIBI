@@ -22,6 +22,7 @@ import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
 import { AssistantSettingsStore, DEFAULT_CHAT_MODEL, instructionsPrompt } from "./assistant-settings";
 import { Organizer, buildBrief } from "./organizer";
+import { Achievements } from "./achievements";
 import { OpenableUrls, webSearch } from "./web-access";
 import { runSelfTest } from "./self-test";
 import { EvalHistory, EvalService } from "./evals";
@@ -190,6 +191,9 @@ const openable = new OpenableUrls();
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
+/** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
+const achievements = new Achievements(path.join(dataDir, "achievements.json"), () => ({ now: Date.now(), notes: organizer.listNotes(), reminders: organizer.listReminders(), missions: organizer.listMissions(), history: organizer.listHistory(), autoCount: organizer.autoCounts() }));
+await loadOrQuarantine("достижения", path.join(dataDir, "achievements.json"), () => achievements.load());
 /** Start-of-day data, shared by the assistant tool and the Home page. */
 async function briefData() {
   const up = updater.status();
@@ -386,7 +390,7 @@ const appDeps: AppDeps = {
   projectStats,
   scenes,
   modules: () => modules.list(),
-  settings, organizer, brief: briefData,
+  settings, organizer, achievements, brief: briefData,
   splitSteps: () => { const l = sceneLlm; return l ? (t: string, signal?: AbortSignal) => splitIntoSteps(l, t, signal) : undefined; }, evals, noteUserText: (t: string) => openable.noteText(t),
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),
@@ -410,7 +414,12 @@ server.listen(port, "127.0.0.1", () => {
 });
 if (modules.isActive("mobile")) void mobile.resume();
 
-const reminderTimer = setInterval(() => { void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e)); }, 20_000);
+let reminderTicks = 0;
+const reminderTimer = setInterval(() => {
+  void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e));
+  // awards and records are given every few minutes, even while the «Дела» page is closed
+  if (++reminderTicks % 15 === 0) void achievements.refresh().catch((e) => log.warn("Достижения не пересчитаны", e));
+}, 20_000);
 void organizer.tick().catch(() => {});
 const runLearning = () => {
   if (!cloudConfigured || !modules.isActive("brain") || !modules.isActive("assistant")) return;
@@ -435,7 +444,7 @@ const shutdown = async (exitCode = 0) => {
   stopping = true;
   clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close(); void mobile.pause();
   // Let pending state writes finish so a stop never loses data.
-  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), mobile.flush(), auditQueue,
+  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), achievements.flush(), evalHistory.flush(), mobile.flush(), auditQueue,
     // Queued memory suggestions get a short grace period; a stuck model call must not block the stop.
     Promise.race([assistant?.idle(), new Promise((resolve) => setTimeout(resolve, 5000).unref())])]);
   await kernel.stop();

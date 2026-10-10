@@ -22,6 +22,19 @@ export interface Note {
   ruled?: string[];
 }
 export type AutoNote = "brief" | "evening" | "week";
+/**
+ * One thing that happened to a note or to-do, kept for «Дела и достижения» (achievements.ts): what was added, ticked off,
+ * moved, edited or removed and when. The text is a short copy, so a removed to-do can still be named.
+ */
+export interface TaskEvent {
+  at: string; id: string; kind: "add" | "done" | "undone" | "move" | "edit" | "remove";
+  text: string; todo: boolean;
+  /** A move: the due dates before and after (null = no date). */
+  from?: string | null; to?: string | null;
+  /** Done by the automation, not by the owner. */
+  auto?: boolean;
+}
+const EVENT_KINDS: TaskEvent["kind"][] = ["add", "done", "undone", "move", "edit", "remove"];
 const AUTO_NOTES: AutoNote[] = ["brief", "evening", "week"];
 /** «Если — то»: when a to-do matches, the automation does one thing for it. */
 export interface AutoRule {
@@ -89,7 +102,7 @@ export interface Reminder { id: string; text: string; at: string; createdAt: str
   source?: string;
   /** The rule that created it (its reminder is dropped when the to-do is done). */
   rule?: string }
-const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_DONE_REMINDERS = 100, MAX_AUTO_TEXT = 1500, MAX_LOG = 60;
+const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_DONE_REMINDERS = 100, MAX_AUTO_TEXT = 1500, MAX_LOG = 60, MAX_HISTORY = 4000;
 const YEAR = 366 * 86_400_000;
 const bad = (message: string, status = 400) => Object.assign(new Error(message), { status });
 const repeatOf = (v: unknown): Repeat | undefined => {
@@ -207,6 +220,10 @@ export class Organizer {
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
   /** «Что сделала автоматика», newest last. */
   private log: AutoLogEntry[] = [];
+  /** What happened to notes and to-dos, oldest first (see TaskEvent). */
+  private history: TaskEvent[] = [];
+  /** Every action of the automation, counted for «Возвращённые часы» (the log itself keeps only the last 60). */
+  private autoCount: Partial<Record<AutoLogEntry["kind"], number>> = {};
   private briefing = false;
   /**
    * Writes the morning brief in words (the assistant, when Cloud.ru is configured); returns null to keep the plain one.
@@ -219,12 +236,14 @@ export class Organizer {
 
   async load() {
     try {
-      const raw = JSON.parse(await readFile(this.file, "utf8")) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown };
+      const raw = JSON.parse(await readFile(this.file, "utf8")) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown };
       this.automation = cleanAutomation(raw.automation);
       if (raw.autoState && typeof raw.autoState === "object") {
         for (const k of ["briefDay", "rollDay", "eveningDay", "weekDay"] as const) if (typeof raw.autoState[k] === "string") this.autoState[k] = raw.autoState[k] as string;
       }
       if (Array.isArray(raw.log)) this.log = raw.log.filter((e): e is AutoLogEntry => !!e && typeof e.id === "string" && typeof e.at === "string" && typeof e.kind === "string" && typeof e.text === "string").slice(-MAX_LOG);
+      if (Array.isArray(raw.history)) this.history = raw.history.filter((e): e is TaskEvent => !!e && typeof e.at === "string" && Number.isFinite(Date.parse(e.at)) && typeof e.id === "string" && EVENT_KINDS.includes(e.kind) && typeof e.text === "string" && typeof e.todo === "boolean").slice(-MAX_HISTORY);
+      if (raw.autoCount && typeof raw.autoCount === "object") for (const [k, v] of Object.entries(raw.autoCount)) if (Number.isInteger(v) && (v as number) >= 0) this.autoCount[k as AutoLogEntry["kind"]] = v as number;
       if (Array.isArray(raw.missions)) this.missions = raw.missions.filter((m): m is Mission => !!m && typeof m.id === "string" && typeof m.title === "string" && typeof m.description === "string" && typeof m.createdAt === "string" && ["active","paused","complete"].includes(m.status)).slice(-100);
       if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= (n.auto ? MAX_AUTO_TEXT : MAX_TEXT) && typeof n.done === "boolean" && typeof n.createdAt === "string").slice(-MAX_NOTES).map(cleanNote);
       // a subtask whose parent is gone becomes an ordinary to-do
@@ -234,7 +253,7 @@ export class Organizer {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   private save() {
-    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log });
+    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log, history: this.history, autoCount: this.autoCount });
     this.writes = this.writes.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + "." + randomUUID() + ".tmp";
@@ -244,6 +263,30 @@ export class Organizer {
     return this.writes;
   }
   flush() { return this.writes; }
+
+  /** «Дела и достижения» read the whole story: events oldest first, and how often the automation did each thing. */
+  listHistory(): TaskEvent[] { return this.history.map((e) => ({ ...e })); }
+  autoCounts(): Partial<Record<AutoLogEntry["kind"], number>> { return { ...this.autoCount }; }
+  listMissions(): Mission[] { return this.missions.map((m) => ({ ...m })); }
+  private record(kind: TaskEvent["kind"], n: Note, extra: Partial<TaskEvent> = {}) {
+    if (n.auto) return;
+    this.history.push({ at: new Date(this.now()).toISOString(), id: n.id, kind, text: n.text.slice(0, 120), todo: n.kind === "todo", ...extra });
+    if (this.history.length > MAX_HISTORY) this.history = this.history.slice(-MAX_HISTORY);
+  }
+  /**
+   * Room for one more record: at the limit the oldest finished to-dos go (not goal steps, not ones with subtasks).
+   * Without it a daily repeating to-do filled the list in a year and then silently stopped repeating.
+   */
+  private makeRoom(): boolean {
+    if (this.notes.length < MAX_NOTES) return true;
+    const parents = new Set(this.notes.map((n) => n.parentId).filter(Boolean));
+    const goals = new Set(this.missions.map((m) => m.id));
+    const old = this.notes.filter((n) => n.kind === "todo" && n.done && !parents.has(n.id) && !(n.project && goals.has(n.project)))
+      .sort((a, b) => (a.completedAt ?? a.createdAt).localeCompare(b.completedAt ?? b.createdAt))[0];
+    if (!old) return false;
+    this.notes = this.notes.filter((n) => n !== old);
+    return true;
+  }
 
   /** Read-only Mission Control. Existing tasks remain the canonical progress source. */
   missionBoard() {
@@ -296,9 +339,11 @@ export class Organizer {
   listNotes(): Note[] { return this.notes.map((n) => ({ ...n })); }
   async addNote(kind: unknown, body: unknown): Promise<Note> {
     if (kind !== "note" && kind !== "todo") throw bad("Тип: note или todo");
-    if (this.notes.length >= MAX_NOTES) throw bad(`Достигнут предел: ${MAX_NOTES} записей`, 409);
-    const n: Note = { id: randomUUID(), kind, text: text(body, "Текст"), done: false, createdAt: new Date(this.now()).toISOString() };
+    const t = text(body, "Текст");
+    if (!this.makeRoom()) throw bad(`Достигнут предел: ${MAX_NOTES} записей`, 409);
+    const n: Note = { id: randomUUID(), kind, text: t, done: false, createdAt: new Date(this.now()).toISOString() };
     this.notes.push(n);
+    this.record("add", n);
     await this.save();
     return { ...n };
   }
@@ -315,7 +360,8 @@ export class Organizer {
   async editNote(id: string, body: unknown): Promise<Note> {
     const n = this.notes.find((x) => x.id === id);
     if (!n) throw bad("Запись не найдена", 404);
-    n.text = text(body, "Текст");
+    const t = text(body, "Текст");
+    if (t !== n.text) { n.text = t; this.record("edit", n); }
     await this.save();
     return { ...n };
   }
@@ -361,7 +407,9 @@ export class Organizer {
     }
     // fields removed above must go from the stored note too (Object.assign alone would keep them)
     for (const k of Object.keys(n) as (keyof Note)[]) if (!(k in next)) delete n[k];
+    const moved = (n.dueAt ?? null) !== (next.dueAt ?? null) ? { from: n.dueAt ?? null, to: next.dueAt ?? null } : null;
     Object.assign(n, next);
+    if (moved) this.record("move", n, moved);
     await this.save();
     return { ...n };
   }
@@ -406,9 +454,10 @@ export class Organizer {
     if (n.kind !== "todo") throw bad("Отметить выполненным можно только дело", 409);
     if (n.done === done) return { ...n };
     n.done = done;
+    this.record(done ? "done" : "undone", n);
     if (done) {
       n.completedAt = new Date(this.now()).toISOString();
-      if (n.repeat && !n.nextId && this.notes.length < MAX_NOTES) {
+      if (n.repeat && !n.nextId && this.makeRoom()) {
         // a repeating to-do: the next one appears as soon as this one is ticked off
         const now = this.now();
         const from = n.dueAt ? Date.parse(n.dueAt) : dayStart(now) + (23 * 60 + 59) * 60_000;
@@ -433,9 +482,10 @@ export class Organizer {
     return { ...n };
   }
   async removeNote(id: string) {
-    const n = this.notes.length;
-    this.notes = this.notes.filter((x) => x.id !== id);
-    if (this.notes.length === n) throw bad("Запись не найдена", 404);
+    const gone = this.notes.find((x) => x.id === id);
+    if (!gone) throw bad("Запись не найдена", 404);
+    this.notes = this.notes.filter((x) => x !== gone);
+    this.record("remove", gone, gone.kind === "todo" && gone.done ? { from: gone.completedAt ?? null } : {});
     // Subtasks of a removed to-do become ordinary to-dos instead of pointing at nothing
     // (such orphans were hidden from the day plan and counted as stages of a missing task).
     for (const x of this.notes) if (x.parentId === id) delete x.parentId;
@@ -579,6 +629,7 @@ export class Organizer {
   listLog(): AutoLogEntry[] { return this.log.map((e) => ({ ...e })).reverse(); }
   private addLog(kind: AutoLogEntry["kind"], text: string, undo?: AutoLogEntry["undo"]) {
     this.log.push({ id: randomUUID(), at: new Date(this.now()).toISOString(), kind, text: text.slice(0, 300), ...(undo ? { undo } : {}) });
+    this.autoCount[kind] = (this.autoCount[kind] ?? 0) + 1;
     if (this.log.length > MAX_LOG) this.log = this.log.slice(-MAX_LOG);
   }
   /** Takes back one action of the automation: due dates and marks as they were, created reminders and notes removed. */
@@ -617,8 +668,10 @@ export class Organizer {
         const d = new Date(n.dueAt), t = new Date(start);
         t.setHours(d.getHours(), d.getMinutes(), 0, 0);
         // a time that is already behind us today (rolled at 10:00 for 08:00) becomes the end of today
+        const was = n.dueAt;
         n.dueAt = (t.getTime() < now ? new Date(start + (23 * 60 + 59) * 60_000) : t).toISOString();
         n.rolled = (n.rolled ?? 0) + 1;
+        this.record("move", n, { from: was, to: n.dueAt, auto: true });
         if (n.repeat) n.streak = 0; // a missed repeating to-do breaks its streak
         delete n.remindedFor;
       }
@@ -922,6 +975,7 @@ export class Organizer {
     for (const p of pick) {
       const n = this.notes.find((x) => x.id === p.id)!;
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
+      this.record("move", n, { from: n.dueAt ?? null, to: p.start, auto: true });
       n.dueAt = p.start; delete n.rolled; delete n.remindedFor;
     }
     if (pick.length) { this.addLog("arrange", `Разложила день ${new Date(base + 12 * 3_600_000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: дел ${pick.length}`, { notes: undo }); await this.save(); }
@@ -942,6 +996,7 @@ export class Organizer {
       d.setDate(d.getDate() + 1);
       if (to === "workday") for (let i = 0; i < 30 && !this.workday(d); i++) d.setDate(d.getDate() + 1);
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
+      this.record("move", n, { from: n.dueAt ?? null, to: d.toISOString() });
       n.dueAt = d.toISOString(); delete n.rolled; delete n.remindedFor;
       out.push({ ...n });
     }

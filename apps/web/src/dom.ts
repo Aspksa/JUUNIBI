@@ -85,6 +85,7 @@ const ICONS = {
   zoom: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3M11 8v6M8 11h6",
   sparkle: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
   undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
+  trophy: "M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 20h8M10 17h4",
 } as const;
 export type IconName = keyof typeof ICONS;
 const FILLED = new Set<IconName>(["stop"]);

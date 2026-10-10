@@ -7,6 +7,7 @@ import { el, icon, iconButton } from "../dom";
 import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
 import { buildAttention } from "./home";
+import { achievementsPanel } from "./achievements-panel";
 import { btn, chip, emptyState } from "./kit";
 import { nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
@@ -100,6 +101,12 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const datesHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Даты из памяти" } });
   const eveHost = el("div", { cls: "tasks-evening-host" });
   const heroHost = el("section", { cls: "tasks-hero", attrs: { "aria-label": "Сводка дня" } });
+  /** «Дела и достижения» in the left column; the chosen title stands under the greeting. */
+  const ach = achievementsPanel({
+    open: (tab) => { if (tab) { try { localStorage.setItem("juunibi.ach.tab", tab); } catch { /* private mode */ } } deps.go("achievements"); },
+    onTitle: () => { if (data) render(); },
+  });
+  let achTimer: ReturnType<typeof setTimeout> | undefined;
   let automation: Automation | null = null;
   /** How full today is (the hero's bar), and the «Разложить день» proposal for the selected day. */
   let todayLoad: DayLoad | null = null;
@@ -119,6 +126,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     render();
     renderDates();
     void renderSide();
+    // a change may have earned something: count again a moment later (several quick ticks give one recount)
+    clearTimeout(achTimer);
+    achTimer = setTimeout(() => ach.refresh(), 700);
   };
   /** Runs a change, reports a failure, reloads the list and the reminder badge. */
   const act = async (run: () => Promise<{ ok: boolean; error?: { message: string } }>, ok?: string, undo?: () => void) => {
@@ -495,7 +505,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     heroHost.replaceChildren(
       el("div", { cls: "tasks-hero-main" },
         el("div", { cls: "tasks-hero-top" }, el("span", { cls: "tasks-hero-ic", attrs: { "aria-hidden": "true" } }, icon(h >= 17 || h < 5 ? "moon" : "sun", 22)),
-          el("div", { cls: "grow" }, el("strong", { cls: "tasks-hero-hello", textContent: hello }), el("span", { cls: "tasks-hero-date" }, date[0]!.toUpperCase() + date.slice(1), kind))),
+          el("div", { cls: "grow" }, el("strong", { cls: "tasks-hero-hello", textContent: hello }), el("span", { cls: "tasks-hero-date" }, date[0]!.toUpperCase() + date.slice(1), kind, ach.title() ? el("button", { type: "button", cls: "ach-title-chip", textContent: ach.title()!, title: "Титул из «Дел и достижений»", onclick: () => deps.go("achievements") }) : null))),
         b ? el("p", { cls: "tasks-hero-text" + (isEve ? " eve" : ""), textContent: isEve ? b.text.split("\n").slice(1).join("\n") : b.text })
           : el("p", { cls: "tasks-hero-text muted", textContent: fb.text }),
         tomorrowNotice(),
@@ -910,6 +920,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     attHost,
     heroHost,
     el("div", { cls: "tasks-layout" },
+      el("aside", { cls: "tasks-ach", attrs: { "aria-label": "Дела и достижения" } }, ach.el),
       el("div", { cls: "tasks-main" },
         el("section", { cls: "pg-card tasks-quick" }, form),
         eveHost,
