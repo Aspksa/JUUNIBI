@@ -67,6 +67,19 @@ export class Chats {
   rename(id: string, title: string) { const t = title.trim().slice(0, 120); if (t) this.update(id, (c) => ({ ...c, title: t })); }
   clearMessages(id: string) { this.update(id, (c) => ({ ...c, messages: [] })); }
   clearAll() { this.store.set({ items: [], activeId: null }); }
+  /** Puts back conversations removed by `clearAll` (the "Отменить" in the toast). */
+  restore(items: Conversation[]) { this.store.set((s) => ({ items: [...s.items, ...items.filter((c) => !s.items.some((x) => x.id === c.id))].slice(0, MAX_CONVERSATIONS), activeId: s.activeId ?? items[0]?.id ?? null })); }
+  /** Adds conversations from an exported JSON file; ones already here (same id) are skipped. Returns how many were added. */
+  importJson(raw: unknown): number {
+    const have = new Set(this.store.get().items.map((c) => c.id));
+    const fresh = sanitize(raw).filter((c) => !have.has(c.id));
+    if (!fresh.length) return 0;
+    this.store.set((s) => {
+      const items = [...s.items, ...fresh].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CONVERSATIONS);
+      return { items, activeId: s.activeId ?? items[0]?.id ?? null };
+    });
+    return fresh.filter((c) => this.get(c.id)).length;
+  }
 
   append(id: string, msg: Omit<ChatMsg, "id" | "at"> & Partial<Pick<ChatMsg, "id" | "at">>): ChatMsg {
     const full: ChatMsg = { id: uid(), at: Date.now(), ...msg };
