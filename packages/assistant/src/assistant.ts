@@ -95,6 +95,7 @@ export class Assistant {
   private summaries = new Map<string, SummaryState>();
   private summariesReady: Promise<void> = Promise.resolve();
   private summaryWork: Promise<void> = Promise.resolve();
+  private readonly summaryRetryAfter = new Map<string, number>();
 
   constructor(private readonly o: AssistantOptions) {
     this.tools = o.tools ?? new ToolRegistry();
@@ -250,6 +251,7 @@ export class Assistant {
   private summaryKey(session: string, older: Message[]): string { return session + ":" + hash(older[0]?.content ?? ""); }
   private queueSummary(session: string, older: Message[]) {
     const key = this.summaryKey(session, older);
+    if ((this.summaryRetryAfter.get(key) ?? 0) > Date.now()) return;
     const have = this.summaries.get(key);
     const fpOf = (n: number) => hash(older.slice(0, n).map((m) => m.role + (m.content ?? "")).join("\u0001"));
     const sameBase = !!have && have.covered <= older.length && have.fp === fpOf(have.covered);
@@ -267,10 +269,17 @@ export class Assistant {
         ], { temperature: 0 });
         const text = (r.content ?? "").trim().slice(0, SUMMARY_MAX_CHARS);
         if (!text) return;
+        this.summaryRetryAfter.delete(key);
         this.summaries.set(key, { covered: older.length, fp: fpOf(older.length), text });
         for (const k of [...this.summaries.keys()].slice(0, Math.max(0, this.summaries.size - SUMMARY_SESSIONS))) this.summaries.delete(k);
         await this.o.summariesStore?.save(JSON.stringify(Object.fromEntries(this.summaries)));
-      } catch (error) { this.log.warn("conversation summary failed", error); }
+      } catch (error) {
+        const status = typeof error === "object" && error !== null && "status" in error ? (error as { status?: unknown }).status : undefined;
+        if (status === 429 || (typeof status === "number" && status >= 500)) {
+          this.summaryRetryAfter.set(key, Date.now() + 60_000);
+          this.log.warn(`conversation summary deferred: Cloud.ru HTTP ${status}; retry after cooldown`);
+        } else this.log.warn("conversation summary failed", error);
+      }
     });
   }
 
