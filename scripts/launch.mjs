@@ -122,15 +122,16 @@ function openBrowser(url) {
 if (Number(process.versions.node.split(".")[0]) < 20) await fail(`Нужен Node.js 20+, найден ${process.version}.`);
 
 // Dependencies are reinstalled when they are missing, when an update/rollback changed package-lock.json,
-// or after an automatic rollback. Scripts of dependencies are not run for code that has just been updated.
+// or after an automatic rollback. Scripts of dependencies are never run.
 const lockFile = path.join(root, "package-lock.json");
 const lockStamp = bin(".juunibi-lock");
 const lockNow = existsSync(lockFile) ? createHash("sha1").update(readFileSync(lockFile)).digest("hex") : "";
 const stamped = (() => { try { return readFileSync(lockStamp, "utf8").trim(); } catch { return ""; } })();
 const forced = process.env.JUUNIBI_REINSTALL === "1";
 if (!existsSync(bin("vite", "bin", "vite.js")) || forced || (touched && stamped !== lockNow)) {
-  const safeMode = touched || forced;
-  const npmArgs = [lockNow ? "ci" : "install", "--no-audit", "--no-fund", ...(safeMode ? ["--ignore-scripts"] : [])];
+  // Install scripts are never needed (esbuild ships its binary as an optional package; the updater installs the
+  // same way), so they are skipped every time: nothing from npm runs, and npm has nothing to warn about.
+  const npmArgs = [lockNow ? "ci" : "install", "--no-audit", "--no-fund", "--ignore-scripts"];
   if (process.platform === "win32") {
     // Windows .cmd wrappers require cmd.exe; invoke it explicitly, not spawn(shell:true).
     // All command arguments here are fixed literals, never user-supplied text.
@@ -142,7 +143,9 @@ if (!existsSync(bin("vite", "bin", "vite.js")) || forced || (touched && stamped 
 const PKGS = ["packages/core", "packages/assistant", "apps/server", "apps/web"];
 const TESTED = ["packages/core", "packages/assistant", "apps/server", "apps/web"];
 
-if (!flag("--skip-checks")) {
+// A freshly installed update was already type-checked and tested in .updates/staging on these exact files.
+if (updateApplied && !flag("--skip-checks")) console.log("\n\x1b[36m==> Проверки пропущены: обновление прошло их перед установкой\x1b[0m");
+else if (!flag("--skip-checks")) {
   for (const p of PKGS) await run(`Проверка типов: ${p}`, process.execPath, [bin("typescript", "bin", "tsc"), "-p", `${p}/tsconfig.json`]);
   for (const p of TESTED) await run(`Тесты: ${p}`, process.execPath, [bin("vitest", "vitest.mjs"), "run"], { cwd: path.join(root, p) });
 }
@@ -151,8 +154,11 @@ const web = path.join(root, "apps", "web");
 await run("Сборка сервера", process.execPath, [path.join(root, "scripts", "build-server.mjs")]);
 if (!dev) await run("Сборка веба", process.execPath, [bin("vite", "bin", "vite.js"), "build"], { cwd: web });
 
-if (!existsSync(path.join(root, ".env"))) {
-  console.log("\n\x1b[33m[!] Файл .env не найден. Cloud.ru можно настроить через приложение или переменные окружения; без ключа чат недоступен.\x1b[0m");
+// The key may live in .env, in the environment or in data/cloudru-settings.json (saved from the Settings page).
+const keySaved = (() => { try { return !!JSON.parse(readFileSync(path.join(root, "data", "cloudru-settings.json"), "utf8"))?.apiKey; } catch { return false; } })();
+const keyInEnv = !!process.env.CLOUDRU_API_KEY?.trim() || (() => { try { return /^\s*CLOUDRU_API_KEY\s*=\s*\S/m.test(readFileSync(path.join(root, ".env"), "utf8")); } catch { return false; } })();
+if (!keySaved && !keyInEnv) {
+  console.log("\n\x1b[33m[!] Ключ Cloud.ru не задан. Укажите его в приложении: «Настройки» → «Подключение». Без ключа чат недоступен.\x1b[0m");
 }
 
 const port = await findPort(wantPort);

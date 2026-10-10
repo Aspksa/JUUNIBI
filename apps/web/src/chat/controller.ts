@@ -91,16 +91,17 @@ export class ChatController {
     }
 
     let text = "";
+    let gap = false; // text written before a tool call is kept, and the next part starts on a new paragraph (as the server stores it)
     let steps: Step[] = [];
     let finished = false;
     try {
       await streamChat({ message: userText, history, session: convId }, ctl.signal, (e) => {
         // "Обдумываю ответ" stays visible while the model reasons and closes as soon as it answers or calls a tool.
         const thought = () => { if (steps.some((st) => st.name === "thinking" && st.status === "running")) { steps = steps.map((st) => (st.name === "thinking" && st.status === "running" ? { ...st, status: "ok" as const } : st)); this.chats.patch(convId, reply.id, { steps }); } };
-        if (e.type === "delta") { thought(); text += e.text; this.chats.patch(convId, reply.id, { content: text }); }
+        if (e.type === "delta") { thought(); if (!gap) text += e.text; else if (e.text.trim()) { text += "\n\n" + e.text.trimStart(); gap = false; } this.chats.patch(convId, reply.id, { content: text }); }
         else if (e.type === "thinking") { steps = [...steps, { id: "thinking-" + steps.length, name: "thinking", status: "running" }]; this.chats.patch(convId, reply.id, { steps }); }
         else if (e.type === "tool") {
-          if (e.phase === "start") { thought(); steps = [...steps, { id: e.id, name: e.name, status: "running" }]; }
+          if (e.phase === "start") { thought(); if (text.trim()) { text = text.trimEnd(); gap = true; } steps = [...steps, { id: e.id, name: e.name, status: "running" }]; }
           else steps = steps.map((st) => (st.id === e.id ? { ...st, status: e.status, ms: e.ms } : st));
           this.chats.patch(convId, reply.id, { steps });
         }
@@ -133,6 +134,7 @@ export class ChatController {
     const r = await api.feedback(msg.turnId, rating);
     if (!r.ok) return;
     this.chats.patch(convId, msg.id, { rating });
+    if (msg.rating) return; // a changed vote: lessons were already proposed after the first one
     await api.reflect(msg.turnId); // proposed lessons wait for approval on the Memory page
     await refreshMemory();
   }

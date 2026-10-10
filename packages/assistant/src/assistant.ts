@@ -16,6 +16,8 @@ export interface Turn {
   tools: string[];
   memoryIds: string[];
   rating?: 1 | -1;
+  /** Lessons were already proposed for this turn: another vote must not propose them again. */
+  reflected?: boolean;
   at: number;
 }
 export type ToolStatus = "ok" | "error" | "denied";
@@ -231,6 +233,8 @@ export class Assistant {
       !(guidance && name.startsWith("brain_") && (name === "brain_v4_unified_review" || !guidance.needsPlanning));
     const t0 = Date.now();
     let firstTextAt = 0, calls = 0, model: string | undefined;
+    /** Text the model wrote before calling tools ("Сейчас посмотрю…") is part of the reply the user saw. */
+    const said: string[] = [];
 
     for (let step = 0; step < (this.o.maxSteps ?? 6); step++) {
       let thinking = false;
@@ -245,7 +249,8 @@ export class Assistant {
       });
       model = r.model ?? model;
       if (r.content) firstTextAt ||= Date.now();
-      if (!r.toolCalls.length) { reply = r.content ?? ""; break; }
+      if (!r.toolCalls.length) { reply = [...said, r.content ?? ""].map((x) => x.trim()).filter(Boolean).join("\n\n"); break; }
+      if (r.content?.trim()) said.push(r.content);
       msgs.push({ role: "assistant", content: r.content, tool_calls: r.toolCalls });
       for (const call of r.toolCalls) {
         used.push(call.name);
@@ -428,11 +433,16 @@ export class Assistant {
   async reflect(turnId: string): Promise<MemoryEntry[]> {
     await this.turnsReady;
     const t = this.turns.find((x) => x.id === turnId);
-    if (!t) return [];
-    const r = await this.o.llm.chat([
-      { role: "system", content: 'Извлеки до 3 коротких переиспользуемых уроков/предпочтений пользователя из диалога. Ответ — только JSON-массив строк, например ["..."]. Если учиться нечему — [].' },
-      { role: "user", content: `Пользователь: ${t.user}\nПомощник: ${t.reply}\nОценка: ${t.rating ?? "нет"}` },
-    ]);
+    if (!t || t.reflected) return [];
+    t.reflected = true;
+    let r: Awaited<ReturnType<LlmProvider["chat"]>>;
+    try {
+      r = await this.o.llm.chat([
+        { role: "system", content: 'Извлеки до 3 коротких переиспользуемых уроков/предпочтений пользователя из диалога. Ответ — только JSON-массив строк, например ["..."]. Если учиться нечему — [].' },
+        { role: "user", content: `Пользователь: ${t.user}\nПомощник: ${t.reply}\nОценка: ${t.rating ?? "нет"}` },
+      ]);
+    } catch (e) { t.reflected = false; throw e; } // the model did not answer: a later vote may try again
+    await this.saveTurns();
     let items: unknown;
     try { items = JSON.parse((r.content ?? "[]").replace(/^```(?:json)?|```$/gm, "").trim()); } catch { return []; }
     if (!Array.isArray(items)) return [];

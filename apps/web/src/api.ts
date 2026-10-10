@@ -74,6 +74,8 @@ export interface ManifestPreview {
   sha256: string; permissions: { id: string; label: string; risk: "low" | "medium" | "high" }[]; warnings: string[]; executable: false; note: string;
 }
 export type ModuleAction = "start" | "stop" | "restart" | "enable" | "disable";
+/** What the server accepts: any subset, also inside the groups (it keeps what is not sent). */
+export type SettingsPatch = { [K in keyof AssistantSettings]?: AssistantSettings[K] extends unknown[] ? AssistantSettings[K] : AssistantSettings[K] extends object ? Partial<AssistantSettings[K]> : AssistantSettings[K] };
 export interface Status { assistant: boolean; model?: string; hint?: string }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -119,7 +121,7 @@ export const api = {
   feedback: (turnId: string, rating: 1 | -1) => attemptAsync(() => call("/api/feedback", post({ turnId, rating }))),
   reflect: (turnId: string) => attemptAsync(() => call<MemoryItem[]>("/api/reflect", post({ turnId }))),
   assistantSettings: () => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings")),
-  saveAssistantSettings: (patch: Partial<AssistantSettings>) => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings", post(patch))),
+  saveAssistantSettings: (patch: SettingsPatch) => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings", post(patch))),
   embeddingTest: () => attemptAsync(() => call<{ ok: boolean; dims?: number; ms: number; error?: string }>("/api/assistant/embedding-test", post({}))),
   embeddingDiagnostics: () => attemptAsync(() => call<EmbeddingDiagnostics>("/api/memory/diagnostics")),
   memoryPin: (id: string, pinned: boolean) => attemptAsync(() => call<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/pin`, post({ pinned }))),

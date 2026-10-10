@@ -1,5 +1,5 @@
 import { ACCENTS, swatchColor } from "../accents";
-import { api, type AssistantSettings } from "../api";
+import { api, type SettingsPatch } from "../api";
 import type { Chats } from "../chat/chats";
 import { formatBytes } from "../chat/helpers";
 import { el, icon, iconButton, short, type IconName } from "../dom";
@@ -11,6 +11,8 @@ import { toggle } from "./modules-parts";
 const KEY_FLASH = { text: "", bad: false };
 /** Models Cloud.ru returned, kept across re-renders so the list is asked for once. */
 let cloudModels: string[] | null = null;
+/** Unsaved text of the fields, so saving one card (which redraws the page) does not wipe what is typed in another. */
+const drafts = new Map<string, string>();
 /** Removes the scroll listener of the previous render. */
 let stopSpy: (() => void) | null = null;
 
@@ -57,8 +59,9 @@ function toc(): HTMLElement {
   stopSpy = null;
   setTimeout(() => {
     const scroller = nav.closest(".content");
-    if (!scroller) return;
+    if (!scroller || !nav.isConnected) return;
     const spy = () => {
+      if (!nav.isConnected) { stopSpy?.(); stopSpy = null; return; } // the page was left: stop listening
       if (Date.now() < pinned) return;
       const top = scroller.getBoundingClientRect().top + 140;
       const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4;
@@ -107,13 +110,18 @@ const rowHead = (title: string, hint: string) => el("span", {}, el("strong", { t
 
 /** Text field whose save button lights up only when the value differs from what is saved; Enter saves. */
 function field(o: { label: string; value: string; placeholder?: string; list?: string; mono?: boolean; maxLength?: number }): { wrap: HTMLElement; input: HTMLInputElement } {
-  const input = el("input", { type: "text", value: o.value, placeholder: o.placeholder ?? "", spellcheck: false, cls: o.mono ? "mono" : "", attrs: { "aria-label": o.label, ...(o.list ? { list: o.list } : {}) } });
+  const draft = drafts.get(o.label);
+  if (draft === o.value) drafts.delete(o.label);
+  const input = el("input", { type: "text", value: draft ?? o.value, placeholder: o.placeholder ?? "", spellcheck: false, cls: o.mono ? "mono" : "", attrs: { "aria-label": o.label, ...(o.list ? { list: o.list } : {}) } });
   if (o.maxLength) input.maxLength = o.maxLength;
+  input.addEventListener("input", () => { if (input.value === o.value) drafts.delete(o.label); else drafts.set(o.label, input.value); });
   return { wrap: el("label", { cls: "beh-field" }, el("span", { textContent: o.label }), input), input };
 }
 function dirtySave(inputs: HTMLInputElement[], saved: string[], text: string, run: () => void): HTMLButtonElement {
-  const b = btn(text, run, { small: true, primary: true, disabled: true });
+  // the values are being saved: they are no longer drafts (the redraw shows what the server kept)
+  const b = btn(text, () => { for (const x of inputs) drafts.delete(x.getAttribute("aria-label") ?? ""); run(); }, { small: true, primary: true, disabled: true });
   const sync = () => { b.disabled = inputs.every((x, i) => x.value.trim() === saved[i]); };
+  sync();
   for (const x of inputs) {
     x.addEventListener("input", sync);
     x.addEventListener("keydown", (e) => { if (e.key === "Enter" && !b.disabled) { e.preventDefault(); b.click(); } });
@@ -127,7 +135,7 @@ const SUGGEST_MODES: ["off" | "rules" | "smart", string, string][] = [["off", "�
 function assistantCards(s: AppState): HTMLElement[] {
   const cfg = s.assistantSettings;
   if (!cfg) return (["model", "memory", "tools", "quick"] as const).map((id) => card(id, "Загружаю настройки помощницы…", el("div", { cls: "set-skeleton" }, el("i"), el("i"))));
-  const save = async (patch: Partial<AssistantSettings>, ok = "Сохранено"): Promise<boolean> => {
+  const save = async (patch: SettingsPatch, ok = "Сохранено"): Promise<boolean> => {
     const r = await api.saveAssistantSettings(patch);
     showToast(r.ok ? ok : r.error.message, { ms: r.ok ? 3000 : 8000 });
     if (r.ok) app.set({ assistantSettings: r.value });
@@ -193,7 +201,7 @@ function assistantCards(s: AppState): HTMLElement[] {
 
   // ---- tools: Wikipedia and one folder
   const root = field({ label: "Папка", value: cfg.files.root, placeholder: "Например: C:\\Users\\Я\\Документы\\Заметки", mono: true });
-  const saveRoot = dirtySave([root.input], [cfg.files.root], cfg.files.root ? "Сменить папку" : "Открыть доступ", () => void save({ files: { root: root.input.value.trim(), allowWrite: root.input.value.trim() ? cfg.files.allowWrite : false } }, root.input.value.trim() ? "Папка выбрана" : "Доступ к файлам закрыт"));
+  const saveRoot = dirtySave([root.input], [cfg.files.root], cfg.files.root ? "Сменить папку" : "Открыть доступ", () => void save({ files: { root: root.input.value.trim() } }, root.input.value.trim() ? (cfg.files.allowWrite ? "Папка выбрана. Запись для новой папки выключена" : "Папка выбрана") : "Доступ к файлам закрыт"));
   const access = cfg.files.root
     ? el("div", { cls: "set-badge ok" }, icon("folder", 16), el("span", { cls: "grow" }, "Открыт доступ к ", el("code", { textContent: cfg.files.root })),
       btn("Закрыть", () => void save({ files: { root: "", allowWrite: false } }, "Доступ к файлам закрыт"), { small: true }))
@@ -215,13 +223,14 @@ function assistantCards(s: AppState): HTMLElement[] {
   qName.input.before(qPrefix);
   qName.wrap.classList.add("q-name");
   qText.wrap.classList.add("grow");
-  const qCancel = btn("Отмена", () => { editing = null; qName.input.value = ""; qText.input.value = ""; qAdd.lastChild!.textContent = "Добавить"; qCancel.hidden = true; }, { small: true });
+  const qCancel = btn("Отмена", () => { editing = null; drafts.delete("Команда"); drafts.delete("Что отправить"); qName.input.value = ""; qText.input.value = ""; qAdd.lastChild!.textContent = "Добавить"; qCancel.hidden = true; }, { small: true });
   qCancel.hidden = true;
   const qAdd = btn("Добавить", async () => {
     const name = qName.input.value.trim().toLowerCase().replace(/^\//, ""), text = qText.input.value.trim();
     if (!name || !text) { showToast("Заполните имя команды и текст."); (name ? qText : qName).input.focus(); return; }
     if (!NAME_RE.test(name)) { showToast("Имя команды: до 24 букв, цифр, «-» или «_», без пробелов."); qName.input.focus(); return; }
     if (name !== editing && cfg.quickCommands.some((c) => c.name === name)) { showToast(`Команда /${name} уже есть.`); qName.input.focus(); return; }
+    drafts.delete(qName.input.getAttribute("aria-label") ?? ""); drafts.delete(qText.input.getAttribute("aria-label") ?? "");
     const list = editing ? cfg.quickCommands.map((c) => (c.name === editing ? { name, text } : c)) : [...cfg.quickCommands, { name, text }];
     if (await save({ quickCommands: list }, editing ? `Команда /${name} изменена` : `Команда /${name} добавлена`)) { editing = null; qName.input.value = ""; qText.input.value = ""; }
   }, { small: true, primary: true, icon: "plus" });
@@ -312,8 +321,9 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
     if (!f) return;
     let raw: unknown;
     try { raw = JSON.parse(await f.text()); } catch { showToast("Это не файл экспорта JUUNIBI: не удалось прочитать JSON."); return; }
-    const n = chats.importJson(Array.isArray(raw) ? raw : (raw as { items?: unknown })?.items);
-    showToast(n ? `Добавлено чатов: ${n}` : "Новых чатов в файле нет: все уже здесь или файл пуст.");
+    const { added, dropped } = chats.importJson(Array.isArray(raw) ? raw : (raw as { items?: unknown })?.items);
+    const full = dropped ? `Не поместилось: ${dropped} (здесь не больше 100 чатов, удалите ненужные и повторите импорт).` : "";
+    showToast(added ? `Добавлено чатов: ${added}. ${full}`.trim() : full || "Новых чатов в файле нет: все уже здесь или файл пуст.", { ms: dropped ? 10000 : 4000 });
   });
   const imp = btn("Импорт", () => file.click(), { icon: "paperclip", title: "Добавить чаты из ранее сохранённого файла" });
   const data = card("data", "История чатов хранится только в этом браузере. Сохраните её в файл, чтобы перенести или не потерять.",
