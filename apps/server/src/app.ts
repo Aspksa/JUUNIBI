@@ -22,7 +22,7 @@ import type { AutonomousLearning } from "./autonomous-learning";
 import type { KnowledgeLedger } from "./knowledge-ledger";
 import { checkPublicEvidence } from "./public-evidence";
 import { comparePublicEvidence } from "./evidence-comparison";
-import type { AssistantSettingsStore } from "./assistant-settings";
+import { publicSettings, type AssistantSettingsStore } from "./assistant-settings";
 import type { Brief, Organizer } from "./organizer";
 import type { EvalService } from "./evals";
 import { buildQualityReport } from "./quality";
@@ -53,6 +53,8 @@ export interface AppDeps {
   settings?: AssistantSettingsStore;
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
+  /** Sees what the owner wrote in the chat (and earlier in the same chat), so links there may be opened. */
+  noteUserText?: (text: string) => void;
   /** Control questions that show whether the assistant got better or worse. */
   evals?: EvalService;
   /** Data for the start-of-day summary. */
@@ -456,10 +458,11 @@ export function createApp(deps: AppDeps): http.Server {
           const o = deps.organizer;
           if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders() });
           if (req.method === "POST" && p === "/api/organizer/notes") { const b = await readJson(req); return send(res, 201, await o.addNote(b.kind ?? "note", b.text)); }
-          if (req.method === "POST" && p === "/api/organizer/reminders") { const b = await readJson(req); return send(res, 201, await o.addReminder(b.text, b.at)); }
+          if (req.method === "POST" && p === "/api/organizer/reminders") { const b = await readJson(req); return send(res, 201, await o.addReminder(b.text, b.at, b.repeat)); }
           const om = /^\/api\/organizer\/(notes|reminders)\/([\w-]+)(?:\/(done|dismiss))?$/.exec(p);
           if (om) {
             const [, kind, id, action] = om;
+            if (req.method === "PATCH" && !action) { const b = await readJson(req); return send(res, 200, kind === "notes" ? await o.editNote(id!, b.text) : await o.editReminder(id!, { text: b.text, at: b.at, repeat: b.repeat })); }
             if (req.method === "DELETE" && !action) { if (kind === "notes") await o.removeNote(id!); else await o.removeReminder(id!); return send(res, 200, { ok: true }); }
             if (req.method === "POST" && kind === "notes" && action === "done") { const b = await readJson(req); if (typeof b.done !== "boolean") return send(res, 400, { error: "Укажите done: true или false" }); return send(res, 200, await o.setDone(id!, b.done)); }
             if (req.method === "POST" && kind === "reminders" && action === "dismiss") return send(res, 200, await o.dismissReminder(id!));
@@ -468,8 +471,8 @@ export function createApp(deps: AppDeps): http.Server {
         }
         if (deps.brief && req.method === "GET" && p === "/api/brief") return send(res, 200, await deps.brief());
         if (deps.settings && p === "/api/assistant/settings") {
-          if (req.method === "GET") return send(res, 200, deps.settings.get());
-          if (req.method === "POST") return send(res, 200, await deps.settings.update(await readJson(req)));
+          if (req.method === "GET") return send(res, 200, publicSettings(deps.settings.get()));
+          if (req.method === "POST") return send(res, 200, publicSettings(await deps.settings.update(await readJson(req))));
         }
         const mem = deps.memory ?? a?.memory;
         if (mem) {
@@ -511,6 +514,11 @@ export function createApp(deps: AppDeps): http.Server {
           if (!deps.approvals) return send(res, 404, { error: "Подтверждения недоступны" });
           return send(res, deps.approvals.decide(approvalMatch[1]!, approvalMatch[2] === "approve") ? 200 : 404, { ok: true });
         }
+        const noteUser = (msg: string, history?: { role: unknown; content: unknown }[]) => {
+          if (!deps.noteUserText) return;
+          deps.noteUserText(msg);
+          for (const h of history?.slice(-200) ?? []) if (h?.role === "user" && typeof h.content === "string") deps.noteUserText(h.content);
+        };
         const brainOn = deps.brain && (!mc || mc.isActive("brain")) ? deps.brain : undefined;
         if (req.method === "POST" && p === "/api/chat/stream") {
           const b = await readJson(req, MAX_CHAT_BODY);
@@ -518,6 +526,7 @@ export function createApp(deps: AppDeps): http.Server {
           if (!msg || msg.length > MAX_CHAT_MESSAGE) return send(res, 400, { error: "Сообщение пустое или слишком длинное" });
           const session = typeof b.session === "string" ? b.session.slice(0, 64) : "default";
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
+          noteUser(msg, history);
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-accel-buffering": "no" });
@@ -540,6 +549,7 @@ export function createApp(deps: AppDeps): http.Server {
           const ctl = new AbortController();
           res.on("close", () => { if (!res.writableEnded) ctl.abort(); });
           const history = Array.isArray(b.history) ? (b.history as { role: "user" | "assistant"; content: string }[]) : undefined;
+          noteUser(msg, history);
           const review = brainOn && deps.automaticBrainReview ? deps.automaticBrainReview(msg) : undefined;
           chatsInFlight++;
           let reply: Awaited<ReturnType<Assistant["ask"]>>;

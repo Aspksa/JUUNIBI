@@ -29,7 +29,7 @@ export function buildAttention(s: AppState, d: Pick<HomeDeps, "go" | "openChat">
   else if (hasUpdate) out.push({ id: "update", tone: "info", icon: "update", text: `Доступна новая версия ${u?.latest?.version}.`, action: "Обновить", run: () => d.go("update") });
   if (pending) out.push({ id: "memory", tone: "info", icon: "memory", text: `Новых записей памяти на подтверждение: ${pending}.`, action: "Посмотреть", run: () => d.go("memory") });
   const dueNow = s.brief?.due.length ?? 0;
-  if (dueNow) out.push({ id: "reminder", tone: "warn", icon: "clock", text: dueNow === 1 ? `Напоминание: ${s.brief!.due[0]!.text}` : `Сработали напоминания: ${dueNow}.`, action: "Открыть", run: () => d.go("reminders") });
+  if (dueNow) out.push({ id: "reminder", tone: "warn", icon: "clock", text: dueNow === 1 ? `Напоминание: ${s.brief!.due[0]!.text}` : `Сработали напоминания: ${dueNow}.`, action: "Открыть", run: () => d.go("tasks") });
   if (failed) out.push({ id: "modules", tone: "bad", icon: "modules", text: `Модулей со сбоем: ${failed}.`, action: "Открыть", run: () => d.go("modules") });
   const sug = s.repeatSuggestions?.[0];
   if (sug && d.saveQuickCommand && d.dismissSuggestion) {

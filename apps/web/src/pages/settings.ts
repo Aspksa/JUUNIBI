@@ -9,6 +9,7 @@ import { btn, dot, pageHead } from "./kit";
 import { toggle } from "./modules-parts";
 
 const KEY_FLASH = { text: "", bad: false };
+const MAX_INSTRUCTIONS = 1500;
 /** Models Cloud.ru returned, kept across re-renders so the list is asked for once. */
 let cloudModels: string[] | null = null;
 /** Unsaved text of the fields, so saving one card (which redraws the page) does not wipe what is typed in another. */
@@ -16,9 +17,9 @@ const drafts = new Map<string, string>();
 /** Removes the scroll listener of the previous render. */
 let stopSpy: (() => void) | null = null;
 
-type SectionId = "conn" | "model" | "memory" | "tools" | "quick" | "look" | "chat" | "data" | "about";
+type SectionId = "conn" | "model" | "persona" | "memory" | "tools" | "quick" | "look" | "chat" | "data" | "about";
 const SECTIONS: [SectionId, string, IconName][] = [
-  ["conn", "Подключение", "cloud"], ["model", "Модель", "spark"], ["memory", "Память", "memory"], ["tools", "Инструменты", "puzzle"],
+  ["conn", "Подключение", "cloud"], ["model", "Модель", "spark"], ["persona", "Инструкции", "edit"], ["memory", "Память", "memory"], ["tools", "Инструменты", "puzzle"],
   ["quick", "Быстрые команды", "list"], ["look", "Внешний вид", "sun"], ["chat", "Чат", "chat"], ["data", "Данные", "folder"], ["about", "О программе", "book"],
 ];
 const label = (id: SectionId) => SECTIONS.find((x) => x[0] === id)!;
@@ -117,14 +118,15 @@ function field(o: { label: string; value: string; placeholder?: string; list?: s
   input.addEventListener("input", () => { if (input.value === o.value) drafts.delete(o.label); else drafts.set(o.label, input.value); });
   return { wrap: el("label", { cls: "beh-field" }, el("span", { textContent: o.label }), input), input };
 }
-function dirtySave(inputs: HTMLInputElement[], saved: string[], text: string, run: () => void): HTMLButtonElement {
+function dirtySave(inputs: (HTMLInputElement | HTMLTextAreaElement)[], saved: string[], text: string, run: () => void): HTMLButtonElement {
   // the values are being saved: they are no longer drafts (the redraw shows what the server kept)
   const b = btn(text, () => { for (const x of inputs) drafts.delete(x.getAttribute("aria-label") ?? ""); run(); }, { small: true, primary: true, disabled: true });
   const sync = () => { b.disabled = inputs.every((x, i) => x.value.trim() === saved[i]); };
   sync();
   for (const x of inputs) {
     x.addEventListener("input", sync);
-    x.addEventListener("keydown", (e) => { if (e.key === "Enter" && !b.disabled) { e.preventDefault(); b.click(); } });
+    // Enter saves a one-line field; in a text area it starts a new line, Ctrl+Enter saves
+    x.addEventListener("keydown", (ev) => { const e = ev as KeyboardEvent; if (e.key === "Enter" && !b.disabled && (x instanceof HTMLInputElement || e.ctrlKey || e.metaKey)) { e.preventDefault(); b.click(); } });
   }
   return b;
 }
@@ -134,7 +136,7 @@ const SUGGEST_MODES: ["off" | "rules" | "smart", string, string][] = [["off", "�
 /** Cards for what the assistant may do. Everything here only ever NARROWS or tunes; memory entries still need your "Принять". */
 function assistantCards(s: AppState): HTMLElement[] {
   const cfg = s.assistantSettings;
-  if (!cfg) return (["model", "memory", "tools", "quick"] as const).map((id) => card(id, "Загружаю настройки помощницы…", el("div", { cls: "set-skeleton" }, el("i"), el("i"))));
+  if (!cfg) return (["model", "persona", "memory", "tools", "quick"] as const).map((id) => card(id, "Загружаю настройки помощницы…", el("div", { cls: "set-skeleton" }, el("i"), el("i"))));
   const save = async (patch: SettingsPatch, ok = "Сохранено"): Promise<boolean> => {
     const r = await api.saveAssistantSettings(patch);
     showToast(r.ok ? ok : r.error.message, { ms: r.ok ? 3000 : 8000 });
@@ -173,6 +175,26 @@ function assistantCards(s: AppState): HTMLElement[] {
     toggle("Размышления модели", "Модель сначала обдумывает ответ (пока видно «Обдумываю ответ»). Выключите, чтобы отвечала быстрее; работает не на всех моделях.", cfg.chat.reasoning,
       (v) => save({ chat: { model: cfg.chat.model, fallbackModel: cfg.chat.fallbackModel, reasoning: v } }, v ? "Размышления включены" : "Размышления выключены")));
 
+  // ---- the owner's instructions, sent with every request
+  const area = (label: string, value: string, placeholder: string) => {
+    const draft = drafts.get(label);
+    if (draft === value) drafts.delete(label);
+    const t = el("textarea", { value: draft ?? value, placeholder, maxLength: MAX_INSTRUCTIONS, rows: 4, cls: "set-area", attrs: { "aria-label": label } });
+    const count = el("small", { cls: "muted set-count", attrs: { "aria-live": "off" } });
+    const sync = () => { count.textContent = `${t.value.length} / ${MAX_INSTRUCTIONS}`; if (t.value === value) drafts.delete(label); else drafts.set(label, t.value); };
+    t.addEventListener("input", sync);
+    sync();
+    return { wrap: el("label", { cls: "beh-field" }, el("span", { textContent: label }), t, count), input: t };
+  };
+  const about = area("Что помощнице знать о вас", cfg.instructions.about, "Например: меня зовут Аня, я дизайнер интерфейсов в Москве. Пишу на TypeScript, учу японский.");
+  const style = area("Как отвечать", cfg.instructions.style, "Например: коротко и по делу, без вступлений. Код с комментариями. Обращайся на «ты».");
+  const saveInstr = dirtySave([about.input, style.input], [cfg.instructions.about, cfg.instructions.style], "Сохранить", () =>
+    void save({ instructions: { about: about.input.value.trim(), style: style.input.value.trim() } }, about.input.value.trim() || style.input.value.trim() ? "Инструкции сохранены: помощница учтёт их со следующего ответа" : "Инструкции очищены"));
+  const clearInstr = cfg.instructions.about || cfg.instructions.style
+    ? btn("Очистить", () => { if (confirm("Удалить ваши инструкции?")) { drafts.delete(about.input.getAttribute("aria-label")!); drafts.delete(style.input.getAttribute("aria-label")!); void save({ instructions: { about: "", style: "" } }, "Инструкции очищены"); } }, { small: true }) : null;
+  const personaCard = card("persona", "Ваши пожелания уходят помощнице с каждым сообщением, поэтому не нужно повторять их в каждом чате. Действий они не разрешают.",
+    about.wrap, style.wrap, el("div", { cls: "row" }, saveInstr, clearInstr));
+
   // ---- memory
   const emb = field({ label: "Модель эмбеддингов", value: cfg.embeddings.model, mono: true });
   const probe = el("p", { cls: "muted small", attrs: { role: "status" } });
@@ -199,7 +221,32 @@ function assistantCards(s: AppState): HTMLElement[] {
     el("div", { cls: "set-row stack" }, rowHead("Предлагать запомнить", "Предложения появляются в «Ждут решения»."), modes),
     toggle("Сводка длинных бесед", "Начало долгого разговора сжимается в краткое содержание, чтобы помощница не теряла нить.", cfg.summaries, (v) => save({ summaries: v }, v ? "Сводки включены" : "Сводки выключены")));
 
-  // ---- tools: Wikipedia and one folder
+  // ---- tools: the internet and one folder
+  const brave = cfg.webSearch.provider === "brave";
+  const braveKey = el("input", { type: "password", autocomplete: "off", spellcheck: false, cls: "key-input mono", placeholder: cfg.webSearch.braveKeySet ? "Ключ сохранён. Вставьте новый, чтобы заменить" : "Ключ API Brave Search", attrs: { "aria-label": "Ключ Brave Search" } });
+  const saveBrave = btn(cfg.webSearch.braveKeySet ? "Заменить ключ" : "Сохранить и включить", () => {
+    const k = braveKey.value.trim();
+    if (!k) { braveKey.focus(); return; }
+    braveKey.value = "";
+    void save({ webSearch: { provider: "brave", braveKey: k } }, "Поиск через Brave Search включён");
+  }, { small: true, primary: true });
+  braveKey.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveBrave.click(); } });
+  const PROVIDERS: ["duckduckgo" | "brave", string, string][] = [["duckduckgo", "DuckDuckGo", "Без ключа и регистрации. При частых запросах может временно ограничивать."], ["brave", "Brave Search", "Стабильнее, нужен свой ключ API (есть бесплатный тариф)."]];
+  const providers = el("div", { cls: "choice-cards two", attrs: { role: "radiogroup", "aria-label": "Поисковик" } }, ...PROVIDERS.map(([v, title, hint]) => {
+    const b = el("button", { type: "button", cls: "choice-card", attrs: { role: "radio", "aria-checked": String(cfg.webSearch.provider === v) } }, el("strong", { textContent: title }), el("span", { cls: "muted", textContent: hint }));
+    b.addEventListener("click", () => {
+      if (cfg.webSearch.provider === v) return;
+      if (v === "brave" && !cfg.webSearch.braveKeySet) { braveSub.hidden = false; braveKey.focus(); showToast("Вставьте ключ Brave Search и нажмите «Сохранить и включить»."); return; }
+      void save({ webSearch: { provider: v } }, `Поиск: ${title}`);
+    });
+    return b;
+  }));
+  const braveSub = el("div", { cls: "set-inline" }, braveKey, saveBrave);
+  braveSub.hidden = !brave && !cfg.webSearch.braveKeySet;
+  const webSub = el("div", { cls: "set-sub" },
+    el("div", { cls: "set-row stack" }, rowHead("Поисковик", "Куда уходят поисковые запросы помощницы."), providers), braveSub,
+    el("p", { cls: "muted small", textContent: "Помощница открывает только ссылки из результатов поиска и из ваших сообщений. Адреса этого компьютера и домашней сети закрыты." }));
+  webSub.hidden = !cfg.web;
   const root = field({ label: "Папка", value: cfg.files.root, placeholder: "Например: C:\\Users\\Я\\Документы\\Заметки", mono: true });
   const saveRoot = dirtySave([root.input], [cfg.files.root], cfg.files.root ? "Сменить папку" : "Открыть доступ", () => void save({ files: { root: root.input.value.trim() } }, root.input.value.trim() ? (cfg.files.allowWrite ? "Папка выбрана. Запись для новой папки выключена" : "Папка выбрана") : "Доступ к файлам закрыт"));
   const access = cfg.files.root
@@ -209,7 +256,8 @@ function assistantCards(s: AppState): HTMLElement[] {
   const write = cfg.files.root ? toggle("Разрешить запись в эту папку", "Создание и замена текстовых документов (.md, .txt, .csv…). Каждый раз нужно ваше подтверждение; прежняя версия сохраняется в резервной копии.", cfg.files.allowWrite,
     (v) => save({ files: { root: cfg.files.root, allowWrite: v } }, v ? "Запись разрешена" : "Запись запрещена")) : null;
   const toolsCard = card("tools", "Что помощница может открыть сама. Каждый инструмент можно выключить.",
-    toggle("Справочник (Википедия)", "Ищет и читает статьи русской Википедии и указывает ссылку на источник.", cfg.web, (v) => save({ web: v }, v ? "Справочник включён" : "Справочник выключен")),
+    toggle("Доступ в интернет", "Ищет в интернете, читает страницы и Википедию, в ответе указывает ссылки на источники. Только чтение: ничего не отправляет и не публикует.", cfg.web, (v) => save({ web: v }, v ? "Доступ в интернет включён" : "Доступ в интернет выключен")),
+    webSub,
     el("div", { cls: "set-row stack" }, rowHead("Доступ к файлам", "Только текстовые файлы до 200 КБ. Секреты (.env, ключи), .git, node_modules и ссылки наружу всегда закрыты."),
       el("div", { cls: "set-sub" }, access, el("div", { cls: "set-inline" }, root.wrap, saveRoot))),
     write);
@@ -243,7 +291,7 @@ function assistantCards(s: AppState): HTMLElement[] {
   const quickCard = card("quick", "Короткое «/имя» в чате отправляет заготовленный текст.",
     quickList, el("div", { cls: "beh-add" }, qName.wrap, qText.wrap, el("div", { cls: "row" }, qAdd, qCancel)));
 
-  return [modelCard, memoryCard, toolsCard, quickCard];
+  return [modelCard, personaCard, memoryCard, toolsCard, quickCard];
 }
 
 export function settingsPage(s: AppState, chats: Chats): HTMLElement {

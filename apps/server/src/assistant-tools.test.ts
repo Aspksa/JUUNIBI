@@ -15,18 +15,22 @@ async function setup(over: Partial<AssistantSettings> = {}) {
   const settings: AssistantSettings = { ...defaultSettings({}), files: { root: docs, allowWrite: true }, web: true, ...over };
   const organizer = new Organizer(path.join(dir, "org.json"), () => Date.parse("2026-10-09T05:00:00+03:00"));
   const tools = buildExtraTools({ settings: () => settings, organizer, backupDir: path.join(dir, "bk"), brief: async () => buildBrief({ now: Date.now(), reminders: [], notes: [], plansRunning: 0, memoryPending: 0, modulesFailed: [], updateAvailable: false }),
-    fetcher: (async () => new Response(JSON.stringify({ query: { search: [{ title: "Чай", snippet: "напиток" }] } }))) as never });
+    fetcher: (async () => new Response(JSON.stringify({ query: { search: [{ title: "Чай", snippet: "напиток" }] } }))) as never,
+    web: {
+      search: async (q, cfg) => ({ provider: cfg.provider, results: [{ title: "Чай — Вики", url: "https://example.com/tea", snippet: String(q) }] }),
+      read: async (url) => ({ url: String(url), title: "Чай", text: "Чай — напиток", truncated: false }),
+    } });
   return { dir, docs, settings, organizer, tools, by: Object.fromEntries(tools.map((t) => [t.name, t])), done: () => rm(dir, { recursive: true, force: true }) };
 }
 
 describe("видимость инструментов зависит от настроек владельца", () => {
   it("файлы, запись и справочник включаются по отдельности", () => {
     const base = defaultSettings({});
-    expect(["list_files", "read_file", "search_files", "write_file", "web_search", "web_read"].map((n) => toolEnabled(n, base))).toEqual([false, false, false, false, false, false]);
+    expect(["list_files", "read_file", "search_files", "write_file", "web_search", "web_open", "wiki_search", "wiki_read"].map((n) => toolEnabled(n, base))).toEqual([false, false, false, false, false, false, false, false]);
     const withFolder = { ...base, files: { root: "/x", allowWrite: false } };
     expect(["read_file", "write_file"].map((n) => toolEnabled(n, withFolder))).toEqual([true, false]);
     expect(toolEnabled("write_file", { ...withFolder, files: { root: "/x", allowWrite: true } })).toBe(true);
-    expect(toolEnabled("web_read", { ...base, web: true })).toBe(true);
+    for (const n of ["web_search", "web_open", "wiki_read"]) expect(toolEnabled(n, { ...base, web: true })).toBe(true);
     for (const n of ["list_notes", "add_note", "add_reminder", "daily_brief", "list_modules"]) expect(toolEnabled(n, base)).toBe(true);
   });
 });
@@ -35,7 +39,7 @@ describe("инструменты", () => {
   it("уровни риска: чтение без подтверждения, изменения — write, запись файлов — danger с планом", async () => {
     const { by, done } = await setup();
     try {
-      for (const n of ["list_files", "read_file", "search_files", "web_search", "web_read", "list_notes", "list_reminders", "daily_brief"]) expect(by[n]!.risk, n).toBe("read");
+      for (const n of ["list_files", "read_file", "search_files", "web_search", "web_open", "wiki_search", "wiki_read", "list_notes", "list_reminders", "daily_brief"]) expect(by[n]!.risk, n).toBe("read");
       for (const n of ["add_note", "complete_todo", "add_reminder", "cancel_reminder"]) expect(by[n]!.risk, n).toBe("write");
       expect(by.write_file!.risk).toBe("danger");
       expect(by.write_file!.actionPlan!.checks.length).toBeGreaterThan(2);
@@ -68,9 +72,28 @@ describe("инструменты", () => {
   it("справочник возвращает ссылку на источник; статья не найдена — понятный ответ", async () => {
     const { by, done } = await setup();
     try {
-      const r = await by.web_search!.run({ query: "чай" }) as { title: string; url: string }[];
+      const r = await by.wiki_search!.run({ query: "чай" }) as { title: string; url: string }[];
       expect(r[0]).toMatchObject({ title: "Чай" });
       expect(r[0]!.url).toMatch(/^https:\/\/ru\.wikipedia\.org\/wiki\//);
+    } finally { await done(); }
+  });
+  it("интернет: поиск открывает доступ к найденным страницам, чужие адреса не открываются", async () => {
+    const { by, done } = await setup();
+    try {
+      await expect(by.web_open!.run({ url: "https://example.com/tea" })).resolves.toMatchObject({ error: expect.stringMatching(/нельзя/) });
+      const found = await by.web_search!.run({ query: "чай" }) as { provider: string; results: { url: string }[] };
+      expect(found).toMatchObject({ provider: "duckduckgo", results: [{ url: "https://example.com/tea" }] });
+      await expect(by.web_open!.run({ url: "https://example.com/tea#part" })).resolves.toMatchObject({ text: "Чай — напиток" });
+      await expect(by.web_open!.run({ url: "https://evil.example/?secret=1" })).resolves.toMatchObject({ error: expect.any(String) });
+    } finally { await done(); }
+  });
+  it("повторяющееся напоминание через инструмент", async () => {
+    const { by, organizer, done } = await setup();
+    try {
+      await by.add_reminder!.run({ text: "Пить воду", at: "2026-10-10T10:00:00+03:00", repeat: "daily" });
+      expect(organizer.listReminders()[0]!.repeat).toBe("daily");
+      expect(await by.list_reminders!.run({})).toEqual([expect.objectContaining({ repeat: "daily" })]);
+      await expect(by.add_reminder!.run({ text: "x", at: "2026-10-10T10:00:00+03:00", repeat: "monthly" })).rejects.toThrow(/Повтор/);
     } finally { await done(); }
   });
   it("заметки, дела и напоминания через инструменты", async () => {

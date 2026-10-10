@@ -18,8 +18,9 @@ import { automaticBrainReview } from "./brain-v41-automatic";
 import { durableMemoryStore } from "./durable-memory-store";
 import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
-import { AssistantSettingsStore, DEFAULT_CHAT_MODEL } from "./assistant-settings";
+import { AssistantSettingsStore, DEFAULT_CHAT_MODEL, instructionsPrompt } from "./assistant-settings";
 import { Organizer, buildBrief } from "./organizer";
+import { OpenableUrls } from "./web-access";
 import { EvalHistory, EvalService } from "./evals";
 import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
 
@@ -166,6 +167,7 @@ const evals = new EvalService(evalHistory, {
   ask: () => { const a = assistant; return a ? async (q, signal) => { const r = await a.ask(q, "eval", signal, { history: [], ephemeral: true }); return { reply: r.reply, tools: r.tools }; } : undefined; },
   model: () => chatModel(), persona: () => currentPersona,
 });
+const openable = new OpenableUrls();
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
 /** Start-of-day data, shared by the assistant tool and the Home page. */
@@ -204,8 +206,8 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Сцены действий и реплики из библиотеки отображаются отдельно от твоего содержательного ответа. Не повторяй вступительную самопрезентацию на каждое сообщение."
   ].join("\n");
   currentPersona = persona;
-  assistant = new Assistant({ persona, llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
-  for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData })) assistant.tools.register(tool);
+  assistant = new Assistant({ persona, instructions: () => instructionsPrompt(settings.get()), llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
+  for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable })) assistant.tools.register(tool);
   assistant.tools.register({
     name: "brain_v4_unified_review", risk: "read",
     description: "Выполнить один безопасный обзор задачи по 20 контрольным этапам: контекст, знания, логика, риски, план, опыт и обучение. Только рекомендации, не автоматическое выполнение.",
@@ -331,7 +333,7 @@ const server = createApp({
   knowledge,
   scenes,
   modules: () => modules.list(),
-  settings, organizer, brief: briefData, evals,
+  settings, organizer, brief: briefData, evals, noteUserText: (t: string) => openable.noteText(t),
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),
     title: (n) => modules.list().find((m) => m.name === n)?.title ?? n,

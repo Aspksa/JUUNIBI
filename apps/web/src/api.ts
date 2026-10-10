@@ -32,10 +32,15 @@ export interface AssistantSettings {
   summaries: boolean;
   files: { root: string; allowWrite: boolean };
   web: boolean;
+  /** The Brave key itself never comes back from the server, only whether one is saved. */
+  webSearch: { provider: SearchProvider; braveKeySet: boolean };
+  instructions: { about: string; style: string };
   quickCommands: QuickCommand[];
 }
+export type SearchProvider = "duckduckgo" | "brave";
+export type Repeat = "daily" | "weekdays" | "weekly";
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string }
-export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string }
+export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string }
 export interface Brief {
   now: string; due: { id: string; text: string; at: string }[]; today: { id: string; text: string; at: string }[];
   openTodos: { count: number; first: { id: string; text: string }[] }; plansRunning: number; memoryPending: number; modulesFailed: string[]; updateAvailable: boolean; attention: number;
@@ -75,7 +80,8 @@ export interface ManifestPreview {
 }
 export type ModuleAction = "start" | "stop" | "restart" | "enable" | "disable";
 /** What the server accepts: any subset, also inside the groups (it keeps what is not sent). */
-export type SettingsPatch = { [K in keyof AssistantSettings]?: AssistantSettings[K] extends unknown[] ? AssistantSettings[K] : AssistantSettings[K] extends object ? Partial<AssistantSettings[K]> : AssistantSettings[K] };
+export type SettingsPatch = { [K in Exclude<keyof AssistantSettings, "webSearch">]?: AssistantSettings[K] extends unknown[] ? AssistantSettings[K] : AssistantSettings[K] extends object ? Partial<AssistantSettings[K]> : AssistantSettings[K] }
+  & { webSearch?: { provider?: SearchProvider; braveKey?: string } };
 export interface Status { assistant: boolean; model?: string; hint?: string }
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -132,7 +138,9 @@ export const api = {
   addNote: (kind: "note" | "todo", text: string) => attemptAsync(() => call<Note>("/api/organizer/notes", post({ kind, text }))),
   setTodoDone: (id: string, done: boolean) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/done`, post({ done }))),
   removeNote: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/notes/${encodeURIComponent(id)}`, { method: "DELETE" })),
-  addReminder: (text: string, at: string) => attemptAsync(() => call<Reminder>("/api/organizer/reminders", post({ text, at }))),
+  addReminder: (text: string, at: string, repeat?: Repeat) => attemptAsync(() => call<Reminder>("/api/organizer/reminders", post({ text, at, ...(repeat ? { repeat } : {}) }))),
+  editNote: (id: string, text: string) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ text }) })),
+  editReminder: (id: string, patch: { text?: string; at?: string; repeat?: Repeat | "none" }) => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) })),
   dismissReminder: (id: string) => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/dismiss`, post({}))),
   removeReminder: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/reminders/${encodeURIComponent(id)}`, { method: "DELETE" })),
   brief: () => attemptAsync(() => call<Brief>("/api/brief")),

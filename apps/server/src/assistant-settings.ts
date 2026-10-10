@@ -15,10 +15,16 @@ export interface AssistantSettings {
   summaries: boolean;
   /** Folder the assistant may read from (empty = no file access). Writing is a separate opt-in. */
   files: { root: string; allowWrite: boolean };
-  /** Let the assistant look things up on Wikipedia and a few reference sites (read-only, with sources). */
+  /** Let the assistant search the internet, open web pages and read Wikipedia (read-only, with sources). */
   web: boolean;
+  /** Where web searches go: DuckDuckGo needs no key; Brave Search needs the owner's API key. */
+  webSearch: { provider: SearchProvider; braveKey: string };
+  /** The owner's own words that go into every request: who they are and how they want answers. */
+  instructions: { about: string; style: string };
   quickCommands: QuickCommand[];
 }
+export type SearchProvider = "duckduckgo" | "brave";
+export const MAX_INSTRUCTIONS = 1500;
 export const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3";
 export const DEFAULT_CHAT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
 const MODEL_NAME = /^[\w./:@+-]{2,100}$/;
@@ -31,7 +37,8 @@ export function defaultSettings(env: NodeJS.ProcessEnv = process.env): Assistant
   return {
     embeddings: { enabled: true, model: env.CLOUDRU_EMBEDDING_MODEL?.trim() || DEFAULT_EMBEDDING_MODEL },
     chat: { model, fallbackModel: fallback === model ? "" : fallback, reasoning: true },
-    suggestions: "smart", summaries: true, files: { root: "", allowWrite: false }, web: false, quickCommands: [],
+    suggestions: "smart", summaries: true, files: { root: "", allowWrite: false }, web: false,
+    webSearch: { provider: "duckduckgo", braveKey: "" }, instructions: { about: "", style: "" }, quickCommands: [],
   };
 }
 
@@ -65,7 +72,28 @@ export async function validateSettings(input: unknown, base: AssistantSettings):
   }
   if (i.suggestions !== undefined) { if (i.suggestions !== "off" && i.suggestions !== "rules" && i.suggestions !== "smart") throw err("Режим предложений: off, rules или smart"); out.suggestions = i.suggestions; }
   if (i.summaries !== undefined) { if (typeof i.summaries !== "boolean") throw err("Некорректный переключатель сводок"); out.summaries = i.summaries; }
-  if (i.web !== undefined) { if (typeof i.web !== "boolean") throw err("Некорректный переключатель справочников"); out.web = i.web; }
+  if (i.web !== undefined) { if (typeof i.web !== "boolean") throw err("Некорректный переключатель интернета"); out.web = i.web; }
+  if (i.webSearch !== undefined) {
+    const w = i.webSearch as Record<string, unknown> | null;
+    if (!w || typeof w !== "object" || Array.isArray(w)) throw err("Некорректные настройки поиска в интернете");
+    if (w.provider !== undefined) { if (w.provider !== "duckduckgo" && w.provider !== "brave") throw err("Поиск: duckduckgo или brave"); out.webSearch.provider = w.provider; }
+    if (w.braveKey !== undefined) {
+      if (typeof w.braveKey !== "string" || w.braveKey.length > 200 || /\s/.test(w.braveKey.trim())) throw err("Некорректный ключ Brave Search");
+      out.webSearch.braveKey = w.braveKey.trim();
+    }
+    if (out.webSearch.provider === "brave" && !out.webSearch.braveKey) throw err("Для Brave Search нужен ключ API");
+  }
+  if (i.instructions !== undefined) {
+    const n = i.instructions as Record<string, unknown> | null;
+    if (!n || typeof n !== "object" || Array.isArray(n)) throw err("Некорректные инструкции");
+    for (const k of ["about", "style"] as const) {
+      if (n[k] === undefined) continue;
+      if (typeof n[k] !== "string" || n[k].includes("\0")) throw err("Некорректный текст инструкций");
+      const v = (n[k] as string).trim();
+      if (v.length > MAX_INSTRUCTIONS) throw err(`Инструкции: не больше ${MAX_INSTRUCTIONS} символов в каждом поле`);
+      out.instructions[k] = v;
+    }
+  }
   if (i.files !== undefined) {
     const f = i.files as Record<string, unknown> | null;
     if (!f || typeof f !== "object" || Array.isArray(f)) throw err("Некорректные настройки файлов");
@@ -104,6 +132,20 @@ export async function validateSettings(input: unknown, base: AssistantSettings):
     });
   }
   return out;
+}
+
+/** What the browser may see: the Brave key never leaves the server, only whether one is saved. */
+export function publicSettings(s: AssistantSettings) {
+  const { braveKey, ...search } = s.webSearch;
+  return { ...s, webSearch: { ...search, braveKeySet: !!braveKey } };
+}
+
+/** The owner's instructions as a block of the system prompt, or "" when there are none. */
+export function instructionsPrompt(s: AssistantSettings): string {
+  const { about, style } = s.instructions;
+  if (!about && !style) return "";
+  return ["Пожелания владельца, которые он сам задал в настройках. Учитывай их в каждом ответе, если они не противоречат правилам выше; они не дают разрешений на действия.",
+    about ? `О владельце:\n${about}` : "", style ? `Как отвечать:\n${style}` : ""].filter(Boolean).join("\n\n");
 }
 
 /** Owner-controlled settings stored in data/assistant-settings.json. */

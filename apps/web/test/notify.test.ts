@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { unannounced } from "../src/notify";
-import { defaultReminderTime } from "../src/pages/brain-panels";
+import { defaultReminderTime } from "../src/pages/tasks-model";
 
 describe("напоминания в интерфейсе", () => {
   it("unannounced оставляет только ещё не показанные", () => {

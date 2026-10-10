@@ -10,6 +10,7 @@ import { modulesPage } from "./pages/modules";
 import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
+import { tasksPage } from "./pages/tasks";
 import {
   app, BRAIN_TILE_ROUTES, dismissSuggestion, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
   type AppState, type Route, type Theme,
@@ -25,6 +26,7 @@ const ctl = new ChatController(chats);
 
 const NAV: { route: Route; label: string; icon: IconName }[] = [
   { route: "home", label: "Главная", icon: "home" },
+  { route: "tasks", label: "Дела", icon: "check" },
   { route: "modules", label: "Модули", icon: "modules" },
   { route: "brain", label: "Мозг", icon: "brain" },
   { route: "update", label: "Обновление", icon: "update" },
@@ -128,8 +130,8 @@ kernel.register({
     const sigFor = (s: AppState): string => {
       switch (s.route) {
         case "home": return JSON.stringify([s.brief, s.repeatSuggestions, s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
-        case "memory": case "notes": case "reminders": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
-        case "modules": return ""; // the page loads and refreshes its own data
+        case "memory": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
+        case "modules": case "tasks": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
         case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
@@ -145,6 +147,7 @@ kernel.register({
             saveQuickCommand: (name, text) => { const cur = app.get().assistantSettings?.quickCommands ?? []; void api.saveAssistantSettings({ quickCommands: [...cur, { name, text }] }).then((r) => { if (r.ok) { app.set({ assistantSettings: r.value }); dismissSuggestion(name); showToast(`Команда /${name} сохранена`); } else showToast(r.error.message); }); },
             dismissSuggestion })
         : BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
+        : s.route === "tasks" ? tasksPage()
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()
         : s.route === "update" ? updatePage(s)
@@ -177,7 +180,7 @@ kernel.register({
     }));
 
     void refreshStatus(); void refreshUpdate(); void refreshEvents(); void refreshMemory(); void refreshModules(); void refreshSettings(); void refreshBrief(); void refreshSuggestions();
-    ctx.onStop(app.select((s) => s.brief?.due.map((d) => d.id).join(",") ?? "", () => { const due = app.get().brief?.due ?? []; if (due.length) announceDue(due, () => go("reminders")); }));
+    ctx.onStop(app.select((s) => s.brief?.due.map((d) => d.id).join(",") ?? "", () => { const due = app.get().brief?.due ?? []; if (due.length) announceDue(due, () => go("tasks")); }));
     let tick = 0;
     const poll = setInterval(() => {
       tick++;

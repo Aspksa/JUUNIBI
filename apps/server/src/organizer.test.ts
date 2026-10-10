@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Organizer, buildBrief } from "./organizer";
+import { Organizer, alignStart, buildBrief, nextOccurrence } from "./organizer";
 
 async function setup(start = Date.parse("2026-10-09T05:00:00+03:00")) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-org-"));
@@ -104,5 +104,74 @@ describe("сводка дня", () => {
   });
   it("в спокойный день внимание равно нулю", () => {
     expect(buildBrief({ now: Date.now(), reminders: [], notes: [], plansRunning: 0, memoryPending: 0, modulesFailed: [], updateAvailable: false }).attention).toBe(0);
+  });
+});
+
+describe("правка и повторы", () => {
+  const local = (d: number, h = 9, m = 0) => new Date(2026, 9, d, h, m).getTime(); // октябрь 2026, местное время
+  it("текст заметки и напоминания меняется; сработавшее напоминание не правится", async () => {
+    const { o, advance, done } = await setup(local(9, 5));
+    try {
+      const n = await o.addNote("todo", "Купить чай");
+      expect((await o.editNote(n.id, " Купить кофе ")).text).toBe("Купить кофе");
+      await expect(o.editNote(n.id, "")).rejects.toMatchObject({ status: 400 });
+      await expect(o.editNote("нет", "x")).rejects.toMatchObject({ status: 404 });
+      const r = await o.addReminder("Позвонить", new Date(local(9, 10)).toISOString());
+      const e = await o.editReminder(r.id, { text: "Позвонить маме", at: new Date(local(9, 11)).toISOString(), repeat: "daily" });
+      expect(e).toMatchObject({ text: "Позвонить маме", repeat: "daily", at: new Date(local(9, 11)).toISOString() });
+      expect((await o.editReminder(r.id, { repeat: "none" })).repeat).toBeUndefined();
+      advance(7 * 3600_000);
+      await o.tick();
+      await expect(o.editReminder(r.id, { text: "x" })).rejects.toMatchObject({ status: 409 });
+    } finally { await done(); }
+  });
+  it("следующий раз: каждый день, по будням (без выходных), каждую неделю; в то же местное время", () => {
+    const fri = local(9, 9); // 9 октября 2026 — пятница
+    expect(new Date(fri).getDay()).toBe(5);
+    expect(nextOccurrence(fri, "daily", fri)).toBe(local(10, 9));
+    expect(nextOccurrence(fri, "weekdays", fri)).toBe(local(12, 9));
+    expect(nextOccurrence(fri, "weekly", fri)).toBe(local(16, 9));
+    // пропущенные дни не копятся: сразу ближайший будущий раз
+    expect(nextOccurrence(fri, "daily", local(14, 12))).toBe(local(15, 9));
+    expect(alignStart(local(10, 9), "weekdays")).toBe(local(12, 9));
+    expect(alignStart(local(10, 9), "daily")).toBe(local(10, 9));
+  });
+  it("повторяющееся срабатывает копией и переходит на следующий раз; пропуски срабатывают один раз", async () => {
+    const { o, advance, done } = await setup(local(9, 8));
+    try {
+      const r = await o.addReminder("Пить воду", new Date(local(9, 9)).toISOString(), "daily");
+      advance(3600_000 + 1);
+      const fired = await o.tick();
+      expect(fired).toHaveLength(1);
+      expect(fired[0]).toMatchObject({ text: "Пить воду", status: "due", seriesId: r.id });
+      expect(fired[0]!.repeat).toBeUndefined();
+      const series = o.listReminders().find((x) => x.id === r.id)!;
+      expect(series).toMatchObject({ status: "scheduled", repeat: "daily", at: new Date(local(10, 9)).toISOString() });
+      advance(3 * 86_400_000); // JUUNIBI был закрыт три дня
+      expect(await o.tick()).toHaveLength(1);
+      expect(o.listReminders().find((x) => x.id === r.id)!.at).toBe(new Date(local(13, 9)).toISOString());
+      // отмена серии
+      expect((await o.dismissReminder(r.id)).status).toBe("done");
+      advance(86_400_000);
+      expect(await o.tick()).toEqual([]);
+    } finally { await done(); }
+  });
+  it("старые выполненные напоминания не копятся бесконечно", async () => {
+    const { o, advance, done } = await setup(local(1, 8));
+    try {
+      const r = await o.addReminder("Каждый день", new Date(local(1, 9)).toISOString(), "daily");
+      for (let i = 0; i < 130; i++) {
+        advance(86_400_000);
+        for (const f of await o.tick()) await o.dismissReminder(f.id);
+      }
+      const all = o.listReminders();
+      expect(all.filter((x) => x.status === "done").length).toBeLessThanOrEqual(100);
+      expect(all.find((x) => x.id === r.id)?.status).toBe("scheduled");
+    } finally { await done(); }
+  });
+  it("повтор проверяется", async () => {
+    const { o, done } = await setup(local(9, 5));
+    try { await expect(o.addReminder("x", new Date(local(9, 9)).toISOString(), "hourly")).rejects.toMatchObject({ status: 400 }); }
+    finally { await done(); }
   });
 });
