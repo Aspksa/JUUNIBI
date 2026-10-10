@@ -1294,3 +1294,114 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 @keyframes tasks-spin{to{transform:rotate(360deg)}}
 @media (max-width:700px){.tasks-hero{display:block;padding:16px}.tasks-hero .tasks-ring{--size:64px;position:absolute;top:14px;right:14px}.tasks-hero .tasks-ring::before{inset:6px}.tasks-hero .tasks-ring-num{font-size:.95rem}.tasks-hero .tasks-ring small{display:none}.tasks-hero-top{padding-right:70px}.tasks-hero-ic{display:none}.tasks-hero-hello{font-size:1.2rem}}
 @media (prefers-reduced-motion:reduce){.tasks-hero,.tasks-hero::after,.tasks-hero-ic svg,.tasks-goal,.tasks-group,.tasks-goal-empty-ic,.tasks-ring.full,.tasks-star.on svg{animation:none}.org-row,.tasks-goal,.tasks-stat,.tasks-calendar-day{transition:none}.tasks-list .org-row:hover,.tasks-goal:hover,.tasks-calendar-day:hover{transform:none}}
+
+/* ===== «Обновление»: new look and «Жизнь проекта» ===== */
+.upd-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 20px;animation:life-rise .4s ease both}
+.upd-head-ic{display:grid;place-items:center;width:52px;height:52px;border-radius:16px;flex:none;color:var(--brand);
+  background:conic-gradient(from 210deg,color-mix(in srgb,var(--brand) 30%,transparent),transparent 40%,color-mix(in srgb,var(--brand) 25%,transparent));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brand) 40%,transparent),0 10px 30px -14px var(--brand)}
+.upd-head-ic svg{animation:life-float 4s ease-in-out infinite}
+.upd-head-text{flex:1;min-width:240px}
+.upd-head h1{margin:0;font-size:1.9rem;letter-spacing:-.02em;background:linear-gradient(100deg,var(--fg) 30%,var(--brand));-webkit-background-clip:text;background-clip:text;color:transparent}
+.upd-head p{margin:4px 0 0;color:var(--muted);max-width:70ch;font-size:.92rem}
+.upd-badges{display:flex;gap:8px;flex-wrap:wrap}
+.upd-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font:500 .8rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted)}
+.upd-badge svg{color:var(--brand)}
+.upd-layout{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:24px;align-items:start}
+.upd-main{min-width:0}
+@media (max-width:1250px){.upd-layout{grid-template-columns:minmax(0,1fr)}}
+/* hero: a slowly turning light around the card while something is going on */
+.upd-hero{background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--brand) 12%,transparent),transparent 55%),var(--surface);box-shadow:0 18px 40px -28px #000a;isolation:isolate}
+.upd-hero.tone-info::after,.upd-hero.tone-busy::after{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:1px;pointer-events:none;z-index:-1;
+  background:conic-gradient(from var(--spin,0deg),transparent 0 70%,var(--brand) 85%,transparent 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:upd-orbit 6s linear infinite}
+@property --spin{syntax:"<angle>";inherits:false;initial-value:0deg}
+.upd-hero-icon{width:64px;height:64px;border-radius:20px;background:radial-gradient(circle at 30% 25%,color-mix(in srgb,var(--brand) 25%,var(--surface-2)),var(--surface-2))}
+.upd-hero-icon::after{content:"";position:absolute;inset:-7px;border-radius:50%;border:1px dashed color-mix(in srgb,var(--brand) 40%,transparent);animation:upd-turn 18s linear infinite}
+.upd-hero.tone-ok .upd-hero-icon::after{border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.upd-hero h2{font-size:1.55rem}
+.upd-ver{transition:transform .15s,box-shadow .15s}.upd-ver:hover{transform:translateY(-2px);box-shadow:0 8px 18px -12px var(--brand)}
+.upd-steps{background:linear-gradient(180deg,color-mix(in srgb,var(--brand) 5%,var(--surface)),var(--surface));box-shadow:0 12px 30px -26px #000a}
+.upd-step.done:not(:last-child)::after{background:linear-gradient(90deg,var(--ok),color-mix(in srgb,var(--ok) 50%,var(--brand)))}
+.upd-step.active .upd-step-dot{animation:upd-pulse 1.6s ease-in-out infinite}
+.upd-card,.upd-checks,.upd-news,.upd-settings,.upd-history{transition:border-color .2s,box-shadow .2s}
+.upd-card:hover,.upd-news:hover,.upd-settings:hover,.upd-history:hover{box-shadow:0 14px 30px -24px var(--brand)}
+.upd-chip[aria-pressed=true]{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 15%,transparent)}
+.upd-group summary:hover{background:color-mix(in srgb,var(--brand) 6%,transparent)}
+
+/* «Жизнь проекта» */
+.life{display:flex;flex-direction:column;gap:12px;min-width:0;animation:life-rise .5s .05s ease both}
+.life-head{display:flex;align-items:flex-start;gap:10px;padding:18px 18px 16px;border-radius:22px;border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line));position:relative;overflow:hidden;
+  background:radial-gradient(140% 120% at 100% 0%,color-mix(in srgb,var(--brand) 22%,transparent),transparent 60%),radial-gradient(80% 90% at 0% 100%,color-mix(in srgb,#7c5cff 14%,transparent),transparent 70%),var(--surface)}
+.life-head::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 35%,color-mix(in srgb,#fff 7%,transparent) 50%,transparent 65%);background-size:250% 100%;animation:life-sheen 6s ease-in-out infinite}
+.life-head-text{flex:1;min-width:0}
+.life-head h2{display:flex;align-items:center;gap:10px;margin:0;font-size:1.25rem;letter-spacing:-.01em}
+.life-head p{margin:4px 0 0;color:var(--muted);font-size:.82rem}
+.life-head .icon-btn.spin svg{animation:upd-turn .9s linear infinite}
+.life-pulse{width:10px;height:10px;border-radius:50%;background:var(--ok,#3c9);box-shadow:0 0 0 0 color-mix(in srgb,var(--ok,#3c9) 60%,transparent);animation:life-ping 2.2s ease-out infinite}
+.life-highlights{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.life-hl{display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;padding:10px 6px;border-radius:16px;border:1px solid var(--line);background:var(--surface);transition:transform .15s,border-color .15s}
+.life-hl:hover{transform:translateY(-2px);border-color:var(--brand)}
+.life-hl span{font-size:1.2rem}
+.life-hl b{font-size:1rem;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.life-hl small{font-size:.68rem;color:var(--muted);line-height:1.2}
+.life-group{border:1px solid var(--line);border-radius:20px;background:var(--surface);overflow:hidden;transition:border-color .2s}
+.life-group[open]{border-color:color-mix(in srgb,var(--g,var(--brand)) 40%,var(--line))}
+.life-group.g-anatomy{--g:#e0a43a}.life-group.g-mind{--g:#8b6cff}.life-group.g-life{--g:#3fbf87}.life-group.g-care{--g:#3ea6ff}.life-group.g-fun{--g:#ff6fa8}
+.life-group summary{display:flex;align-items:center;gap:10px;padding:13px 16px;cursor:pointer;list-style:none;font-weight:600}
+.life-group summary::-webkit-details-marker{display:none}
+.life-group summary:hover{background:color-mix(in srgb,var(--g) 7%,transparent)}
+.life-group summary>svg{color:var(--muted);transition:transform .2s;transform:rotate(-90deg)}
+.life-group[open] summary>svg{transform:none}
+.life-group-ic{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;font-size:1rem;background:color-mix(in srgb,var(--g) 16%,transparent)}
+.life-count{font-size:.75rem;font-weight:600;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--g) 16%,transparent);color:var(--g)}
+.life-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:4px 12px 12px}
+.life-tile{position:relative;display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:16px;border:1px solid var(--line);background:var(--bg);min-width:0;overflow:hidden;
+  transition:transform .18s,border-color .18s,box-shadow .18s;animation:life-rise .4s calc(var(--i,0)*35ms) ease both}
+.life-tile::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .2s;background:radial-gradient(120% 80% at 0% 0%,color-mix(in srgb,var(--g,var(--brand)) 16%,transparent),transparent 60%)}
+.life-tile:hover,.life-tile:focus-visible{transform:translateY(-3px);border-color:color-mix(in srgb,var(--g,var(--brand)) 55%,var(--line));box-shadow:0 12px 24px -16px var(--g,var(--brand));outline:none}
+.life-tile:hover::before,.life-tile:focus-visible::before{opacity:1}
+.life-tile:hover .life-emoji{transform:scale(1.18) rotate(-6deg)}
+.life-tile.wide{grid-column:1/-1}
+.life-tile.empty .life-value{color:var(--muted)}
+.life-tile-top{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.life-emoji{font-size:1.25rem;line-height:1;transition:transform .2s;flex:none}
+.life-tile-name{display:flex;flex-direction:column;min-width:0}
+.life-tile-name strong{font-size:.82rem;font-weight:600;line-height:1.25}
+.life-tile-name small{font-size:.7rem;color:var(--muted);line-height:1.25}
+.life-value{font-size:1.3rem;font-weight:700;letter-spacing:-.01em;font-variant-numeric:tabular-nums;color:var(--g,var(--fg));overflow-wrap:anywhere;line-height:1.2;margin-top:2px}
+.life-detail{margin:0;font-size:.72rem;color:var(--muted);overflow-wrap:anywhere;line-height:1.35}
+.life-bars{display:flex;align-items:flex-end;gap:2px;height:48px;margin-top:6px}
+.life-bars i{flex:1;min-width:2px;height:calc(var(--h)*1%);border-radius:3px 3px 1px 1px;background:linear-gradient(180deg,var(--g,var(--brand)),color-mix(in srgb,var(--g,var(--brand)) 35%,transparent));transform-origin:bottom;animation:life-grow .6s calc(var(--d)*18ms) cubic-bezier(.2,.9,.3,1.2) both}
+.life-bars i:hover{filter:brightness(1.3)}
+.life-axis{display:flex;justify-content:space-between;font-size:.62rem;color:var(--muted);margin-top:3px}
+.life-heat{display:grid;grid-template-rows:repeat(7,14px);grid-auto-flow:column;grid-auto-columns:14px;gap:3px;margin-top:8px}
+.life-heat i{border-radius:4px;background:color-mix(in srgb,var(--fg) 7%,transparent);position:relative;overflow:hidden;animation:life-pop .35s calc(var(--d)*12ms) ease both}
+.life-heat i::after{content:"";position:absolute;inset:0;background:var(--g,var(--brand));opacity:var(--a)}
+.life-list{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:3px;font-size:.76rem}
+.life-list li{padding:3px 8px;border-radius:8px;background:color-mix(in srgb,var(--fg) 4%,transparent);overflow-wrap:anywhere}
+.life-list li.on{color:var(--g,var(--ok));background:color-mix(in srgb,var(--g,var(--ok)) 10%,transparent)}
+.life-list li.off{color:var(--muted)}
+.life-skeleton{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.life-skeleton i{height:96px;border-radius:16px;background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);background-size:300% 100%;animation:life-sheen 1.4s linear infinite}
+.life-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 16px;text-align:center;border:1px dashed var(--line);border-radius:20px;color:var(--muted)}
+.life-empty span{font-size:2rem;animation:life-float 4s ease-in-out infinite}
+.life-empty p{margin:0;font-size:.86rem}
+.life-note{margin:0;font-size:.78rem;color:var(--muted);text-align:center}
+@keyframes life-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes life-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes life-pop{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:none}}
+@keyframes life-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes life-sheen{0%{background-position:120% 0}100%{background-position:-120% 0}}
+@keyframes life-ping{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok,#3c9) 60%,transparent)}80%,100%{box-shadow:0 0 0 10px transparent}}
+@keyframes upd-orbit{to{--spin:360deg}}
+@keyframes upd-turn{to{transform:rotate(360deg)}}
+@keyframes upd-pulse{0%,100%{box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 18%,transparent)}50%{box-shadow:0 0 0 9px color-mix(in srgb,var(--brand) 6%,transparent)}}
+@media (max-width:520px){.life-highlights{grid-template-columns:repeat(2,1fr)}.life-grid{grid-template-columns:1fr}.upd-head h1{font-size:1.5rem}}
+@media (prefers-reduced-motion:reduce){.upd-head,.upd-head-ic svg,.upd-hero::after,.upd-hero-icon::after,.upd-step.active .upd-step-dot,.life,.life-head::after,.life-pulse,.life-tile,.life-bars i,.life-heat i,.life-skeleton i,.life-empty span{animation:none!important}.life-tile,.life-hl,.upd-ver{transition:none}.life-tile:hover,.life-hl:hover,.upd-ver:hover{transform:none}}
+.page.upd{max-width:1440px}
+.upd-settings select,.upd-settings input[type=password]{min-height:38px;padding:7px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);font:inherit;font-size:.88rem;transition:border-color .15s,box-shadow .15s}
+.upd-settings select:hover,.upd-settings input:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
+.upd-settings select:focus-visible,.upd-settings input:focus-visible{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 20%,transparent)}
+@media (max-width:600px){.upd-head-ic{display:none}}
+.content-main:has(.page.upd){max-width:1500px}

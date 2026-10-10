@@ -12,6 +12,7 @@ import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
 import { AutonomousLearning } from "./autonomous-learning";
 import { KnowledgeLedger } from "./knowledge-ledger";
+import { ProjectStats, recordStartup, type RuntimeFigures } from "./project-stats";
 import { searchVerifiedKnowledge } from "./brain-knowledge-search";
 import { summarizeChatExperience } from "./brain-chat-experience";
 import { runUnifiedBrainCycle } from "./brain-v4-cycle";
@@ -316,6 +317,25 @@ await kernel.start();
 const port = Number(process.env.PORT ?? 4173);
 if (!Number.isInteger(port) || port < 1 || port > 65535) { log.error("Некорректный PORT: " + process.env.PORT); process.exit(1); }
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
+let startupTimes: number[] = [];
+const ru = (n: number) => n.toLocaleString("ru-RU");
+/** What only the running app knows: its knowledge, rollbacks, start-up time and the last checked install. */
+const projectStats = new ProjectStats(root, dataDir, async () => {
+  const out: RuntimeFigures = {};
+  const items = knowledge.list();
+  out.library = { value: ru(items.length), detail: `проверенных записей: ${items.filter((x) => x.status === "verified").length}` };
+  const edges = knowledge.graph().edges.length, suggested = knowledge.suggestedLinks().length;
+  out.links = { value: ru(edges + suggested), detail: `по словам: ${edges}, по теме: ${suggested}` };
+  const h = (await updater.history()).items;
+  const saved = h.filter((x) => x.kind === "rollback" || x.kind === "failed" || x.kind === "startup_failed").length;
+  out.rescued = { value: ru(saved), detail: `установок обновлений: ${h.filter((x) => x.kind === "install").length}` };
+  const [prev, now] = [startupTimes.at(-2), startupTimes.at(-1)];
+  if (now !== undefined) out.startup = { value: `${ru(now)} мс`, detail: prev ? (now <= prev ? `быстрее на ${ru(prev - now)} мс, чем в прошлый раз` : `медленнее на ${ru(now - prev)} мс, чем в прошлый раз`) : "первый замер" };
+  const last = h.find((x) => x.kind === "install" && x.files);
+  if (last?.files) out.integrity = { value: ru(last.files), detail: "файлов проверено при последнем обновлении" };
+  return out;
+});
+
 const appDeps: AppDeps = {
   getAssistant: () => (modules.isActive("assistant") ? assistant : undefined),
   cloudStatus: () => ({ configured: cloudConfigured, model: chatModel() }),
@@ -350,6 +370,7 @@ const appDeps: AppDeps = {
   },
   learning,
   knowledge,
+  projectStats,
   scenes,
   modules: () => modules.list(),
   settings, organizer, brief: briefData,
@@ -369,7 +390,11 @@ const appDeps: AppDeps = {
 };
 const server = createApp(appDeps);
 checkUpdates();
-server.listen(port, "127.0.0.1", () => log.info(`http://127.0.0.1:${port}/`));
+server.listen(port, "127.0.0.1", () => {
+  log.info(`http://127.0.0.1:${port}/`);
+  // performance.now() counts from the start of the process: this is the whole start-up
+  void recordStartup(dataDir, performance.now()).then((t) => { startupTimes = t; });
+});
 if (modules.isActive("mobile")) void mobile.resume();
 
 const reminderTimer = setInterval(() => { void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e)); }, 20_000);

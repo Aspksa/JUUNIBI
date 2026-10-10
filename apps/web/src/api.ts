@@ -43,6 +43,9 @@ export type SearchProvider = "duckduckgo" | "brave";
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days" | "yearly";
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string;
   repeat?: Repeat; rolled?: number; auto?: "brief" }
+/** «Жизнь проекта»: figures about the project's history (server: project-stats.ts). */
+export interface ProjectMetric { id: string; group: string; emoji: string; title: string; hint: string; value: string; detail: string; kind?: "hours" | "calendar" | "spark" | "list"; series?: number[]; list?: string[] }
+export interface ProjectStatsData { generatedAt: string; head: string; commits: number; groups: { id: string; title: string }[]; metrics: ProjectMetric[]; source?: "git" | "github" | "saved" }
 /** What the "Дела" automation does by itself (server: Organizer.automation). */
 export interface Automation { brief: boolean; briefTime: string; rollOverdue: boolean; dueReminder: "off" | "15" | "60" | "morning"; workdays: boolean }
 export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; source?: string }
@@ -126,6 +129,7 @@ export const api = {
   updateCancel: () => attemptAsync(() => call<UpdateStatus>("/api/update/cancel", post({}))),
   updateSettings: (patch: Partial<UpdateConfig> & { githubToken?: string }) => attemptAsync(() => call<UpdateStatus>("/api/update/settings", post(patch))),
   updateHistory: () => attemptAsync(() => call<UpdateHistory>("/api/update/history")),
+  projectStats: (force = false) => attemptAsync(() => call<ProjectStatsData>("/api/project-stats" + (force ? "?force=1" : ""))),
   updateRollback: (cancel = false) => attemptAsync(() => call<UpdateStatus>("/api/update/rollback", post({ cancel }))),
   updateInstallNow: (force = false) => attemptAsync(() => call<{ restarting: boolean }>("/api/update/install-now", post({ force }))),
   approvals: () => attemptAsync(() => call<ApprovalItem[]>("/api/approvals")),
