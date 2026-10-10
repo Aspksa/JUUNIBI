@@ -263,3 +263,17 @@ describe("режим проверки качества (ephemeral)", () => {
     expect(events[0]!.status).toBe("denied");
   });
 });
+
+describe("инструкции владельца", () => {
+  it("попадают в системное сообщение каждого запроса и меняются на лету", async () => {
+    let system = "";
+    const llm = { chat: async (m: { role: string; content: string | null }[]) => { system = String(m[0]!.content); return { content: "ок", toolCalls: [] }; } };
+    let text = "Отвечай коротко.";
+    const a = new Assistant({ llm: llm as never, memory: new Memory(), instructions: () => text });
+    await a.ask("привет");
+    expect(system).toContain("Отвечай коротко.");
+    text = "";
+    await a.ask("ещё");
+    expect(system).not.toContain("Отвечай коротко.");
+  });
+});

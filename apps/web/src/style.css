@@ -910,6 +910,20 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .org-row.due{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 9%,var(--bg))}
 .org-ic{display:inline-flex;color:var(--brand);flex:none}
 .org-row input[type=checkbox]{width:18px;height:18px;accent-color:var(--brand);flex:none}
+/* "Дела" page */
+.tasks-add .segmented{margin:0 0 12px}
+.tasks-add-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.tasks-when{display:flex;gap:10px;flex-wrap:wrap}
+.tasks-when[hidden]{display:none}
+.tasks-group{margin:0 0 18px}
+.tasks-group>h2{font-size:.95rem;margin:0 0 8px;color:var(--muted);font-weight:600}
+.tasks-group.due>h2{color:var(--brand)}
+.tasks-done{margin-top:8px}
+.tasks-age{flex:none}
+.org-row.editing{padding:10px}
+.tasks-edit{display:flex;gap:8px;flex-wrap:wrap;align-items:center;width:100%}
+.tasks-edit .mem-input{flex:1 1 220px;min-width:0}
+@media (max-width:600px){.tasks-add-row>.mem-input,.tasks-when,.tasks-when>*{flex:1 1 100%}.tasks-age{display:none}.org-row{flex-wrap:wrap}.org-row .grow{flex:1 1 60%}}
 .eval-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .eval-list li{display:grid;grid-template-columns:24px 1fr;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);align-items:start}
 .eval-list li>div{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
@@ -1003,6 +1017,12 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .set-card>.muted.small:empty{display:none}
 .set-inline{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.set-inline .beh-field{flex:1 1 260px}
 .set-inline .btn{min-height:42px}
+.set-inline .key-input{flex:1 1 260px;min-width:0}
+.set-area{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);width:100%;font:inherit;font-size:.95rem;line-height:1.45;resize:vertical;min-height:92px}
+.set-area:focus{outline:2px solid color-mix(in srgb,var(--brand) 55%,transparent);outline-offset:0;border-color:transparent}
+.set-count{align-self:flex-end;font-size:.76rem}
+#set-persona .beh-field+.beh-field{margin-top:12px}
+#set-persona .row{margin-top:12px}
 .beh-field input.mono,.set-badge code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88rem}
 .beh-field input:focus{outline:2px solid color-mix(in srgb,var(--brand) 55%,transparent);outline-offset:0;border-color:transparent}
 .set-badge{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2);color:var(--muted);font-size:.88rem}
@@ -1010,7 +1030,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .set-badge.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--fg)}.set-badge.ok svg{color:var(--ok)}
 .set-badge code{overflow-wrap:anywhere}
 .ok-text{color:var(--ok)}.bad-text{color:var(--danger)}
-.choice-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:100%;margin-top:4px}
+.choice-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;width:100%;margin-top:4px}.choice-cards.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .choice-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--bg);text-align:left;transition:border-color .12s,box-shadow .12s}
 .choice-card:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
 .choice-card .muted{font-size:.82rem;line-height:1.4}
@@ -1057,7 +1077,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 }
 @media (max-width:860px){.set-toc{top:52px}.set-card{scroll-margin-top:116px}}
 @media (max-width:760px){
-  .set-grid2,.choice-cards,.set-split{grid-template-columns:1fr}
+  .set-grid2,.choice-cards,.choice-cards.two,.set-split{grid-template-columns:1fr}
   .set-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
   .set-card .set-row:not(.stack){flex-wrap:wrap}
   .settings-page .pg-head-text{flex-basis:calc(100% - 64px)}

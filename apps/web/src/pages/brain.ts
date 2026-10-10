@@ -5,7 +5,7 @@ import { btn, dot, pageHead } from "./kit";
 import { buildBrainTiles, type BrainData, type TileId } from "./brain-model";
 import { memoryPanel } from "./memory";
 import { openSheet, type Sheet } from "./sheet";
-import { notesPanel, qualityPanel, remindersPanel } from "./brain-panels";
+import { qualityPanel } from "./brain-panels";
 import { block, empty, failed, field, fold, note, pct, postJson, progress, tag, tile, when } from "./brain-ui";
 
 const MODES: Record<string, string> = { chat: "Обычный чат", analysis: "Анализ", agent: "Агент", creative: "Творчество" };
@@ -88,8 +88,7 @@ export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
   function content(id: TileId): Node {
     switch (id) {
       case "memory": return memoryPanel(app.get());
-      case "notes": return notesPanel(() => void reload());
-      case "reminders": return remindersPanel(() => void reload());
+      case "notes": case "reminders": return el("div"); // open the "Дела" page instead (see openTile)
       case "quality": return qualityPanel(() => void reload());
       case "plans": return plansBlock(data.plans ?? []);
       case "learning": return learningPanel();
@@ -99,6 +98,7 @@ export function brainPage(opts: BrainPageOpts = {}): HTMLElement {
     }
   }
   function openTile(id: TileId, onClosed?: () => void) {
+    if (id === "notes" || id === "reminders") { location.hash = "#/tasks"; return; }
     const t = buildBrainTiles(data).find((x) => x.id === id)!;
     openId = id;
     let off = () => {};
