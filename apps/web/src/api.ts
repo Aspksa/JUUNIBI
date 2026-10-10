@@ -50,6 +50,32 @@ export interface ProjectMetric {
   kind?: "hours" | "calendar" | "spark" | "list" | "line" | "split" | "dots" | "swatches"; series?: number[]; list?: string[];
   labels?: string[]; ring?: number;
 }
+/** «Дела и достижения» (server: achievements.ts). */
+export interface AchMetric {
+  id: string; n: number; group: string; emoji: string; title: string; hint: string; value: string; detail: string; ready: boolean;
+  kind?: "spark" | "line" | "split" | "dots" | "list"; series?: number[]; labels?: string[]; list?: string[]; ring?: number;
+}
+export interface AchAward {
+  id: string; n: number; emoji: string; title: string; tier: number; group: string; metric: string; goal: string; nextGoal: string | null; levels: number; hidden: boolean; riddle: string | null;
+  repeat: "week" | "month" | null; level: number; firstAt: string | null; lastAt: string | null; history: { level: number; at: string }[]; periods: number; progress: number; next: number | null;
+}
+export interface AchTail { id: string; emoji: string; title: string; done: number; level: number; pattern: string; next: number | null; progress: number }
+export interface AchTier { id: string; emoji: string; title: string; hint: string; color: string; effects: [string, string] }
+export interface AchEffect { id: string; emoji: string; title: string; family: "magic" | "fox" | "ceremony" | "legend" }
+export interface AchNotice { id: string; at: string; text: string; emoji: string; award?: string; tier?: number; kind: "award" | "record" | "event" | "tail" | "title" }
+export interface AchRecord { id: string; emoji: string; title: string; best: { value: number; label: string; text: string; at: string; first?: boolean }; history: { value: number; label: string; text: string; at: string; first?: boolean }[] }
+export interface AchPending { award: string; level: number; at: string; title: string; emoji: string; tier: number; text: string | null }
+export interface AchievementsData {
+  generatedAt: string; groups: { id: string; emoji: string; title: string }[]; tiers: AchTier[]; effects: AchEffect[]; medals: string[];
+  metrics: AchMetric[]; awards: AchAward[]; tails: AchTail[]; titles: { id: string; title: string; emoji: string; how: string; at: string | null }[]; title: string | null;
+  records: AchRecord[]; notices: AchNotice[]; surprise: { emoji: string; text: string }; discoveries: string[]; pending: AchPending[];
+  stats: { won: number; total: number; rare: number; medals: number; ready: number };
+}
+export interface AchDay {
+  day: string; date: string; story: string; prev: string; next: string | null;
+  lines: { at: string; time: string; kind: "add" | "done" | "move" | "remove" | "edit" | "undone" | "note" | "award" | "notice"; text: string }[];
+  counts: { done: number; added: number; notes: number; moved: number; removed: number; awards: number };
+}
 export interface ProjectStatsData { generatedAt: string; head: string; commits: number; groups: { id: string; title: string }[]; metrics: ProjectMetric[]; source?: "git" | "github" | "saved" }
 /** What the "Дела" automation does by itself (server: Organizer.automation). */
 export interface Automation {
@@ -147,6 +173,10 @@ export const api = {
   updateCancel: () => attemptAsync(() => call<UpdateStatus>("/api/update/cancel", post({}))),
   updateSettings: (patch: Partial<UpdateConfig> & { githubToken?: string }) => attemptAsync(() => call<UpdateStatus>("/api/update/settings", post(patch))),
   updateHistory: () => attemptAsync(() => call<UpdateHistory>("/api/update/history")),
+  achievements: () => attemptAsync(() => call<AchievementsData>("/api/achievements")),
+  achievementsSeen: (ids: string[]) => attemptAsync(() => call<{ ok: boolean }>("/api/achievements/seen", post({ ids }))),
+  achievementTitle: (id: string | null) => attemptAsync(() => call<{ title: string | null }>("/api/achievements/title", post({ id }))),
+  achievementDay: (day: string) => attemptAsync(() => call<AchDay>(`/api/achievements/day?day=${encodeURIComponent(day)}`)),
   projectStats: (force = false) => attemptAsync(() => call<ProjectStatsData>("/api/project-stats" + (force ? "?force=1" : ""))),
   updateRollback: (cancel = false) => attemptAsync(() => call<UpdateStatus>("/api/update/rollback", post({ cancel }))),
   updateInstallNow: (force = false) => attemptAsync(() => call<{ restarting: boolean }>("/api/update/install-now", post({ force }))),

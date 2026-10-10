@@ -16,9 +16,10 @@ import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { focusSettingsSearch, settingsPage } from "./pages/settings";
 import { tasksPage } from "./pages/tasks";
+import { achievementsPage } from "./pages/achievements";
 import { mobilePage } from "./pages/mobile";
 import {
-  app, BRAIN_TILE_ROUTES, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
+  app, BRAIN_TILE_ROUTES, SUB_ROUTES, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
   type AppState, type Route, type Theme,
 } from "./state";
 import { announceDue } from "./notify";
@@ -136,7 +137,7 @@ kernel.register({
     const renderNav = (s: AppState) => {
       menu.render(s);
       navScrim.classList.toggle("show", s.navOpen);
-      topTitle.textContent = NAV_ITEMS.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : s.route))?.label ?? "";
+      topTitle.textContent = NAV_ITEMS.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : SUB_ROUTES[s.route] ?? s.route))?.label ?? "";
     };
 
     // ----- pages (re-rendered only when what they show actually changed, so typing in forms is never disturbed)
@@ -144,7 +145,7 @@ kernel.register({
     const sigFor = (s: AppState): string => {
       switch (s.route) {
         case "memory": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
-        case "modules": case "tasks": case "mobile": return ""; // the page loads and refreshes its own data
+        case "modules": case "tasks": case "mobile": case "achievements": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
         case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.customAccent, s.uiRadius, s.uiScale, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
@@ -158,6 +159,7 @@ kernel.register({
       const page =
         BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
         : s.route === "tasks" ? tasksPage({ go, openChat })
+        : s.route === "achievements" ? achievementsPage({ back: () => go("tasks") })
         : s.route === "mobile" ? mobilePage()
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()

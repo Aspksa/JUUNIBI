@@ -1111,8 +1111,16 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 @media (prefers-reduced-motion:reduce){.set-skeleton i{animation:none}}
 
 /* "Дела": list on the left, calendar, day plan and goals on the right */
-.page.tasks-page{max-width:1320px}
-.tasks-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
+/* «Дела»: the page used to be held at 980px by .content-main, so its «wide» layout never got wider than that.
+   Now it takes the screen: «Дела и достижения» on the left, the list in the middle, the calendar column on the right;
+   on a medium screen the calendar goes under the achievements, so the list keeps its width. */
+.content-main:has(.tasks-page){max-width:1760px}
+.page.tasks-page{max-width:none;container:tasks/inline-size}
+.tasks-layout{display:grid;grid-template-columns:320px minmax(0,1fr);grid-template-areas:"ach main" "side main";grid-template-rows:auto 1fr;gap:16px 24px;align-items:start}
+.tasks-ach{grid-area:ach;display:flex;flex-direction:column;gap:14px;min-width:0}
+.tasks-main{grid-area:main;min-width:0}
+.tasks-layout>.tasks-side{grid-area:side;min-width:0}
+@container tasks (min-width:1380px){.tasks-layout{grid-template-columns:300px minmax(0,1fr) 340px;grid-template-areas:"ach main side";grid-template-rows:auto}}
 .tasks-side{display:flex;flex-direction:column;gap:14px;padding-bottom:4px}
 .tasks-side-card{padding:14px 16px;margin:0}
 .tasks-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 10px;flex-wrap:wrap}
@@ -1158,7 +1166,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-goal .tasks-add-row,.tasks-goal-new{flex-wrap:nowrap;gap:6px}
 .tasks-goal .mem-input{padding:6px 10px;font-size:.88rem}
 .tasks-goal-new{margin-top:10px}
-@media (max-width:1100px){.tasks-layout{grid-template-columns:minmax(0,1fr)}.tasks-side{position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}}
+@container tasks (max-width:900px){.tasks-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:"main" "ach" "side";grid-template-rows:auto}.tasks-side{position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}}
 @media (max-width:600px){.tasks-side{display:flex}.tasks-side-card{padding:12px}}
 
 /* «Дела»: automation — brief, evening review, steps, settings, dates from memory, holiday hint */
