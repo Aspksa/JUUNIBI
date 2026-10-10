@@ -1109,7 +1109,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 /* "Дела": list on the left, calendar, day plan and goals on the right */
 .page.tasks-page{max-width:1320px}
 .tasks-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
-.tasks-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;scrollbar-width:thin;padding-bottom:4px}
+.tasks-side{display:flex;flex-direction:column;gap:14px;padding-bottom:4px}
 .tasks-side-card{padding:14px 16px;margin:0}
 .tasks-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 10px;flex-wrap:wrap}
 .tasks-side-head h2{margin:0;font-size:1rem;font-weight:600}
@@ -1151,15 +1151,6 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-plan-list.numbered li::before{counter-increment:n;content:counter(n);flex:none;width:18px;color:var(--muted);font-variant-numeric:tabular-nums}
 .tasks-plan-list .br-tag{flex:none;font-size:.72rem}
 .tasks-plan-time{flex:none;min-width:44px;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
-.tasks-goal{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
-.tasks-goal:first-of-type{border-top:0;padding-top:0}
-.tasks-goal.paused,.tasks-goal.complete{opacity:.65}
-.tasks-goal-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.tasks-goal-head strong{min-width:0;overflow-wrap:anywhere;font-weight:600}
-.tasks-goal-status{width:auto;min-height:0;height:auto;padding:4px 8px;font-size:.78rem;border-radius:8px}
-.tasks-goal-bar{display:flex;align-items:center;gap:8px}
-.tasks-goal-bar progress{flex:1;height:6px;accent-color:var(--brand)}
-.tasks-goal-next{margin:0}
 .tasks-goal .tasks-add-row,.tasks-goal-new{flex-wrap:nowrap;gap:6px}
 .tasks-goal .mem-input{padding:6px 10px;font-size:.88rem}
 .tasks-goal-new{margin-top:10px}
@@ -1207,3 +1198,99 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-dates li>span{min-width:0;font-size:.9rem}
 .tasks-head>.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .tasks-hint .btn{color:var(--fg)}
+
+/* «Дела»: the hero on top, folding side cards, goal cards with rings, small effects */
+.tasks-hero{position:relative;display:flex;align-items:stretch;gap:24px;margin:0 0 18px;padding:22px 26px;border-radius:24px;overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line));
+  background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--brand) 18%,transparent) 0%,transparent 55%),
+    radial-gradient(90% 120% at 100% 100%,color-mix(in srgb,var(--brand) 10%,transparent) 0%,transparent 60%),var(--surface);
+  box-shadow:0 10px 30px -18px color-mix(in srgb,var(--brand) 60%,transparent);animation:tasks-rise .45s var(--ease2,ease) both}
+.tasks-hero:empty{display:none}
+.tasks-hero::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 30%,color-mix(in srgb,#fff 6%,transparent) 50%,transparent 70%);background-size:250% 100%;animation:tasks-sheen 7s ease-in-out infinite}
+.tasks-hero-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+.tasks-hero-top{display:flex;align-items:center;gap:14px}
+.tasks-hero-ic{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;flex:none;color:var(--brand);background:color-mix(in srgb,var(--brand) 16%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brand) 35%,transparent)}
+.tasks-hero-ic svg{animation:tasks-float 5s ease-in-out infinite}
+.tasks-hero-hello{display:block;font-size:1.45rem;font-weight:700;letter-spacing:-.01em;line-height:1.2}
+.tasks-hero-date{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:.92rem;margin-top:2px}
+.tasks-daykind{padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:600;background:color-mix(in srgb,var(--ok,#3c9) 16%,transparent);color:var(--ok,#3c9)}
+.tasks-daykind.weekend,.tasks-daykind.holiday,.tasks-daykind.off{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
+.tasks-daykind.short{background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--brand)}
+.tasks-hero-text{margin:0;white-space:pre-line;line-height:1.6;font-size:1rem;max-width:72ch}
+.tasks-hero-text.muted{font-size:.92rem}
+.tasks-hero-stats{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tasks-stat{display:inline-flex;align-items:baseline;gap:6px;padding:7px 14px;border-radius:12px;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 70%,transparent);color:var(--fg);font:inherit;font-size:.88rem;cursor:pointer;transition:transform .15s,border-color .15s,box-shadow .15s}
+.tasks-stat b{font-size:1.15rem;font-variant-numeric:tabular-nums}
+.tasks-stat span{color:var(--muted)}
+.tasks-stat:not(:disabled):hover{transform:translateY(-2px);border-color:var(--brand);box-shadow:0 6px 16px -10px var(--brand)}
+.tasks-stat:disabled{cursor:default}
+.tasks-stat.today b{color:var(--brand)}.tasks-stat.late:not(.zero){border-color:color-mix(in srgb,var(--danger) 50%,var(--line))}.tasks-stat.late b{color:var(--danger)}.tasks-stat.done b{color:var(--ok,#3c9)}
+.tasks-stat.zero b{color:var(--muted)}
+.tasks-hero .icon-btn.spin svg{animation:tasks-spin .9s linear infinite}
+/* progress ring: --p is 0..100 */
+.tasks-ring{--p:0;--size:118px;position:relative;flex:none;align-self:center;display:grid;place-items:center;align-content:center;width:var(--size);height:var(--size);border-radius:50%;
+  background:conic-gradient(var(--brand) calc(var(--p)*1%),color-mix(in srgb,var(--fg) 10%,transparent) 0);transition:--p .6s}
+.tasks-ring::before{content:"";position:absolute;inset:10px;border-radius:50%;background:var(--surface)}
+.tasks-ring>*{position:relative}
+.tasks-ring-num{font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.tasks-ring small{color:var(--muted);font-size:.75rem;margin-top:4px}
+.tasks-ring.full{background:conic-gradient(var(--ok,#3c9) 100%,transparent 0);box-shadow:0 0 24px -6px var(--ok,#3c9);animation:tasks-pop .5s ease}
+.tasks-ring.sm{--size:46px}.tasks-ring.sm::before{inset:5px}.tasks-ring.sm .tasks-ring-num{font-size:.72rem;font-weight:600}
+@property --p{syntax:"<number>";inherits:true;initial-value:0}
+/* folding side cards */
+.tasks-side-card{transition:box-shadow .2s,border-color .2s}
+.tasks-side-card:hover{border-color:color-mix(in srgb,var(--brand) 25%,var(--line))}
+.tasks-side-head h2{display:flex;min-width:0}
+.tasks-fold{display:inline-flex;align-items:center;gap:6px;padding:2px 4px 2px 0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;border-radius:8px}
+.tasks-fold svg{color:var(--muted);transition:transform .2s}
+.tasks-fold:hover svg{color:var(--brand)}
+.tasks-side-card.folded .tasks-fold svg{transform:rotate(-90deg)}
+.tasks-side-card.folded>:not(.tasks-side-head){display:none}
+.tasks-side-card.folded .tasks-side-head{margin:0}
+.tasks-side-card.folded .tasks-side-head>:not(h2){display:none}
+/* goals */
+.tasks-goal{display:flex;flex-direction:column;gap:10px;padding:12px;margin:0 0 10px;border:1px solid var(--line);border-radius:16px;background:var(--bg);transition:transform .15s,box-shadow .15s,border-color .15s;animation:tasks-rise .35s ease both}
+.tasks-goal:hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--brand) 35%,var(--line));box-shadow:0 8px 20px -14px var(--brand)}
+.tasks-goal.paused{opacity:.7}.tasks-goal.complete{border-color:color-mix(in srgb,var(--ok,#3c9) 40%,var(--line))}
+.tasks-goal-head{display:flex;align-items:center;gap:12px}
+.tasks-goal-head .grow{display:flex;flex-direction:column;min-width:0}
+.tasks-goal-head strong{overflow-wrap:anywhere;font-weight:600}
+.tasks-goal-status{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:color-mix(in srgb,var(--fg) 6%,transparent);align-self:flex-start}
+.tasks-goal-status button{border:0;background:none;color:var(--muted);font:inherit;font-size:.78rem;padding:4px 10px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s}
+.tasks-goal-status button:hover{color:var(--fg)}
+.tasks-goal-status button[aria-checked=true].active{background:var(--brand);color:var(--accent-fg,#111)}
+.tasks-goal-status button[aria-checked=true].paused{background:color-mix(in srgb,var(--fg) 18%,transparent);color:var(--fg)}
+.tasks-goal-status button[aria-checked=true].complete{background:var(--ok,#3c9);color:#062}
+.tasks-goal-steps{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.tasks-goal-steps label{display:flex;align-items:flex-start;gap:8px;padding:4px 6px;border-radius:8px;cursor:pointer;font-size:.9rem}
+.tasks-goal-steps label:hover{background:var(--hover)}
+.tasks-goal-steps li.done span{text-decoration:line-through;color:var(--muted)}
+.tasks-goal-steps .more{padding-left:6px}
+.tasks-goal-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:8px 4px 4px}
+.tasks-goal-empty p{margin:0;color:var(--muted)}
+.tasks-goal-empty-ic{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;color:var(--brand);background:radial-gradient(circle,color-mix(in srgb,var(--brand) 22%,transparent),transparent 70%);animation:tasks-float 5s ease-in-out infinite}
+.tasks-goal-empty .chips{justify-content:center}
+/* rows: hover lift, an animated check, a star that pops */
+.org-row{transition:transform .15s,box-shadow .15s,border-color .15s,background .15s}
+.tasks-list .org-row:not(.editing):hover{transform:translateY(-1px);border-color:color-mix(in srgb,var(--brand) 30%,var(--line));box-shadow:0 6px 18px -14px var(--brand)}
+.tasks-page input[type=checkbox]{appearance:none;-webkit-appearance:none;width:20px;height:20px;flex:none;margin:0;border:2px solid color-mix(in srgb,var(--fg) 35%,transparent);border-radius:7px;display:grid;place-items:center;cursor:pointer;background:transparent;transition:background .15s,border-color .15s,transform .1s}
+.tasks-page input[type=checkbox]::after{content:"";width:5px;height:10px;border:solid var(--accent-fg,#111);border-width:0 2.5px 2.5px 0;transform:rotate(45deg) scale(0);margin-top:-2px;transition:transform .18s cubic-bezier(.3,1.6,.5,1)}
+.tasks-page input[type=checkbox]:hover{border-color:var(--brand)}
+.tasks-page input[type=checkbox]:active{transform:scale(.9)}
+.tasks-page input[type=checkbox]:checked{background:var(--brand);border-color:var(--brand)}
+.tasks-page input[type=checkbox]:checked::after{transform:rotate(45deg) scale(1)}
+.tasks-page input[type=checkbox]:focus-visible{outline:2px solid var(--ring,var(--brand));outline-offset:2px}
+.tasks-star.on svg{fill:currentColor;animation:tasks-pop .35s ease}
+.tasks-group{animation:tasks-rise .3s ease both}
+.tasks-group>h2::before{content:"";width:8px;height:8px;border-radius:50%;background:color-mix(in srgb,var(--fg) 30%,transparent);align-self:center}
+.tasks-group.today>h2::before,.tasks-group.due>h2::before{background:var(--brand);box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 18%,transparent)}
+.tasks-group.late>h2::before{background:var(--danger);box-shadow:0 0 0 4px color-mix(in srgb,var(--danger) 18%,transparent)}
+.tasks-calendar-day{transition:transform .12s,background .15s}
+.tasks-calendar-day:hover{transform:scale(1.08)}
+@keyframes tasks-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes tasks-pop{0%{transform:scale(.8)}60%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes tasks-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes tasks-sheen{0%,60%{background-position:120% 0}100%{background-position:-120% 0}}
+@keyframes tasks-spin{to{transform:rotate(360deg)}}
+@media (max-width:700px){.tasks-hero{display:block;padding:16px}.tasks-hero .tasks-ring{--size:64px;position:absolute;top:14px;right:14px}.tasks-hero .tasks-ring::before{inset:6px}.tasks-hero .tasks-ring-num{font-size:.95rem}.tasks-hero .tasks-ring small{display:none}.tasks-hero-top{padding-right:70px}.tasks-hero-ic{display:none}.tasks-hero-hello{font-size:1.2rem}}
+@media (prefers-reduced-motion:reduce){.tasks-hero,.tasks-hero::after,.tasks-hero-ic svg,.tasks-goal,.tasks-group,.tasks-goal-empty-ic,.tasks-ring.full,.tasks-star.on svg{animation:none}.org-row,.tasks-goal,.tasks-stat,.tasks-calendar-day{transition:none}.tasks-list .org-row:hover,.tasks-goal:hover,.tasks-calendar-day:hover{transform:none}}
