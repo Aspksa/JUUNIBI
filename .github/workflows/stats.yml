@@ -1,5 +1,5 @@
 name: Жизнь проекта
-# Counts the 50 figures shown on the «Обновление» page and publishes them to the `stats` branch:
+# Counts the 85 figures (with chart data) shown on the «Обновление» page and publishes them to the `stats` branch:
 # an install from a ZIP has no git history, so it reads them from there.
 on:
   push:

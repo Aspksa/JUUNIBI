@@ -1,5 +1,5 @@
 /**
- * «Жизнь проекта» on the «Обновление» page: 50 figures about JUUNIBI's history.
+ * «Жизнь проекта» on the «Обновление» page: 85 figures about JUUNIBI's history, each with a small chart.
  * A git checkout counts them itself (scripts/project-stats.mjs); an install from a ZIP has no history and
  * reads what GitHub Actions published to the `stats` branch. Figures only the running app knows (knowledge,
  * rollbacks, start-up time) are filled in on top.
@@ -14,15 +14,21 @@ const LOCAL_TTL = 10 * 60_000, REMOTE_TTL = 60 * 60_000;
 
 export interface Metric {
   id: string; group: string; emoji: string; title: string; hint: string; value: string; detail: string;
-  kind?: "hours" | "calendar" | "spark" | "list"; series?: number[]; list?: string[];
+  kind?: ChartKind; series?: number[]; list?: string[];
+  /** Names of the bars or parts of the chart (shown on hover and under a split bar). */
+  labels?: string[];
+  /** A share from 0 to 1, drawn as a ring next to the value. */
+  ring?: number;
 }
+export const CHART_KINDS = ["hours", "calendar", "spark", "list", "line", "split", "dots", "swatches"] as const;
+export type ChartKind = typeof CHART_KINDS[number];
 export interface ProjectStatsData {
   version: 1; generatedAt: string; head: string; commits: number;
   groups: { id: string; title: string }[]; metrics: Metric[];
   /** Where the figures came from: this checkout, GitHub, or the copy saved after the last successful download. */
   source?: "git" | "github" | "saved";
 }
-export type RuntimeFigures = Record<string, { value: string; detail?: string }>;
+export type RuntimeFigures = Record<string, { value: string; detail?: string } & Pick<Metric, "kind" | "series" | "labels" | "ring">>;
 
 const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : "");
 /** Accepts only the expected shape; anything else from the network is dropped. */
@@ -33,13 +39,15 @@ export function cleanStats(raw: unknown): ProjectStatsData | null {
   for (const m of r.metrics as unknown[]) {
     const x = m as Partial<Metric>;
     if (!x || typeof x.id !== "string" || typeof x.group !== "string") continue;
-    const kind = x.kind === "hours" || x.kind === "calendar" || x.kind === "spark" || x.kind === "list" ? x.kind : undefined;
+    const kind = (CHART_KINDS as readonly unknown[]).includes(x.kind) ? x.kind : undefined;
     metrics.push({
       id: str(x.id, 40), group: str(x.group, 40), emoji: str(x.emoji, 8), title: str(x.title, 80), hint: str(x.hint, 120),
       value: str(x.value, 60), detail: str(x.detail, 200),
       ...(kind ? { kind } : {}),
       ...(Array.isArray(x.series) ? { series: x.series.slice(0, 60).map((n) => (Number.isFinite(n) ? Number(n) : 0)) } : {}),
-      ...(Array.isArray(x.list) ? { list: x.list.slice(0, 20).map((s) => str(s, 160)) } : {}),
+      ...(Array.isArray(x.list) ? { list: x.list.slice(0, 24).map((s) => str(s, 160)) } : {}),
+      ...(Array.isArray(x.labels) ? { labels: x.labels.slice(0, 60).map((s) => str(s, 60)) } : {}),
+      ...(typeof x.ring === "number" && Number.isFinite(x.ring) ? { ring: Math.min(1, Math.max(0, x.ring)) } : {}),
     });
   }
   return {
@@ -70,7 +78,7 @@ export class ProjectStats {
   private async withRuntime(data: ProjectStatsData): Promise<ProjectStatsData> {
     let extra: RuntimeFigures = {};
     try { extra = await this.runtime(); } catch { /* the figures from history are still worth showing */ }
-    return { ...data, metrics: data.metrics.map((m) => (extra[m.id] ? { ...m, value: extra[m.id]!.value, detail: extra[m.id]!.detail ?? m.detail } : m)) };
+    return { ...data, metrics: data.metrics.map((m) => (extra[m.id] ? { ...m, ...extra[m.id], detail: extra[m.id]!.detail ?? m.detail } : m)) };
   }
 
   private fromGit(): Promise<ProjectStatsData> {
