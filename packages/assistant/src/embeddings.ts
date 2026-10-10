@@ -13,11 +13,13 @@ export class CloudEmbeddingProvider implements EmbeddingProvider {
   private readonly endpoint: string;
   private readonly fetcher: typeof fetch;
   private readonly timeoutMs: number;
+  readonly id: string;
   constructor(private readonly options: CloudEmbeddingOptions) {
     if (!options.apiKey || !options.model) throw new Error("Embedding model and key are required");
     const base = new URL((options.baseUrl ?? "https://foundation-models.api.cloud.ru/v1").replace(/\/+$/, "") + "/");
     if (base.protocol !== "https:" && !(base.hostname === "127.0.0.1" || base.hostname === "localhost")) throw new Error("HTTPS required");
     this.endpoint = new URL("embeddings", base).toString();
+    this.id = options.model + "@" + this.endpoint;
     this.fetcher = options.fetch ?? fetch;
     this.timeoutMs = Math.max(1000, Math.min(options.timeoutMs ?? 12000, 30000));
   }
