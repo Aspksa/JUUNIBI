@@ -40,9 +40,12 @@ export interface AssistantSettings {
   quickCommands: QuickCommand[];
 }
 export type SearchProvider = "duckduckgo" | "brave";
-export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days";
-export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string }
-export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string }
+export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days" | "yearly";
+export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string;
+  repeat?: Repeat; rolled?: number; auto?: "brief" }
+/** What the "Дела" automation does by itself (server: Organizer.automation). */
+export interface Automation { brief: boolean; briefTime: string; rollOverdue: boolean; dueReminder: "off" | "15" | "60" | "morning"; workdays: boolean }
+export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; source?: string }
 export interface Brief {
   now: string; due: { id: string; text: string; at: string }[]; today: { id: string; text: string; at: string }[];
   openTodos: { count: number; first: { id: string; text: string }[] }; plansRunning: number; memoryPending: number; modulesFailed: string[]; updateAvailable: boolean; attention: number;
@@ -164,7 +167,11 @@ export const api = {
   timeBlocks: (day:string) => attemptAsync(() => call<{day:string;workingMinutes:number;plannedMinutes:number;remainingMinutes:number;blocks:{id:string;text:string;start:string;end:string;minutes:number}[];note:string;advisoryOnly:boolean}>(`/api/organizer/time-blocks?day=${encodeURIComponent(day)}`)),
   snoozeReminder: (id:string,minutes:number) => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
-  updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
+  updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none"}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
+  automation: () => attemptAsync(() => call<Automation>("/api/organizer/automation")),
+  setAutomation: (patch: Partial<Automation>) => attemptAsync(() => call<Automation>("/api/organizer/automation", post(patch))),
+  runBrief: () => attemptAsync(() => call<Note>("/api/organizer/brief", post({}))),
+  splitTask: (text: string) => attemptAsync(() => call<{ steps: string[] }>("/api/organizer/split", post({ text }))),
   addNote: (kind: "note" | "todo", text: string) => attemptAsync(() => call<Note>("/api/organizer/notes", post({ kind, text }))),
   setTodoDone: (id: string, done: boolean) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/done`, post({ done }))),
   removeNote: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/notes/${encodeURIComponent(id)}`, { method: "DELETE" })),

@@ -2,15 +2,15 @@
  * "Дела" — the start page: quick entry in one line, one timeline of to-dos and reminders by day,
  * notes; beside it (below on a phone) a calendar with the production calendar, the day plan and goals.
  */
-import { api, type Note, type Reminder, type Repeat } from "../api";
+import { api, type Automation, type Note, type Reminder, type Repeat } from "../api";
 import { el, icon, iconButton } from "../dom";
 import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
 import { buildAttention } from "./home";
 import { btn, chip, emptyState } from "./kit";
-import { prodDay, prodStats, type DayKind } from "./prod-calendar";
+import { nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
-import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, isDateOnly, localDay, toLocalInput, type TaskFilter, type TimedItem } from "./tasks-model";
+import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, daySummary, isDateOnly, localDay, memoryDates, toLocalInput, tomorrowSameTime, type TaskFilter, type TimedItem } from "./tasks-model";
 
 type Mission = { id: string; title: string; description: string; status: "active" | "paused" | "complete"; total: number; done: number; percent: number; blocked: number; next: { id: string; text: string; reason: string } | null; stages: { id: string; text: string; done: boolean }[] };
 const KINDS: [QuickKind, string][] = [["auto", "Авто"], ["todo", "Дело"], ["reminder", "Напоминание"], ["note", "Заметка"]];
@@ -19,6 +19,12 @@ const UI = { filter: "all" as TaskFilter, query: "", kind: "auto" as QuickKind, 
 /** Deletions waiting for their "Отменить" window to pass; hidden from the list meanwhile. */
 const pendingDelete = new Set<string>();
 const UNDO_MS = 6000;
+/** Remembered in the browser: memory dates the owner turned down, the day the evening prompt was closed. */
+const store = {
+  get(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key: string, v: string) { try { localStorage.setItem(key, v); } catch { /* private mode: forget it */ } },
+};
+const SKIP_DATES = "juunibi.tasks.skipDates", EVENING_SEEN = "juunibi.tasks.eveningSeen";
 
 const fromLocal = (v: string): string | null => { const d = new Date(v); return v && !Number.isNaN(d.getTime()) ? d.toISOString() : null; };
 const hm = (iso: string | number) => new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -57,18 +63,18 @@ export function withWhen(p: QuickParsed, iso: string | null, rep: string): Quick
 }
 
 /** Saves a parsed quick entry: a reminder, a note, or a to-do with its due date, importance and project. */
-export async function saveQuick(p: QuickParsed): Promise<{ ok: boolean; error?: { message: string } }> {
+export async function saveQuick(p: QuickParsed): Promise<{ ok: true; value: { id: string } } | { ok: false; error: { message: string } }> {
   if (p.kind === "reminder") return api.addReminder(p.text, p.at!, p.repeat);
   if (p.kind === "note") return api.addNote("note", p.text);
   const r = await api.addNote("todo", p.text);
-  if (!r.ok || (!p.at && !p.priority && !p.project)) return r;
-  return api.updateTask(r.value.id, { ...(p.at ? { dueAt: p.dateOnly ? endOfDay(p.at) : p.at } : {}), ...(p.priority ? { priority: p.priority } : {}), ...(p.project ? { project: p.project } : {}) });
+  if (!r.ok || (!p.at && !p.priority && !p.project && !p.repeat)) return r;
+  return api.updateTask(r.value.id, { ...(p.at ? { dueAt: p.dateOnly ? endOfDay(p.at) : p.at } : {}), ...(p.priority ? { priority: p.priority } : {}), ...(p.project ? { project: p.project } : {}), ...(p.repeat ? { repeat: p.repeat } : {}) });
 }
 /** The toast after `saveQuick`. */
 export function savedText(p: QuickParsed): string {
   if (p.kind === "reminder") return "Напоминание: " + whenLabel(p.at!, false) + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : "");
   if (p.kind === "note") return "Заметка добавлена";
-  return p.at ? "Дело добавлено: срок " + whenLabel(p.at, !!p.dateOnly) : "Дело добавлено";
+  return (p.at ? "Дело добавлено: срок " + whenLabel(p.at, !!p.dateOnly) : "Дело добавлено") + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : "");
 }
 /** Opens the page already filtered by `q` (a search result from Ctrl+K). */
 export function searchTasksFor(q: string) { UI.query = q; UI.filter = "all"; }
@@ -88,12 +94,22 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
   const goalsHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Цели" } });
+  const autoHost = el("section", { cls: "pg-card tasks-side-card tasks-auto", attrs: { "aria-label": "Автоматика" } });
+  const datesHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Даты из памяти" } });
+  const eveHost = el("div", { cls: "tasks-evening-host" });
+  let automation: Automation | null = null;
+  /** The evening review is open (by the header button or the prompt after 18:00). */
+  let evening = false;
+  /** «Разбить на шаги»: the steps the assistant suggested, by to-do or goal id; null while it thinks. */
+  const splits = new Map<string, { steps: string[] | null; error?: string }>();
 
   const load = async () => {
-    const [r, m] = await Promise.all([api.organizer(), api.missions()]);
+    const [r, m, a] = await Promise.all([api.organizer(), api.missions(), automation ? Promise.resolve(null) : api.automation()]);
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     if (m.ok) missions = m.value;
+    if (a?.ok) { automation = a.value; renderAuto(); }
     render();
+    renderDates();
     void renderSide();
   };
   /** Runs a change, reports a failure, reloads the list and the reminder badge. */
@@ -126,6 +142,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   // ---------- quick entry ----------
   const text = el("input", { type: "text", maxLength: 500, cls: "mem-input tasks-quick-input", placeholder: "Например: завтра в 10 позвонить маме", enterKeyHint: "done", attrs: { "aria-label": "Новое дело, напоминание или заметка", "aria-describedby": "tasks-preview" } });
   const preview = el("p", { cls: "tasks-preview muted small", id: "tasks-preview", attrs: { "aria-live": "polite" } });
+  const hint = el("div", { cls: "tasks-hint small" });
+  /** The date moved to the next working day by the hint's button; typing clears it. */
+  let shiftAt: string | null = null;
   const at = el("input", { type: "datetime-local", cls: "mem-select", attrs: { "aria-label": "Когда напомнить" } });
   const repeat = repeatSelect(undefined, "Повтор");
   const when_ = el("div", { cls: "tasks-when" }, at, repeat);
@@ -136,7 +155,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const add = btn("Добавить", () => {}, { primary: true, icon: "plus" });
   add.type = "submit";
   const kinds = el("div", { cls: "segmented tasks-kinds", attrs: { role: "radiogroup", "aria-label": "Что добавить" } });
-  const parsed = () => parseQuick(text.value, new Date(), UI.kind);
+  const parsed = (): QuickParsed => { const p = parseQuick(text.value, new Date(), UI.kind); return shiftAt && p.at ? { ...p, at: shiftAt } : p; };
   const syncQuick = () => {
     const p = parsed();
     // the date fields appear when a reminder is wanted but the text has no time: fill them in by hand
@@ -146,18 +165,26 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       at.value = toLocalInput(p.at ?? new Date(Date.now() + 3_600_000).toISOString()).slice(0, 14) + (p.at ? toLocalInput(p.at).slice(14) : "00");
       repeat.value = p.repeat ?? "none";
     }
+    // a date on a weekend or a holiday: offer the nearest working day
+    const pd = !needWhen && p.at && !p.repeat && p.kind !== "note" ? prodDay(localDay(p.at)) : null;
+    if (pd && pd.kind !== "work" && pd.kind !== "short") {
+      const to = nextWorkday(new Date(p.at!)).toISOString();
+      hint.replaceChildren(el("span", { textContent: `${whenLabel(p.at!, true)[0]!.toUpperCase() + whenLabel(p.at!, true).slice(1)}: ${DAY_KIND[pd.kind].toLowerCase()}${pd.note ? " (" + pd.note + ")" : ""}.` }),
+        btn("На рабочий день, " + whenLabel(to, true), () => { shiftAt = to; syncQuick(); text.focus(); }, { small: true }));
+      hint.hidden = false;
+    } else { hint.replaceChildren(); hint.hidden = true; }
     preview.textContent = text.value.trim() ? describeQuick(needWhen && at.value ? withWhen(p, fromLocal(at.value), repeat.value) : p) : "Можно писать сразу с датой и временем: «по будням в 10 стендап», «отчёт в пятницу !», «заметка: код 1234».";
   };
   const syncKind = () => {
     kinds.replaceChildren(...KINDS.map(([k, label]) => {
       const b = el("button", { type: "button", textContent: label, attrs: { role: "radio", "aria-checked": String(UI.kind === k) } });
-      b.addEventListener("click", () => { UI.kind = k; manualWhen = false; syncKind(); syncQuick(); text.focus(); });
+      b.addEventListener("click", () => { UI.kind = k; manualWhen = false; shiftAt = null; syncKind(); syncQuick(); text.focus(); });
       return b;
     }));
   };
-  text.addEventListener("input", () => syncQuick());
+  text.addEventListener("input", () => { shiftAt = null; syncQuick(); });
   syncKind(); syncQuick();
-  const form = el("form", { cls: "tasks-add" }, el("div", { cls: "tasks-add-row" }, text, add), preview, el("div", { cls: "tasks-add-row tasks-add-opts" }, kinds, when_));
+  const form = el("form", { cls: "tasks-add" }, el("div", { cls: "tasks-add-row" }, text, add), preview, hint, el("div", { cls: "tasks-add-row tasks-add-opts" }, kinds, when_));
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!text.value.trim()) { text.focus(); return; }
@@ -170,7 +197,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     add.disabled = true;
     const ok = await act(() => saveQuick(p), savedText(p));
     add.disabled = false;
-    if (ok) { text.value = ""; manualWhen = false; syncQuick(); text.focus(); }
+    if (ok) { text.value = ""; manualWhen = false; shiftAt = null; syncQuick(); text.focus(); }
   });
 
   // ---------- rows ----------
@@ -191,6 +218,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const hasKids = !!data?.notes.some((x) => x.parentId === n.id);
     const parent = el("select", { cls: "mem-select", disabled: hasKids, attrs: { "aria-label": "Входит в дело" } }, el("option", { value: "", textContent: hasKids ? "Есть свои подзадачи" : "Самостоятельное дело" }), ...parents.map((x) => el("option", { value: x.id, textContent: "Шаг дела: " + x.text.slice(0, 60) })));
     parent.value = n.parentId ?? "";
+    const rep = repeatSelect(n.repeat, "Повтор");
     const save = btn("Сохранить", async () => {
       const t = input.value.trim();
       if (!t) { input.focus(); return; }
@@ -199,7 +227,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       const ok = await act(async () => {
         if (t !== n.text) { const r = await api.editNote(n.id, t); if (!r.ok) return r; }
         return api.updateTask(n.id, { dueAt: due.value ? fromLocal(due.value) : null, priority: priority.value as NonNullable<Note["priority"]>, estimateMinutes: Number.isFinite(minutes) ? minutes : null,
-          ...(mission ? {} : { project: project.value.trim() || null }), ...(hasKids ? {} : { parentId: parent.value || null }) });
+          ...(rep.value !== (n.repeat ?? "none") ? { repeat: rep.value as Repeat | "none" } : {}), ...(mission ? {} : { project: project.value.trim() || null }), ...(hasKids ? {} : { parentId: parent.value || null }) });
       }, "Сохранено");
       if (ok) editing = null;
       render();
@@ -211,7 +239,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       el("div", { cls: "tasks-editor-grid" },
         el("label", {}, el("span", { textContent: "Срок" }), due), el("label", {}, el("span", { textContent: "Важность" }), priority),
         el("label", {}, el("span", { textContent: "Проект" }), project), el("label", {}, el("span", { textContent: "Минут" }), estimate),
-        el("label", { cls: "wide" }, el("span", { textContent: "Входит в" }), parent)),
+        el("label", {}, el("span", { textContent: "Повтор" }), rep),
+        el("label", {}, el("span", { textContent: "Входит в" }), parent)),
       el("div", { cls: "row" }, save, cancel)));
   };
   const simpleEditor = (initial: string, extra: HTMLElement[], save: (t: string) => Promise<boolean>) => {
@@ -221,6 +250,35 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); ok.click(); } else if (e.key === "Escape") { e.preventDefault(); cancel.click(); } });
     queueMicrotask(() => { input.focus(); input.select(); });
     return el("li", { cls: "org-row editing" }, el("div", { cls: "tasks-edit" }, input, ...extra, el("div", { cls: "row" }, ok, cancel)));
+  };
+
+  // ---------- «Разбить на шаги» ----------
+  const startSplit = async (key: string, task: string, redraw: () => void) => {
+    splits.set(key, { steps: null });
+    redraw();
+    const r = await api.splitTask(task);
+    if (!splits.has(key)) return; // closed while it was thinking
+    splits.set(key, !r.ok ? { steps: null, error: r.error.message } : r.value.steps.length ? { steps: r.value.steps } : { steps: null, error: "Не получилось придумать шаги. Попробуйте описать дело подробнее." });
+    redraw();
+  };
+  const stepsPanel = (key: string, redraw: () => void, addAll: (steps: string[]) => Promise<boolean>): HTMLElement | null => {
+    const st = splits.get(key);
+    if (!st) return null;
+    const close = () => { splits.delete(key); redraw(); };
+    if (!st.steps) return el("div", { cls: "tasks-split" + (st.error ? " error" : ""), attrs: { "aria-live": "polite" } },
+      el("p", { cls: "small grow", textContent: st.error ?? "Ассистент разбивает на шаги…" }), iconButton("x", "Закрыть", close, "icon-btn sm"));
+    const rows = st.steps.map((x) => ({ on: el("input", { type: "checkbox", checked: true, attrs: { "aria-label": "Взять шаг" } }), text: el("input", { type: "text", maxLength: 500, value: x, cls: "mem-input", attrs: { "aria-label": "Текст шага" } }) }));
+    const ok = btn("Добавить шаги", async () => {
+      const pick = rows.filter((x) => x.on.checked && x.text.value.trim()).map((x) => x.text.value.trim());
+      if (!pick.length) { showToast("Отметьте хотя бы один шаг."); return; }
+      ok.disabled = true;
+      if (await addAll(pick)) splits.delete(key);
+      else ok.disabled = false;
+      redraw();
+    }, { small: true, primary: true });
+    return el("div", { cls: "tasks-split" }, el("p", { cls: "small muted", textContent: "Шаги от ассистента: уберите лишнее или поправьте текст." }),
+      el("ol", { cls: "tasks-split-list" }, ...rows.map((x) => el("li", {}, x.on, x.text))),
+      el("div", { cls: "row" }, ok, btn("Отмена", close, { small: true })));
   };
 
   const todoRow = (n: Note, kids: Note[] = []): HTMLElement => {
@@ -236,15 +294,28 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const row = el("li", { cls: "org-row" + (n.done ? " done" : "") + (overdue ? " overdue" : "") + (n.priority === "high" && !n.done ? " important" : "") }, box,
       body(n.text, meta(
         n.dueAt ? el("span", { cls: overdue ? "late" : "", textContent: (overdue ? "просрочено · " : "") + whenLabel(n.dueAt, isDateOnly(n.dueAt)) }) : null,
+        n.rolled && !n.done ? el("span", { cls: "tasks-rolled", title: `Не сделано вовремя, перенесено автоматически (${n.rolled} раз)`, textContent: "перенесено" + (n.rolled > 1 ? " ×" + n.rolled : "") }) : null,
+        n.repeat ? "↻ " + REPEAT_LABEL[n.repeat] : null,
         kids.length ? `шаги ${doneKids}/${kids.length}` : null,
         n.estimateMinutes ? n.estimateMinutes + " мин" : null,
         mission ? "◎ " + mission : n.project ? "#" + n.project : null,
         n.done && n.completedAt ? "сделано " + whenLabel(n.completedAt, false) : null)),
       n.done ? null : star,
+      n.done || n.parentId ? null : iconButton("spark", "Разбить на шаги: " + n.text, () => void startSplit(n.id, n.text, render), "icon-btn sm"),
       n.done ? null : iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"),
       iconButton("trash", "Удалить: " + n.text, () => removeLater(n.id, kids.length ? `Дело удалено, его шаги (${kids.length}) стали отдельными делами` : "Дело удалено", () => api.removeNote(n.id)), "icon-btn sm"));
-    if (!kids.length) return row;
-    return el("li", { cls: "tasks-parent" }, el("ul", { cls: "org-list" }, row), el("ul", { cls: "org-list tasks-children" }, ...kids.filter((k) => !pendingDelete.has(k.id)).map((k) => todoRow(k))));
+    const panel = stepsPanel(n.id, render, (steps) => act(async () => {
+      for (const x of steps) {
+        const r = await api.addNote("todo", x);
+        if (!r.ok) return r;
+        const u = await api.updateTask(r.value.id, { parentId: n.id });
+        if (!u.ok) return u;
+      }
+      return { ok: true };
+    }, `Добавлено шагов: ${steps.length}`));
+    if (!kids.length && !panel) return row;
+    return el("li", { cls: "tasks-parent" }, el("ul", { cls: "org-list" }, row), panel,
+      kids.length ? el("ul", { cls: "org-list tasks-children" }, ...kids.filter((k) => !pendingDelete.has(k.id)).map((k) => todoRow(k))) : null);
   };
   const reminderRow = (r: Reminder): HTMLElement => {
     if (editing === r.id && r.status === "scheduled") {
@@ -290,6 +361,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     if (!data) { listHost.replaceChildren(loadError ? emptyState("alert", "Не удалось загрузить", loadError, btn("Повторить", () => void load(), { small: true })) : el("p", { cls: "muted", textContent: "Загрузка…" })); return; }
     const visible = { notes: data.notes.filter((n) => !pendingDelete.has(n.id)), reminders: data.reminders.filter((r) => !pendingDelete.has(r.id)) };
     const t = buildTasks(visible, UI.filter, UI.query);
+    renderTop(t);
     const c = t.counts;
     const opts: [TaskFilter, string, number][] = [["all", "Все", c.all], ["todo", "Дела", c.todo], ["reminder", "Напоминания", c.reminder], ["note", "Заметки", c.note]];
     chipsHost.replaceChildren(...opts.map(([f, label, n]) => chip(label, n, UI.filter === f, () => { UI.filter = f; render(); })));
@@ -316,6 +388,52 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     }
     listHost.replaceChildren(...groups, ...(done ? [done] : []));
   }
+  function renderTop(t: ReturnType<typeof buildTasks>) {
+    const parts: HTMLElement[] = [];
+    if (t.brief && UI.filter === "all" && !UI.query) {
+      const b = t.brief;
+      const refresh = iconButton("refresh", "Составить сводку заново", async () => { refresh.disabled = true; await act(() => api.runBrief(), "Сводка обновлена"); }, "icon-btn sm");
+      parts.push(el("section", { cls: "pg-card tasks-brief", attrs: { "aria-label": "Утренняя сводка" } },
+        el("div", { cls: "tasks-brief-head" }, icon("sun", 18), el("strong", { cls: "grow", textContent: "Сводка дня" }), el("small", { cls: "muted", textContent: hm(b.createdAt) }), refresh,
+          iconButton("x", "Скрыть сводку", () => removeLater(b.id, "Сводка скрыта", () => api.removeNote(b.id)), "icon-btn sm")),
+        el("p", { cls: "tasks-brief-text", textContent: b.text })));
+    }
+    const today = localDay(new Date());
+    const sum = data ? daySummary(data.notes) : { done: [], open: [] };
+    if (evening) parts.push(eveningCard(sum));
+    else if (new Date().getHours() >= 18 && sum.open.length && store.get(EVENING_SEEN) !== today) {
+      parts.push(el("div", { cls: "attn-row info tasks-evening-ask" }, icon("moon", 18),
+        el("span", { cls: "grow", textContent: `Вечер. На сегодня не сделано: ${sum.open.length}` + (sum.done.length ? `, сделано: ${sum.done.length}.` : ".") }),
+        btn("Подвести итог", () => { evening = true; render(); }, { small: true, primary: true }),
+        iconButton("x", "Не сегодня", () => { store.set(EVENING_SEEN, today); render(); }, "icon-btn sm")));
+    }
+    eveHost.replaceChildren(...parts);
+  }
+  /** «Итог дня»: done today, and what is left for today with one button to move it to tomorrow. */
+  function eveningCard(sum: { done: Note[]; open: Note[] }): HTMLElement {
+    const close = () => { evening = false; store.set(EVENING_SEEN, localDay(new Date())); render(); };
+    const rows = sum.open.map((n) => ({ n, box: el("input", { type: "checkbox", checked: true, attrs: { "aria-label": "Перенести на завтра: " + n.text } }) }));
+    const move = btn("Перенести отмеченное на завтра", async () => {
+      const pick = rows.filter((x) => x.box.checked).map((x) => x.n);
+      if (!pick.length) { showToast("Ничего не отмечено."); return; }
+      move.disabled = true;
+      const ok = await act(async () => {
+        for (const n of pick) { const r = await api.updateTask(n.id, { dueAt: tomorrowSameTime(n.dueAt!) }); if (!r.ok) return r; }
+        return { ok: true };
+      }, `Перенесено на завтра: ${pick.length}`);
+      if (ok) close(); else move.disabled = false;
+    }, { small: true, primary: true, icon: "arrowDown" });
+    return el("section", { cls: "pg-card tasks-evening", attrs: { "aria-label": "Итог дня" } },
+      el("div", { cls: "tasks-brief-head" }, icon("moon", 18), el("strong", { cls: "grow", textContent: "Итог дня" }), iconButton("x", "Закрыть итог дня", close, "icon-btn sm")),
+      el("p", { cls: "small", textContent: sum.done.length ? `Сделано сегодня: ${sum.done.length}` : "Сегодня пока ничего не отмечено сделанным." }),
+      sum.done.length ? el("ul", { cls: "tasks-evening-done" }, ...sum.done.map((n) => el("li", { textContent: n.text }))) : null,
+      sum.open.length
+        ? el("div", {}, el("p", { cls: "small", textContent: `Не успели: ${sum.open.length}. Отметьте, что перенести на завтра (время сохранится), или отметьте сделанным.` }),
+            el("ul", { cls: "tasks-evening-open" }, ...rows.map(({ n, box }) => el("li", {}, el("label", { cls: "grow" }, box, el("span", { textContent: n.text }), el("small", { cls: "muted", textContent: " · " + whenLabel(n.dueAt!, isDateOnly(n.dueAt!)) })),
+              iconButton("check", "Сделано: " + n.text, () => void act(() => api.setTodoDone(n.id, true), "Готово: " + n.text), "icon-btn sm")))),
+            el("div", { cls: "row" }, move))
+        : el("p", { cls: "small", textContent: "Всё, что было на сегодня, сделано. Хорошего вечера!" }));
+  }
 
   // ---------- attention (what was on the old Home page) ----------
   const renderAttention = (s: AppState) => {
@@ -336,6 +454,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const s = app.get();
     const sig = JSON.stringify([s.status?.assistant, !!s.status, s.approvals.length, s.chatOpen, s.update?.phase, s.update?.latest?.sha, s.update?.localVersion, s.update?.blocked, s.update?.rollbackPending, s.memory.filter((m) => m.status === "pending").length, s.modules.map((m) => m.status), s.repeatSuggestions[0]?.name]);
     if (sig !== attSig) { attSig = sig; renderAttention(s); }
+    const ds = s.memory.map((m) => m.id + m.status).join();
+    if (ds !== datesSig) { datesSig = ds; renderDates(); }
   });
 
   // ---------- side panel: calendar, day plan, goals ----------
@@ -453,10 +573,60 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         el("div", { cls: "tasks-goal-head" }, el("strong", { textContent: m.title }), status),
         el("div", { cls: "tasks-goal-bar" }, el("progress", { max: 100, value: m.percent, attrs: { "aria-label": "Прогресс цели " + m.title } }), el("span", { cls: "muted small", textContent: `${m.done}/${m.total}` })),
         m.next ? el("p", { cls: "muted small tasks-goal-next", textContent: "Дальше: " + m.next.text }) : null,
-        m.status === "active" ? addStage : null);
+        m.status === "active" ? el("div", { cls: "tasks-goal-add" }, addStage,
+          iconButton("spark", "Разбить цель на шаги", () => void startSplit("goal:" + m.id, [m.title, m.description, m.stages.length ? "Уже есть шаги: " + m.stages.map((x) => x.text).join("; ") : ""].filter(Boolean).join(". "), renderGoals), "icon-btn sm")) : null,
+        stepsPanel("goal:" + m.id, renderGoals, (steps) => act(async () => {
+          for (const x of steps) { const r = await api.addMissionStage(m.id, x); if (!r.ok) return r; }
+          goalsSig = "";
+          return { ok: true };
+        }, `Добавлено шагов: ${steps.length}`)));
     });
     goalsHost.replaceChildren(cardHead("Цели", el("small", { cls: "muted", textContent: "шаги — это дела с пометкой ◎" })),
       ...(cards.length ? cards : [el("p", { cls: "muted small", textContent: "Целей пока нет. Цель — большое дело из нескольких шагов." })]), form);
+  }
+
+  // ---------- automation settings ----------
+  const setAuto = async (patch: Partial<Automation>) => {
+    const r = await api.setAutomation(patch);
+    if (r.ok) { automation = r.value; showToast("Сохранено", { ms: 1500 }); } else showToast(r.error.message, { ms: 8000 });
+    renderAuto();
+    void load();
+  };
+  function renderAuto() {
+    autoHost.hidden = !automation;
+    if (!automation) return;
+    const a = automation;
+    const toggle = (label: string, note: string, on: boolean, patch: (v: boolean) => Partial<Automation>) => {
+      const c = el("input", { type: "checkbox", checked: on });
+      c.addEventListener("change", () => void setAuto(patch(c.checked)));
+      return el("label", { cls: "tasks-auto-row" }, c, el("span", { cls: "grow" }, el("span", { textContent: label }), el("small", { cls: "muted", textContent: note })));
+    };
+    const time = el("input", { type: "time", value: a.briefTime, cls: "mem-select", disabled: !a.brief, attrs: { "aria-label": "Время утренней сводки" } });
+    time.addEventListener("change", () => { if (time.value && time.value !== a.briefTime) void setAuto({ briefTime: time.value }); });
+    const due = el("select", { cls: "mem-select", attrs: { "aria-label": "Напоминать о сроке дела" } },
+      ...([["off", "Не напоминать"], ["15", "За 15 минут"], ["60", "За час"], ["morning", "Утром в день срока"]] as const).map(([v, t]) => el("option", { value: v, textContent: t })));
+    due.value = a.dueReminder;
+    due.addEventListener("change", () => void setAuto({ dueReminder: due.value as Automation["dueReminder"] }));
+    const now = btn("Сводка сейчас", () => void act(() => api.runBrief(), "Сводка готова"), { small: true, icon: "sun" });
+    autoHost.replaceChildren(cardHead("Автоматика", now),
+      el("div", { cls: "tasks-auto-line" }, toggle("Утренняя сводка", "с ключом Cloud.ru пишет ассистент", a.brief, (v) => ({ brief: v })), time),
+      toggle("Переносить просроченное на сегодня", "утром, с пометкой «перенесено»", a.rollOverdue, (v) => ({ rollOverdue: v })),
+      el("label", { cls: "tasks-auto-row" }, el("span", { cls: "grow" }, el("span", { textContent: "Напоминать о сроке дела" }), el("small", { cls: "muted", textContent: "для дел со временем; «утром» — в 9:00" })), due),
+      toggle("Праздники в «по будням»", "по производственному календарю: праздники пропускаются, рабочие субботы считаются", a.workdays, (v) => ({ workdays: v })));
+  }
+  // ---------- dates from memory ----------
+  let datesSig = "";
+  function renderDates() {
+    const skip = new Set((store.get(SKIP_DATES) ?? "").split(",").filter(Boolean));
+    const list = data ? memoryDates(app.get().memory, data.reminders).filter((d) => !skip.has(d.id)) : [];
+    datesHost.hidden = !list.length;
+    datesHost.replaceChildren(...(list.length ? [cardHead("Даты из памяти", el("small", { cls: "muted", textContent: "напоминать каждый год?" })),
+      el("ul", { cls: "tasks-dates" }, ...list.slice(0, 5).map((d) => {
+        const when = new Date(d.at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+        return el("li", {}, el("span", { cls: "grow" }, el("span", { textContent: d.text }), el("small", { cls: "muted", textContent: " · в 9:00" })),
+          btn("Напоминать", () => void act(() => api.addReminder(d.text, d.at, "yearly"), `Напомню ${when} и дальше каждый год`), { small: true, primary: true }),
+          iconButton("x", "Не нужно", () => { skip.add(d.id); store.set(SKIP_DATES, [...skip].slice(-200).join(",")); renderDates(); }, "icon-btn sm"));
+      }))] : []));
   }
 
   // ---------- toolbar and keys ----------
@@ -474,15 +644,18 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   addEventListener("keydown", onKey);
 
   const root = el("div", { cls: "page tasks-page" },
-    el("header", { cls: "pg-head tasks-head" }, el("div", { cls: "pg-head-text" }, el("h1", { textContent: "Дела" }), summary), perm),
+    el("header", { cls: "pg-head tasks-head" }, el("div", { cls: "pg-head-text" }, el("h1", { textContent: "Дела" }), summary),
+      el("div", { cls: "row" }, btn("Итог дня", () => { evening = !evening; render(); }, { small: true, icon: "moon", title: "Что сделано сегодня и что перенести на завтра" }), perm)),
     attHost,
     el("div", { cls: "tasks-layout" },
       el("div", { cls: "tasks-main" },
         el("section", { cls: "pg-card tasks-quick" }, form),
+        eveHost,
         el("div", { cls: "mem-toolbar" }, search, chipsHost),
         listHost,
         el("p", { cls: "muted small tasks-foot", textContent: "Напоминания срабатывают, пока JUUNIBI запущен. Клавиши: N — новое, / — поиск." })),
-      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, goalsHost)));
+      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, goalsHost, datesHost, autoHost)));
+  autoHost.hidden = true; datesHost.hidden = true;
   render();
   renderAttention(app.get());
   void load();
