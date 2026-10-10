@@ -7,6 +7,8 @@ export interface QuickCommand { name: string; text: string }
 export interface AssistantSettings {
   /** Search memory by meaning (needs an embeddings model on Cloud.ru). Falls back to word search on any failure. */
   embeddings: { enabled: boolean; model: string };
+  /** Chat model, an optional fallback tried once when it is down, and whether the model may reason before answering. */
+  chat: { model: string; fallbackModel: string; reasoning: boolean };
   /** off: never propose memory; rules: only explicit phrases ("Запомни…"); smart: also ask the model to extract facts. */
   suggestions: SuggestionMode;
   /** Keep a short summary of the part of a long conversation that no longer fits in the context. */
@@ -18,12 +20,15 @@ export interface AssistantSettings {
   quickCommands: QuickCommand[];
 }
 export const DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3";
+export const DEFAULT_CHAT_MODEL = "deepseek-ai/DeepSeek-V4-Flash";
+const MODEL_NAME = /^[\w./:@+-]{2,100}$/;
 export const BUILTIN_COMMAND_NAMES = ["новый", "new", "запомни", "remember", "память", "memory", "модули", "modules", "обновления", "update", "настройки", "settings", "экспорт", "export", "очистить", "clear", "сцены", "scenes", "помощь", "help", "сводка", "brief"];
 const err = (message: string) => Object.assign(new Error(message), { status: 400 });
 
 export function defaultSettings(env: NodeJS.ProcessEnv = process.env): AssistantSettings {
   return {
     embeddings: { enabled: true, model: env.CLOUDRU_EMBEDDING_MODEL?.trim() || DEFAULT_EMBEDDING_MODEL },
+    chat: { model: env.CLOUDRU_MODEL?.trim() || DEFAULT_CHAT_MODEL, fallbackModel: env.CLOUDRU_FALLBACK_MODEL?.trim() || "", reasoning: true },
     suggestions: "smart", summaries: true, files: { root: "", allowWrite: false }, web: false, quickCommands: [],
   };
 }
@@ -38,9 +43,22 @@ export async function validateSettings(input: unknown, base: AssistantSettings):
     if (!e || typeof e !== "object" || Array.isArray(e)) throw err("Некорректные настройки поиска по смыслу");
     if (e.enabled !== undefined) { if (typeof e.enabled !== "boolean") throw err("Некорректный переключатель поиска по смыслу"); out.embeddings.enabled = e.enabled; }
     if (e.model !== undefined) {
-      if (typeof e.model !== "string" || !/^[\w./:@+-]{2,100}$/.test(e.model.trim())) throw err("Некорректное имя модели эмбеддингов");
+      if (typeof e.model !== "string" || !MODEL_NAME.test(e.model.trim())) throw err("Некорректное имя модели эмбеддингов");
       out.embeddings.model = e.model.trim();
     }
+  }
+  if (i.chat !== undefined) {
+    const c = i.chat as Record<string, unknown> | null;
+    if (!c || typeof c !== "object" || Array.isArray(c)) throw err("Некорректные настройки модели");
+    if (c.model !== undefined) {
+      if (typeof c.model !== "string" || !MODEL_NAME.test(c.model.trim())) throw err("Некорректное имя модели");
+      out.chat.model = c.model.trim();
+    }
+    if (c.fallbackModel !== undefined) {
+      if (typeof c.fallbackModel !== "string" || (c.fallbackModel.trim() && !MODEL_NAME.test(c.fallbackModel.trim()))) throw err("Некорректное имя запасной модели");
+      out.chat.fallbackModel = c.fallbackModel.trim();
+    }
+    if (c.reasoning !== undefined) { if (typeof c.reasoning !== "boolean") throw err("Некорректный переключатель размышлений"); out.chat.reasoning = c.reasoning; }
   }
   if (i.suggestions !== undefined) { if (i.suggestions !== "off" && i.suggestions !== "rules" && i.suggestions !== "smart") throw err("Режим предложений: off, rules или smart"); out.suggestions = i.suggestions; }
   if (i.summaries !== undefined) { if (typeof i.summaries !== "boolean") throw err("Некорректный переключатель сводок"); out.summaries = i.summaries; }

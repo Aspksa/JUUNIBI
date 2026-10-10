@@ -1,5 +1,6 @@
 export type StreamEvent =
   | { type: "delta"; text: string }
+  | { type: "thinking" }
   | { type: "tool"; phase: "start"; id: string; name: string; args: string }
   | { type: "tool"; phase: "end"; id: string; name: string; status: "ok" | "error" | "denied"; ms: number }
   | { type: "done"; turnId: string; reply: string; tools: string[]; memory?: string[] } | { type: "error"; message: string };

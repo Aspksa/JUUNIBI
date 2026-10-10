@@ -18,7 +18,7 @@ import { automaticBrainReview } from "./brain-v41-automatic";
 import { durableMemoryStore } from "./durable-memory-store";
 import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
-import { AssistantSettingsStore } from "./assistant-settings";
+import { AssistantSettingsStore, DEFAULT_CHAT_MODEL } from "./assistant-settings";
 import { Organizer, buildBrief } from "./organizer";
 import { EvalHistory, EvalService } from "./evals";
 import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
@@ -72,8 +72,9 @@ const checkUpdates = () => {
 };
 const updateTimer = setInterval(checkUpdates, 15 * 60_000);
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
-const MODEL = process.env.CLOUDRU_MODEL?.trim() || "deepseek-ai/DeepSeek-V4-Flash";
-let activeModel: string | undefined;
+const MODEL = process.env.CLOUDRU_MODEL?.trim() || DEFAULT_CHAT_MODEL;
+/** The chat model chosen in Settings (CLOUDRU_MODEL is only its default). */
+const chatModel = () => settings.get().chat.model;
 let cloudConfigured = false;
 let sceneLlm: LlmProvider | undefined;
 const knowledge = new KnowledgeLedger(path.join(dataDir, "verified-knowledge.json"));
@@ -119,7 +120,7 @@ const modules = new ModuleManager(root, [
   { name: "assistant", title: "Помощница", deps: ["memory"],
     description: "Чат с моделью Cloud.ru: отвечает, вызывает инструменты и учится на ваших оценках.",
     files: ["data/turns.json", "data/cloudru-settings.json"],
-    probe: () => cloudConfigured ? { status: "started", note: `Модель ${activeModel ?? MODEL} (Cloud.ru)` } : { status: "pending", note: "Нужен ключ Cloud.ru — добавьте его в настройках" },
+    probe: () => cloudConfigured ? { status: "started", note: `Модель ${chatModel()} (Cloud.ru)${settings.get().chat.fallbackModel ? ", запасная " + settings.get().chat.fallbackModel : ""}` } : { status: "pending", note: "Нужен ключ Cloud.ru — добавьте его в настройках" },
     start: async () => { if (learningKey) await configureCloud(learningKey, process.env.CLOUDRU_BASE_URL); },
     stop: async () => { approvalGate.denyAll(); } },
   { name: "approvals", title: "Подтверждение действий", deps: ["assistant"], core: true,
@@ -157,13 +158,13 @@ function applyEmbeddings() {
   try { memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) })); }
   catch (error) { memory.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
 }
-settings.onChange(() => applyEmbeddings());
+settings.onChange((s) => { applyEmbeddings(); learningProvider?.setModels(s.chat); });
 let currentPersona = "";
 const evalHistory = new EvalHistory(path.join(dataDir, "evals.json"));
 await loadOrQuarantine("проверки качества", path.join(dataDir, "evals.json"), () => evalHistory.load());
 const evals = new EvalService(evalHistory, {
   ask: () => { const a = assistant; return a ? async (q, signal) => { const r = await a.ask(q, "eval", signal, { history: [], ephemeral: true }); return { reply: r.reply, tools: r.tools }; } : undefined; },
-  model: () => activeModel ?? MODEL, persona: () => currentPersona,
+  model: () => chatModel(), persona: () => currentPersona,
 });
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
@@ -181,7 +182,8 @@ async function briefData() {
 let assistant: Assistant | undefined;
 let approvalGate: ApprovalGate;
 async function configureCloud(apiKey: string, baseUrl?: string) {
-  const raw = new CloudRuProvider({ apiKey, model: MODEL, ...(baseUrl ? { baseUrl } : {}) });
+  const chat = settings.get().chat;
+  const raw = new CloudRuProvider({ apiKey, model: chat.model, fallbackModel: chat.fallbackModel, reasoning: chat.reasoning, ...(baseUrl ? { baseUrl } : {}) });
   // Measures every model call for the Modules page (latency, errors); a user cancel is not an error.
   const llm: LlmProvider = { chat: async (messages, opts) => {
     const t0 = Date.now();
@@ -256,7 +258,6 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
         async query => (await memory.search(query, 8)).map(item => item.text));
     },
   });
-  activeModel = MODEL;
   cloudConfigured = true;
 }
 async function saveCloud(apiKey: string) {
@@ -296,7 +297,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) { log.error("Некор
 const staticDir = process.env.STATIC_DIR ?? path.join(root, "apps", "web", "dist");
 const server = createApp({
   getAssistant: () => (modules.isActive("assistant") ? assistant : undefined),
-  cloudStatus: () => ({ configured: cloudConfigured, model: MODEL }),
+  cloudStatus: () => ({ configured: cloudConfigured, model: chatModel() }),
+  cloudModels: async () => { if (!learningProvider) throw Object.assign(new Error("Сначала укажите ключ Cloud.ru"), { status: 409 }); return learningProvider.listModels(); },
   saveCloud,
   memory,
   approvals: approvalGate,

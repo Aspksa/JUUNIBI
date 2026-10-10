@@ -27,6 +27,7 @@ export interface MemoryItem { id: string; kind: string; text: string; status: "a
 export interface QuickCommand { name: string; text: string }
 export interface AssistantSettings {
   embeddings: { enabled: boolean; model: string };
+  chat: { model: string; fallbackModel: string; reasoning: boolean };
   suggestions: "off" | "rules" | "smart";
   summaries: boolean;
   files: { root: string; allowWrite: boolean };
@@ -90,6 +91,7 @@ export const api = {
   nextScene: () => attemptAsync(() => call<SceneReply>("/api/juunibi/scenes/next",post({}))),
   cloudStatus: () => attemptAsync(() => call<CloudStatus>("/api/cloudru")),
   cloudSave: (apiKey: string) => attemptAsync(() => call<CloudStatus>("/api/cloudru", post({ apiKey }))),
+  cloudModels: () => attemptAsync(() => call<{ models: string[] }>("/api/cloudru/models")),
   updateEvents: () => attemptAsync(() => call<UpdateEvent[]>("/api/update/events")),
   updateStatus: () => attemptAsync(() => call<UpdateStatus>("/api/update/status")),
   updateCheck: () => attemptAsync(() => call<UpdateStatus>("/api/update/check", post({}))),
