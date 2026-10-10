@@ -24,13 +24,22 @@ export function tasksPage(): HTMLElement {
   let loadError = "";
   /** The entry being edited, so a reload (after another change) keeps the editor open. */
   let editing: string | null = null;
+  let detailId: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
+  const planHost = el("section", { cls:"pg-card",attrs:{"aria-label":"План дня"} }, el("p",{cls:"muted",textContent:"План дня загружается…"}));
 
   const load = async () => {
     const r = await api.organizer();
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     render();
+    const plan = await api.taskPlan();
+    if (plan.ok) {
+      const v = plan.value;
+      planHost.replaceChildren(el("h2",{textContent:"План дня · рекомендовано"}),
+        el("p",{cls:"muted small",textContent:`Открыто: ${v.total} · Просрочено: ${v.overdue} · Оценка: ${v.estimatedMinutes} мин`}),
+        el("ul",{cls:"org-list"},...v.suggested.map(x=>el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})) )));
+    } else planHost.replaceChildren(el("p",{cls:"muted",textContent:"План дня временно недоступен"}));
   };
   /** Runs a change, reports a failure, reloads the list and the reminder badge on Home. */
   const act = async (run: () => Promise<{ ok: boolean; error?: { message: string } }>, ok?: string) => {
@@ -86,6 +95,26 @@ export function tasksPage(): HTMLElement {
     queueMicrotask(() => { input.focus(); input.select(); });
     return el("li", { cls: "org-row editing" }, el("div", { cls: "tasks-edit" }, input, ...extra, el("div", { cls: "row" }, ok, cancel)));
   };
+  const taskDetails = (n: Note): HTMLElement => {
+    const priority = el("select", { cls:"mem-select", attrs:{"aria-label":"Приоритет"} },
+      ...([["low","Низкий"],["normal","Обычный"],["high","Высокий"]] as const).map(([v,label])=>el("option",{value:v,textContent:label})));
+    priority.value = n.priority ?? "normal";
+    const due = el("input",{type:"datetime-local",cls:"mem-select",value:n.dueAt?toLocalInput(n.dueAt):"",attrs:{"aria-label":"Срок выполнения"}});
+    const project = el("input",{type:"text",maxLength:80,value:n.project??"",cls:"mem-input",placeholder:"Проект",attrs:{"aria-label":"Проект"}});
+    const estimate = el("input",{type:"number",min:"1",max:"1440",value:n.estimateMinutes?String(n.estimateMinutes):"",cls:"mem-input",placeholder:"Минуты",attrs:{"aria-label":"Оценка в минутах"}});
+    const parents = data?.notes.filter(x=>x.kind==="todo"&&x.id!==n.id&&!x.parentId)??[];
+    const parent = el("select",{cls:"mem-select",attrs:{"aria-label":"Подзадача дела"}},
+      el("option",{value:"",textContent:"Без родительского дела"}),
+      ...parents.map(x=>el("option",{value:x.id,textContent:x.text.slice(0,70)})));
+    parent.value=n.parentId??"";
+    return el("div",{cls:"tasks-edit"},
+      el("div",{cls:"tasks-add-row"},priority,due,project,estimate,parent),
+      btn("Сохранить план",()=>void act(()=>api.updateTask(n.id,{
+        priority:priority.value as NonNullable<Note["priority"]>, dueAt:due.value?fromLocal(due.value):null,
+        project:project.value.trim()||null, estimateMinutes:estimate.value?Number(estimate.value):null,
+        parentId:parent.value||null
+      }),"Параметры дела сохранены"),{small:true,primary:true}));
+  };
   const noteRow = (n: Note): HTMLElement => {
     if (editing === n.id) return editor(n.text, [], (t) => act(() => api.editNote(n.id, t), "Сохранено"));
     const box = n.kind === "todo"
@@ -94,7 +123,8 @@ export function tasksPage(): HTMLElement {
     if (box instanceof HTMLInputElement) box.addEventListener("change", () => void act(() => api.setTodoDone(n.id, box.checked), box.checked ? "Готово" : undefined));
     return el("li", { cls: "org-row" + (n.done ? " done" : "") }, box,
       el("span", { cls: "grow", textContent: n.text }),
-      el("span", { cls: "muted small tasks-age", textContent: new Date(n.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) }),
+      el("span", { cls: "muted small tasks-age", textContent: n.kind==="todo" ? [n.priority==="high"?"⚑ Важно":null,n.dueAt?new Date(n.dueAt).toLocaleDateString("ru-RU"):null,n.project,n.estimateMinutes? n.estimateMinutes+" мин":null].filter(Boolean).join(" · ") || "Без срока" : new Date(n.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) }),
+      n.kind==="todo" ? iconButton("settings","Параметры дела",()=>{ detailId = detailId===n.id?null:n.id; render(); },"icon-btn sm") : null,
       n.done ? null : iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"),
       iconButton("trash", "Удалить: " + n.text, () => { if (confirm("Удалить запись?")) void act(() => api.removeNote(n.id), "Удалено"); }, "icon-btn sm"));
   };
@@ -130,6 +160,7 @@ export function tasksPage(): HTMLElement {
     const opts: [TaskFilter, string, number][] = [["all", "Все", c.all], ["todo", "Дела", c.todo], ["reminder", "Напоминания", c.reminder], ["note", "Заметки", c.note]];
     chipsHost.replaceChildren(...opts.map(([f, label, n]) => chip(label, n, UI.filter === f, () => { UI.filter = f; render(); })));
     const finished = [...t.finished.todos.map(noteRow), ...t.finished.reminders.map(reminderRow)];
+    const taskDetailsOpen = detailId && data.notes.find(n=>n.id===detailId&&n.kind==="todo");
     const groups = [
       group(`Сработали · ${t.due.length}`, t.due.map(reminderRow), "due"),
       group(`Дела · ${t.todos.length}`, t.todos.map(noteRow)),
@@ -143,7 +174,7 @@ export function tasksPage(): HTMLElement {
         : emptyState("check", "Пока пусто", "Добавьте дело или напоминание выше. Можно и в чате: «Напоминай каждый будний день в 10:00 про стендап»: помощница поставит его после вашего подтверждения."));
       return;
     }
-    listHost.replaceChildren(...groups, ...(done ? [done] : []));
+    listHost.replaceChildren(...(taskDetailsOpen ? [el("section",{cls:"pg-card"},el("h2",{textContent:"Параметры: "+taskDetailsOpen.text}),taskDetails(taskDetailsOpen))] : []), ...groups, ...(done ? [done] : []));
   }
 
   const search = el("input", { type: "search", placeholder: "Поиск", value: UI.query, cls: "mem-search", attrs: { "aria-label": "Поиск по делам и заметкам" } });
@@ -156,6 +187,7 @@ export function tasksPage(): HTMLElement {
   return el("div", { cls: "page tasks-page" },
     pageHead("check", "Дела", "Дела, заметки и напоминания. Напоминания срабатывают, пока JUUNIBI запущен."),
     el("section", { cls: "pg-card" }, form),
+    planHost,
     el("div", { cls: "mem-toolbar" }, search, chipsHost, perm),
     listHost);
 }

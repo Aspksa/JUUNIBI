@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string }
+export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string }
 /** How a reminder repeats: every day, Monday to Friday, or every week on the same weekday. */
 export type Repeat = "daily" | "weekdays" | "weekly";
 export const REPEATS: Repeat[] = ["daily", "weekdays", "weekly"];
@@ -78,11 +78,59 @@ export class Organizer {
     await this.save();
     return { ...n };
   }
+  /** Optional task details; older stored notes remain readable without migration. */
+  async updateTask(id: string, patch: Record<string, unknown>): Promise<Note> {
+    const n = this.notes.find(x => x.id === id);
+    if (!n) throw bad("Дело не найдено", 404);
+    if (n.kind !== "todo") throw bad("Поля планирования доступны только делам", 409);
+    const next = { ...n };
+    if ("priority" in patch) {
+      if (!["low", "normal", "high"].includes(String(patch.priority))) throw bad("Недопустимый приоритет");
+      next.priority = patch.priority as "low" | "normal" | "high";
+    }
+    if ("project" in patch) {
+      if (patch.project === null || patch.project === "") delete next.project;
+      else if (typeof patch.project === "string" && patch.project.trim().length <= 80) next.project = patch.project.trim();
+      else throw bad("Некорректный проект");
+    }
+    if ("dueAt" in patch) {
+      if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt;
+      else if (typeof patch.dueAt === "string" && Number.isFinite(Date.parse(patch.dueAt))) next.dueAt = new Date(patch.dueAt).toISOString();
+      else throw bad("Некорректный срок");
+    }
+    if ("estimateMinutes" in patch) {
+      if (patch.estimateMinutes === null) delete next.estimateMinutes;
+      else if (Number.isInteger(patch.estimateMinutes) && Number(patch.estimateMinutes) >= 1 && Number(patch.estimateMinutes) <= 1440) next.estimateMinutes = Number(patch.estimateMinutes);
+      else throw bad("Оценка времени: 1–1440 минут");
+    }
+    if ("parentId" in patch) {
+      if (patch.parentId === null || patch.parentId === "") delete next.parentId;
+      else if (typeof patch.parentId === "string" && patch.parentId !== id && this.notes.some(x=>x.id === patch.parentId && x.kind === "todo" && !x.parentId)) next.parentId = patch.parentId;
+      else throw bad("Родительское дело не найдено или вложенность недопустима");
+    }
+    Object.assign(n, next);
+    await this.save();
+    return { ...n };
+  }
+  /** Advisory only: never modifies tasks or schedules. */
+  planToday(now = this.now()) {
+    const start = new Date(now); start.setHours(0,0,0,0);
+    const end = new Date(start); end.setDate(end.getDate()+1);
+    const open = this.notes.filter(n=>n.kind==="todo"&&!n.done);
+    const due = (n: Note) => n.dueAt ? Date.parse(n.dueAt) : Infinity;
+    const score = (n: Note) => (n.priority==="high"?30:n.priority==="low"?0:10) + (due(n)<now?50:due(n)<end.getTime()?35:0);
+    const ordered = [...open].sort((a,b)=>score(b)-score(a)||due(a)-due(b)||a.createdAt.localeCompare(b.createdAt));
+    return { generatedAt:new Date(now).toISOString(), total:open.length, overdue:open.filter(n=>due(n)<now).length,
+      estimatedMinutes:open.reduce((sum,n)=>sum+(n.estimateMinutes??0),0),
+      suggested:ordered.slice(0,10).map(n=>({id:n.id,text:n.text,score:score(n),reason:due(n)<now?"Просрочено":due(n)<end.getTime()?"Срок сегодня":n.priority==="high"?"Высокий приоритет":"Очередь задач"})),
+      advisoryOnly:true as const };
+  }
   async setDone(id: string, done: boolean): Promise<Note> {
     const n = this.notes.find((x) => x.id === id);
     if (!n) throw bad("Запись не найдена", 404);
     if (n.kind !== "todo") throw bad("Отметить выполненным можно только дело", 409);
     n.done = done;
+    if (done) n.completedAt = new Date(this.now()).toISOString(); else delete n.completedAt;
     await this.save();
     return { ...n };
   }
