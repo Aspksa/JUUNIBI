@@ -169,7 +169,7 @@ describe("правка и повторы", () => {
       expect(all.filter((x) => x.status === "done").length).toBeLessThanOrEqual(100);
       expect(all.find((x) => x.id === r.id)?.status).toBe("scheduled");
     } finally { await done(); }
-  });
+  }, 60_000); // 130 days = ~260 file writes: seconds on Windows with an antivirus or OneDrive
   it("повтор проверяется", async () => {
     const { o, done } = await setup(local(9, 5));
     try { await expect(o.addReminder("x", new Date(local(9, 9)).toISOString(), "hourly")).rejects.toMatchObject({ status: 400 }); }

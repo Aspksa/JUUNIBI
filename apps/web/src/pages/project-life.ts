@@ -1,13 +1,14 @@
 /**
- * «Жизнь проекта»: the panel beside the update centre with 50 figures about JUUNIBI's history,
- * grouped and drawn as tiles (with small charts for hours, days and build times).
+ * «Жизнь проекта»: the panel beside the update centre with 85 figures about JUUNIBI's history,
+ * grouped and drawn as tiles, each with a small chart (life-charts.ts).
  * The element is built once and kept, because the update page is rebuilt on every status change.
  */
 import { api, type ProjectMetric, type ProjectStatsData } from "../api";
 import { el, icon, iconButton } from "../dom";
+import { barChart, miniChart, ringChart } from "./life-charts";
 
 const OPEN_KEY = "juunibi.life.open";
-const GROUP_ICON: Record<string, string> = { anatomy: "🧬", mind: "🧠", life: "🌿", care: "🛡️", fun: "🎲" };
+const GROUP_ICON: Record<string, string> = { anatomy: "🧬", mind: "🧠", life: "🌿", care: "🛡️", fun: "🎲", code: "🔬" };
 const HIGHLIGHTS = ["age", "words_added", "tests", "experiments"];
 const HOURS_LABEL = ["0", "6", "12", "18", "23"];
 
@@ -32,17 +33,6 @@ export function agoText(iso: string, now = Date.now()): string {
   return new Date(t).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 }
 
-/** Bars scaled to the largest value; zero stays a thin stub so the rhythm is still visible. */
-function bars(series: number[], cls: string, labels?: string[]): HTMLElement {
-  const max = Math.max(1, ...series);
-  return el("div", { cls: "life-bars " + cls, attrs: { "aria-hidden": "true" } },
-    ...series.map((v, i) => {
-      const b = el("i", { title: labels ? `${labels[i]}: ${v}` : String(v) });
-      b.style.setProperty("--h", String(Math.max(4, Math.round((100 * v) / max))));
-      b.style.setProperty("--d", String(i));
-      return b;
-    }));
-}
 /** Five weeks of commits, oldest top-left, as a heat grid. */
 function heat(series: number[]): HTMLElement {
   const max = Math.max(1, ...series);
@@ -56,17 +46,19 @@ function heat(series: number[]): HTMLElement {
 
 function tile(m: ProjectMetric, i: number): HTMLElement {
   const empty = m.value === "—";
-  const chart = m.kind === "hours" && m.series ? el("div", {}, bars(m.series, "hours", m.series.map((_, h) => `${h}:00`)), el("div", { cls: "life-axis" }, ...HOURS_LABEL.map((x) => el("span", { textContent: x }))))
+  const wide = m.kind === "hours" && m.series ? el("div", {}, barChart(m.series, m.series.map((_, h) => `${h}:00`), "hours"), el("div", { cls: "life-axis" }, ...HOURS_LABEL.map((x) => el("span", { textContent: x }))))
     : m.kind === "calendar" && m.series ? heat(m.series)
-    : m.kind === "spark" && m.series ? bars(m.series, "spark")
     : m.kind === "list" && m.list ? el("ul", { cls: "life-list" }, ...m.list.map((x) => el("li", { cls: x.startsWith("✓") ? "on" : x.startsWith("·") ? "off" : "", textContent: x })))
     : null;
-  const t = el("article", { cls: "life-tile" + (chart ? " wide" : "") + (empty ? " empty" : ""), title: m.hint, attrs: { tabindex: "0" } },
+  const mini = wide || empty ? null : miniChart(m.kind, m.series, m.labels, m.list);
+  const ring = typeof m.ring === "number" && !empty ? ringChart(m.ring) : null;
+  const t = el("article", { cls: "life-tile" + (wide ? " wide" : "") + (empty ? " empty" : ""), title: m.hint, attrs: { tabindex: "0" } },
     el("div", { cls: "life-tile-top" }, el("span", { cls: "life-emoji", attrs: { "aria-hidden": "true" }, textContent: m.emoji }),
       el("div", { cls: "life-tile-name" }, el("strong", { textContent: m.title }), el("small", { textContent: m.hint }))),
-    el("div", { cls: "life-value", textContent: m.value }),
+    el("div", { cls: "life-value-row" }, el("div", { cls: "life-value", textContent: m.value }), ring),
     m.detail ? el("p", { cls: "life-detail", textContent: m.detail }) : null,
-    chart);
+    mini ? el("div", { cls: "life-mini" }, mini) : null,
+    wide);
   t.style.setProperty("--i", String(i));
   return t;
 }
@@ -78,7 +70,7 @@ function render() {
   const src = data?.source === "git" ? "по истории git" : data?.source === "github" ? "с GitHub" : data?.source === "saved" ? "сохранённая копия" : "";
   const head = el("header", { cls: "life-head" },
     el("div", { cls: "life-head-text" }, el("h2", {}, el("span", { cls: "life-pulse", attrs: { "aria-hidden": "true" } }), "Жизнь проекта"),
-      el("p", { textContent: data ? [`${data.commits.toLocaleString("ru-RU")} коммитов`, agoText(data.generatedAt), src].filter(Boolean).join(" · ") : "50 необычных показателей JUUNIBI" })),
+      el("p", { textContent: data ? [`${data.commits.toLocaleString("ru-RU")} коммитов`, agoText(data.generatedAt), src].filter(Boolean).join(" · ") : "85 необычных показателей JUUNIBI" })),
     refresh);
   if (!data) {
     host.replaceChildren(head, error

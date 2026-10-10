@@ -44,7 +44,12 @@ export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days" 
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string;
   repeat?: Repeat; rolled?: number; auto?: "brief" | "evening" | "week"; streak?: number }
 /** «Жизнь проекта»: figures about the project's history (server: project-stats.ts). */
-export interface ProjectMetric { id: string; group: string; emoji: string; title: string; hint: string; value: string; detail: string; kind?: "hours" | "calendar" | "spark" | "list"; series?: number[]; list?: string[] }
+/** One figure of «Жизнь проекта» with the data of its small chart (server: project-stats.ts Metric). */
+export interface ProjectMetric {
+  id: string; group: string; emoji: string; title: string; hint: string; value: string; detail: string;
+  kind?: "hours" | "calendar" | "spark" | "list" | "line" | "split" | "dots" | "swatches"; series?: number[]; list?: string[];
+  labels?: string[]; ring?: number;
+}
 export interface ProjectStatsData { generatedAt: string; head: string; commits: number; groups: { id: string; title: string }[]; metrics: ProjectMetric[]; source?: "git" | "github" | "saved" }
 /** What the "Дела" automation does by itself (server: Organizer.automation). */
 export interface Automation {
