@@ -8,6 +8,7 @@ import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
 import { buildAttention } from "./home";
 import { achievementsPanel } from "./achievements-panel";
+import { forecastWeek } from "./weekly-forecast";
 import { btn, chip, emptyState } from "./kit";
 import { nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
@@ -97,6 +98,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
   const goalsHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Цели" } });
+  const forecastHost = el("section", { cls: "pg-card tasks-side-card tasks-forecast", attrs: { "aria-label": "Прогноз нагрузки на неделю" } });
   const autoHost = el("section", { cls: "pg-card tasks-side-card tasks-auto", attrs: { "aria-label": "Автоматика" } });
   const datesHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Даты из памяти" } });
   const eveHost = el("div", { cls: "tasks-evening-host" });
@@ -576,6 +578,20 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     // goals keep what is typed in their fields: redraw them only when they changed
     const sig = JSON.stringify(missions);
     if (sig !== goalsSig) { goalsSig = sig; renderGoals(); }
+    const forecast = forecastWeek(data?.notes ?? [], new Date(), Math.round((automation?.dayHours ?? 8) * 60));
+    forecastHost.replaceChildren(
+      el("h2", { textContent: "↗ Прогноз на 7 дней" }),
+      el("p", { cls: "small muted", textContent: "Оценка по срокам: без указанной длительности — 30 минут на дело. Выходные без рабочих часов." }),
+      ...forecast.map(f => {
+        const row = el("div", { cls: "tasks-forecast-day" + (f.overload ? " overload" : "") },
+          el("time", { textContent: f.day.slice(5) }),
+          el("span", { cls: "tasks-forecast-track" }, el("i")),
+          el("small", { textContent: f.count + " дел · " + (Math.round(f.planned / 6) / 10) + " ч" }),
+          f.overload ? el("b", { textContent: "↗ +" + (Math.round(f.excess / 6) / 10) + " ч", title: "Перегрузка: попробуйте перенести несрочные дела" }) : null);
+        const fill = row.querySelector(".tasks-forecast-track i") as HTMLElement | null;
+        if (fill) fill.style.width = Math.min(100, f.capacity ? 100 * f.planned / f.capacity : f.planned ? 100 : 0) + "%";
+        return row;
+      }));
   }
   /** A side card's title; clicking it folds the card to one line (remembered in the browser). */
   const cardHead = (host: HTMLElement, key: string, title: string, ...extra: (Node | null)[]) => {
@@ -927,7 +943,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         el("div", { cls: "mem-toolbar" }, search, chipsHost),
         listHost,
         el("p", { cls: "muted small tasks-foot", textContent: "Напоминания срабатывают, пока JUUNIBI запущен. Клавиши: N — новое, / — поиск." })),
-      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, goalsHost, datesHost, autoHost)));
+      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, forecastHost, goalsHost, datesHost, autoHost)));
   autoHost.hidden = true; datesHost.hidden = true;
   render();
   renderAttention(app.get());

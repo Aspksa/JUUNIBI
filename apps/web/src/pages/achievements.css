@@ -273,3 +273,30 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .cel.still,.cel.still *{animation:none!important}
 .cel.still .cel-card{opacity:1}
 @media (prefers-reduced-motion:reduce){.cel,.cel *{animation:none!important;transition:none!important}.ach-card,.ach-mini,.ach-tier-btn,.ach-fx{transition:none}.ach-card:hover,.ach-mini:hover,.ach-tier-btn:hover,.ach-fx:hover{transform:none}}
+
+/* JUUNIBI fox tails: natural ginger-to-red fur and visible level progression. */
+.ach-tails-art{background:radial-gradient(circle at 50% 58%,rgba(214,73,29,.14),transparent 65%),var(--surface,var(--bg));border-color:color-mix(in srgb,#dc531f 30%,var(--line))}
+.ach-tail-row{border-left:3px solid transparent;transition:border-color .15s,background-color .15s}
+.ach-tail-row:hover,.ach-tail-row.sel{border-color:#e15b2a;background:color-mix(in srgb,#de5728 7%,var(--bg))}
+.ach-tail-bar{background:color-mix(in srgb,#c35a36 15%,transparent)}
+.ach-tail-bar i{background:linear-gradient(90deg,#a92c20,#dc4b24 52%,#f18e3b);box-shadow:0 0 8px rgba(221,72,29,.25)}
+.ach-tail-lv{background:color-mix(in srgb,#dc5429 16%,transparent);color:var(--fg)}
+.ach-tail-next{display:flex;align-items:center;gap:3px;white-space:nowrap;color:#e8753c;font-weight:800;font-variant-numeric:tabular-nums}
+.ach-tail-next>span{font-size:1.2rem;line-height:1}
+.ach-tail-next small{font-size:.7rem}
+.tail-stripe{stroke:rgba(255,240,218,.78)}
+.tail-flame{fill:#ef4a21;filter:drop-shadow(0 0 5px #f97316)}
+.tails-svg .tail:hover .tail-body,.tails-svg .tail:focus-visible .tail-body,.tails-svg .tail.sel .tail-body{stroke:#ff803a}
+@media (prefers-reduced-motion:reduce){.ach-tail-row,.ach-tail-bar i{transition:none}}
+
+/* Explainable seven-day workload forecast in the task sidebar. */
+.tasks-forecast{display:grid;gap:8px}
+.tasks-forecast h2{margin:0;font-size:1rem}
+.tasks-forecast p{margin:0 0 4px}
+.tasks-forecast-day{display:grid;grid-template-columns:40px minmax(24px,1fr) auto auto;align-items:center;gap:7px;min-width:0;font-variant-numeric:tabular-nums}
+.tasks-forecast-day time{font-size:.8rem;color:var(--muted)}
+.tasks-forecast-day small{font-size:.73rem;white-space:nowrap}
+.tasks-forecast-day b{font-size:.72rem;color:#e75a30;white-space:nowrap}
+.tasks-forecast-track{height:8px;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.tasks-forecast-track i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#f19b4a,#de5c28)}
+.tasks-forecast-day.overload .tasks-forecast-track i{background:linear-gradient(90deg,#dc5129,#af2424)}

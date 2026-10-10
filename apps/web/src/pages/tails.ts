@@ -11,8 +11,8 @@ const node = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
   return n;
 };
-/** One hue per tail, around the colour wheel from warm to cool. */
-export const TAIL_HUES = [28, 44, 58, 96, 140, 168, 190, 212, 248, 278, 312, 345];
+/** Twelve naturally varying red/ginger fox coats, rather than a rainbow. */
+export const TAIL_HUES = [13, 17, 20, 12, 8, 19, 15, 10, 22, 6, 16, 11];
 /** The angle of tail `i` of `n` in degrees: a fan from −78° to +78° (0 is straight up). */
 export const tailAngle = (i: number, n = 12) => -78 + (156 * i) / Math.max(1, n - 1);
 const TAIL = "M0 0 C-15 -26 -21 -62 -9 -96 C-4 -110 4 -112 8 -100 C20 -64 14 -26 0 0Z";
@@ -31,10 +31,10 @@ export function tailsEmblem(tails: AchTail[], o: { size?: "sm" | "lg"; onPick?: 
   tails.forEach((t, i) => {
     const h = TAIL_HUES[i % 12]!;
     const g = node("linearGradient", { id: `${id}-g${i}`, x1: 0, y1: 1, x2: 0, y2: 0 });
-    const sat = t.level ? 55 + t.level * 8 : 8;
-    g.append(node("stop", { offset: "0", "stop-color": `hsl(${h} ${sat}% ${t.level ? 46 : 60}%)` }),
-      node("stop", { offset: "0.72", "stop-color": `hsl(${h} ${sat}% ${t.level ? 62 : 70}%)` }),
-      node("stop", { offset: "1", "stop-color": t.level ? "#fff8ec" : `hsl(${h} 8% 78%)` }));
+    const sat = t.level ? Math.min(94, 75 + t.level * 3) : 20;
+    g.append(node("stop", { offset: "0", "stop-color": `hsl(${h} ${sat}% ${t.level ? 30 : 43}%)` }),
+      node("stop", { offset: "0.72", "stop-color": `hsl(${h} ${sat}% ${t.level ? 52 : 62}%)` }),
+      node("stop", { offset: "1", "stop-color": t.level ? "#fff4df" : `hsl(${h} 20% 80%)` }));
     defs.append(g);
   });
   svg.append(defs);
