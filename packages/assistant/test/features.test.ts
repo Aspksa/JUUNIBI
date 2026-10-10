@@ -129,6 +129,7 @@ describe("настройки предложений", () => {
     expect(await memory.list()).toEqual([]);
     const b = new Assistant({ llm: scripted().llm, memory, log: quiet, prefs: () => ({ suggestions: "rules", summaries: false }) });
     await b.ask("Запомни: кофе без сахара");
+    await b.idle();
     expect((await memory.list("pending")).map((e) => e.text)).toEqual(["кофе без сахара"]);
   });
 });
