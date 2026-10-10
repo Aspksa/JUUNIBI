@@ -120,6 +120,7 @@ describe("настройки предложений", () => {
       const memory = new Memory();
       const a = new Assistant({ llm, memory, log: quiet, prefs: () => ({ suggestions: mode, summaries: false }) });
       await a.ask("Я люблю гулять по вечерам в парке");
+      await a.idle();
       expect(seen.length).toBe(expectedModelCalls);
     }
     const memory = new Memory();
@@ -128,6 +129,7 @@ describe("настройки предложений", () => {
     expect(await memory.list()).toEqual([]);
     const b = new Assistant({ llm: scripted().llm, memory, log: quiet, prefs: () => ({ suggestions: "rules", summaries: false }) });
     await b.ask("Запомни: кофе без сахара");
+    await b.idle();
     expect((await memory.list("pending")).map((e) => e.text)).toEqual(["кофе без сахара"]);
   });
 });

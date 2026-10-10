@@ -95,6 +95,7 @@ export class Assistant {
   private summaries = new Map<string, SummaryState>();
   private summariesReady: Promise<void> = Promise.resolve();
   private summaryWork: Promise<void> = Promise.resolve();
+  private memoryWork: Promise<void> = Promise.resolve();
   private readonly summaryRetryAfter = new Map<string, number>();
 
   constructor(private readonly o: AssistantOptions) {
@@ -117,7 +118,7 @@ export class Assistant {
     });
   }
   /** Resolves when background work (conversation summaries) is finished. Mostly for tests. */
-  idle(): Promise<void> { return this.summaryWork; }
+  idle(): Promise<void> { return Promise.all([this.summaryWork, this.memoryWork]).then(() => {}); }
   /** Rated and unrated turns, newest last, as plain copies (for the quality report). */
   turnsSnapshot(): Turn[] { return this.turns.map((t) => ({ ...t, tools: [...t.tools], memoryIds: [...t.memoryIds] })); }
 
@@ -238,11 +239,14 @@ export class Assistant {
     this.turns = this.turns.slice(-TURNS_LIMIT);
     await this.saveTurns();
     if (prefs.suggestions !== "off") {
-      try {
-        const proposed = await this.memory.suggestFromUserText(text);
-        if (proposed.length) { if (prefs.suggestions === "smart") await this.checkPreferenceRevision(proposed[0]!); }
-        else if (prefs.suggestions === "smart") await this.learnFromMessage(text);
-      } catch (error) { this.log.warn("memory suggestion failed", error); }
+      this.memoryWork = this.memoryWork.catch(() => {}).then(async () => {
+        try {
+          const proposed = await this.memory.suggestFromUserText(text);
+          if (proposed.length) {
+            if (prefs.suggestions === "smart") await this.checkPreferenceRevision(proposed[0]!);
+          } else if (prefs.suggestions === "smart") await this.learnFromMessage(text);
+        } catch (error) { this.log.warn("memory suggestion failed", error); }
+      });
     }
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
