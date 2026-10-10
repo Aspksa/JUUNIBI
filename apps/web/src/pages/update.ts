@@ -1,6 +1,6 @@
 import { api } from "../api";
 import { el, icon, short, type IconName } from "../dom";
-import { pageHead } from "./kit";
+import { projectLifePanel } from "./project-life";
 import { plural } from "./brain-model";
 import { app, cancelUpdate, checkUpdate, dismissInstallWarning, downloadUpdate, installNow, requestRollback, saveUpdateConfig, type AppState } from "../state";
 import type { UpdateCi, UpdateConfig } from "../api";
@@ -274,11 +274,21 @@ export function setUpdateRerender(fn: () => void) { rerender = fn; }
 export function updatePage(s: AppState): HTMLElement {
   const m = buildUpdateModel(s.update, s.updateEvents);
   const hasNew = !!s.update?.latest && s.update.localVersion !== s.update.latest.sha;
-  return el("div", { cls: "page upd" },
-    pageHead("update", "Обновление", "Файлы скачиваются и проверяются во временной папке; работающая версия не трогается, пока всё не пройдёт проверку."),
-    hero(s, m), stepper(m.steps), ...resultCards(s, m), ...historyCard(s),
-    checksCard(s), whatsNew(s, hasNew), changes(m, hasNew), settingsCard(s), logPanel(s),
-    s.updateError ? el("p", { cls: "bad", textContent: s.updateError }) : null);
+  const head = el("header", { cls: "upd-head" },
+    el("div", { cls: "upd-head-ic", attrs: { "aria-hidden": "true" } }, icon("update", 24)),
+    el("div", { cls: "upd-head-text" }, el("h1", { textContent: "Обновление" }),
+      el("p", { textContent: "Файлы скачиваются и проверяются во временной папке; работающая версия не трогается, пока всё не пройдёт проверку." })),
+    el("div", { cls: "upd-badges" },
+      el("span", { cls: "upd-badge", title: "Установленная версия" }, icon("folder", 14), short(s.update?.localVersion ?? "—")),
+      el("span", { cls: "upd-badge", title: "Источник обновлений" }, icon("cloud", 14), "Aspksa/JUUNIBI"),
+      el("span", { cls: "upd-badge", title: "Канал обновлений" }, icon("shield", 14), s.update?.config?.channel === "stable" ? "стабильный" : "свежий")));
+  return el("div", { cls: "page upd" }, head,
+    el("div", { cls: "upd-layout" },
+      el("div", { cls: "upd-main" },
+        hero(s, m), stepper(m.steps), ...resultCards(s, m), ...historyCard(s),
+        checksCard(s), whatsNew(s, hasNew), changes(m, hasNew), settingsCard(s), logPanel(s),
+        s.updateError ? el("p", { cls: "bad", textContent: s.updateError }) : null),
+      projectLifePanel()));
 }
 
 let lastFlight = "";

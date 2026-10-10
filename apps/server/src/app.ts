@@ -54,6 +54,8 @@ export interface AppDeps {
   settings?: AssistantSettingsStore;
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
+  /** «Жизнь проекта»: figures about the project's history for the «Обновление» page. */
+  projectStats?: { get(force?: boolean): Promise<unknown> };
   /** Breaks a to-do or goal into steps with the model; undefined while Cloud.ru is not configured. */
   splitSteps?: () => ((text: string, signal?: AbortSignal) => Promise<string[]>) | undefined;
   /** Sees what the owner wrote in the chat (and earlier in the same chat), so links there may be opened. */
@@ -251,6 +253,11 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "POST" && p === "/api/knowledge/evidence/compare") {
           const b = await readJson(req);
           return send(res, 200, await comparePublicEvidence(b.sources));
+        }
+        if (req.method === "GET" && p === "/api/project-stats") {
+          if (!deps.projectStats) return send(res, 503, { error: "Показатели проекта недоступны" });
+          try { return send(res, 200, await deps.projectStats.get(url.searchParams.get("force") === "1")); }
+          catch (e) { return send(res, (e as { status?: number }).status ?? 500, { error: (e as Error).message }); }
         }
         if (req.method === "GET" && p === "/api/knowledge/gaps")
           return send(res, deps.knowledge ? 200 : 503, deps.knowledge?.gaps() ?? { error: "Пробелы недоступны" });
