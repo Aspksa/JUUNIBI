@@ -47,6 +47,19 @@ const text = (v: unknown, label: string) => {
   return v.trim();
 };
 
+/** Optional fields from the file are kept only when they make sense, so one bad value cannot break the page. */
+function cleanNote(n: Note): Note {
+  const c: Note = { ...n };
+  if (c.priority !== undefined && !["low", "normal", "high"].includes(c.priority)) delete c.priority;
+  if (c.dueAt !== undefined && (typeof c.dueAt !== "string" || !Number.isFinite(Date.parse(c.dueAt)))) delete c.dueAt;
+  if (c.completedAt !== undefined && (typeof c.completedAt !== "string" || !Number.isFinite(Date.parse(c.completedAt)))) delete c.completedAt;
+  if (c.project !== undefined && (typeof c.project !== "string" || !c.project.trim() || c.project.length > 80)) delete c.project;
+  if (c.parentId !== undefined && typeof c.parentId !== "string") delete c.parentId;
+  if (c.estimateMinutes !== undefined && !(Number.isInteger(c.estimateMinutes) && c.estimateMinutes >= 1 && c.estimateMinutes <= 1440)) delete c.estimateMinutes;
+  if (c.kind === "note") { delete c.priority; delete c.dueAt; delete c.parentId; delete c.estimateMinutes; }
+  return c;
+}
+
 /** Notes, to-do items and reminders kept by the owner and (with approval) by the assistant. */
 export class Organizer {
   private notes: Note[] = [];
@@ -59,7 +72,10 @@ export class Organizer {
     try {
       const raw = JSON.parse(await readFile(this.file, "utf8")) as { notes?: unknown; reminders?: unknown; missions?: unknown };
       if (Array.isArray(raw.missions)) this.missions = raw.missions.filter((m): m is Mission => !!m && typeof m.id === "string" && typeof m.title === "string" && typeof m.description === "string" && typeof m.createdAt === "string" && ["active","paused","complete"].includes(m.status)).slice(-100);
-      if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= MAX_TEXT && typeof n.done === "boolean" && typeof n.createdAt === "string").slice(-MAX_NOTES);
+      if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= MAX_TEXT && typeof n.done === "boolean" && typeof n.createdAt === "string").slice(-MAX_NOTES).map(cleanNote);
+      // a subtask whose parent is gone becomes an ordinary to-do
+      const ids = new Set(this.notes.map((n) => n.id));
+      for (const n of this.notes) if (n.parentId && !ids.has(n.parentId)) delete n.parentId;
       if (Array.isArray(raw.reminders)) this.reminders = raw.reminders.filter((r): r is Reminder => !!r && typeof r.id === "string" && typeof r.text === "string" && r.text.length <= MAX_TEXT && !Number.isNaN(Date.parse(r.at)) && ["scheduled", "due", "done"].includes(r.status) && (r.repeat === undefined || REPEATS.includes(r.repeat))).slice(-MAX_REMINDERS);
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
@@ -213,6 +229,9 @@ export class Organizer {
     const n = this.notes.length;
     this.notes = this.notes.filter((x) => x.id !== id);
     if (this.notes.length === n) throw bad("Запись не найдена", 404);
+    // Subtasks of a removed to-do become ordinary to-dos instead of pointing at nothing
+    // (such orphans were hidden from the day plan and counted as stages of a missing task).
+    for (const x of this.notes) if (x.parentId === id) delete x.parentId;
     await this.save();
   }
 

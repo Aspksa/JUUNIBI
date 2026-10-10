@@ -5,7 +5,6 @@ import { Chats } from "./chat/chats";
 import { ChatController } from "./chat/controller";
 import { ChatView } from "./chat/view";
 import { el, icon, type IconName } from "./dom";
-import { homePage } from "./pages/home";
 import { modulesPage } from "./pages/modules";
 import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
@@ -13,7 +12,7 @@ import { settingsPage } from "./pages/settings";
 import { tasksPage } from "./pages/tasks";
 import { mobilePage } from "./pages/mobile";
 import {
-  app, BRAIN_TILE_ROUTES, dismissSuggestion, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
+  app, BRAIN_TILE_ROUTES, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
   type AppState, type Route, type Theme,
 } from "./state";
 import { announceDue } from "./notify";
@@ -26,7 +25,6 @@ const chats = new Chats();
 const ctl = new ChatController(chats);
 
 const NAV: { route: Route; label: string; icon: IconName }[] = [
-  { route: "home", label: "Главная", icon: "home" },
   { route: "tasks", label: "Дела", icon: "check" },
   { route: "modules", label: "Модули", icon: "modules" },
   { route: "brain", label: "Мозг", icon: "brain" },
@@ -131,7 +129,6 @@ kernel.register({
     let pageSig = "";
     const sigFor = (s: AppState): string => {
       switch (s.route) {
-        case "home": return JSON.stringify([s.brief, s.repeatSuggestions, s.status, s.update?.latest?.sha, s.update?.localVersion, s.update?.phase, s.memory.length, s.memory.filter((m) => m.status === "pending").length, s.modules, s.approvals.length, s.chatOpen, chats.store.get().items.map((c) => [c.id, c.title, c.updatedAt, c.messages.length])]);
         case "memory": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
         case "modules": case "tasks": case "mobile": return ""; // the page loads and refreshes its own data
         case "brain": return "";
@@ -145,11 +142,8 @@ kernel.register({
       const changedRoute = !pageSig.startsWith(s.route + "|");
       pageSig = sig;
       const page =
-        s.route === "home" ? homePage(s, { go, openChat, chats, askBrief: () => { openChat(); void chatWin.askBrief(); },
-            saveQuickCommand: (name, text) => { const cur = app.get().assistantSettings?.quickCommands ?? []; void api.saveAssistantSettings({ quickCommands: [...cur, { name, text }] }).then((r) => { if (r.ok) { app.set({ assistantSettings: r.value }); dismissSuggestion(name); showToast(`Команда /${name} сохранена`); } else showToast(r.error.message); }); },
-            dismissSuggestion })
-        : BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
-        : s.route === "tasks" ? tasksPage()
+        BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
+        : s.route === "tasks" ? tasksPage({ go, openChat })
         : s.route === "mobile" ? mobilePage()
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()
@@ -170,7 +164,7 @@ kernel.register({
     const onApp = () => { const s = app.get(); renderNav(s); renderPage(s); renderAvatar(); };
     ctx.onStop(app.subscribe(onApp));
     ctx.onStop(ctl.store.subscribe(renderAvatar));
-    ctx.onStop(chats.store.subscribe(() => { if (app.get().route === "home" || app.get().route === "settings") renderPage(app.get()); }));
+    ctx.onStop(chats.store.subscribe(() => { if (app.get().route === "settings") renderPage(app.get()); }));
     app.set({ route: routeFromHash() });
     onApp();
 

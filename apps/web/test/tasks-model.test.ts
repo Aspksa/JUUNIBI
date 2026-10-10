@@ -1,35 +1,60 @@
 import { describe, expect, it } from "vitest";
 import type { Note, Reminder } from "../src/api";
-import { buildTasks, toLocalInput } from "../src/pages/tasks-model";
+import { buildTasks, isDateOnly, localDay, toLocalInput } from "../src/pages/tasks-model";
 
-const note = (id: string, kind: Note["kind"], done = false, createdAt = "2026-10-01T10:00:00Z"): Note => ({ id, kind, text: id, done, createdAt });
+// Суббота, 10 октября 2026, 12:00 по местному времени
+const now = new Date(2026, 9, 10, 12, 0);
+const iso = (d: number, h: number, m = 0) => new Date(2026, 9, d, h, m).toISOString();
+const note = (id: string, kind: Note["kind"], extra: Partial<Note> = {}): Note => ({ id, kind, text: id, done: false, createdAt: iso(1, 10), ...extra });
 const rem = (id: string, status: Reminder["status"], at: string, extra: Partial<Reminder> = {}): Reminder => ({ id, text: id, at, createdAt: at, status, ...extra });
 
 describe("страница «Дела»", () => {
   const org = {
-    notes: [note("хлеб", "todo"), note("молоко", "todo", true), note("код", "note", false, "2026-10-01T09:00:00Z"), note("идея", "note", false, "2026-10-02T09:00:00Z")],
-    reminders: [rem("позже", "scheduled", "2026-10-12T10:00:00Z"), rem("раньше", "scheduled", "2026-10-11T10:00:00Z", { repeat: "daily" }), rem("сейчас", "due", "2026-10-10T08:00:00Z"), rem("было", "done", "2026-10-09T08:00:00Z")],
+    notes: [
+      note("хлеб", "todo"), note("важное", "todo", { priority: "high", createdAt: iso(5, 10) }),
+      note("отчёт", "todo", { dueAt: iso(10, 9) }), note("звонок", "todo", { dueAt: iso(10, 23, 59) }),
+      note("сдать", "todo", { dueAt: iso(11, 23, 59) }), note("отпуск", "todo", { dueAt: iso(20, 23, 59) }),
+      note("молоко", "todo", { done: true, completedAt: iso(10, 8) }),
+      note("шаг 1", "todo", { parentId: "отпуск" }), note("шаг 2", "todo", { parentId: "отпуск", done: true }),
+      note("сирота", "todo", { parentId: "удалённое" }),
+      note("код", "note", { createdAt: iso(1, 9) }), note("идея", "note", { createdAt: iso(2, 9) }),
+    ],
+    reminders: [rem("вечером", "scheduled", iso(10, 19)), rem("утром", "scheduled", iso(11, 9), { repeat: "daily" }), rem("сейчас", "due", iso(10, 8)), rem("было", "done", iso(9, 8))],
   };
-  it("раскладывает по разделам и считает", () => {
-    const t = buildTasks(org);
+  it("одна лента по дням: просрочено, сегодня, завтра, позже; без срока отдельно", () => {
+    const t = buildTasks(org, "all", "", now);
     expect(t.due.map((x) => x.id)).toEqual(["сейчас"]);
-    expect(t.todos.map((x) => x.id)).toEqual(["хлеб"]);
-    expect(t.reminders.map((x) => x.id)).toEqual(["раньше", "позже"]);
+    const ids = (xs: { type: string; note?: Note; reminder?: Reminder }[]) => xs.map((x) => (x.note ?? x.reminder)!.id);
+    expect(ids(t.overdue)).toEqual(["отчёт"]);
+    expect(ids(t.today)).toEqual(["вечером", "звонок"]);
+    expect(ids(t.tomorrow)).toEqual(["утром", "сдать"]);
+    expect(ids(t.later)).toEqual(["отпуск"]);
+    expect(t.someday.map((x) => x.id)).toEqual(["важное", "хлеб", "сирота"]);
     expect(t.notes.map((x) => x.id)).toEqual(["идея", "код"]);
     expect(t.finished.todos.map((x) => x.id)).toEqual(["молоко"]);
     expect(t.finished.reminders.map((x) => x.id)).toEqual(["было"]);
-    expect(t.counts).toEqual({ all: 6, todo: 1, note: 2, reminder: 3 });
+    expect(t.summary).toEqual({ today: 2, overdue: 1, doneToday: 1 });
   });
-  it("фильтр и поиск", () => {
-    const only = buildTasks(org, "reminder");
-    expect([only.todos.length, only.notes.length, only.reminders.length, only.due.length]).toEqual([0, 0, 2, 1]);
-    const found = buildTasks(org, "all", "ХЛЕ");
-    expect(found.todos.map((x) => x.id)).toEqual(["хлеб"]);
-    expect(found.reminders).toEqual([]);
-    expect(found.counts.all).toBe(6); // счётчики не зависят от поиска
+  it("подзадачи под своим делом; без родителя — обычное дело", () => {
+    const t = buildTasks(org, "all", "", now);
+    expect(t.children["отпуск"]!.map((x) => x.id)).toEqual(["шаг 1", "шаг 2"]);
+    expect(t.someday.map((x) => x.id)).not.toContain("шаг 1");
+    // при поиске подзадачи видны сами по себе
+    expect(buildTasks(org, "all", "шаг", now).someday.map((x) => x.id)).toEqual(["шаг 1"]);
   });
-  it("время для поля ввода — местное, с минутами", () => {
-    const d = new Date(2026, 9, 10, 7, 5);
-    expect(toLocalInput(d.toISOString())).toBe("2026-10-10T07:05");
+  it("фильтр и поиск; счётчики не зависят от поиска", () => {
+    const only = buildTasks(org, "reminder", "", now);
+    expect([only.someday.length, only.notes.length, only.due.length, only.overdue.length]).toEqual([0, 0, 1, 0]);
+    expect(only.today.map((x) => x.type)).toEqual(["reminder"]);
+    const found = buildTasks(org, "all", "ХЛЕ", now);
+    expect(found.someday.map((x) => x.id)).toEqual(["хлеб"]);
+    expect(found.today).toEqual([]);
+    expect(found.counts).toEqual(buildTasks(org, "all", "", now).counts);
+  });
+  it("местные дни и время", () => {
+    expect(toLocalInput(new Date(2026, 9, 10, 7, 5).toISOString())).toBe("2026-10-10T07:05");
+    expect(localDay(new Date(2026, 9, 10, 0, 30))).toBe("2026-10-10");
+    expect(isDateOnly(iso(10, 23, 59))).toBe(true);
+    expect(isDateOnly(iso(10, 9))).toBe(false);
   });
 });

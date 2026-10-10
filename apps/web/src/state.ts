@@ -2,10 +2,10 @@ import { Store, attempt } from "@juunibi/core";
 import { ACCENT_IDS, type AccentId } from "./accents";
 import { api, type AssistantSettings, type Brief, type RepeatSuggestion, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateHistory, type UpdateStatus } from "./api";
 
-export type Route = "home" | "tasks" | "memory" | "quality" | "modules" | "brain" | "mobile" | "update" | "settings";
-export const ROUTES: Route[] = ["home", "tasks", "memory", "quality", "modules", "brain", "mobile", "update", "settings"];
+export type Route = "tasks" | "memory" | "quality" | "modules" | "brain" | "mobile" | "update" | "settings";
+export const ROUTES: Route[] = ["tasks", "memory", "quality", "modules", "brain", "mobile", "update", "settings"];
 /** Older addresses that now open another page. */
-const ROUTE_ALIASES: Record<string, Route> = { notes: "tasks", reminders: "tasks" };
+const ROUTE_ALIASES: Record<string, Route> = { home: "tasks", notes: "tasks", reminders: "tasks" };
 /** Addresses that open a tile of the Brain page in its window. */
 export const BRAIN_TILE_ROUTES: Partial<Record<Route, "memory" | "quality">> = { memory: "memory", quality: "quality" };
 export type Theme = "auto" | "light" | "dark";
@@ -41,7 +41,7 @@ export const app = new Store<AppState>({
 
 export function routeFromHash(): Route {
   const h = location.hash.replace(/^#\/?/, "");
-  return (ROUTES as string[]).includes(h) ? (h as Route) : ROUTE_ALIASES[h] ?? "home";
+  return (ROUTES as string[]).includes(h) ? (h as Route) : ROUTE_ALIASES[h] ?? "tasks";
 }
 export function persistPrefs(s: AppState) {
   attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent })));
