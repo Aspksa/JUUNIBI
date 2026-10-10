@@ -29,10 +29,31 @@ export function tasksPage(): HTMLElement {
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
   const planHost = el("section", { cls:"pg-card",attrs:{"aria-label":"План дня"} }, el("p",{cls:"muted",textContent:"План дня загружается…"}));
 
+  const month = el("input", { type:"month",value:new Date().toISOString().slice(0,7),cls:"mem-select",attrs:{"aria-label":"Месяц календаря"} });
+  const calendarHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Календарь и продуктивность"}});
+  const renderInsights = async () => {
+    const r = await api.taskInsights(month.value);
+    if (!r.ok) { calendarHost.replaceChildren(el("p",{cls:"muted",textContent:"Календарь временно недоступен"})); return; }
+    const {statistics:stats, items,brainRecommendations} = r.value;
+    const days = new Map<string, typeof items>();
+    for(const item of items){const day=item.at.slice(0,10);days.set(day,[...(days.get(day)??[]),item]);}
+    calendarHost.replaceChildren(
+      el("h2",{textContent:"Календарь · "+month.value}),
+      el("p",{cls:"muted small",textContent:`Выполнено: ${stats.completed} из ${stats.all} (${stats.completionPercent}%) · За месяц: ${stats.completedThisMonth} · Просрочено: ${stats.overdue}`}),
+      el("ul",{cls:"org-list"},...[...days.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([day,entries])=>
+        el("li",{cls:"org-row"},el("span",{cls:"br-tag",textContent:day}),
+          el("span",{cls:"grow",textContent:entries.map(x=>(x.done?"✓ ":"")+x.text).join(" · ").slice(0,450)}))),
+      el("h3",{textContent:"Рекомендации JUUNIBI · Brain"}),
+      el("p",{cls:"muted small",textContent:"Основаны на реальных сроках и приоритетах. Дела не меняются автоматически."}),
+      el("ul",{cls:"org-list"},...brainRecommendations.map(x=>
+        el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})))));
+  };
+  month.addEventListener("change",()=>void renderInsights());
   const load = async () => {
     const r = await api.organizer();
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     render();
+    void renderInsights();
     const plan = await api.taskPlan();
     if (plan.ok) {
       const v = plan.value;
@@ -188,6 +209,8 @@ export function tasksPage(): HTMLElement {
     pageHead("check", "Дела", "Дела, заметки и напоминания. Напоминания срабатывают, пока JUUNIBI запущен."),
     el("section", { cls: "pg-card" }, form),
     planHost,
+    el("section",{cls:"pg-card"},el("label",{textContent:"Месяц календаря"}),month),
+    calendarHost,
     el("div", { cls: "mem-toolbar" }, search, chipsHost, perm),
     listHost);
 }
