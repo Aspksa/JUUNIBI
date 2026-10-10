@@ -8,7 +8,7 @@ import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
 import { buildAttention } from "./home";
 import { achievementsPanel } from "./achievements-panel";
-import { forecastWeek } from "./weekly-forecast";
+import { forecastWeek, simulateWeek } from "./weekly-forecast";
 import { btn, chip, emptyState } from "./kit";
 import { nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
@@ -99,6 +99,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
   const goalsHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Цели" } });
   const forecastHost = el("section", { cls: "pg-card tasks-side-card tasks-forecast", attrs: { "aria-label": "Прогноз нагрузки на неделю" } });
+  let scenarioMinutes = 0;
   const autoHost = el("section", { cls: "pg-card tasks-side-card tasks-auto", attrs: { "aria-label": "Автоматика" } });
   const datesHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Даты из памяти" } });
   const eveHost = el("div", { cls: "tasks-evening-host" });
@@ -578,10 +579,20 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     // goals keep what is typed in their fields: redraw them only when they changed
     const sig = JSON.stringify(missions);
     if (sig !== goalsSig) { goalsSig = sig; renderGoals(); }
-    const forecast = forecastWeek(data?.notes ?? [], new Date(), Math.round((automation?.dayHours ?? 8) * 60));
+    const baseline = forecastWeek(data?.notes ?? [], new Date(), Math.round((automation?.dayHours ?? 8) * 60));
+    const scenario = simulateWeek(baseline, scenarioMinutes);
+    const forecast = scenario.days;
     forecastHost.replaceChildren(
       el("h2", { textContent: "↗ Прогноз на 7 дней" }),
       el("p", { cls: "small muted", textContent: "Оценка по срокам: без указанной длительности — 30 минут на дело. Выходные без рабочих часов." }),
+      el("p", { cls: "small muted", textContent: "Симулятор будущего: что если добавить работу в каждый будний день?" }),
+      el("div", { cls: "tasks-scenario-controls" },
+        ...([0, 30, 60, 120] as const).map(minutes => {
+          const b = el("button", { type: "button", cls: "chip" + (scenarioMinutes === minutes ? " on" : ""), textContent: minutes ? "+" + minutes + " мин" : "Без изменений", attrs: { "aria-pressed": String(scenarioMinutes === minutes) } });
+          b.addEventListener("click", () => { scenarioMinutes = minutes; void renderSide(); });
+          return b;
+        })),
+      el("p", { cls: "small muted", textContent: scenarioMinutes ? "Сценарий: дополнительно " + Math.round(scenario.extra / 6) / 10 + " ч в неделю, перегруженных дней: " + scenario.overloadedDays + ". План не изменён." : "Текущая нагрузка; эксперимент не меняет задачи." }),
       ...forecast.map(f => {
         const row = el("div", { cls: "tasks-forecast-day" + (f.overload ? " overload" : "") },
           el("time", { textContent: f.day.slice(5) }),
