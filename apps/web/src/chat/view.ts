@@ -19,7 +19,7 @@ const GENERIC: Suggestion[] = [
 ];
 const SHORTCUTS: [string, string][] = [
   ["Enter", "Отправить сообщение"], ["Shift + Enter", "Новая строка"], ["↑ (поле пустое)", "Изменить последнее сообщение"],
-  ["/", "Меню команд"], ["Ctrl + K", "Открыть/закрыть чат"], ["Ctrl + Shift + O", "Новый чат"], ["Ctrl + /", "Эта справка"],
+  ["/", "Меню команд"], ["Ctrl + K", "Поиск и команды"], ["Ctrl + J", "Открыть/закрыть чат"], ["Ctrl + Shift + O", "Новый чат"], ["Ctrl + /", "Эта справка"],
   ["Esc", "Закрыть меню, затем чат"], ["Двойной клик по шапке", "На весь экран / обратно"],
 ];
 
@@ -128,6 +128,10 @@ export class ChatView {
   focus() { this.composer.focus(); }
   /** The "Сегодня" card on Home asks the assistant for the day summary. */
   askBrief() { return this.sendText(BRIEF_PROMPT); }
+  /** Sends a message from outside the window (a quick command or a question from Ctrl+K). */
+  send(text: string) { return this.sendText(text); }
+  /** A fresh chat, as Ctrl+Shift+O does inside the window. */
+  startNew() { this.newChat(); }
   resetPosition() { this.frame.reset(); }
   /** Esc: close the innermost transient thing first; "close" means nothing was open. */
   escape(): "handled" | "close" {

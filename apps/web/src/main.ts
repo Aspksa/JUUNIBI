@@ -4,7 +4,12 @@ import { Avatar } from "./avatar";
 import { Chats } from "./chat/chats";
 import { ChatController } from "./chat/controller";
 import { ChatView } from "./chat/view";
-import { el, icon, type IconName } from "./dom";
+import { el, icon } from "./dom";
+import { Menu, openConnection } from "./nav/menu";
+import { NAV_ITEMS, itemForDigit } from "./nav/model";
+import { closePalette, openPalette, paletteOpen, setPaletteFallback } from "./nav/palette";
+import { baseEntries, taskEntries } from "./nav/commands";
+import { openQuickAdd } from "./nav/quick-add";
 import { modulesPage } from "./pages/modules";
 import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
@@ -12,28 +17,19 @@ import { settingsPage } from "./pages/settings";
 import { tasksPage } from "./pages/tasks";
 import { mobilePage } from "./pages/mobile";
 import {
-  app, BRAIN_TILE_ROUTES, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
+  app, BRAIN_TILE_ROUTES, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
   type AppState, type Route, type Theme,
 } from "./state";
 import { announceDue } from "./notify";
 import { showToast } from "./toast";
 import { api } from "./api";
 import "./style.css";
+import "./nav/nav.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
 const chats = new Chats();
 const ctl = new ChatController(chats);
 
-const NAV: { route: Route; label: string; icon: IconName }[] = [
-  { route: "tasks", label: "Дела", icon: "check" },
-  { route: "modules", label: "Модули", icon: "modules" },
-  { route: "brain", label: "Мозг", icon: "brain" },
-  { route: "mobile", label: "Мобильное приложение", icon: "phone" },
-  { route: "update", label: "Обновление", icon: "update" },
-  { route: "settings", label: "Настройки", icon: "settings" },
-];
-const cls = (n: SVGSVGElement, c: string): SVGSVGElement => { n.classList.add(c); return n; };
-const isDark = (t: Theme): boolean => t === "dark" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
 const syncMeta = (): void => {
   const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
   let m = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
@@ -70,14 +66,14 @@ kernel.register({
     if (!root) throw new Error("#app not found");
 
     const pageHost = el("main", { cls: "content-main", attrs: { id: "main", tabindex: "-1" } });
-    const nav = el("nav", { cls: "nav", attrs: { "aria-label": "Разделы" } });
     const navScrim = el("div", { cls: "nav-scrim" });
     navScrim.addEventListener("click", () => app.set({ navOpen: false }));
     const burger = el("button", { type: "button", cls: "icon-btn burger", title: "Меню", attrs: { "aria-label": "Меню" } }, icon("menu", 20));
     burger.addEventListener("click", () => app.set((s) => ({ navOpen: !s.navOpen })));
     const topTitle = el("strong", { cls: "topbar-title" });
     const topbar = el("header", { cls: "topbar" }, burger, topTitle);
-    const shell = el("div", { cls: "app" }, nav, navScrim, el("div", { cls: "content" }, topbar, pageHost));
+    const menu: Menu = new Menu({ chats, ctl, go: (r) => go(r), openChat: (id) => openChat(id), quickAdd: () => quickAdd(), palette: () => palette() });
+    const shell = el("div", { cls: "app" }, menu.nav, navScrim, el("div", { cls: "content" }, topbar, pageHost), menu.bottom);
     root.replaceChildren(shell);
 
     const go = (r: Route) => { location.hash = "#/" + r; };
@@ -102,27 +98,35 @@ kernel.register({
     };
     const closeChat = () => { app.set({ chatOpen: false }); chatWin.root.hidden = true; chatWin.onClosed(); avatar.focus(); };
     chatWin.setHandlers(closeChat, (r) => { closeChat(); go(r); });
+    const newChat = () => { openChat(); chatWin.startNew(); };
+    const quickAdd = (text = "") => openQuickAdd(() => { if (app.get().route === "tasks") { pageSig = ""; renderPage(app.get()); } }, text);
+    const commandDeps = () => ({
+      chats, prefs: menu.prefs, go: (r: Route) => { if (app.get().chatOpen) closeChat(); go(r); }, openChat: (id?: string) => openChat(id), newChat,
+      send: (t: string) => void chatWin.send(t), quickAdd, toggleCollapsed: () => menu.toggleCollapsed(), editMenu: () => menu.startEdit(), connection: () => openConnection(go),
+    });
+    const palette = () => { const d = commandDeps(); openPalette(baseEntries(d), taskEntries(d)); };
+    setPaletteFallback((q) => { openChat(); void chatWin.send(q); });
+    // Physical keys (e.code), so the shortcuts also work with the Russian layout.
     addEventListener("keydown", (e) => {
-      if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); if (app.get().chatOpen) closeChat(); else openChat(); }
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.altKey && !e.shiftKey && e.code === "KeyK") { e.preventDefault(); if (paletteOpen()) closePalette(); else palette(); }
+      else if (mod && !e.altKey && !e.shiftKey && e.code === "KeyJ") { e.preventDefault(); if (app.get().chatOpen) closeChat(); else openChat(); }
+      else if (mod && !e.altKey && !e.shiftKey && e.code === "KeyB" && innerWidth > 860) { e.preventDefault(); menu.toggleCollapsed(); }
+      else if (e.altKey && !mod && !e.shiftKey && e.code === "KeyN") { e.preventDefault(); newChat(); }
+      else if (e.altKey && !mod && !e.shiftKey && itemForDigit(menu.prefs, e.code)) {
+        e.preventDefault();
+        const n = itemForDigit(menu.prefs, e.code)!;
+        if (n.route) { if (app.get().chatOpen) closeChat(); go(n.route); } else openChat();
+      }
       else if (e.key === "Escape" && app.get().chatOpen && !e.defaultPrevented) { if (chatWin.escape() === "close") closeChat(); }
+      else if (e.key === "Escape" && app.get().navOpen && !e.defaultPrevented) app.set({ navOpen: false });
     });
 
     // ----- left menu
     const renderNav = (s: AppState) => {
-      const newer = !!s.update?.latest && s.update.localVersion !== "не определена" && s.update.localVersion !== s.update.latest.sha;
-      const dark = isDark(s.theme);
-      const theme = el("button", { type: "button", cls: "theme-switch", attrs: { role: "switch", "aria-checked": String(dark), "aria-label": "Тёмная тема" } },
-        el("span", { cls: "ts-label", textContent: "Тёмная тема" }),
-        el("span", { cls: "ts-track" }, cls(icon("sun", 14), "s"), cls(icon("moon", 14), "m"), el("span", { cls: "ts-thumb" }, icon(dark ? "moon" : "sun", 13))));
-      theme.addEventListener("click", () => { app.set({ theme: dark ? "light" : "dark" }); persistPrefs(app.get()); });
-      nav.replaceChildren(
-        el("div", { cls: "brand", textContent: "JUUNIBI" }), // reserved slot: put your logo here
-        ...NAV.map((n) => el("a", { href: "#/" + n.route, cls: "nav-item" + (n.route === s.route || (n.route === "brain" && !!BRAIN_TILE_ROUTES[s.route]) ? " active" : ""), attrs: n.route === s.route || (n.route === "brain" && !!BRAIN_TILE_ROUTES[s.route]) ? { "aria-current": "page" } : {} },
-          icon(n.icon, 18), el("span", { textContent: n.label }), n.route === "update" && newer ? el("i", { cls: "dot", title: "Доступно обновление" }) : null)),
-        el("span", { cls: "grow" }), theme);
-      nav.classList.toggle("open", s.navOpen);
+      menu.render(s);
       navScrim.classList.toggle("show", s.navOpen);
-      topTitle.textContent = NAV.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : s.route))?.label ?? "";
+      topTitle.textContent = NAV_ITEMS.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : s.route))?.label ?? "";
     };
 
     // ----- pages (re-rendered only when what they show actually changed, so typing in forms is never disturbed)
@@ -163,8 +167,8 @@ kernel.register({
 
     const onApp = () => { const s = app.get(); renderNav(s); renderPage(s); renderAvatar(); };
     ctx.onStop(app.subscribe(onApp));
-    ctx.onStop(ctl.store.subscribe(renderAvatar));
-    ctx.onStop(chats.store.subscribe(() => { if (app.get().route === "settings") renderPage(app.get()); }));
+    ctx.onStop(ctl.store.subscribe(() => { renderAvatar(); menu.render(app.get()); }));
+    ctx.onStop(chats.store.subscribe(() => { menu.render(app.get()); if (app.get().route === "settings") renderPage(app.get()); }));
     app.set({ route: routeFromHash() });
     onApp();
 

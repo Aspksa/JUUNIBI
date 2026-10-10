@@ -379,6 +379,8 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
     el("div", { cls: "row" }, exp, imp, file, el("span", { cls: "grow" }), wipe));
 
   // ---- about
+  const HOTKEYS: [string, string[]][] = [["Поиск и команды", ["Ctrl", "K"]], ["Открыть или закрыть чат", ["Ctrl", "J"]], ["Новая беседа", ["Alt", "N"]],
+    ["Разделы меню по порядку", ["Alt", "1…7"]], ["Свернуть или развернуть меню", ["Ctrl", "B"]]];
   const link = el("a", { href: "https://github.com/Aspksa/JUUNIBI", target: "_blank", rel: "noopener noreferrer", textContent: "github.com/Aspksa/JUUNIBI" });
   const version = short(s.update?.localVersion);
   const copy = iconButton("copy", "Скопировать версию", () => { void navigator.clipboard?.writeText(s.update?.localVersion ?? version).then(() => showToast("Версия скопирована", { ms: 2000 })); }, "icon-btn sm");
@@ -386,7 +388,7 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
     el("div", { cls: "about-grid" },
       el("span", { cls: "muted", textContent: "Версия" }), el("span", { cls: "row" }, el("code", { textContent: version }), copy, el("a", { href: "#/update", cls: "small", textContent: "Проверить обновления" })),
       el("span", { cls: "muted", textContent: "Исходный код" }), link,
-      el("span", { cls: "muted", textContent: "Быстро открыть чат" }), el("span", {}, el("kbd", { cls: "kbd", textContent: "Ctrl" }), " + ", el("kbd", { cls: "kbd", textContent: "K" }))));
+      ...HOTKEYS.flatMap(([label, keys]) => [el("span", { cls: "muted", textContent: label }), el("span", {}, ...keys.flatMap((k, i) => [i ? " + " : "", el("kbd", { cls: "kbd", textContent: k })]))])));
 
   const pill = el("a", { href: "#/settings", cls: `set-pill ${ok ? "ok" : "off"}` }, dot(ok ? "ok" : "off"), ok ? "Подключена" : "Не подключена");
   pill.addEventListener("click", (e) => { e.preventDefault(); document.getElementById("set-conn")?.scrollIntoView({ behavior: "smooth", block: "start" }); if (!ok) key.focus({ preventScroll: true }); });
