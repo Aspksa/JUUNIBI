@@ -1130,6 +1130,19 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-calendar-day.today{border-color:var(--brand)}
 .tasks-calendar-day strong{font-size:14px}.tasks-calendar-event{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 5px;border-radius:5px;background:color-mix(in srgb,var(--brand) 14%,transparent);font-size:11px}
 .tasks-calendar-day.selected{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,var(--surface))}
+.tasks-calendar-num{display:flex;align-items:baseline;gap:6px;width:100%;min-width:0}
+.tasks-calendar-num small{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:700px){.tasks-calendar-num small{display:none}}
+.tasks-calendar-day.weekend .tasks-calendar-num,.tasks-calendar-day.holiday .tasks-calendar-num,.tasks-calendar-day.off .tasks-calendar-num{color:var(--danger)}
+.tasks-calendar-day.holiday,.tasks-calendar-day.off{background:color-mix(in srgb,var(--danger) 8%,var(--surface))}
+.tasks-calendar-day.short .tasks-calendar-num small{color:var(--brand)}
+.tasks-prod{display:flex;flex-direction:column;gap:2px;margin:12px 0 0}
+.tasks-calendar-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0 0}
+.tasks-calendar-legend .lg::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line)}
+.tasks-calendar-legend .holiday::before,.tasks-calendar-legend .off::before{background:color-mix(in srgb,var(--danger) 35%,transparent)}
+.tasks-calendar-legend .short::before{background:color-mix(in srgb,var(--brand) 45%,transparent)}
+.tasks-calendar-legend .weekend::before{background:transparent;border-color:var(--danger)}
+.tasks-prod-day{margin:0;font-size:.88rem;color:var(--muted)}.tasks-prod-day.holiday,.tasks-prod-day.off,.tasks-prod-day.weekend{color:var(--danger)}.tasks-prod-day.short{color:var(--brand)}
 .tasks-calendar-event.rem{background:var(--hover-2)}
 .tasks-calendar-event.done{text-decoration:line-through;opacity:.55}
 .tasks-selected-day{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:18px 0;padding:14px;border-radius:14px;background:var(--surface)}

@@ -8,6 +8,7 @@ import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
 import { buildAttention } from "./home";
 import { btn, chip, emptyState } from "./kit";
+import { prodDay, prodStats, type DayKind } from "./prod-calendar";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
 import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, isDateOnly, localDay, toLocalInput, type TaskFilter, type TimedItem } from "./tasks-model";
 
@@ -44,6 +45,9 @@ export function describeQuick(p: QuickParsed, now = new Date()): string {
   return [kind, p.at ? (p.kind === "todo" ? "срок " : "") + whenLabel(p.at, !!p.dateOnly && p.kind === "todo", now) : p.kind === "reminder" ? "время не указано" : null,
     p.repeat ? "↻ " + REPEAT_LABEL[p.repeat] : null, p.kind === "todo" && p.priority ? "⚑ важно" : null, p.kind === "todo" && p.project ? "#" + p.project : null].filter(Boolean).join(" · ");
 }
+
+const DAY_KIND: Record<DayKind, string> = { work: "Рабочий день", short: "Сокращённый день", weekend: "Выходной", holiday: "Праздник", off: "Перенесённый выходной" };
+const fmtH = (h: number) => h.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " ч";
 
 /** The quick-entry result with the date and repeat picked by hand. */
 export function withWhen(p: QuickParsed, iso: string | null, rep: string): QuickParsed {
@@ -290,7 +294,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const opts: [TaskFilter, string, number][] = [["all", "Все", c.all], ["todo", "Дела", c.todo], ["reminder", "Напоминания", c.reminder], ["note", "Заметки", c.note]];
     chipsHost.replaceChildren(...opts.map(([f, label, n]) => chip(label, n, UI.filter === f, () => { UI.filter = f; render(); })));
     const today = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    summary.textContent = [today[0]!.toUpperCase() + today.slice(1), t.summary.today ? `на сегодня: ${t.summary.today}` : "на сегодня ничего", t.summary.overdue ? `просрочено: ${t.summary.overdue}` : null, t.summary.doneToday ? `сделано: ${t.summary.doneToday}` : null].filter(Boolean).join(" · ");
+    const pdToday = prodDay(localDay(new Date()));
+    summary.textContent = [today[0]!.toUpperCase() + today.slice(1), pdToday?.kind === "holiday" ? pdToday.note : pdToday?.kind === "off" ? "выходной (перенос)" : pdToday?.kind === "short" ? "сокращённый день" : null, t.summary.today ? `на сегодня: ${t.summary.today}` : "на сегодня ничего", t.summary.overdue ? `просрочено: ${t.summary.overdue}` : null, t.summary.doneToday ? `сделано: ${t.summary.doneToday}` : null].filter(Boolean).join(" · ");
     const kids = t.children;
     const finished = [...t.finished.todos.map((n) => todoRow(n)), ...t.finished.reminders.map(reminderRow)];
     const groups = [
@@ -370,13 +375,20 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     for (let d = 1; d <= new Date(y!, mo!, 0).getDate(); d++) {
       const key = `${UI.month}-${String(d).padStart(2, "0")}`;
       const list = byDay.get(key) ?? [];
-      const cell = el("button", { type: "button", cls: "tasks-calendar-day" + (key === todayKey ? " today" : "") + (key === UI.day ? " selected" : ""), attrs: { "aria-pressed": String(key === UI.day), "aria-label": `${d}: записей ${list.length}` } },
-        el("strong", { textContent: String(d) }), ...list.slice(0, 3).map((x) => el("span", { cls: "tasks-calendar-event" + (x.done ? " done" : "") + (x.kind === "reminder" ? " rem" : ""), textContent: x.text })),
+      const pd = prodDay(key);
+      const cell = el("button", { type: "button", cls: "tasks-calendar-day" + (pd && pd.kind !== "work" ? " " + pd.kind : "") + (key === todayKey ? " today" : "") + (key === UI.day ? " selected" : ""), title: pd ? DAY_KIND[pd.kind] + (pd.note ? ": " + pd.note : "") : "", attrs: { "aria-pressed": String(key === UI.day), "aria-label": `${d}${pd && pd.kind !== "work" ? ", " + DAY_KIND[pd.kind].toLowerCase() : ""}: записей ${list.length}` } },
+        el("span", { cls: "tasks-calendar-num" }, el("strong", { textContent: String(d) }), pd?.kind === "holiday" || pd?.kind === "off" || pd?.kind === "short" ? el("small", { textContent: pd.kind === "short" ? "−1 ч" : pd.kind === "holiday" ? "праздник" : "выходной" }) : null), ...list.slice(0, 3).map((x) => el("span", { cls: "tasks-calendar-event" + (x.done ? " done" : "") + (x.kind === "reminder" ? " rem" : ""), textContent: x.text })),
         list.length > 3 ? el("small", { textContent: "ещё " + (list.length - 3) }) : null);
       cell.addEventListener("click", () => { UI.day = key; void renderCalendar(); });
       cells.push(cell);
     }
     const dayItems = byDay.get(UI.day) ?? [];
+    const ms = prodStats(UI.month), ys = prodStats(UI.month.slice(0, 4)), sel = prodDay(UI.day);
+    const prodLine = ms && ys
+      ? el("p", { cls: "tasks-prod muted small" },
+          el("span", { textContent: `Рабочих дней: ${ms.workDays}, выходных и праздников: ${ms.offDays}` + (ms.shortDays ? `, сокращённых: ${ms.shortDays}` : "") + `. Норма: ${fmtH(ms.hours[40])} при 40 ч в неделю, ${fmtH(ms.hours[36])} при 36 ч, ${fmtH(ms.hours[24])} при 24 ч.` }),
+          el("span", { textContent: `За ${UI.month.slice(0, 4)} год: ${ys.workDays} рабочих дней, ${ys.offDays} выходных, норма ${fmtH(ys.hours[40])} (40 ч в неделю).` }))
+      : el("p", { cls: "tasks-prod muted small", textContent: "Производственный календарь есть на 2026 и 2027 годы." });
     const open = data?.notes.filter((n) => n.kind === "todo" && !n.done) ?? [];
     const pick = el("select", { cls: "mem-select", attrs: { "aria-label": "Дело для переноса" } }, el("option", { value: "", textContent: "Перенести сюда дело…" }), ...open.map((n) => el("option", { value: n.id, textContent: n.text.slice(0, 80) })));
     pick.addEventListener("change", () => {
@@ -389,10 +401,13 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     });
     planBody.replaceChildren(
       el("div", { cls: "tasks-cal-head" }, month, el("span", { cls: "muted small", textContent: `Сделано ${st.completed} из ${st.all} · просрочено ${st.overdue} · в этом месяце закрыто ${st.completedThisMonth}` })),
+      prodLine,
+      el("div", { cls: "tasks-calendar-legend muted small", attrs: { "aria-hidden": "true" } }, ...(["holiday", "off", "short", "weekend"] as const).map((k) => el("span", { cls: "lg " + k, textContent: DAY_KIND[k] }))),
       el("div", { cls: "tasks-calendar-weekdays" }, ...["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((x) => el("span", { textContent: x }))),
       el("div", { cls: "tasks-calendar-grid" }, ...cells),
       el("div", { cls: "tasks-selected-day" },
         el("h3", { textContent: new Date(UI.day + "T12:00").toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" }) }),
+        sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null,
         dayItems.length ? el("ul", { cls: "tasks-plan-list" }, ...dayItems.map((x) => el("li", { cls: x.done ? "done" : "" }, el("span", { cls: "grow", textContent: (x.kind === "reminder" ? "◷ " : "✓ ") + x.text }), el("span", { cls: "muted small", textContent: isDateOnly(x.at) ? "" : hm(x.at) })))) : el("p", { cls: "muted small", textContent: "В этот день ничего не запланировано." }),
         open.length ? pick : null));
   }
