@@ -383,6 +383,11 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           const input = await readJson(req);
           return send(res, 200, deps.brain.previewDecisionTree(input.branches as DecisionBranch[], input.limits as PlanLimits, input.event as DecisionEvent | undefined));
         }
+        if (req.method === "POST" && p === "/api/brain/compare-robust-strategies") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const input = await readJson(req);
+          return send(res, 200, deps.brain.compareRobustStrategies(input.steps as SequenceStep[], input.limits as PlanLimits));
+        }
         if (req.method === "POST" && p === "/api/brain/suggest-sequence-repairs") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const input = await readJson(req);

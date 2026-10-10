@@ -25,6 +25,7 @@ import { rankWithExperience, type RankingOption } from "./experience-ranking";
 import { evaluateDecisionTree, type DecisionBranch, type DecisionEvent } from "./decision-tree";
 import { simulateSequence, type SequenceStep } from "./sequence-simulator";
 import { suggestSequenceRepairs } from "./sequence-repair";
+import { compareRobustStrategies } from "./robust-strategies";
 import { evaluateOptions, type PlanLimits, type PlanOption } from "./plan-evaluator";
 
 export type BrainMode = "chat" | "analysis" | "agent" | "creative";
@@ -115,6 +116,7 @@ export class BrainCore {
   previewDecisionTree(branches: DecisionBranch[], limits: PlanLimits, event?: DecisionEvent) { return evaluateDecisionTree(branches, limits, event); }
   previewSequence(steps: SequenceStep[], limits: PlanLimits) { return simulateSequence(steps, limits); }
   suggestRepairs(steps: SequenceStep[], limits: PlanLimits) { return suggestSequenceRepairs(steps, limits); }
+  compareRobustStrategies(steps: SequenceStep[], limits: PlanLimits) { return compareRobustStrategies(steps, limits); }
   /** Simulate alternatives only. The selected plan is never executed or saved. */
   compareAlternatives(options: PlanOption[], limits: PlanLimits) { return evaluateOptions(options, limits); }
   private writeQueue: Promise<void> = Promise.resolve();
