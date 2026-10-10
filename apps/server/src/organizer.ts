@@ -234,9 +234,29 @@ export class Organizer {
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
 
+  /** Fall back to the previous valid snapshot after a partial or corrupted main file. */
+  private async readRecoverable(): Promise<string> {
+    try {
+      const value = await readFile(this.file, "utf8");
+      JSON.parse(value);
+      return value;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        // A missing main file may still have a valid snapshot after interrupted recovery.
+        try { const backup = await readFile(this.file + ".bak", "utf8"); JSON.parse(backup); return backup; }
+        catch { throw error; }
+      }
+      if (!(error instanceof SyntaxError)) throw error;
+      const backup = await readFile(this.file + ".bak", "utf8");
+      JSON.parse(backup);
+      return backup;
+    }
+  }
+
   async load() {
     try {
-      const raw = JSON.parse(await readFile(this.file, "utf8")) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown };
+      const raw = JSON.parse(await this.readRecoverable()) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown };
       this.automation = cleanAutomation(raw.automation);
       if (raw.autoState && typeof raw.autoState === "object") {
         for (const k of ["briefDay", "rollDay", "eveningDay", "weekDay"] as const) if (typeof raw.autoState[k] === "string") this.autoState[k] = raw.autoState[k] as string;
@@ -258,6 +278,16 @@ export class Organizer {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + "." + randomUUID() + ".tmp";
       await writeFile(tmp, data, { mode: 0o600 });
+      // Never replace a known-good backup with corrupt data.
+      try {
+        const previous = await readFile(this.file, "utf8");
+        JSON.parse(previous);
+        const backupTmp = this.file + "." + randomUUID() + ".bak.tmp";
+        await writeFile(backupTmp, previous, { mode: 0o600 });
+        await rename(backupTmp, this.file + ".bak");
+      } catch (error) {
+        if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
       await rename(tmp, this.file);
     });
     return this.writes;
