@@ -57,6 +57,7 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
   else if (take(st, R(`${B}(каждую\\s+неделю|еженедельно)${E}`))) out.repeat = "weekly";
   else if (take(st, R(`${B}(каждый\\s+месяц|ежемесячно)${E}`))) out.repeat = "monthly";
   else if (take(st, R(`${B}каждые\\s+(3|три)\\s+дня${E}`))) out.repeat = "every3days";
+  else if (take(st, R(`${B}(каждый\\s+год|ежегодно)${E}`))) out.repeat = "yearly";
   else {
     const m = take(st, R(`${B}(кажд(ый|ую|ое))\\s+${WD}${E}`));
     if (m) { out.repeat = "weekly"; repeatWeekday = weekday(m[3]!); }
@@ -87,6 +88,10 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
       const y = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : day.getFullYear();
       date = new Date(y, Number(m[2]) - 1, Number(m[1]));
       if (!m[3] && date < day) date.setFullYear(date.getFullYear() + 1);
+    } else if ((m = take(st, R(`${B}(\\d{1,2})(?:-?го(?:\\s+числа)?|\\s+числа)${E}`)))) {
+      // "25-го", "25 числа": this month, or the next one when that day has passed
+      date = new Date(day.getFullYear(), day.getMonth(), Number(m[1]));
+      if (date < day) date = new Date(day.getFullYear(), day.getMonth() + 1, Number(m[1]));
     } else if ((m = take(st, R(`${B}(в|во)\\s+${WD}${E}`)))) {
       const wd = weekday(m[2]!)!;
       date = new Date(day);
@@ -113,26 +118,26 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
   let dateOnly = false;
   if (!at && repeatWeekday !== undefined) {
     const d = new Date(day); d.setHours(hh ?? 9, mm, 0, 0);
-    while (d.getDay() !== repeatWeekday || d <= now) d.setDate(d.getDate() + 1);
+    while (d.getDay() !== repeatWeekday || (hh !== null ? d <= now : d < day)) d.setDate(d.getDate() + 1);
     at = d;
+    dateOnly = hh === null;
   } else if (!at && hh !== null) {
     const d = new Date(date ?? day); d.setHours(hh, mm, 0, 0);
     if (!date && d <= now) d.setDate(d.getDate() + 1); // "в 9" when 9:00 has passed means tomorrow
     at = d;
   } else if (!at && out.repeat) {
-    const d = new Date(date ?? day); d.setHours(9, 0, 0, 0);
-    if (d <= now) d.setDate(d.getDate() + 1);
-    at = d;
+    // a repeat without a time is a repeating to-do from that day (today when no date is given)
+    at = new Date(date ?? day); at.setHours(9, 0, 0, 0);
+    dateOnly = true;
   } else if (!at && date) { at = new Date(date); at.setHours(9, 0, 0, 0); dateOnly = true; }
 
   const text = st.s.replace(/\s+/g, " ").replace(/^[\s,.:;—–-]+|[\s,.:;—–-]+$/g, "").trim();
   const kind: QuickParsed["kind"] = forced === "todo" ? "todo" : forced === "reminder" ? "reminder"
-    : remind || out.repeat || (at && !dateOnly) ? "reminder" : "todo";
+    : remind || (at && !dateOnly) ? "reminder" : "todo";
   const res: QuickParsed = { kind, text: text || raw, ...out };
   if (kind !== "todo") { delete res.priority; delete res.project; } // reminders have neither
   if (at) res.at = at.toISOString();
   if (dateOnly) res.dateOnly = true;
-  if (kind === "todo") delete res.repeat;
   return res;
 }
 
@@ -140,4 +145,14 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
 export function endOfDay(iso: string): string {
   const d = new Date(iso); d.setHours(23, 59, 0, 0);
   return d.toISOString();
+}
+
+/** What to add: the selection inside the message, else its first sentence without markdown marks. */
+export function taskTextFrom(content: string, selection = ""): string {
+  const sel = selection.replace(/\s+/g, " ").trim();
+  if (sel) return sel.slice(0, 200);
+  const plain = content.replace(/```[\s\S]*?```/g, " ").replace(/[*_#>`~]+/g, "").replace(/^\s*(?:[-•]|\d+[.)])\s+/gm, "").trim();
+  const line = plain.split(/\n+/).map((x) => x.trim()).find(Boolean) ?? "";
+  const sentence = /^.+?[.!?…](?=\s|$)/.exec(line)?.[0] ?? line;
+  return sentence.replace(/[.…]+$/, "").slice(0, 200).trim();
 }

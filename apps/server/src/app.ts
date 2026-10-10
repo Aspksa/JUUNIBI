@@ -54,6 +54,8 @@ export interface AppDeps {
   settings?: AssistantSettingsStore;
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
+  /** Breaks a to-do or goal into steps with the model; undefined while Cloud.ru is not configured. */
+  splitSteps?: () => ((text: string, signal?: AbortSignal) => Promise<string[]>) | undefined;
   /** Sees what the owner wrote in the chat (and earlier in the same chat), so links there may be opened. */
   noteUserText?: (text: string) => void;
   /** Control questions that show whether the assistant got better or worse. */
@@ -495,6 +497,19 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             const id = parts[4] ?? "";
             if (req.method === "POST" && parts.length === 6 && parts[5] === "stages") { const b = await readJson(req); return send(res, 201, await o.addMissionStage(id, b.text)); }
             if (req.method === "PATCH" && parts.length === 5) { const b = await readJson(req); return send(res, 200, await o.updateMission(id,b.status)); }
+          }
+          if (p === "/api/organizer/automation") {
+            if (req.method === "GET") return send(res, 200, o.getAutomation());
+            if (req.method === "POST") return send(res, 200, await o.setAutomation(await readJson(req)));
+          }
+          if (req.method === "POST" && p === "/api/organizer/brief") { const n = await o.runBrief(Date.now(), true); return n ? send(res, 200, n) : send(res, 409, { error: "Сводка уже готовится" }); }
+          if (req.method === "POST" && p === "/api/organizer/split") {
+            const b = await readJson(req);
+            if (typeof b.text !== "string" || !b.text.trim() || b.text.length > 500) return send(res, 400, { error: "Текст дела: от 1 до 500 символов" });
+            const split = deps.splitSteps?.();
+            if (!split) return send(res, 503, { error: "Чтобы разбивать дела на шаги, подключите помощницу: нужен ключ Cloud.ru в Настройках." });
+            const steps = await split(b.text.trim());
+            return send(res, 200, { steps });
           }
           if (req.method === "GET" && p === "/api/organizer/plan") return send(res, 200, o.planToday());
           if (req.method === "GET" && p === "/api/organizer/time-blocks") return send(res, 200, o.timeBlocks(url.searchParams.get("day") ?? new Date().toISOString().slice(0,10)));

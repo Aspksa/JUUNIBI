@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prodDay, prodStats } from "../src/pages/prod-calendar";
+import { prodDay, prodStats } from "../src/prod-calendar";
 
 // Working days per month and the year's norms as published by КонсультантПлюс
 const OFFICIAL: Record<number, number[]> = {

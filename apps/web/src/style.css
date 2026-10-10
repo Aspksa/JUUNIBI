@@ -1165,3 +1165,45 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-goal-new{margin-top:10px}
 @media (max-width:1100px){.tasks-layout{grid-template-columns:minmax(0,1fr)}.tasks-side{position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}}
 @media (max-width:600px){.tasks-side{display:flex}.tasks-side-card{padding:12px}}
+
+/* «Дела»: automation — brief, evening review, steps, settings, dates from memory, holiday hint */
+.tasks-hint{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 2px 10px;color:var(--danger)}
+.tasks-hint[hidden]{display:none}
+.tasks-evening-host{display:grid;gap:10px;margin-bottom:16px}
+.tasks-evening-host:empty{display:none}
+.tasks-brief,.tasks-evening{padding:12px 16px;margin:0}
+.tasks-brief{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
+.tasks-brief-head{display:flex;align-items:center;gap:8px}
+.tasks-brief-head svg{color:var(--brand);flex:none}
+.tasks-brief-text{margin:8px 0 0;white-space:pre-line;line-height:1.5}
+.tasks-evening p{margin:10px 0 6px}
+.tasks-evening ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.tasks-evening-done li{color:var(--muted);text-decoration:line-through;padding-left:4px}
+.tasks-evening-open li{display:flex;align-items:center;gap:6px}
+.tasks-evening-open label{display:flex;align-items:baseline;gap:8px;min-width:0}
+.tasks-evening .row{margin-top:10px}
+.tasks-meta .tasks-rolled{color:var(--brand)}
+.tasks-split{display:flex;flex-direction:column;gap:8px;margin:4px 0 8px 34px;padding:10px 12px;border:1px dashed var(--line);border-radius:12px;background:var(--surface-2)}
+.tasks-split:not(:has(ol)){flex-direction:row;align-items:center}
+.tasks-split.error p{color:var(--danger)}
+.tasks-split p{margin:0}
+.tasks-split-list{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.tasks-split-list li{display:flex;align-items:center;gap:8px}
+.tasks-split-list .mem-input{flex:1;min-width:0}
+.tasks-side .tasks-split{margin:8px 0 0}
+.tasks-goal-add{display:flex;align-items:center;gap:6px}
+.tasks-goal-add>form{flex:1;min-width:0}
+.tasks-auto-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);cursor:pointer}
+.tasks-auto-row:first-of-type{border-top:0}
+.tasks-auto-row>span{display:flex;flex-direction:column;gap:1px;min-width:0}
+.tasks-auto-row small{font-size:.78rem}
+.tasks-auto-row select{max-width:46%}
+.tasks-auto-line{display:flex;align-items:center;gap:8px}
+.tasks-auto-line .tasks-auto-row{flex:1;min-width:0}
+.tasks-auto-line input[type=time]{width:auto}
+.tasks-auto .tasks-auto-line+.tasks-auto-row,.tasks-auto .tasks-auto-row+.tasks-auto-row{border-top:1px solid var(--line)}
+.tasks-dates{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.tasks-dates li{display:flex;align-items:center;gap:6px}
+.tasks-dates li>span{min-width:0;font-size:.9rem}
+.tasks-head>.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tasks-hint .btn{color:var(--fg)}

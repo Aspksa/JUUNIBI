@@ -94,6 +94,7 @@ describe("сводка дня", () => {
       await o.addReminder("завтра", "2026-10-10T09:00:00");
       await o.addNote("todo", "Дело 1"); const d2 = await o.addNote("todo", "Дело 2"); await o.addNote("note", "просто заметка");
       await o.setDone(d2.id, true);
+      await o.setAutomation({ brief: false }); // the morning brief has its own tests
       advance(5 * 3600_000); await o.tick(); // 10:00 — «утром» уже наступило
       const b = buildBrief({ now: Date.parse("2026-10-09T10:00:00"), reminders: o.listReminders(), notes: o.listNotes(), plansRunning: 2, memoryPending: 3, modulesFailed: ["scenes"], updateAvailable: true });
       expect(b.due.map((r) => r.text)).toEqual(["утром"]);

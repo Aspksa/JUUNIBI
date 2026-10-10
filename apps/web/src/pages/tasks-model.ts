@@ -2,8 +2,8 @@
 import type { Note, Reminder, Repeat } from "../api";
 
 export type TaskFilter = "all" | "todo" | "note" | "reminder";
-export const REPEAT_LABEL: Record<Repeat, string> = { daily: "каждый день", weekdays: "по будням", weekly: "каждую неделю", monthly: "каждый месяц", every3days: "каждые 3 дня" };
-export const REPEAT_OPTIONS: [Repeat | "none", string][] = [["none", "Один раз"], ["daily", "Каждый день"], ["weekdays", "По будням"], ["weekly", "Каждую неделю"], ["monthly", "Каждый месяц"], ["every3days", "Каждые 3 дня"]];
+export const REPEAT_LABEL: Record<Repeat, string> = { daily: "каждый день", weekdays: "по будням", weekly: "каждую неделю", monthly: "каждый месяц", every3days: "каждые 3 дня", yearly: "каждый год" };
+export const REPEAT_OPTIONS: [Repeat | "none", string][] = [["none", "Один раз"], ["daily", "Каждый день"], ["weekdays", "По будням"], ["weekly", "Каждую неделю"], ["monthly", "Каждый месяц"], ["every3days", "Каждые 3 дня"], ["yearly", "Каждый год"]];
 
 /** The value of a datetime-local input for tomorrow 09:00, in local time. */
 export function defaultReminderTime(now = new Date()): string {
@@ -33,6 +33,8 @@ export interface TaskView {
   /** Open to-dos without a date: important first, then oldest first. */
   someday: Note[];
   notes: Note[];
+  /** Today's morning brief written by the automation, shown apart from the notes. */
+  brief?: Note;
   /** Subtasks shown under their to-do (only while not searching). */
   children: Record<string, Note[]>;
   finished: { todos: Note[]; reminders: Reminder[] };
@@ -68,20 +70,22 @@ export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter
     due: show("reminder") ? org.reminders.filter((r) => r.status === "due" && hit(r.text)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) : [],
     overdue: [], today: [], tomorrow: [], later: [],
     someday: open.filter((n) => !n.dueAt).sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || Date.parse(a.createdAt) - Date.parse(b.createdAt)),
-    notes: show("note") ? org.notes.filter((n) => n.kind === "note" && hit(n.text)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)) : [],
+    notes: show("note") ? org.notes.filter((n) => n.kind === "note" && !n.auto && hit(n.text)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)) : [],
     children,
     finished: {
       todos: show("todo") ? org.notes.filter((n) => n.kind === "todo" && n.done && !isChild(n) && hit(n.text)).sort((a, b) => Date.parse(b.completedAt ?? b.createdAt) - Date.parse(a.completedAt ?? a.createdAt)).slice(0, 30) : [],
       reminders: show("reminder") ? org.reminders.filter((r) => r.status === "done" && hit(r.text)).sort((a, b) => Date.parse(b.firedAt ?? b.at) - Date.parse(a.firedAt ?? a.at)).slice(0, 20) : [],
     },
     counts: {
-      all: org.notes.filter((n) => !(n.kind === "todo" && n.done)).length + org.reminders.filter((r) => r.status !== "done").length,
+      all: org.notes.filter((n) => !(n.kind === "todo" && n.done) && !n.auto).length + org.reminders.filter((r) => r.status !== "done").length,
       todo: org.notes.filter((n) => n.kind === "todo" && !n.done).length,
-      note: org.notes.filter((n) => n.kind === "note").length,
+      note: org.notes.filter((n) => n.kind === "note" && !n.auto).length,
       reminder: org.reminders.filter((r) => r.status !== "done").length,
     },
     summary: { today: 0, overdue: 0, doneToday: org.notes.filter((n) => n.kind === "todo" && n.done && n.completedAt && localDay(n.completedAt) === todayKey).length },
   };
+  const brief = org.notes.find((n) => n.auto === "brief");
+  if (brief && localDay(brief.createdAt) === todayKey) view.brief = brief;
   for (const it of timed) {
     const key = localDay(it.at);
     // a to-do is overdue once its moment has passed; a planned reminder fires by itself, so it stays in its day
@@ -95,4 +99,52 @@ export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter
   view.summary.today = allOpen.filter((n) => Date.parse(n.dueAt!) >= now.getTime() && localDay(n.dueAt!) === todayKey).length
     + org.reminders.filter((r) => r.status === "scheduled" && localDay(r.at) === todayKey).length;
   return view;
+}
+
+const MONTHS = ["январ", "феврал", "март", "апрел", "ма", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"];
+const DATE_WORDS = /(день рождени|дня рождени|днём рождени|днем рождени|(?:^|[^а-яё])др(?![а-яё])|годовщин|юбиле|именин|свадьб)/i;
+/** A date from memory that could become a yearly reminder. */
+export interface MemoryDate { id: string; text: string; month: number; day: number; at: string }
+/**
+ * Birthdays, anniversaries and other yearly dates found in memory («у мамы день рождения 12 марта», «годовщина 05.06»),
+ * each with its next 09:00. Skips the ones already turned into a yearly reminder with the same text.
+ */
+export function memoryDates(memory: { id: string; text: string; status?: string }[], reminders: Reminder[], now = new Date()): MemoryDate[] {
+  const have = new Set(reminders.filter((r) => r.repeat === "yearly").map((r) => r.text.trim().toLowerCase()));
+  const out: MemoryDate[] = [];
+  for (const m of memory) {
+    if (m.status === "pending" || !DATE_WORDS.test(m.text)) continue;
+    let day = 0, month = 0;
+    const w = /(?:^|[^\d])(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)/i.exec(m.text);
+    if (w) { day = Number(w[1]); month = MONTHS.findIndex((x) => w[2]!.toLowerCase().startsWith(x)) + 1; }
+    else {
+      const d = /(?:^|[^\d.])(\d{1,2})\.(\d{1,2})(?:\.(?:\d{4}|\d{2}))?(?![\d.]*\d)/.exec(m.text);
+      if (d) { day = Number(d[1]); month = Number(d[2]); }
+    }
+    if (!day || month < 1 || month > 12) continue;
+    // 29 February comes back on 28 February in other years
+    const at = (y: number) => { const last = new Date(y, month, 0).getDate(); return new Date(y, month - 1, Math.min(day, last), 9, 0); };
+    if (day > new Date(2024, month, 0).getDate()) continue;
+    let next = at(now.getFullYear());
+    if (next.getTime() <= now.getTime()) next = at(now.getFullYear() + 1);
+    const text = m.text.trim().slice(0, 200);
+    if (have.has(text.toLowerCase())) continue;
+    out.push({ id: m.id, text, month, day, at: next.toISOString() });
+  }
+  return out;
+}
+
+/** The evening review: what got done today and what is still open for today or overdue. */
+export function daySummary(notes: Note[], now = new Date()): { done: Note[]; open: Note[] } {
+  const today = localDay(now);
+  const todos = notes.filter((n) => n.kind === "todo" && !n.auto);
+  return {
+    done: todos.filter((n) => n.done && n.completedAt && localDay(n.completedAt) === today),
+    open: todos.filter((n) => !n.done && n.dueAt && localDay(n.dueAt) <= today).sort((a, b) => Date.parse(a.dueAt!) - Date.parse(b.dueAt!)),
+  };
+}
+/** The same time of day on the next day (a date-only to-do stays date-only). */
+export function tomorrowSameTime(iso: string, now = new Date()): string {
+  const d = new Date(iso), t = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, d.getHours(), d.getMinutes());
+  return t.toISOString();
 }

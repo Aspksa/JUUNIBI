@@ -24,6 +24,7 @@ import { Organizer, buildBrief } from "./organizer";
 import { OpenableUrls } from "./web-access";
 import { EvalHistory, EvalService } from "./evals";
 import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
+import { composeBrief, splitIntoSteps } from "./task-helpers";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -210,6 +211,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     catch (e) { if (!opts?.signal?.aborted) { modules.fail("assistant", (e as Error).message); noteCloudFailure((e as Error).message); } throw e; }
   } };
   sceneLlm = llm;
+  organizer.composeBrief = (facts) => composeBrief(llm, facts).catch(() => null);
   learningProvider = raw;
   learningKey = apiKey;
   embeddingKey = { apiKey, ...(baseUrl ? { baseUrl } : {}) };
@@ -350,7 +352,8 @@ const appDeps: AppDeps = {
   knowledge,
   scenes,
   modules: () => modules.list(),
-  settings, organizer, brief: briefData, evals, noteUserText: (t: string) => openable.noteText(t),
+  settings, organizer, brief: briefData,
+  splitSteps: () => { const l = sceneLlm; return l ? (t: string, signal?: AbortSignal) => splitIntoSteps(l, t, signal) : undefined; }, evals, noteUserText: (t: string) => openable.noteText(t),
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),
     title: (n) => modules.list().find((m) => m.name === n)?.title ?? n,

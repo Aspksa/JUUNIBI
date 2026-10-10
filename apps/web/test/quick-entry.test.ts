@@ -36,7 +36,13 @@ describe("быстрый ввод", () => {
     expect(parseQuick("по будням в 10 стендап", now)).toMatchObject({ repeat: "weekdays", at: at(10, 10), text: "стендап" });
     expect(parseQuick("каждый пн в 9 планёрка", now)).toMatchObject({ repeat: "weekly", at: at(12, 9), text: "планёрка" });
     expect(parseQuick("каждую пятницу в 18 отчёт", now)).toMatchObject({ repeat: "weekly", at: at(9, 18) });
-    expect(parseQuick("ежемесячно оплатить квартиру", now)).toMatchObject({ repeat: "monthly", at: at(10, 9) });
+    // a repeat without a time is a repeating to-do with a date; with a time or «напомни» it is a reminder
+    expect(parseQuick("ежемесячно оплатить квартиру", now)).toEqual({ kind: "todo", text: "оплатить квартиру", repeat: "monthly", at: at(9, 9), dateOnly: true });
+    expect(parseQuick("каждый месяц 25-го оплатить квартиру", now)).toEqual({ kind: "todo", text: "оплатить квартиру", repeat: "monthly", at: at(25, 9), dateOnly: true });
+    expect(parseQuick("каждый месяц 5 числа сдать показания", now)).toMatchObject({ kind: "todo", repeat: "monthly", at: new Date(2026, 10, 5, 9).toISOString() });
+    expect(parseQuick("каждый пн вынести мусор", now)).toMatchObject({ kind: "todo", repeat: "weekly", at: at(12, 9), dateOnly: true });
+    expect(parseQuick("напомни ежемесячно оплатить квартиру", now)).toMatchObject({ kind: "reminder", repeat: "monthly" });
+    expect(parseQuick("каждый год 5 марта день рождения мамы", now)).toMatchObject({ kind: "todo", repeat: "yearly", text: "день рождения мамы", at: new Date(2027, 2, 5, 9).toISOString() });
   });
   it("важность и проект", () => {
     expect(parseQuick("! дописать отчёт #работа", now)).toEqual({ kind: "todo", text: "дописать отчёт", priority: "high", project: "работа" });

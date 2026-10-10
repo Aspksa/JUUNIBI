@@ -70,3 +70,17 @@ export function prodStats(period: string): ProdStats | undefined {
   const norm = (week: number) => Math.round((workDays * week / 5 - shortDays) * 100) / 100;
   return { workDays, offDays, shortDays, hours: { 40: norm(40), 36: norm(36), 24: norm(24) } };
 }
+
+/** A working day by the production calendar; for a year without data, Monday to Friday. */
+export function isWorkday(d: Date): boolean {
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const p = prodDay(key);
+  if (p) return p.kind === "work" || p.kind === "short";
+  return d.getDay() !== 0 && d.getDay() !== 6;
+}
+/** The first working day on or after `d` (same time of day). */
+export function nextWorkday(d: Date): Date {
+  const x = new Date(d);
+  for (let i = 0; i < 30 && !isWorkday(x); i++) x.setDate(x.getDate() + 1);
+  return x;
+}

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { Tool } from "@juunibi/assistant";
 import type { AssistantSettings } from "./assistant-settings";
-import type { Brief, Organizer } from "./organizer";
+import type { Brief, Note, Organizer } from "./organizer";
 import { listDir, readText, searchText, writeText } from "./safe-files";
 import { wikiRead, wikiSearch } from "./reference";
 import { OpenableUrls, readPage, webSearch } from "./web-access";
@@ -69,18 +69,41 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
     { name: "wiki_read", risk: "read", description: "Прочитать статью русской Википедии по точному названию (из wiki_search). Ссылайся на url." + DATA,
       parameters: { type: "object", properties: { title: str("Точное название статьи", { maxLength: 200 }) }, required: ["title"] },
       run: async (a) => (await wikiRead(a.title, d.fetcher)) ?? { error: "Статья не найдена" } },
-    { name: "list_notes", risk: "read", description: "Показать заметки и дела владельца.", parameters: { type: "object", properties: {} },
-      run: () => d.organizer.listNotes().map((n) => ({ id: n.id, kind: n.kind, text: n.text, done: n.done })) },
-    { name: "add_note", risk: "write", description: "Добавить заметку или дело в список владельца. Требует подтверждения.",
-      parameters: { type: "object", properties: { text: str("Текст, до 500 символов", { maxLength: 500 }), kind: { type: "string", enum: ["note", "todo"], description: "note — заметка, todo — дело" } }, required: ["text"] },
-      run: (a) => d.organizer.addNote(a.kind ?? "note", a.text) },
+    { name: "list_notes", risk: "read", description: "Показать дела и заметки владельца: сроки (dueAt, ISO), важность, повтор, выполнено ли. Для вопросов «что у меня на сегодня/на неделе/что просрочено» выбери period. Время показывай владельцу по его часовому поясу из системного сообщения." + DATA,
+      parameters: { type: "object", properties: { period: { type: "string", enum: ["all", "today", "week", "overdue", "open", "notes"], description: "all — всё; today — срок сегодня; week — срок в ближайшие 7 дней; overdue — просроченные; open — все невыполненные дела; notes — только заметки" } } },
+      run: (a) => listTasks(d.organizer, typeof a.period === "string" ? a.period : "all") },
+    { name: "add_note", risk: "write", description: "Добавить дело или заметку. Если владелец в разговоре упоминает, что ему нужно что-то сделать («надо завтра…», «не забыть в пятницу…»), один раз коротко предложи записать это в дела и после согласия вызови add_note с kind=todo и сроком. Требует подтверждения.",
+      parameters: { type: "object", properties: {
+        text: str("Текст, до 500 символов", { maxLength: 500 }),
+        kind: { type: "string", enum: ["note", "todo"], description: "note — заметка, todo — дело" },
+        due_at: str("Срок дела, ISO 8601 с часовым поясом; для срока без времени — 23:59 того дня"),
+        priority: { type: "string", enum: ["normal", "high"], description: "high — важное" },
+        repeat: { type: "string", enum: ["none", "daily", "weekdays", "weekly", "monthly", "yearly"], description: "Повторяющееся дело: после отметки появится следующее" } }, required: ["text"] },
+      run: (a) => (a.kind ?? "note") === "todo" || a.due_at || a.repeat ? d.organizer.addTask(a.text, { dueAt: a.due_at, priority: a.priority, repeat: a.repeat }) : d.organizer.addNote("note", a.text) },
+    { name: "update_task", risk: "write", description: "Изменить дело: перенести срок («перенеси отчёт на пятницу»), поменять текст или важность, отметить выполненным или вернуть. id бери из list_notes. Требует подтверждения.",
+      parameters: { type: "object", properties: {
+        id: str("Идентификатор дела из list_notes"),
+        due_at: str("Новый срок, ISO 8601 с часовым поясом; пустая строка — убрать срок"),
+        text: str("Новый текст", { maxLength: 500 }),
+        priority: { type: "string", enum: ["normal", "high"] },
+        done: { type: "boolean", description: "true — выполнено, false — вернуть в работу" } }, required: ["id"] },
+      run: async (a) => {
+        const id = String(a.id);
+        if (typeof a.text === "string" && a.text.trim()) await d.organizer.editNote(id, a.text);
+        const patch: Record<string, unknown> = {};
+        if (typeof a.due_at === "string") patch.dueAt = a.due_at || null;
+        if (a.priority === "high" || a.priority === "normal") patch.priority = a.priority;
+        let n = Object.keys(patch).length ? await d.organizer.updateTask(id, patch) : undefined;
+        if (typeof a.done === "boolean") n = await d.organizer.setDone(id, a.done);
+        return n ?? d.organizer.listNotes().find((x) => x.id === id) ?? { error: "Дело не найдено" };
+      } },
     { name: "complete_todo", risk: "write", description: "Отметить дело выполненным. Требует подтверждения.",
       parameters: { type: "object", properties: { id: str("Идентификатор дела из list_notes") }, required: ["id"] }, run: (a) => d.organizer.setDone(String(a.id), true) },
     { name: "list_reminders", risk: "read", description: "Показать напоминания владельца.", parameters: { type: "object", properties: {} },
       run: () => d.organizer.listReminders().map((r) => ({ id: r.id, text: r.text, at: r.at, status: r.status, ...(r.repeat ? { repeat: r.repeat } : {}) })) },
     { name: "add_reminder", risk: "write", description: "Поставить напоминание. Время — по текущему времени из системного сообщения, в формате ISO 8601 с часовым поясом (например 2026-10-10T10:00:00+03:00). Для повторяющихся («каждый день в 9», «по будням», «каждую среду») укажи repeat и время первого раза. Требует подтверждения.",
       parameters: { type: "object", properties: { text: str("О чём напомнить", { maxLength: 500 }), at: str("Когда (для повторяющегося — первый раз), ISO 8601 с часовым поясом"),
-        repeat: { type: "string", enum: ["none", "daily", "weekdays", "weekly"], description: "none — один раз; daily — каждый день; weekdays — по будням; weekly — каждую неделю в тот же день" } }, required: ["text", "at"] },
+        repeat: { type: "string", enum: ["none", "daily", "weekdays", "weekly", "monthly", "every3days", "yearly"], description: "none — один раз; daily — каждый день; weekdays — по будням (без праздников); weekly — каждую неделю в тот же день; monthly — каждый месяц того же числа; every3days — каждые 3 дня; yearly — каждый год (дни рождения)" } }, required: ["text", "at"] },
       run: (a) => d.organizer.addReminder(a.text, a.at, a.repeat) },
     { name: "cancel_reminder", risk: "write", description: "Отменить напоминание (повторяющееся больше не сработает). Требует подтверждения.",
       parameters: { type: "object", properties: { id: str("Идентификатор из list_reminders") }, required: ["id"] }, run: (a) => d.organizer.dismissReminder(String(a.id)) },
@@ -89,3 +112,24 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
   ];
 }
 export const defaultBackupDir = (dataDir: string) => path.join(dataDir, "file-backups");
+
+/** Dates as the owner sees them (local time) plus the raw ISO, so the model can both say and change them. */
+function listTasks(o: Organizer, period: string) {
+  const now = Date.now(), start = new Date(now); start.setHours(0, 0, 0, 0);
+  const t0 = start.getTime(), dayEnd = t0 + 86_400_000, weekEnd = t0 + 7 * 86_400_000;
+  const due = (n: Note) => n.dueAt ? Date.parse(n.dueAt) : NaN;
+  const pick = (n: Note) => {
+    if (period === "notes") return n.kind === "note";
+    if (n.kind === "note") return period === "all";
+    if (period === "open") return !n.done;
+    if (period === "today") return !n.done && due(n) >= t0 && due(n) < dayEnd;
+    if (period === "week") return !n.done && due(n) >= t0 && due(n) < weekEnd;
+    if (period === "overdue") return !n.done && due(n) < now;
+    return true;
+  };
+  return o.listNotes().filter((n) => !n.auto && pick(n)).slice(0, 100).map((n) => ({
+    id: n.id, kind: n.kind, text: n.text, done: n.done,
+    ...(n.dueAt ? { dueAt: n.dueAt, due: new Date(n.dueAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) } : {}),
+    ...(n.priority === "high" ? { important: true } : {}), ...(n.repeat ? { repeat: n.repeat } : {}), ...(n.parentId ? { parentId: n.parentId } : {}),
+  }));
+}

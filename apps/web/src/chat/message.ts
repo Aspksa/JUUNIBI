@@ -5,6 +5,7 @@ import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
 import { formatBytes, stepLabel } from "./helpers";
 import { speechSupported } from "./voice";
+import { toTasksButton } from "./to-tasks";
 
 export interface MsgCtx {
   convId: string; streaming: boolean; isLast: boolean; busy: boolean; editing: boolean; speaking: boolean;
@@ -54,7 +55,7 @@ function fillUser(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
   if (m.content) root.append(el("div", { cls: "bubble", textContent: m.content }));
   const actions = el("div", { cls: "msg-actions" }, el("span", { cls: "msg-time", textContent: time(m.at) }), copyButton(m.content));
   if (!c.busy) actions.append(iconButton("edit", "Изменить сообщение", () => c.onEdit(m.id), "icon-btn sm"));
-  if (m.content.trim()) actions.append(iconButton("memory", "Запомнить это", () => c.onRemember(m.content), "icon-btn sm"));
+  if (m.content.trim()) actions.append(iconButton("memory", "Запомнить это", () => c.onRemember(m.content), "icon-btn sm"), toTasksButton(m.content, () => root));
   root.append(actions);
 }
 
@@ -115,7 +116,7 @@ function fillAssistant(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
     if (c.streaming) return [];
     const actions = el("div", { cls: "msg-actions" }, el("span", { cls: "msg-time", textContent: time(m.at) }));
     if (m.content) {
-      actions.append(copyButton(m.content));
+      actions.append(copyButton(m.content), toTasksButton(m.content, () => actions.parentElement));
       if (m.turnId) for (const [name, label, r] of [["up", "Хороший ответ", 1], ["down", "Плохой ответ", -1]] as const) {
         const b = iconButton(name, label, () => void c.ctl.rate(c.convId, m, r), "icon-btn sm");
         b.setAttribute("aria-pressed", String(m.rating === r));
