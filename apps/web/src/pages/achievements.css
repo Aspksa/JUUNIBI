@@ -288,3 +288,15 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .tail-flame{fill:#ef4a21;filter:drop-shadow(0 0 5px #f97316)}
 .tails-svg .tail:hover .tail-body,.tails-svg .tail:focus-visible .tail-body,.tails-svg .tail.sel .tail-body{stroke:#ff803a}
 @media (prefers-reduced-motion:reduce){.ach-tail-row,.ach-tail-bar i{transition:none}}
+
+/* Explainable seven-day workload forecast in the task sidebar. */
+.tasks-forecast{display:grid;gap:8px}
+.tasks-forecast h2{margin:0;font-size:1rem}
+.tasks-forecast p{margin:0 0 4px}
+.tasks-forecast-day{display:grid;grid-template-columns:40px minmax(24px,1fr) auto auto;align-items:center;gap:7px;min-width:0;font-variant-numeric:tabular-nums}
+.tasks-forecast-day time{font-size:.8rem;color:var(--muted)}
+.tasks-forecast-day small{font-size:.73rem;white-space:nowrap}
+.tasks-forecast-day b{font-size:.72rem;color:#e75a30;white-space:nowrap}
+.tasks-forecast-track{height:8px;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.tasks-forecast-track i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#f19b4a,#de5c28)}
+.tasks-forecast-day.overload .tasks-forecast-track i{background:linear-gradient(90deg,#dc5129,#af2424)}
