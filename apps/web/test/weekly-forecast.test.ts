@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { forecastWeek } from "../src/pages/weekly-forecast";
+import { forecastWeek, simulateWeek } from "../src/pages/weekly-forecast";
 import type { Note } from "../src/api";
 const task = (id: string, date: string, minutes?: number, done = false): Note => ({
   id, kind: "todo", text: id, createdAt: "2026-10-01T12:00:00.000Z",
@@ -20,5 +20,23 @@ describe("seven-day productivity forecast", () => {
   });
   it("does not mutate input", () => {
     const n=[task("x","2026-10-12",60)];forecastWeek(n,new Date(2026,9,12));expect(n[0]?.estimateMinutes).toBe(60);
+  });
+});
+
+describe("hypothetical future scenarios", () => {
+  it("adds only to workdays and leaves baseline unchanged", () => {
+    const base = forecastWeek([], new Date(2026,9,12));
+    const hypothetical = simulateWeek(base, 60);
+    expect(hypothetical.extra).toBe(300);
+    expect(hypothetical.projected).toBe(300);
+    expect(hypothetical.overloadedDays).toBe(0);
+    expect(base.every(d=>d.planned===0)).toBe(true);
+  });
+  it("reports overload without mutating source data", () => {
+    const base = forecastWeek([task("huge","2026-10-12",470)],new Date(2026,9,12));
+    const h=simulateWeek(base,60);
+    expect(h.days[0]).toMatchObject({planned:530,overload:true,excess:50});
+    expect(base[0]?.planned).toBe(470);
+    expect(simulateWeek(base,Number.NaN).extra).toBe(0);
   });
 });
