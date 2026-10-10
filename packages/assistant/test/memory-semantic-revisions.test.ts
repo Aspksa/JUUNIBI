@@ -13,7 +13,9 @@ describe("semantic preference revisions", () => {
       return calls === 1 ? { content: "Хорошо", toolCalls: [] }
         : { content: JSON.stringify({ revisesId: old.id }), toolCalls: [] };
     } };
-    await new Assistant({ llm, memory }).ask("Я предпочитаю подробные ответы");
+    const assistant = new Assistant({ llm, memory });
+    await assistant.ask("Я предпочитаю подробные ответы");
+    await assistant.idle();
     const pending = await memory.list("pending");
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({ revisesId: old.id, status: "pending" });
@@ -27,7 +29,9 @@ describe("semantic preference revisions", () => {
     const old = await memory.add("preference", "тёмную тему", "active");
     const llm: LlmProvider = { chat: async (messages) =>
       ({ content: messages.length === 2 ? JSON.stringify({ revisesId: old.id }) : "Хорошо", toolCalls: [] }) };
-    await new Assistant({ llm, memory }).ask("Я предпочитаю горячий чай");
+    const assistant = new Assistant({ llm, memory });
+    await assistant.ask("Я предпочитаю горячий чай");
+    await assistant.idle();
     expect((await memory.list("pending"))[0]?.revisesId).toBeUndefined();
     expect((await memory.list("active"))[0]?.id).toBe(old.id);
   });
