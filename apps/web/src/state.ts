@@ -1,5 +1,5 @@
 import { Store, attempt } from "@juunibi/core";
-import { ACCENT_IDS, type AccentId } from "./accents";
+import { ACCENT_IDS, DEFAULT_CUSTOM_ACCENT, isHexColor, type AccentId } from "./accents";
 import { api, type AssistantSettings, type Brief, type RepeatSuggestion, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateHistory, type UpdateStatus } from "./api";
 
 export type Route = "tasks" | "memory" | "quality" | "modules" | "brain" | "mobile" | "update" | "settings";
@@ -23,9 +23,16 @@ export interface AppState {
   updateWarnings: string[];
   theme: Theme; showScenes: boolean;
   chatOpen: boolean; chatMax: boolean; chatDensity: "comfortable" | "compact"; chatFont: "sm" | "md" | "lg"; accent: AccentId;
+  /** The owner's own accent colour (#rrggbb), used when `accent` is "custom". */
+  customAccent: string;
+  /** Corners of cards and buttons, and the size of the whole interface. */
+  uiRadius: UiRadius; uiScale: UiScale;
 }
+export type UiRadius = "sharp" | "normal" | "round";
+export type UiScale = "sm" | "md" | "lg";
 
-const KEY = "juunibi:ui:v3";
+export const UI_PREFS_KEY = "juunibi:ui:v3";
+const KEY = UI_PREFS_KEY;
 const read = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "{}") as Partial<AppState>);
 const saved: Partial<AppState> = read.ok && read.value && typeof read.value === "object" ? read.value : {};
 const pick = <T extends string>(v: unknown, ok: readonly T[], d: T): T => (ok.includes(v as T) ? (v as T) : d);
@@ -37,6 +44,8 @@ export const app = new Store<AppState>({
   theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false,
   chatOpen: false, chatMax: saved.chatMax === true,
   chatDensity: pick(saved.chatDensity, ["comfortable", "compact"], "comfortable"), chatFont: pick(saved.chatFont, ["sm", "md", "lg"], "md"), accent: pick(saved.accent, ACCENT_IDS, "gold"),
+  customAccent: isHexColor(saved.customAccent) ? saved.customAccent : DEFAULT_CUSTOM_ACCENT,
+  uiRadius: pick(saved.uiRadius, ["sharp", "normal", "round"], "normal"), uiScale: pick(saved.uiScale, ["sm", "md", "lg"], "md"),
 });
 
 export function routeFromHash(): Route {
@@ -44,7 +53,7 @@ export function routeFromHash(): Route {
   return (ROUTES as string[]).includes(h) ? (h as Route) : ROUTE_ALIASES[h] ?? "tasks";
 }
 export function persistPrefs(s: AppState) {
-  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent })));
+  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent, customAccent: s.customAccent, uiRadius: s.uiRadius, uiScale: s.uiScale })));
 }
 
 export async function refreshStatus() {

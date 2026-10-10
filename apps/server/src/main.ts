@@ -22,7 +22,8 @@ import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
 import { AssistantSettingsStore, DEFAULT_CHAT_MODEL, instructionsPrompt } from "./assistant-settings";
 import { Organizer, buildBrief } from "./organizer";
-import { OpenableUrls } from "./web-access";
+import { OpenableUrls, webSearch } from "./web-access";
+import { runSelfTest } from "./self-test";
 import { EvalHistory, EvalService } from "./evals";
 import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
 import { composeBrief, splitIntoSteps } from "./task-helpers";
@@ -341,6 +342,15 @@ const appDeps: AppDeps = {
   cloudStatus: () => ({ configured: cloudConfigured, model: chatModel() }),
   cloudModels: async () => { if (!learningProvider) throw Object.assign(new Error("Сначала укажите ключ Cloud.ru"), { status: 409 }); return learningProvider.listModels(); },
   saveCloud,
+  selfTest: () => {
+    const c = settings.get(), p = learningProvider;
+    return runSelfTest({
+      settings: { model: c.chat.model, fallbackModel: c.chat.fallbackModel, embeddings: c.embeddings.enabled },
+      ...(p ? { listModels: () => p.listModels(), ping: (m: string) => p.ping(m) } : {}),
+      embeddings: () => memory.probeEmbedding(),
+      ...(c.web ? { search: () => webSearch("Википедия", c.webSearch) } : {}),
+    });
+  },
   memory,
   approvals: approvalGate,
   updater,

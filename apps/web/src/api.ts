@@ -150,6 +150,8 @@ export const api = {
   reflect: (turnId: string) => attemptAsync(() => call<MemoryItem[]>("/api/reflect", post({ turnId }))),
   assistantSettings: () => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings")),
   saveAssistantSettings: (patch: SettingsPatch) => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings", post(patch))),
+  settingsDefaults: () => attemptAsync(() => call<AssistantSettings>("/api/assistant/settings/defaults")),
+  selfTest: () => attemptAsync(() => call<{ checks: import("./pages/settings-parts").CheckResult[] }>("/api/assistant/selftest", post({}))),
   embeddingTest: () => attemptAsync(() => call<{ ok: boolean; dims?: number; ms: number; error?: string }>("/api/assistant/embedding-test", post({}))),
   embeddingDiagnostics: () => attemptAsync(() => call<EmbeddingDiagnostics>("/api/memory/diagnostics")),
   memoryPin: (id: string, pinned: boolean) => attemptAsync(() => call<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/pin`, post({ pinned }))),
