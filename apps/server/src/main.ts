@@ -73,22 +73,11 @@ let cloudConfigured = false;
 let sceneLlm: LlmProvider | undefined;
 const knowledge = new KnowledgeLedger(path.join(dataDir, "verified-knowledge.json"));
 let learningKey: string | undefined;
+let learningProvider: CloudRuProvider | undefined;
 const learning = new AutonomousLearning(path.join(dataDir, "autonomous-learning.json"), async (question, maxTokens) => {
-  if (!learningKey) throw new Error("Cloud.ru не настроен");
-  const base = (process.env.CLOUDRU_BASE_URL ?? "https://foundation-models.api.cloud.ru/v1").replace(/\/$/, "");
-  const ctl = new AbortController();
-  const timeout = setTimeout(() => ctl.abort(), 25000);
-  try {
-    const response = await fetch(base + "/chat/completions", {
-      method: "POST", signal: ctl.signal,
-      headers: { "Authorization": "Bearer " + learningKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: MODEL, messages: [{ role: "user", content: question }],
-        max_tokens: maxTokens, temperature: 0.3 }),
-    });
-    if (!response.ok) throw new Error("Cloud.ru status " + response.status);
-    const json = await response.json() as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
-    return { text: json.choices?.[0]?.message?.content ?? "", tokens: json.usage?.total_tokens ?? 1500 };
-  } finally { clearTimeout(timeout); }
+  if (!learningProvider) throw new Error("Cloud.ru не настроен");
+  const answer = await learningProvider.chat([{ role: "user", content: question }], { maxTokens, temperature: 0.3 });
+  return { text: answer.content ?? "", tokens: Math.max(1, Math.ceil((question.length + (answer.content ?? "").length) / 3)) };
 }, () => moduleList().map(m => m.name), async fact => {
   knowledge.addVerified({ topic: "математика", ...fact, evidence: "deterministic-test" });
   await knowledge.flush();
@@ -185,6 +174,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     catch (e) { if (!opts?.signal?.aborted) modules.fail("assistant", (e as Error).message); throw e; }
   } };
   sceneLlm = llm;
+  learningProvider = raw;
   learningKey = apiKey;
   embeddingKey = { apiKey, ...(baseUrl ? { baseUrl } : {}) };
   applyEmbeddings();

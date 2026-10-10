@@ -13,7 +13,7 @@ describe("learning engine fixes", () => {
    const learner = new AutonomousLearning(filename, vi.fn(async () => { throw new Error("Cloud.ru status 401 token=secret"); }), () => []);
    expect(await learner.tick()).toEqual({ok:false});
    const status = learner.status();
-   expect(status.lastError).toBe("Авторизация Cloud.ru отклонена");
+   expect(status.lastError).toBe("Авторизация Cloud.ru отклонена (HTTP 401)");
    expect(status.lastAttemptAt).toMatch(/^\d{4}-/);
    expect(JSON.stringify(status)).not.toContain("secret");
    const other = new AutonomousLearning(filename, vi.fn(), () => []);

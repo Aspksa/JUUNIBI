@@ -8,7 +8,7 @@ export interface Message {
 export interface ToolSpec { name: string; description: string; parameters: object }
 export interface LlmResponse { content: string | null; toolCalls: ToolCall[] }
 export interface ChatOptions {
-  tools?: ToolSpec[]; signal?: AbortSignal; temperature?: number;
+  tools?: ToolSpec[]; signal?: AbortSignal; temperature?: number; maxTokens?: number;
   /** If set, the provider streams and calls this with each text fragment as it arrives. */
   onText?: (text: string) => void;
 }
@@ -66,6 +66,7 @@ export class CloudRuProvider implements LlmProvider {
         })) } : {}),
       })),
       temperature: opts.temperature ?? 0.3,
+      ...(opts.maxTokens !== undefined ? { max_tokens: opts.maxTokens } : {}),
       ...(opts.onText ? { stream: true } : {}),
       ...(opts.tools?.length
         ? { tools: opts.tools.map((t) => ({ type: "function", function: t })), tool_choice: "auto" }
