@@ -5,6 +5,7 @@ This is an additive archive, not a replacement for the live organizer JSON.
 Run: python scripts/archive-sqlite.py [--data-dir data] [--db data/juunibi-history.sqlite3]
 """
 import argparse
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -36,7 +37,7 @@ def migrate(data_dir: Path, db: Path):
     db.parent.mkdir(parents=True, exist_ok=True)
     if db.exists():
         # A copy is taken before any schema or data changes.
-        with sqlite3.connect(db) as source, sqlite3.connect(str(db) + ".bak") as backup:
+        with closing(sqlite3.connect(db)) as source, closing(sqlite3.connect(str(db) + ".bak")) as backup:
             source.backup(backup)
     conn = sqlite3.connect(db)
     try:
