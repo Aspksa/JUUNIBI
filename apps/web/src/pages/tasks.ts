@@ -1,6 +1,6 @@
 /**
  * "Дела" — the start page: quick entry in one line, one timeline of to-dos and reminders by day,
- * notes, and planning tools (day plan, calendar, goals, time plan) folded below.
+ * notes; beside it (below on a phone) a calendar with the production calendar, the day plan and goals.
  */
 import { api, type Note, type Reminder, type Repeat } from "../api";
 import { el, icon, iconButton } from "../dom";
@@ -13,11 +13,9 @@ import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-
 import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, isDateOnly, localDay, toLocalInput, type TaskFilter, type TimedItem } from "./tasks-model";
 
 type Mission = { id: string; title: string; description: string; status: "active" | "paused" | "complete"; total: number; done: number; percent: number; blocked: number; next: { id: string; text: string; reason: string } | null; stages: { id: string; text: string; done: boolean }[] };
-type PlanTab = "plan" | "calendar" | "goals" | "time";
 const KINDS: [QuickKind, string][] = [["auto", "Авто"], ["todo", "Дело"], ["reminder", "Напоминание"], ["note", "Заметка"]];
-const TABS: [PlanTab, string][] = [["plan", "План дня"], ["calendar", "Календарь"], ["goals", "Цели"], ["time", "План времени"]];
-/** Kept across re-renders and visits: filter, search, the kind of the new entry and the planning tab. */
-const UI = { filter: "all" as TaskFilter, query: "", kind: "auto" as QuickKind, tab: "plan" as PlanTab, planOpen: false, month: "", day: "" };
+/** Kept across re-renders and visits: filter, search, the kind of the new entry, the calendar month and day. */
+const UI = { filter: "all" as TaskFilter, query: "", kind: "auto" as QuickKind, month: "", day: "" };
 /** Deletions waiting for their "Отменить" window to pass; hidden from the list meanwhile. */
 const pendingDelete = new Set<string>();
 const UNDO_MS = 6000;
@@ -87,14 +85,16 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
   const summary = el("p", { cls: "muted tasks-summary" });
   const attHost = el("div", { cls: "tasks-attn" });
-  const planBody = el("div", { cls: "tasks-plan-body" });
+  const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
+  const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
+  const goalsHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Цели" } });
 
   const load = async () => {
     const [r, m] = await Promise.all([api.organizer(), api.missions()]);
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     if (m.ok) missions = m.value;
     render();
-    if (UI.planOpen) void renderPlan();
+    void renderSide();
   };
   /** Runs a change, reports a failure, reloads the list and the reminder badge. */
   const act = async (run: () => Promise<{ ok: boolean; error?: { message: string } }>, ok?: string, undo?: () => void) => {
@@ -338,59 +338,64 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     if (sig !== attSig) { attSig = sig; renderAttention(s); }
   });
 
-  // ---------- planning: day plan, calendar, goals, time plan (loaded only when opened) ----------
-  const tabs = el("div", { cls: "segmented", attrs: { role: "tablist", "aria-label": "Планирование" } });
-  const syncTabs = () => tabs.replaceChildren(...TABS.map(([id, label]) => {
-    const b = el("button", { type: "button", textContent: label, attrs: { role: "tab", "aria-selected": String(UI.tab === id), "aria-checked": String(UI.tab === id) } });
-    b.addEventListener("click", () => { UI.tab = id; syncTabs(); void renderPlan(); });
-    return b;
-  }));
-  syncTabs();
-  async function renderPlan() {
+  // ---------- side panel: calendar, day plan, goals ----------
+  let goalsSig = "";
+  async function renderSide() {
     if (!UI.month) UI.month = localDay(new Date()).slice(0, 7);
     if (!UI.day) UI.day = localDay(new Date());
-    if (UI.tab === "plan") {
-      const r = await api.taskPlan();
-      if (!r.ok) { planBody.replaceChildren(el("p", { cls: "muted", textContent: "План дня недоступен: " + r.error.message })); return; }
-      const v = r.value;
-      planBody.replaceChildren(el("p", { cls: "muted small", textContent: `Открыто: ${v.total} · просрочено: ${v.overdue}` + (v.estimatedMinutes ? ` · примерно ${v.estimatedMinutes} мин` : "") + ". Порядок по срокам и важности, ничего не меняется само." }),
-        v.suggested.length ? el("ol", { cls: "tasks-plan-list" }, ...v.suggested.map((x) => el("li", {}, el("span", { cls: "grow", textContent: x.text }), el("span", { cls: "br-tag", textContent: x.reason })))) : el("p", { cls: "muted", textContent: "Открытых дел нет." }));
-    } else if (UI.tab === "calendar") await renderCalendar();
-    else if (UI.tab === "goals") renderGoals();
-    else await renderTime();
+    await Promise.all([renderCalendar(), renderDay()]);
+    // goals keep what is typed in their fields: redraw them only when they changed
+    const sig = JSON.stringify(missions);
+    if (sig !== goalsSig) { goalsSig = sig; renderGoals(); }
   }
+  const cardHead = (title: string, ...extra: (Node | null)[]) => el("div", { cls: "tasks-side-head" }, el("h2", { textContent: title }), ...extra);
+  const shiftMonth = (n: number) => { const [y, m] = UI.month.split("-").map(Number); const d = new Date(y!, m! - 1 + n, 1); UI.month = localDay(d).slice(0, 7); void renderCalendar(); };
   async function renderCalendar() {
-    const month = el("input", { type: "month", value: UI.month, cls: "mem-select", attrs: { "aria-label": "Месяц" } });
-    month.addEventListener("change", () => { if (month.value) { UI.month = month.value; void renderCalendar(); } });
     const r = await api.taskInsights(UI.month);
-    if (!r.ok) { planBody.replaceChildren(month, el("p", { cls: "muted", textContent: "Календарь недоступен: " + r.error.message })); return; }
-    const { statistics: st, items } = r.value;
-    const byDay = new Map<string, typeof items>();
-    for (const it of items) { const k = localDay(it.at); byDay.set(k, [...(byDay.get(k) ?? []), it]); }
     const [y, mo] = UI.month.split("-").map(Number);
     const first = new Date(y!, mo! - 1, 1);
-    const cells: HTMLElement[] = [];
-    for (let i = 0; i < (first.getDay() + 6) % 7; i++) cells.push(el("div", { cls: "tasks-calendar-empty" }));
+    const title = first.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
     const todayKey = localDay(new Date());
+    const nav = el("div", { cls: "tasks-cal-nav" },
+      iconButton("chevronLeft", "Предыдущий месяц", () => shiftMonth(-1), "icon-btn sm"),
+      btn("Сегодня", () => { UI.month = todayKey.slice(0, 7); UI.day = todayKey; void renderSide(); }, { small: true }),
+      iconButton("chevronRight", "Следующий месяц", () => shiftMonth(1), "icon-btn sm"));
+    const head = cardHead(title[0]!.toUpperCase() + title.slice(1), nav);
+    if (!r.ok) { calHost.replaceChildren(head, el("p", { cls: "muted small", textContent: "Календарь недоступен: " + r.error.message })); return; }
+    const items = r.value.items;
+    const byDay = new Map<string, typeof items>();
+    for (const it of items) { const k = localDay(it.at); byDay.set(k, [...(byDay.get(k) ?? []), it]); }
+    const cells: HTMLElement[] = [];
+    for (let i = 0; i < (first.getDay() + 6) % 7; i++) cells.push(el("span", { cls: "tasks-calendar-empty" }));
     for (let d = 1; d <= new Date(y!, mo!, 0).getDate(); d++) {
       const key = `${UI.month}-${String(d).padStart(2, "0")}`;
       const list = byDay.get(key) ?? [];
       const pd = prodDay(key);
-      const cell = el("button", { type: "button", cls: "tasks-calendar-day" + (pd && pd.kind !== "work" ? " " + pd.kind : "") + (key === todayKey ? " today" : "") + (key === UI.day ? " selected" : ""), title: pd ? DAY_KIND[pd.kind] + (pd.note ? ": " + pd.note : "") : "", attrs: { "aria-pressed": String(key === UI.day), "aria-label": `${d}${pd && pd.kind !== "work" ? ", " + DAY_KIND[pd.kind].toLowerCase() : ""}: записей ${list.length}` } },
-        el("span", { cls: "tasks-calendar-num" }, el("strong", { textContent: String(d) }), pd?.kind === "holiday" || pd?.kind === "off" || pd?.kind === "short" ? el("small", { textContent: pd.kind === "short" ? "−1 ч" : pd.kind === "holiday" ? "праздник" : "выходной" }) : null), ...list.slice(0, 3).map((x) => el("span", { cls: "tasks-calendar-event" + (x.done ? " done" : "") + (x.kind === "reminder" ? " rem" : ""), textContent: x.text })),
-        list.length > 3 ? el("small", { textContent: "ещё " + (list.length - 3) }) : null);
-      cell.addEventListener("click", () => { UI.day = key; void renderCalendar(); });
+      const label = `${d}${pd && pd.kind !== "work" ? ", " + DAY_KIND[pd.kind].toLowerCase() + (pd.note ? " (" + pd.note + ")" : "") : ""}` + (list.length ? `: записей ${list.length}` : "");
+      const cell = el("button", { type: "button", cls: "tasks-calendar-day" + (pd && pd.kind !== "work" ? " " + pd.kind : "") + (key === todayKey ? " today" : "") + (key === UI.day ? " selected" : ""), title: label, attrs: { "aria-pressed": String(key === UI.day), "aria-label": label } },
+        el("span", { cls: "tasks-calendar-num", textContent: String(d) }),
+        list.length ? el("span", { cls: "tasks-calendar-dots", attrs: { "aria-hidden": "true" } }, ...list.slice(0, 3).map((x) => el("i", { cls: (x.done ? "done" : "") + (x.kind === "reminder" ? " rem" : "") }))) : null);
+      cell.addEventListener("click", () => { UI.day = key; void renderSide(); });
       cells.push(cell);
     }
-    const dayItems = byDay.get(UI.day) ?? [];
-    const ms = prodStats(UI.month), ys = prodStats(UI.month.slice(0, 4)), sel = prodDay(UI.day);
-    const prodLine = ms && ys
-      ? el("p", { cls: "tasks-prod muted small" },
-          el("span", { textContent: `Рабочих дней: ${ms.workDays}, выходных и праздников: ${ms.offDays}` + (ms.shortDays ? `, сокращённых: ${ms.shortDays}` : "") + `. Норма: ${fmtH(ms.hours[40])} при 40 ч в неделю, ${fmtH(ms.hours[36])} при 36 ч, ${fmtH(ms.hours[24])} при 24 ч.` }),
-          el("span", { textContent: `За ${UI.month.slice(0, 4)} год: ${ys.workDays} рабочих дней, ${ys.offDays} выходных, норма ${fmtH(ys.hours[40])} (40 ч в неделю).` }))
-      : el("p", { cls: "tasks-prod muted small", textContent: "Производственный календарь есть на 2026 и 2027 годы." });
-    const open = data?.notes.filter((n) => n.kind === "todo" && !n.done) ?? [];
-    const pick = el("select", { cls: "mem-select", attrs: { "aria-label": "Дело для переноса" } }, el("option", { value: "", textContent: "Перенести сюда дело…" }), ...open.map((n) => el("option", { value: n.id, textContent: n.text.slice(0, 80) })));
+    const ms = prodStats(UI.month), ys = prodStats(UI.month.slice(0, 4));
+    calHost.replaceChildren(head,
+      el("div", { cls: "tasks-calendar-weekdays" }, ...["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((x) => el("span", { textContent: x }))),
+      el("div", { cls: "tasks-calendar-grid" }, ...cells),
+      el("div", { cls: "tasks-calendar-legend muted small", attrs: { "aria-hidden": "true" } }, ...(["holiday", "off", "short"] as const).map((k) => el("span", { cls: "lg " + k, textContent: k === "off" ? "Перенос" : k === "short" ? "−1 час" : "Праздник" })), el("span", { cls: "lg dot", textContent: "Есть дела" })),
+      ms && ys
+        ? el("p", { cls: "tasks-prod muted small", title: `За ${UI.month.slice(0, 4)} год: ${ys.workDays} рабочих дней, ${ys.offDays} выходных и праздников, норма ${fmtH(ys.hours[40])} при 40 ч, ${fmtH(ys.hours[36])} при 36 ч, ${fmtH(ys.hours[24])} при 24 ч в неделю.` },
+            el("span", { textContent: `Рабочих дней: ${ms.workDays} из ${ms.workDays + ms.offDays} · норма ${fmtH(ms.hours[40])}` + (ms.shortDays ? ` · сокращённых: ${ms.shortDays}` : "") }),
+            el("span", { textContent: `За год: ${ys.workDays} рабочих дней, норма ${fmtH(ys.hours[40])} (40 ч), ${fmtH(ys.hours[36])} (36 ч), ${fmtH(ys.hours[24])} (24 ч)` }))
+        : el("p", { cls: "tasks-prod muted small", textContent: "Производственный календарь есть на 2026 и 2027 годы." }));
+  }
+  async function renderDay() {
+    const [plan, blocks, ins] = await Promise.all([UI.day === localDay(new Date()) ? api.taskPlan() : Promise.resolve(null), api.timeBlocks(UI.day), api.taskInsights(UI.day.slice(0, 7))]);
+    const dayName = new Date(UI.day + "T12:00").toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    const sel = prodDay(UI.day);
+    const dayItems = ins.ok ? ins.value.items.filter((x) => localDay(x.at) === UI.day).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) : [];
+    const open = data?.notes.filter((n) => n.kind === "todo" && !n.done && (!n.dueAt || localDay(n.dueAt) !== UI.day)) ?? [];
+    const pick = el("select", { cls: "mem-select", attrs: { "aria-label": "Перенести дело на этот день" } }, el("option", { value: "", textContent: "＋ Перенести сюда дело…" }), ...open.map((n) => el("option", { value: n.id, textContent: n.text.slice(0, 80) })));
     pick.addEventListener("change", () => {
       const n = open.find((x) => x.id === pick.value);
       if (!n) return;
@@ -399,63 +404,60 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       const iso = fromLocal(`${UI.day}T${time}`);
       if (iso) void act(() => api.updateTask(n.id, { dueAt: iso }), "Перенесено на " + whenLabel(iso, time === "23:59"));
     });
-    planBody.replaceChildren(
-      el("div", { cls: "tasks-cal-head" }, month, el("span", { cls: "muted small", textContent: `Сделано ${st.completed} из ${st.all} · просрочено ${st.overdue} · в этом месяце закрыто ${st.completedThisMonth}` })),
-      prodLine,
-      el("div", { cls: "tasks-calendar-legend muted small", attrs: { "aria-hidden": "true" } }, ...(["holiday", "off", "short", "weekend"] as const).map((k) => el("span", { cls: "lg " + k, textContent: DAY_KIND[k] }))),
-      el("div", { cls: "tasks-calendar-weekdays" }, ...["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((x) => el("span", { textContent: x }))),
-      el("div", { cls: "tasks-calendar-grid" }, ...cells),
-      el("div", { cls: "tasks-selected-day" },
-        el("h3", { textContent: new Date(UI.day + "T12:00").toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" }) }),
-        sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null,
-        dayItems.length ? el("ul", { cls: "tasks-plan-list" }, ...dayItems.map((x) => el("li", { cls: x.done ? "done" : "" }, el("span", { cls: "grow", textContent: (x.kind === "reminder" ? "◷ " : "✓ ") + x.text }), el("span", { cls: "muted small", textContent: isDateOnly(x.at) ? "" : hm(x.at) })))) : el("p", { cls: "muted small", textContent: "В этот день ничего не запланировано." }),
-        open.length ? pick : null));
+    const parts: (Node | null)[] = [cardHead(dayName[0]!.toUpperCase() + dayName.slice(1)),
+      sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null];
+    parts.push(dayItems.length
+      ? el("ul", { cls: "tasks-plan-list" }, ...dayItems.map((x) => el("li", { cls: x.done ? "done" : "" }, el("span", { cls: "tasks-plan-time", textContent: isDateOnly(x.at) ? "весь день" : hm(x.at) }), el("span", { cls: "grow", textContent: (x.kind === "reminder" ? "◷ " : "") + x.text }))))
+      : el("p", { cls: "muted small", textContent: "В этот день ничего не запланировано." }));
+    if (open.length) parts.push(pick);
+    if (plan?.ok && plan.value.suggested.length) {
+      parts.push(el("h3", { textContent: "Что сделать сначала" }),
+        el("ol", { cls: "tasks-plan-list numbered" }, ...plan.value.suggested.slice(0, 5).map((x) => el("li", {}, el("span", { cls: "grow", textContent: x.text }), el("span", { cls: "br-tag", textContent: x.reason })))));
+    }
+    if (blocks.ok && blocks.value.blocks.length) {
+      const v = blocks.value;
+      parts.push(el("h3", { textContent: "По часам" }, el("small", { cls: "muted", textContent: ` в плане ${v.plannedMinutes} мин, свободно ${v.remainingMinutes}` })),
+        el("ol", { cls: "tasks-plan-list" }, ...v.blocks.map((b) => el("li", {}, el("span", { cls: "tasks-plan-time", textContent: hm(b.start) }), el("span", { cls: "grow", textContent: b.text }), el("span", { cls: "muted small", textContent: b.minutes + " мин" })))),
+        el("p", { cls: "muted small", textContent: "Длительность берётся из поля «Минут» у дела, по умолчанию 30 минут, с 09:00 до 18:00." }));
+    }
+    dayHost.replaceChildren(...parts.filter((x): x is Node => !!x));
   }
   function renderGoals() {
-    const title = el("input", { type: "text", maxLength: 500, cls: "mem-input", placeholder: "Новая цель, например «Выучить японский до N4»", attrs: { "aria-label": "Новая цель" } });
-    const create = btn("Создать", () => {}, { small: true, primary: true, icon: "plus" });
+    const title = el("input", { type: "text", maxLength: 500, cls: "mem-input", placeholder: "Новая цель", attrs: { "aria-label": "Новая цель" } });
+    const create = iconButton("plus", "Создать цель", () => {}, "icon-btn");
     create.type = "submit";
-    const form = el("form", { cls: "tasks-add-row" }, title, create);
+    const form = el("form", { cls: "tasks-add-row tasks-goal-new" }, title, create);
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (!title.value.trim()) return;
+      if (!title.value.trim()) { title.focus(); return; }
       const r = await api.addMission(title.value.trim(), "");
       if (!r.ok) { showToast(r.error.message); return; }
-      await load(); renderGoals();
+      showToast("Цель создана");
+      await load();
     });
-    const cards = missions.map((m) => {
+    const cards = missions.filter((m) => m.status !== "complete").concat(missions.filter((m) => m.status === "complete")).map((m) => {
       const stage = el("input", { type: "text", maxLength: 500, cls: "mem-input", placeholder: "Следующий шаг", attrs: { "aria-label": "Новый шаг цели " + m.title } });
-      const addStage = el("form", { cls: "tasks-add-row" }, stage, btn("Добавить шаг", () => {}, { small: true }));
+      const addBtn = iconButton("plus", "Добавить шаг", () => {}, "icon-btn sm");
+      addBtn.type = "submit";
+      const addStage = el("form", { cls: "tasks-add-row" }, stage, addBtn);
       addStage.addEventListener("submit", async (e) => {
         e.preventDefault();
         if (!stage.value.trim()) return;
-        if (await act(() => api.addMissionStage(m.id, stage.value.trim()), "Шаг добавлен")) renderGoals();
+        goalsSig = ""; // the step was added on purpose: redraw the goal with an empty field
+        await act(() => api.addMissionStage(m.id, stage.value.trim()), "Шаг добавлен");
       });
-      const status = el("select", { cls: "mem-select", attrs: { "aria-label": "Состояние цели " + m.title } }, ...([["active", "В работе"], ["paused", "Пауза"], ["complete", "Достигнута"]] as const).map(([value, label]) => el("option", { value, textContent: label })));
+      const status = el("select", { cls: "mem-select tasks-goal-status", attrs: { "aria-label": "Состояние цели " + m.title } }, ...([["active", "В работе"], ["paused", "Пауза"], ["complete", "Достигнута"]] as const).map(([value, label]) => el("option", { value, textContent: label })));
       status.value = m.status;
-      status.addEventListener("change", async () => { if (await act(() => api.changeMissionStatus(m.id, status.value as Mission["status"]))) renderGoals(); });
-      return el("article", { cls: "tasks-mission-card" },
-        el("div", { cls: "tasks-mission-head" }, el("h3", { textContent: m.title }), status),
-        el("div", { cls: "tasks-mission-metrics" }, el("strong", { textContent: m.percent + "%" }), el("span", { textContent: `${m.done} из ${m.total} шагов` + (m.blocked ? ` · ждут других: ${m.blocked}` : "") })),
-        el("progress", { max: 100, value: m.percent, attrs: { "aria-label": "Прогресс цели " + m.title } }),
-        m.next ? el("p", { cls: "tasks-mission-next", textContent: "Следующий шаг: " + m.next.text }) : null,
+      status.addEventListener("change", () => void act(() => api.changeMissionStatus(m.id, status.value as Mission["status"])));
+      return el("article", { cls: "tasks-goal" + (m.status !== "active" ? " " + m.status : "") },
+        el("div", { cls: "tasks-goal-head" }, el("strong", { textContent: m.title }), status),
+        el("div", { cls: "tasks-goal-bar" }, el("progress", { max: 100, value: m.percent, attrs: { "aria-label": "Прогресс цели " + m.title } }), el("span", { cls: "muted small", textContent: `${m.done}/${m.total}` })),
+        m.next ? el("p", { cls: "muted small tasks-goal-next", textContent: "Дальше: " + m.next.text }) : null,
         m.status === "active" ? addStage : null);
     });
-    planBody.replaceChildren(el("p", { cls: "muted small", textContent: "Шаги цели — обычные дела в списке выше, с пометкой ◎. Отмечайте их там." }), form,
-      ...(cards.length ? cards : [el("p", { cls: "muted", textContent: "Целей пока нет." })]));
+    goalsHost.replaceChildren(cardHead("Цели", el("small", { cls: "muted", textContent: "шаги — это дела с пометкой ◎" })),
+      ...(cards.length ? cards : [el("p", { cls: "muted small", textContent: "Целей пока нет. Цель — большое дело из нескольких шагов." })]), form);
   }
-  async function renderTime() {
-    const day = el("input", { type: "date", value: UI.day, cls: "mem-select", attrs: { "aria-label": "День" } });
-    day.addEventListener("change", () => { if (day.value) { UI.day = day.value; void renderTime(); } });
-    const r = await api.timeBlocks(UI.day);
-    if (!r.ok) { planBody.replaceChildren(day, el("p", { cls: "muted", textContent: "План времени недоступен: " + r.error.message })); return; }
-    const v = r.value;
-    planBody.replaceChildren(el("div", { cls: "tasks-cal-head" }, day, el("span", { cls: "muted small", textContent: `09:00–18:00 · в плане ${v.plannedMinutes} мин · свободно ${v.remainingMinutes} мин` })),
-      v.blocks.length ? el("ol", { cls: "tasks-plan-list" }, ...v.blocks.map((b) => el("li", {}, el("span", { cls: "br-tag", textContent: hm(b.start) }), el("span", { cls: "grow", textContent: b.text }), el("span", { cls: "muted small", textContent: b.minutes + " мин" })))) : el("p", { cls: "muted", textContent: "Нет дел для плана." }),
-      el("p", { cls: "muted small", textContent: "Длительность берётся из поля «Минут» у дела (по умолчанию 30). " + v.note + "." }));
-  }
-  const planning = el("details", { cls: "pg-card tasks-planning", open: UI.planOpen }, el("summary", {}, icon("list", 18), el("span", { textContent: "Планирование" }), el("small", { cls: "muted", textContent: "план дня, календарь, цели, план времени" })), tabs, planBody);
-  planning.addEventListener("toggle", () => { UI.planOpen = planning.open; if (planning.open) void renderPlan(); });
 
   // ---------- toolbar and keys ----------
   const search = el("input", { type: "search", placeholder: "Поиск", value: UI.query, cls: "mem-search", attrs: { "aria-label": "Поиск по делам и заметкам" } });
@@ -474,14 +476,15 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const root = el("div", { cls: "page tasks-page" },
     el("header", { cls: "pg-head tasks-head" }, el("div", { cls: "pg-head-text" }, el("h1", { textContent: "Дела" }), summary), perm),
     attHost,
-    el("section", { cls: "pg-card tasks-quick" }, form),
-    el("div", { cls: "mem-toolbar" }, search, chipsHost),
-    listHost,
-    planning,
-    el("p", { cls: "muted small tasks-foot", textContent: "Напоминания срабатывают, пока JUUNIBI запущен. Клавиши: N — новое, / — поиск." }));
+    el("div", { cls: "tasks-layout" },
+      el("div", { cls: "tasks-main" },
+        el("section", { cls: "pg-card tasks-quick" }, form),
+        el("div", { cls: "mem-toolbar" }, search, chipsHost),
+        listHost,
+        el("p", { cls: "muted small tasks-foot", textContent: "Напоминания срабатывают, пока JUUNIBI запущен. Клавиши: N — новое, / — поиск." })),
+      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, goalsHost)));
   render();
   renderAttention(app.get());
   void load();
-  if (UI.planOpen) void renderPlan();
   return root;
 }

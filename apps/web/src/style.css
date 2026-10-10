@@ -941,22 +941,9 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-editor-grid label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted);min-width:0}
 .tasks-editor-grid .wide{grid-column:1/-1}
 .tasks-est{width:100%}
-.tasks-planning{margin:22px 0 10px;padding:0}
-.tasks-planning>summary{display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;font-weight:600;list-style:none}
-.tasks-planning>summary::-webkit-details-marker{display:none}
-.tasks-planning>summary small{font-weight:400}
-.tasks-planning[open]>summary{border-bottom:1px solid var(--line)}
-.tasks-planning>:not(summary){margin-left:16px;margin-right:16px}
-.tasks-planning>.segmented{margin-top:14px}
-.tasks-plan-body{padding-bottom:16px}
-.tasks-plan-list{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
-.tasks-plan-list li{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:10px}
-.tasks-plan-list li.done .grow{text-decoration:line-through;color:var(--muted)}
-.tasks-cal-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
-.tasks-calendar-empty{min-height:1px}
 .tasks-foot{margin:20px 0 0;text-align:center}
 @media (max-width:600px){.tasks-summary{font-size:.86rem}.tasks-quick{padding:12px}.tasks-quick-input{flex-basis:0}.tasks-add-row>.btn{flex:none;padding-inline:14px}.tasks-add-opts{flex-direction:column;align-items:stretch}.tasks-kinds{display:flex}.tasks-kinds button{flex:1}.tasks-when,.tasks-when>*{flex:1 1 100%}
-  .org-row{flex-wrap:wrap;gap:8px}.org-row .grow{flex:1 1 0}.org-row.due .grow{flex-basis:70%}.org-row .icon-btn.sm{margin:0 -4px}.tasks-children{margin-left:12px}.tasks-planning>:not(summary){margin-left:10px;margin-right:10px}}
+  .org-row{flex-wrap:wrap;gap:8px}.org-row .grow{flex:1 1 0}.org-row.due .grow{flex-basis:70%}.org-row .icon-btn.sm{margin:0 -4px}.tasks-children{margin-left:12px}}
 .eval-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .eval-list li{display:grid;grid-template-columns:24px 1fr;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);align-items:start}
 .eval-list li>div{display:flex;flex-direction:column;gap:2px;min-width:0;overflow-wrap:anywhere}
@@ -1119,45 +1106,62 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 }
 @media (prefers-reduced-motion:reduce){.set-skeleton i{animation:none}}
 
-/* Дела 2.2 — keyboard-friendly, responsive calendar and schedule */
-.tasks-stat-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
-.tasks-stat{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
-.tasks-stat span{font-size:12px;opacity:.75}.tasks-stat strong{font-size:22px;font-variant-numeric:tabular-nums}
-.tasks-calendar-weekdays,.tasks-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
-.tasks-calendar-weekdays{margin-top:14px;text-align:center;font-size:12px;opacity:.7}
-.tasks-calendar-day{display:flex;align-items:flex-start;flex-direction:column;gap:5px;min-height:94px;min-width:0;text-align:left;background:var(--surface);color:inherit;border:1px solid var(--line);border-radius:12px;padding:9px;cursor:pointer}
-.tasks-calendar-day:hover,.tasks-calendar-day:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
-.tasks-calendar-day.today{border-color:var(--brand)}
-.tasks-calendar-day strong{font-size:14px}.tasks-calendar-event{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 5px;border-radius:5px;background:color-mix(in srgb,var(--brand) 14%,transparent);font-size:11px}
-.tasks-calendar-day.selected{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,var(--surface))}
-.tasks-calendar-num{display:flex;align-items:baseline;gap:6px;width:100%;min-width:0}
-.tasks-calendar-num small{font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media(max-width:700px){.tasks-calendar-num small{display:none}}
+/* "Дела": list on the left, calendar, day plan and goals on the right */
+.page.tasks-page{max-width:1320px}
+.tasks-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
+.tasks-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;scrollbar-width:thin;padding-bottom:4px}
+.tasks-side-card{padding:14px 16px;margin:0}
+.tasks-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 10px;flex-wrap:wrap}
+.tasks-side-head h2{margin:0;font-size:1rem;font-weight:600}
+.tasks-side-card h3{display:flex;align-items:baseline;gap:4px;margin:14px 0 6px;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.tasks-side-card h3 small{text-transform:none;letter-spacing:0;font-weight:400}
+.tasks-side-card>select{width:100%;margin-top:8px}
+.tasks-cal-nav{display:flex;align-items:center;gap:2px}
+.tasks-calendar-weekdays,.tasks-calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.tasks-calendar-weekdays{text-align:center;font-size:11px;color:var(--muted);margin-bottom:3px}
+.tasks-calendar-weekdays span:nth-child(n+6){color:var(--danger)}
+.tasks-calendar-day{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:40px;min-width:0;padding:0;border:1px solid transparent;border-radius:10px;background:transparent;color:inherit;cursor:pointer;font-variant-numeric:tabular-nums}
+.tasks-calendar-day:hover{background:var(--hover)}
+.tasks-calendar-day:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.tasks-calendar-num{font-size:.9rem;line-height:1}
 .tasks-calendar-day.weekend .tasks-calendar-num,.tasks-calendar-day.holiday .tasks-calendar-num,.tasks-calendar-day.off .tasks-calendar-num{color:var(--danger)}
-.tasks-calendar-day.holiday,.tasks-calendar-day.off{background:color-mix(in srgb,var(--danger) 8%,var(--surface))}
-.tasks-calendar-day.short .tasks-calendar-num small{color:var(--brand)}
-.tasks-prod{display:flex;flex-direction:column;gap:2px;margin:12px 0 0}
-.tasks-calendar-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0 0}
-.tasks-calendar-legend .lg::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid var(--line)}
-.tasks-calendar-legend .holiday::before,.tasks-calendar-legend .off::before{background:color-mix(in srgb,var(--danger) 35%,transparent)}
-.tasks-calendar-legend .short::before{background:color-mix(in srgb,var(--brand) 45%,transparent)}
-.tasks-calendar-legend .weekend::before{background:transparent;border-color:var(--danger)}
-.tasks-prod-day{margin:0;font-size:.88rem;color:var(--muted)}.tasks-prod-day.holiday,.tasks-prod-day.off,.tasks-prod-day.weekend{color:var(--danger)}.tasks-prod-day.short{color:var(--brand)}
-.tasks-calendar-event.rem{background:var(--hover-2)}
-.tasks-calendar-event.done{text-decoration:line-through;opacity:.55}
-.tasks-selected-day{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:18px 0;padding:14px;border-radius:14px;background:var(--surface)}
-.tasks-selected-day h3,.tasks-selected-day p{flex-basis:100%;margin:0}
-.tasks-selected-day select{max-width:min(100%,350px)}
-@media(max-width:700px){.tasks-stat-strip{grid-template-columns:repeat(2,minmax(0,1fr))}.tasks-calendar-weekdays,.tasks-calendar-grid{gap:3px}.tasks-calendar-day{min-height:65px;padding:5px;border-radius:8px}.tasks-calendar-event{font-size:9px;padding:1px 2px}}
-
-/* JUUNIBI Mission Control — readable, responsive goal cards */
-.tasks-mission-card{display:flex;flex-direction:column;gap:12px;margin-top:14px;padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
-.tasks-mission-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.tasks-mission-head h3{margin:0;font-size:18px;line-height:1.3}
-.tasks-mission-metrics{display:flex;gap:12px;align-items:baseline;font-size:13px;opacity:.85}
-.tasks-mission-metrics strong{font-size:23px;opacity:1;font-variant-numeric:tabular-nums}
-.tasks-mission-card progress{width:100%;height:9px;accent-color:var(--brand)}
-.tasks-mission-next{margin:0;padding:11px 13px;border-radius:11px;background:color-mix(in srgb,var(--brand) 10%,transparent);font-size:13px}
-.tasks-mission-card .tasks-add-row{display:flex;gap:8px;flex-wrap:wrap}
-.tasks-mission-card .org-list{margin:0}
-@media(max-width:600px){.tasks-mission-card{padding:12px}.tasks-mission-head .mem-select{width:100%}}
+.tasks-calendar-day.holiday,.tasks-calendar-day.off{background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.tasks-calendar-day.short::after{content:"";position:absolute;top:4px;right:5px;width:6px;height:6px;box-sizing:border-box;border-radius:50%;border:1.5px solid var(--brand)}
+.tasks-calendar-day.today{border-color:var(--brand)}
+.tasks-calendar-day.today .tasks-calendar-num{font-weight:700}
+.tasks-calendar-day.selected{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.tasks-calendar-day.selected .tasks-calendar-num{color:inherit}
+.tasks-calendar-dots{display:flex;gap:2px;height:5px}
+.tasks-calendar-dots i{width:5px;height:5px;border-radius:50%;background:var(--brand)}
+.tasks-calendar-dots i.rem{background:var(--muted)}.tasks-calendar-dots i.done{opacity:.35}
+.tasks-calendar-day.selected .tasks-calendar-dots i{background:currentColor}
+.tasks-calendar-empty{min-height:1px}
+.tasks-calendar-legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 0 0;font-size:.75rem}
+.tasks-calendar-legend .lg::before{content:"";display:inline-block;width:8px;height:8px;border-radius:3px;margin-right:5px;vertical-align:0}
+.tasks-calendar-legend .holiday::before,.tasks-calendar-legend .off::before{background:color-mix(in srgb,var(--danger) 40%,transparent)}
+.tasks-calendar-legend .dot::before{border-radius:50%;background:var(--brand)}.tasks-calendar-legend .short::before{box-sizing:border-box;border-radius:50%;border:1.5px solid var(--brand)}
+.tasks-prod{display:flex;flex-direction:column;gap:2px;margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line);font-size:.78rem}
+.tasks-prod-day{margin:-4px 0 8px;font-size:.85rem;color:var(--muted)}.tasks-prod-day.holiday,.tasks-prod-day.off,.tasks-prod-day.weekend{color:var(--danger)}.tasks-prod-day.short{color:var(--brand)}
+.tasks-plan-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.tasks-plan-list li{display:flex;align-items:baseline;gap:10px;padding:6px 8px;border-radius:8px;font-size:.9rem;min-width:0}
+.tasks-plan-list li:hover{background:var(--hover)}
+.tasks-plan-list li .grow{min-width:0;overflow-wrap:anywhere}
+.tasks-plan-list li.done .grow{text-decoration:line-through;color:var(--muted)}
+.tasks-plan-list.numbered{counter-reset:n}
+.tasks-plan-list.numbered li::before{counter-increment:n;content:counter(n);flex:none;width:18px;color:var(--muted);font-variant-numeric:tabular-nums}
+.tasks-plan-list .br-tag{flex:none;font-size:.72rem}
+.tasks-plan-time{flex:none;min-width:44px;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+.tasks-goal{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--line)}
+.tasks-goal:first-of-type{border-top:0;padding-top:0}
+.tasks-goal.paused,.tasks-goal.complete{opacity:.65}
+.tasks-goal-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tasks-goal-head strong{min-width:0;overflow-wrap:anywhere;font-weight:600}
+.tasks-goal-status{width:auto;min-height:0;height:auto;padding:4px 8px;font-size:.78rem;border-radius:8px}
+.tasks-goal-bar{display:flex;align-items:center;gap:8px}
+.tasks-goal-bar progress{flex:1;height:6px;accent-color:var(--brand)}
+.tasks-goal-next{margin:0}
+.tasks-goal .tasks-add-row,.tasks-goal-new{flex-wrap:nowrap;gap:6px}
+.tasks-goal .mem-input{padding:6px 10px;font-size:.88rem}
+.tasks-goal-new{margin-top:10px}
+@media (max-width:1100px){.tasks-layout{grid-template-columns:minmax(0,1fr)}.tasks-side{position:static;max-height:none;overflow:visible;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}}
+@media (max-width:600px){.tasks-side{display:flex}.tasks-side-card{padding:12px}}
