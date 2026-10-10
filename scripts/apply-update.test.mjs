@@ -4,7 +4,8 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promis
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
-import { applyPreparedUpdate, safeUpdatePath } from "./apply-update.mjs";
+import { applyPreparedUpdate, safeUpdatePath, rollbackInstall, rollbackFailedStart, confirmUpdate, applyRollbackRequest, pruneUpdateFolder } from "./apply-update.mjs";
+import { readdir } from "node:fs/promises";
 const hash = b => createHash("sha1").update("blob " + b.length + "\0").update(b).digest("hex");
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "juunibi-installer-"));
@@ -166,5 +167,106 @@ test("unsafe destination aborts without any success event", async () => {
     const ev=await events(root);
     assert.ok(!ev.some(e=>e.type==="file_install_done"));
     assert.ok(!ev.some(e=>e.type==="update_completed"));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+const history = async root => (await readFile(path.join(root,".updates","history.jsonl"),"utf8")).trim().split("\n").map(JSON.parse);
+test("a file already identical on disk is neither backed up nor rewritten", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps"),{recursive:true});
+    await writeFile(path.join(root,"apps","same.txt"),"same");
+    await writeFile(path.join(root,"apps","changed.txt"),"old");
+    await ready(root,[["apps/same.txt","same"],["apps/changed.txt","new"]]);
+    await applyPreparedUpdate(root);
+    const ev=await events(root);
+    assert.deepEqual(ev.filter(e=>e.type==="file_install_done").map(e=>e.relative_path),["apps/changed.txt"]);
+    const backups=await readdir(path.join(root,".updates","backups"));
+    const saved=await readdir(path.join(root,".updates","backups",backups[0],"apps"));
+    assert.deepEqual(saved,["changed.txt"]);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("a successful install records history, awaits confirmation and frees the staging folder", async () => {
+  const root=await fixture();
+  try {
+    await writeFile(path.join(root,".juunibi-version"),"b".repeat(40)+"\n");
+    await ready(root,[["apps/a.txt","x"]]);
+    await applyPreparedUpdate(root);
+    const [h]=await history(root);
+    assert.equal(h.kind,"install"); assert.equal(h.from,"b".repeat(40)); assert.equal(h.to,"a".repeat(40)); assert.ok(h.backup);
+    assert.ok(JSON.parse(await readFile(path.join(root,".updates","pending-confirm.json"),"utf8")).backup);
+    await assert.rejects(readdir(path.join(root,".updates","staging")));
+    await confirmUpdate(root);
+    await assert.rejects(readFile(path.join(root,".updates","pending-confirm.json")));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("a failed install is written to history as failed", async () => {
+  const root=await fixture();
+  try {
+    await ready(root,[["apps/a.txt","x"]]);
+    await assert.rejects(applyPreparedUpdate(root,{healthCheck:async()=>{throw new Error("нет");}}));
+    const [h]=await history(root);
+    assert.equal(h.kind,"failed"); assert.match(h.message,/нет/);
+    await assert.rejects(readFile(path.join(root,".updates","pending-confirm.json")));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("a new version that does not start is rolled back automatically", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps"),{recursive:true});
+    await writeFile(path.join(root,"apps","a.txt"),"old");
+    await writeFile(path.join(root,".juunibi-version"),"oldmarker");
+    await writeFile(path.join(root,".updates","installed.json"),'{"sha":"old","paths":["apps/a.txt"]}');
+    await ready(root,[["apps/a.txt","new"],["apps/b.txt","added"]]);
+    await applyPreparedUpdate(root);
+    assert.equal(await readFile(path.join(root,"apps","a.txt"),"utf8"),"new");
+    assert.equal(await rollbackFailedStart(root,"Сервер не ответил"),true);
+    assert.equal(await readFile(path.join(root,"apps","a.txt"),"utf8"),"old");
+    await assert.rejects(readFile(path.join(root,"apps","b.txt")));
+    assert.equal(await readFile(path.join(root,".juunibi-version"),"utf8"),"oldmarker");
+    assert.equal(JSON.parse(await readFile(path.join(root,".updates","installed.json"),"utf8")).sha,"old");
+    const h=await history(root);
+    assert.deepEqual(h.map(x=>x.kind),["install","startup_failed"]);
+    assert.equal(h[1].rollbackOf,h[0].backup);
+    assert.equal(await rollbackFailedStart(root,"again"),false); // nothing pending any more
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("a confirmed install can still be rolled back by hand, once", async () => {
+  const root=await fixture();
+  try {
+    await mkdir(path.join(root,"apps"),{recursive:true});
+    await writeFile(path.join(root,"apps","a.txt"),"old");
+    await ready(root,[["apps/a.txt","new"]]);
+    await applyPreparedUpdate(root);
+    await confirmUpdate(root);
+    const [h]=await history(root);
+    await writeFile(path.join(root,".updates","rollback-request.json"),JSON.stringify({backup:h.backup}));
+    assert.equal(await applyRollbackRequest(root),true);
+    assert.equal(await readFile(path.join(root,"apps","a.txt"),"utf8"),"old");
+    await assert.rejects(readFile(path.join(root,".updates","rollback-request.json")));
+    assert.equal((await history(root))[1].kind,"rollback");
+    assert.equal(await applyRollbackRequest(root),false);
+    assert.ok((await events(root)).some(e=>e.type==="rollback_done"&&e.reason==="rollback"));
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("rollback refuses unsafe backup names and damaged metadata", async () => {
+  const root=await fixture();
+  try {
+    for (const bad of ["../x","a/b","","x y"]) await assert.rejects(rollbackInstall(root,bad),/Некорректное имя/);
+    await assert.rejects(rollbackInstall(root,"missing"),/не найдена/);
+    await mkdir(path.join(root,".updates","backups","evil"),{recursive:true});
+    await writeFile(path.join(root,".updates","backups","evil",".meta.json"),JSON.stringify({changes:[{name:".env",existed:false}]}));
+    await assert.rejects(rollbackInstall(root,"evil"),/Повреждён/);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("only the newest backups and failed manifests are kept", async () => {
+  const root=await fixture();
+  try {
+    const folder=path.join(root,".updates");
+    for (const n of ["2026-01-a","2026-02-b","2026-03-c","2026-04-d","2026-05-e"]) await mkdir(path.join(folder,"backups",n),{recursive:true});
+    for (const t of [1,2,3,4,5]) await writeFile(path.join(folder,`ready.failed-${t}.json`),"{}");
+    await pruneUpdateFolder(folder);
+    assert.deepEqual((await readdir(path.join(folder,"backups"))).sort(),["2026-03-c","2026-04-d","2026-05-e"]);
+    assert.deepEqual((await readdir(folder)).filter(n=>n.startsWith("ready.failed")).sort(),["ready.failed-3.json","ready.failed-4.json","ready.failed-5.json"]);
   } finally {await rm(root,{recursive:true,force:true});}
 });

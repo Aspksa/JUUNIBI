@@ -64,7 +64,12 @@ const kernel = new Kernel(log);
 const dataDir = path.join(root, "data");
 const updater = new ProjectUpdater(root);
 const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, "brain.json")));
-const checkUpdates = () => { if (modules.isActive("updater")) void modules.track("updater", () => updater.check()).catch((e) => log.warn("Не удалось проверить обновления", e)); };
+/** Background check according to the owner's choice (off / hourly / daily); the 15-minute tick only decides whether it is time. */
+const checkUpdates = () => {
+  const every = { off: 0, hourly: 60 * 60_000, daily: 24 * 60 * 60_000 }[updater.getConfig().autoCheck];
+  if (!every || !modules.isActive("updater") || updater.isBusy() || Date.now() - updater.lastCheckedAt() < every) return;
+  void modules.track("updater", () => updater.check(false)).catch((e) => log.warn("Не удалось проверить обновления", e));
+};
 const updateTimer = setInterval(checkUpdates, 15 * 60_000);
 const settingsFile = path.join(dataDir, "cloudru-settings.json");
 const MODEL = process.env.CLOUDRU_MODEL?.trim() || "deepseek-ai/DeepSeek-V4-Flash";
@@ -296,6 +301,12 @@ const server = createApp({
   memory,
   approvals: approvalGate,
   updater,
+  // Only a launcher can start the server again, so a restart is offered only when it started us.
+  restart: () => { if (process.env.JUUNIBI_SUPERVISED !== "1") return false; setTimeout(() => void shutdown(75), 400); return true; },
+  activity: () => {
+    const running = brain.status().plans.filter((p) => p.status === "running").length;
+    return running ? [`выполняются планы Мозга: ${running}`] : [];
+  },
   brain,
   automaticBrainReview: (message: string) => {
     const review = automaticBrainReview({
@@ -345,15 +356,15 @@ const runLearning = () => {
 const initialLearningTimer = setTimeout(runLearning, 3000);
 const learningTimer = setInterval(runLearning, 10 * 60_000);
 let stopping = false;
-const shutdown = async () => {
+const shutdown = async (exitCode = 0) => {
   if (stopping) return;
   stopping = true;
   clearTimeout(initialLearningTimer); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close();
   // Let pending state writes finish so a stop never loses data.
   await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), evalHistory.flush(), auditQueue]);
   await kernel.stop();
-  process.exit(0);
+  process.exit(exitCode);
 };
 process.on("unhandledRejection", (reason) => log.error("Необработанная ошибка", reason));
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());

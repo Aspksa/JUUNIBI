@@ -11,7 +11,7 @@ import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
 import { settingsPage } from "./pages/settings";
 import {
-  app, BRAIN_TILE_ROUTES, dismissSuggestion, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, routeFromHash,
+  app, BRAIN_TILE_ROUTES, dismissSuggestion, persistPrefs, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
   type AppState, type Route, type Theme,
 } from "./state";
 import { announceDue } from "./notify";
@@ -131,7 +131,7 @@ kernel.register({
         case "memory": case "notes": case "reminders": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
         case "modules": return ""; // the page loads and refreshes its own data
         case "brain": return "";
-        case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError]);
+        case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
         case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length]);
       }
     };
@@ -172,7 +172,7 @@ kernel.register({
     ctx.onStop(app.select((s) => s.route, (r) => {
       if (BRAIN_TILE_ROUTES[r] || r === "brain") void refreshMemory();
       if (r === "modules") void refreshModules();
-      if (r === "update") { void refreshUpdate(); void refreshEvents(); }
+      if (r === "update") { void refreshUpdate(); void refreshEvents(); void refreshHistory(); }
       pageHost.focus({ preventScroll: true });
     }));
 
@@ -183,7 +183,7 @@ kernel.register({
       tick++;
       const s = app.get();
       if (ctl.busy || s.approvals.length) void refreshApprovals();
-      if (s.route === "update" || s.update?.phase === "downloading" || s.update?.phase === "testing") { void refreshUpdate(); void refreshEvents(); }
+      if (s.route === "update" || s.update?.phase === "downloading" || s.update?.phase === "testing") { void refreshUpdate(); void refreshEvents(); if (s.route === "update" && tick % 4 === 0) void refreshHistory(); }
       if (tick % 8 === 0) { void refreshStatus(); void refreshUpdate(); void refreshBrief(); void refreshSuggestions(); }
     }, 2500);
     ctx.onStop(() => clearInterval(poll));

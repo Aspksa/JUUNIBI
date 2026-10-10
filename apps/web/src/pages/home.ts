@@ -23,7 +23,9 @@ export function buildAttention(s: AppState, d: Pick<HomeDeps, "go" | "openChat">
   const out: Attention[] = [];
   if (s.status && !ok) out.push({ id: "key", tone: "warn", icon: "settings", text: "Помощница не подключена: нужен ключ Cloud.ru.", action: "Подключить", run: () => d.go("settings") });
   if (s.approvals.length && !s.chatOpen) out.push({ id: "approvals", tone: "bad", icon: "alert", text: `Ждёт вашего решения действий: ${s.approvals.length}.`, action: "Открыть чат", run: () => d.openChat() });
-  if (u?.phase === "ready") out.push({ id: "update", tone: "info", icon: "update", text: "Обновление скачано и проверено — осталось перезапустить JUUNIBI.", action: "Подробнее", run: () => d.go("update") });
+  if (u?.phase === "ready") out.push({ id: "update", tone: "info", icon: "update", text: "Обновление скачано и проверено — его можно установить.", action: "Установить", run: () => d.go("update") });
+  else if (u?.rollbackPending) out.push({ id: "update", tone: "warn", icon: "update", text: "Запланирован откат на предыдущую версию.", action: "Подробнее", run: () => d.go("update") });
+  else if (hasUpdate && u?.blocked) out.push({ id: "update", tone: "info", icon: "update", text: `Новая версия ${u?.latest?.version} появилась, но её автоматические проверки ещё не пройдены.`, action: "Подробнее", run: () => d.go("update") });
   else if (hasUpdate) out.push({ id: "update", tone: "info", icon: "update", text: `Доступна новая версия ${u?.latest?.version}.`, action: "Обновить", run: () => d.go("update") });
   if (pending) out.push({ id: "memory", tone: "info", icon: "memory", text: `Новых записей памяти на подтверждение: ${pending}.`, action: "Посмотреть", run: () => d.go("memory") });
   const dueNow = s.brief?.due.length ?? 0;

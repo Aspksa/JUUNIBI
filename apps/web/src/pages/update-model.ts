@@ -1,5 +1,5 @@
 /** Pure view-model of the update centre. Everything shown comes from real status/events — nothing is estimated or faked. */
-import type { UpdateEvent, UpdateStatus } from "../api";
+import type { UpdateCi, UpdateEvent, UpdateStatus } from "../api";
 
 export type StepStatus = "todo" | "active" | "done" | "error";
 export interface Step { id: string; title: string; detail: string; status: StepStatus; progress?: number }
@@ -8,7 +8,9 @@ export type FileState = "waiting" | "downloading" | "downloaded" | "verified" | 
 export interface FileRow { path: string; change: Change; state: FileState; size: number }
 export type Tone = "neutral" | "ok" | "info" | "busy" | "danger";
 export type Action = "check" | "download" | "busy" | "restart";
-export interface Installed { ok: boolean; sha: string; healthy: boolean | null; backup: string; at: string; message: string }
+/** What happened at the last installation: installed, rolled back after a failure, new version did not start, or rolled back by hand. */
+export type InstalledKind = "install" | "failed" | "startup_failed" | "rollback";
+export interface Installed { ok: boolean; sha: string; healthy: boolean | null; backup: string; at: string; message: string; kind: InstalledKind }
 export interface UpdateModel {
   tone: Tone; headline: string; sub: string; action: Action;
   steps: Step[];
@@ -17,6 +19,9 @@ export interface UpdateModel {
   installed: Installed | null;
   current: string;
   health: { ok: boolean; message: string } | null;
+  /** Reason the newest version cannot be downloaded yet (CI not green); "" = it can. */
+  blocked: string;
+  ci: UpdateCi | null;
 }
 
 export function formatBytes(n: number): string {
@@ -50,19 +55,24 @@ export function buildUpdateModel(u: UpdateStatus | null, rawEvents: UpdateEvent[
 
   // ---- result of the last installation (done by the launcher on the next start)
   const lastPrepared = [...events].reverse().find((e) => e.type === "update_prepared");
-  const completed = [...events].reverse().find((e) => e.type === "update_completed" && (!lastPrepared || e.timestamp >= lastPrepared.timestamp));
-  const rolled = [...events].reverse().find((e) => e.type === "rollback_done" && (!lastPrepared || e.timestamp >= lastPrepared.timestamp));
+  const afterPrepared = (e: UpdateEvent) => !lastPrepared || e.timestamp >= lastPrepared.timestamp;
+  const completed = [...events].reverse().find((e) => e.type === "update_completed" && afterPrepared(e));
+  const rolled = [...events].reverse().find((e) => e.type === "rollback_done" && afterPrepared(e));
   const healthEv = [...events].reverse().find((e) => e.type === "health_check_done");
   const health = healthEv ? { ok: healthEv.status === "healthy", message: healthEv.message ?? "" } : null;
   let installedInfo: Installed | null = null;
-  if (completed) {
+  // The newest of "installed" and "rolled back" is what the person needs to see.
+  if (rolled && (!completed || rolled.timestamp >= completed.timestamp)) {
+    const reason = String((rolled as UpdateEvent & { reason?: string }).reason ?? "install_failed");
+    const fail = [...events].reverse().find((e) => e.type === "update_failed");
+    if (reason === "rollback") installedInfo = { ok: true, sha: "", healthy: null, backup: "", at: rolled.timestamp, message: "Выполнен откат на предыдущую версию.", kind: "rollback" };
+    else if (reason === "startup_failed") installedInfo = { ok: false, sha: "", healthy: null, backup: "", at: rolled.timestamp, message: rolled.message || "Новая версия не запустилась — возвращена прежняя.", kind: "startup_failed" };
+    else installedInfo = { ok: false, sha: "", healthy: health ? health.ok : null, backup: "", at: rolled.timestamp, message: fail?.message ?? "Установка не удалась, изменения откатаны.", kind: "failed" };
+  } else if (completed) {
     const sha = String((completed as UpdateEvent & { sha?: string }).sha ?? "");
     if (!u || !sha || u.localVersion === sha) {
-      installedInfo = { ok: true, sha, healthy: health ? health.ok : null, backup: String((completed as UpdateEvent & { backup_relative_path?: string }).backup_relative_path ?? ""), at: completed.timestamp, message: "" };
+      installedInfo = { ok: true, sha, healthy: health ? health.ok : null, backup: String((completed as UpdateEvent & { backup_relative_path?: string }).backup_relative_path ?? ""), at: completed.timestamp, message: "", kind: "install" };
     }
-  } else if (rolled) {
-    const fail = [...events].reverse().find((e) => e.type === "update_failed");
-    installedInfo = { ok: false, sha: "", healthy: health ? health.ok : null, backup: "", at: rolled.timestamp, message: fail?.message ?? "Установка не удалась, изменения откатаны." };
   }
 
   // ---- headline & primary action
@@ -76,7 +86,7 @@ export function buildUpdateModel(u: UpdateStatus | null, rawEvents: UpdateEvent[
     tone = "busy"; action = "busy"; headline = "Проверяем обновление"; sub = "Устанавливаем зависимости, гоняем тесты и собираем проект во временной папке. Работающая версия не затрагивается.";
   } else if (phase === "ready") {
     tone = "ok"; action = "restart"; headline = "Обновление готово к установке";
-    sub = "Перезапустите JUUNIBI через лаунчер — установка пройдёт автоматически, с резервной копией и проверкой запуска.";
+    sub = "Установка пройдёт с резервной копией и проверкой запуска; если новая версия не запустится, вернётся прежняя.";
   } else if (phase === "error") {
     tone = "danger"; action = hasNew ? "download" : "check"; headline = "Не удалось подготовить обновление"; sub = u.error || u.message || "Попробуйте ещё раз.";
   } else if (hasNew) {
@@ -106,12 +116,12 @@ export function buildUpdateModel(u: UpdateStatus | null, rawEvents: UpdateEvent[
     { id: "verify", title: "Проверка целостности", status: stepStatus("verify"), detail: total && (phase === "downloading" || verifiedCount) ? `${Math.min(verifiedCount, total)} из ${total} по хешам` : "Хеши каждого файла" },
     { id: "tests", title: "Тесты и сборка", status: stepStatus("tests"), detail: phase === "testing" ? "Идёт проверка" : phase === "ready" ? "Пройдено" : failedWhere === "tests" ? "Не пройдено" : "Во временной папке" },
     { id: "ready", title: "Готово к установке", status: stepStatus("ready"), detail: phase === "ready" ? "Нужен перезапуск" : "—" },
-    { id: "install", title: "Установка", status: stepStatus("install"), detail: installedInfo ? (installedInfo.ok ? (installedInfo.healthy === false ? "Установлено, проверка запуска не пройдена" : "Установлено и проверено") : "Откат выполнен") : "При запуске лаунчера" },
+    { id: "install", title: "Установка", status: stepStatus("install"), detail: installedInfo ? (installedInfo.ok ? (installedInfo.kind === "rollback" ? "Откат выполнен" : installedInfo.healthy === false ? "Установлено, проверка запуска не пройдена" : "Установлено и проверено") : "Откат выполнен") : "Кнопка «Установить сейчас» или запуск лаунчера" },
   ];
 
   // ---- the file currently in motion (for the transfer lane)
   const moving = [...after].reverse().find((e) => e.relative_path && ["download_started", "file_download_done", "file_install_start"].includes(e.type));
-  return { tone, headline, sub, action, steps, counts, files, installed: installedInfo, current: moving?.relative_path ?? "", health };
+  return { tone, headline, sub, action, steps, counts, files, installed: installedInfo, current: moving?.relative_path ?? "", health, blocked: hasNew && phase !== "ready" ? (u?.blocked ?? "") : "", ci: u?.latest?.ci ?? null };
 }
 
 // ---------- grouping for the change list ----------

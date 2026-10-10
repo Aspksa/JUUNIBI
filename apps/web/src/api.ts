@@ -5,7 +5,22 @@ export interface CloudStatus { configured: boolean; model: string }
 export interface BrainPlan { id:string; goal:string; createdAt:string; status:"planned"|"running"|"completed"|"failed"; steps:{id:string;title:string;status:"pending"|"active"|"done"|"failed"}[] }
 export interface BrainStatus { mode:"chat"|"analysis"|"agent"|"creative"; assistantReady:boolean; capabilities:string[]; plans:BrainPlan[] }
 export interface UpdateEvent {event_id:string;type:string;timestamp:string;operation_id:string;relative_path:string;status:string;change_type?:string;bytes_done?:number;bytes_total?:number;target_relative_path?:string;message?:string;files?:{path:string;change_type:string;size:number}[]}
-export interface UpdateStatus { phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; pendingRemovals?: string[]; removalsConfirmed?: boolean; localVersion: string; latest: null | { sha: string; version: string; description: string; date: string } }
+export type UpdateCi = "success" | "pending" | "failure" | "none" | "unknown";
+export interface UpdateChangeNote { sha: string; title: string; pr?: number }
+export interface UpdateCheckStep { id: "install" | "typecheck" | "test" | "build"; title: string; status: "todo" | "active" | "done" | "error" }
+export interface UpdateConfig { channel: "fresh" | "stable"; autoCheck: "off" | "hourly" | "daily" }
+export interface UpdateStatus {
+  phase: "idle" | "downloading" | "testing" | "ready" | "error"; percent: number; downloadedFiles: number; totalFiles: number; downloadedBytes: number; totalBytes: number; message: string; error?: string; pendingRemovals?: string[]; removalsConfirmed?: boolean; localVersion: string;
+  latest: null | { sha: string; version: string; description: string; date: string; channel?: "fresh" | "stable"; tag?: string; ci?: UpdateCi; changes?: UpdateChangeNote[]; changesTotal?: number };
+  reusedFiles?: number; treeBytes?: number; checks?: UpdateCheckStep[]; logTail?: string;
+  config?: UpdateConfig; rollbackPending?: boolean;
+  /** Why the newest version cannot be installed yet (CI not green); null/absent = it can. */
+  blocked?: string | null;
+  /** Work that a restart would interrupt. */
+  activity?: string[];
+}
+export interface UpdateHistoryItem { id: string; at: string; kind: "install" | "rollback" | "failed" | "startup_failed"; from: string; to: string; backup?: string; rollbackOf?: string; message?: string; files?: number }
+export interface UpdateHistory { items: UpdateHistoryItem[]; canRollback: UpdateHistoryItem | null; rollbackPending: boolean }
 export interface ApprovalItem { id: string; tool: string; risk: "read" | "write" | "danger"; args: Record<string, unknown>; expiresAt: number }
 export interface ChatReply { turnId: string; reply: string; tools: string[]; memory: string[] }
 export interface MemoryItem { id: string; kind: string; text: string; status: "active" | "pending"; score: number; createdAt?: number; expiresAt?: number; pinned?: boolean }
@@ -63,7 +78,7 @@ export interface Status { assistant: boolean; model?: string; hint?: string }
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers: { "content-type": "application/json" } });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((body as { error?: string }).error ?? `Ошибка ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error((body as { error?: string }).error ?? `Ошибка ${res.status}`), { body });
   return body as T;
 }
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
@@ -80,6 +95,11 @@ export const api = {
   updateCheck: () => attemptAsync(() => call<UpdateStatus>("/api/update/check", post({}))),
   updateConfirmRemovals: () => attemptAsync(() => call<UpdateStatus>("/api/update/confirm-removals", post({}))),
   updateDownload: () => attemptAsync(() => call<{ok:boolean}>("/api/update/download", post({}))),
+  updateCancel: () => attemptAsync(() => call<UpdateStatus>("/api/update/cancel", post({}))),
+  updateSettings: (patch: Partial<UpdateConfig>) => attemptAsync(() => call<UpdateStatus>("/api/update/settings", post(patch))),
+  updateHistory: () => attemptAsync(() => call<UpdateHistory>("/api/update/history")),
+  updateRollback: (cancel = false) => attemptAsync(() => call<UpdateStatus>("/api/update/rollback", post({ cancel }))),
+  updateInstallNow: (force = false) => attemptAsync(() => call<{ restarting: boolean }>("/api/update/install-now", post({ force }))),
   approvals: () => attemptAsync(() => call<ApprovalItem[]>("/api/approvals")),
   decideApproval: (id: string, approve: boolean) => attemptAsync(() => call<{ok:boolean}>(`/api/approvals/${encodeURIComponent(id)}/${approve ? "approve" : "reject"}`, post({}))),
   status: (): Promise<Result<Status>> => attemptAsync(() => call<Status>("/api/status")),
