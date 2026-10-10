@@ -95,6 +95,13 @@ export class CloudRuProvider implements LlmProvider {
     } finally { clearTimeout(timer); signal?.removeEventListener("abort", onAbort); }
   }
 
+  /** One tiny request to `model` only (no fallback, no retries): the settings page's «Проверить всё». Returns the time it took. */
+  async ping(model: string, timeoutMs = 20_000): Promise<number> {
+    const t0 = Date.now();
+    await this.attempt(model, [{ role: "user", content: "Ответь одним словом: готово" }], { maxTokens: 8, temperature: 0, timeoutMs }, 0, { streamed: false });
+    return Date.now() - t0;
+  }
+
   async chat(messages: Message[], opts: ChatOptions = {}): Promise<LlmResponse> {
     const primary = this.cfg.model;
     const fallback = this.cfg.fallbackModel && this.cfg.fallbackModel !== primary ? this.cfg.fallbackModel : "";

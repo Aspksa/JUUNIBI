@@ -1,5 +1,6 @@
 import { Kernel, Logger } from "@juunibi/core";
 import { applyAccent } from "./accents";
+import { isHelpKey, openHotkeys } from "./hotkeys";
 import { Avatar } from "./avatar";
 import { Chats } from "./chat/chats";
 import { ChatController } from "./chat/controller";
@@ -13,7 +14,7 @@ import { openQuickAdd } from "./nav/quick-add";
 import { modulesPage } from "./pages/modules";
 import { brainPage } from "./pages/brain";
 import { animateFlight, setUpdateRerender, updatePage } from "./pages/update";
-import { settingsPage } from "./pages/settings";
+import { focusSettingsSearch, settingsPage } from "./pages/settings";
 import { tasksPage } from "./pages/tasks";
 import { mobilePage } from "./pages/mobile";
 import {
@@ -48,8 +49,15 @@ kernel.register({
       first = false; apply(t); syncMeta();
     };
     swap(app.get().theme);
-    applyAccent(app.get().accent);
-    const reapply = () => { applyAccent(app.get().accent); syncMeta(); };
+    const reapply = () => { applyAccent(app.get().accent, app.get().customAccent); syncMeta(); };
+    const look = () => {
+      const s = app.get(), d = document.documentElement;
+      if (s.uiRadius === "normal") d.removeAttribute("data-radius"); else d.dataset.radius = s.uiRadius;
+      if (s.uiScale === "md") d.removeAttribute("data-scale"); else d.dataset.scale = s.uiScale;
+    };
+    reapply(); look();
+    ctx.onStop(app.select((s) => s.customAccent, reapply));
+    ctx.onStop(app.select((s) => s.uiRadius + s.uiScale, look));
     const mq = matchMedia("(prefers-color-scheme: dark)");
     mq.addEventListener("change", reapply);
     ctx.onStop(() => mq.removeEventListener("change", reapply));
@@ -113,6 +121,8 @@ kernel.register({
       else if (mod && !e.altKey && !e.shiftKey && e.code === "KeyJ") { e.preventDefault(); if (app.get().chatOpen) closeChat(); else openChat(); }
       else if (mod && !e.altKey && !e.shiftKey && e.code === "KeyB" && innerWidth > 860) { e.preventDefault(); menu.toggleCollapsed(); }
       else if (e.altKey && !mod && !e.shiftKey && e.code === "KeyN") { e.preventDefault(); newChat(); }
+      else if (mod && !e.altKey && !e.shiftKey && e.code === "Comma") { e.preventDefault(); if (app.get().chatOpen) closeChat(); go("settings"); focusSettingsSearch(); }
+      else if (isHelpKey(e)) { e.preventDefault(); openHotkeys(); }
       else if (e.altKey && !mod && !e.shiftKey && itemForDigit(menu.prefs, e.code)) {
         e.preventDefault();
         const n = itemForDigit(menu.prefs, e.code)!;
@@ -137,7 +147,7 @@ kernel.register({
         case "modules": case "tasks": case "mobile": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
-        case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
+        case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.customAccent, s.uiRadius, s.uiScale, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
       }
     };
     const renderPage = (s: AppState) => {

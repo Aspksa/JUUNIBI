@@ -72,6 +72,8 @@ export interface AppDeps {
   saveCloud?: (apiKey: string) => Promise<void>;
   /** Chat models available to the saved Cloud.ru key. */
   cloudModels?: () => Promise<string[]>;
+  /** «Проверить всё» on the settings page: key, models, embeddings and internet in one go. */
+  selfTest?: () => Promise<unknown>;
   assistant?: Assistant | undefined;
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
@@ -536,6 +538,8 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           return send(res, 404, { error: "Не найдено" });
         }
         if (deps.brief && req.method === "GET" && p === "/api/brief") return send(res, 200, await deps.brief());
+        if (deps.settings && req.method === "GET" && p === "/api/assistant/settings/defaults") return send(res, 200, publicSettings(deps.settings.defaults()));
+        if (deps.selfTest && req.method === "POST" && p === "/api/assistant/selftest") return send(res, 200, { checks: await deps.selfTest() });
         if (deps.settings && p === "/api/assistant/settings") {
           if (req.method === "GET") return send(res, 200, publicSettings(deps.settings.get()));
           if (req.method === "POST") return send(res, 200, publicSettings(await deps.settings.update(await readJson(req))));

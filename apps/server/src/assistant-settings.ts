@@ -153,7 +153,9 @@ export class AssistantSettingsStore {
   private value: AssistantSettings;
   private writes: Promise<void> = Promise.resolve();
   private listeners: ((s: AssistantSettings) => void)[] = [];
-  constructor(private readonly file: string, env: NodeJS.ProcessEnv = process.env) { this.value = defaultSettings(env); }
+  constructor(private readonly file: string, private readonly env: NodeJS.ProcessEnv = process.env) { this.value = defaultSettings(env); }
+  /** What a fresh install would have (the «По умолчанию» buttons of the settings page). */
+  defaults(): AssistantSettings { return defaultSettings(this.env); }
   async load() {
     try {
       const raw: unknown = JSON.parse(await readFile(this.file, "utf8"));

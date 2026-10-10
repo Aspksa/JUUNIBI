@@ -23,6 +23,23 @@ export const BRIEF_PROMPT = "Сделай сводку дня: возьми да
 export const quickToCommands = (list: { name: string; text: string }[]): Command[] =>
   list.map((q) => ({ id: "quick" as const, names: [q.name], hint: q.text.replace(/\s+/g, " ").slice(0, 70), quick: q.text }));
 
+/** Words a quick command's text may contain; they are replaced when the command is sent. */
+export const PLACEHOLDERS: [string, string][] = [["{дата}", "сегодняшняя дата"], ["{время}", "текущее время"], ["{день}", "день недели"], ["{буфер}", "текст из буфера обмена"]];
+const pad = (n: number) => String(n).padStart(2, "0");
+const WEEKDAYS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+/** Fills {дата}, {время}, {день} and {буфер} in a quick command's text. */
+export function fillPlaceholders(text: string, o: { now: Date; clipboard?: string }): string {
+  const d = o.now;
+  return text.replace(/\{(дата|время|день|буфер)\}/giu, (_, w: string) => {
+    switch (w.toLowerCase()) {
+      case "дата": return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+      case "время": return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      case "день": return WEEKDAYS[d.getDay()]!;
+      default: return (o.clipboard ?? "").trim();
+    }
+  });
+}
+
 /** `/запомни кофе без сахара` -> { command, arg }. Unknown commands return null (the text is sent as a normal message). */
 export function parseCommand(input: string, extra: Command[] = []): { command: Command; arg: string } | null {
   const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(input.trim());

@@ -69,6 +69,19 @@ const ICONS = {
   help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01",
   view: "M4 6h16M7 12h10M10 18h4",
   download: "M12 4v12m0 0-4-4m4 4 4-4M5 20h14",
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z",
+  key: "M8 15a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11.5 12H21M17 12v3M20 12v2",
+  palette: "M12 3a9 9 0 0 0 0 18c1.2 0 1.6-.9 1.2-1.8-.5-1-.1-2.2 1.2-2.2H17a4 4 0 0 0 4-4c0-5.5-4-10-9-10zM7.5 11h.01M10 7h.01M14.5 7h.01",
+  textSize: "M4 7V5h9v2M8.5 5v14M7 19h3M14 12v-1h6v1M17 11v8M16 19h2",
+  rows: "M4 5h16v4H4zM4 15h16v4H4z",
+  thought: "M7 15a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17 8a3.5 3.5 0 0 1 0 7zM8 19.5h.01M5 21h.01",
+  keyboard: "M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10",
+  archive: "M3 5h18v4H3zM5 9v10h14V9M10 13h4",
+  pulse: "M3 12h4l2-6 4 12 2-6h6",
+  corner: "M5 19V11a6 6 0 0 1 6-6h8",
+  zoom: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3M11 8v6M8 11h6",
+  sparkle: "M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6",
+  undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
 } as const;
 export type IconName = keyof typeof ICONS;
 const FILLED = new Set<IconName>(["stop"]);

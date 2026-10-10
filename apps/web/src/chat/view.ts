@@ -4,7 +4,7 @@ import { app, decideApproval, persistPrefs, type Route } from "../state";
 import { groupLabel, type Chats, type ChatMsg, type Conversation } from "./chats";
 import { Composer } from "./composer";
 import type { ChatController } from "./controller";
-import { BRIEF_PROMPT, COMMANDS, quickToCommands, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
+import { BRIEF_PROMPT, COMMANDS, fillPlaceholders, quickToCommands, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
 import { fillMessage, msgSignature } from "./message";
 import { isSpeaking, speak, speechSupported, stopSpeaking } from "./voice";
 import { WindowFrame } from "./window";
@@ -128,6 +128,12 @@ export class ChatView {
   focus() { this.composer.focus(); }
   /** The "Сегодня" card on Home asks the assistant for the day summary. */
   askBrief() { return this.sendText(BRIEF_PROMPT); }
+  /** A quick command: its text with {дата}, {время}, {день}, {буфер} filled in, then what was typed after it. */
+  private async sendQuick(text: string, arg: string) {
+    const clipboard = /\{буфер\}/i.test(text) ? await navigator.clipboard?.readText().catch(() => "") ?? "" : "";
+    const body = fillPlaceholders(text, { now: new Date(), clipboard });
+    return this.sendText(arg ? body + "\n\n" + arg : body);
+  }
   /** Sends a message from outside the window (a quick command or a question from Ctrl+K). */
   send(text: string) { return this.sendText(text); }
   /** A fresh chat, as Ctrl+Shift+O does inside the window. */
@@ -183,7 +189,7 @@ export class ChatView {
       case "memory": case "modules": case "update": case "settings": this.onNavigate(c.id); break;
       case "export": this.exportChat(conv); break;
       case "brief": void this.sendText(BRIEF_PROMPT); break;
-      case "quick": if (c.quick) void this.sendText(arg ? c.quick + "\n\n" + arg : c.quick); break;
+      case "quick": if (c.quick) void this.sendQuick(c.quick, arg); break;
       case "clear":
         if (conv.messages.length && confirm("Очистить текущий чат?")) { if (this.ctl.busy) this.ctl.stop(); this.chats.clearMessages(conv.id); }
         break;
