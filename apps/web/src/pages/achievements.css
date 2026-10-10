@@ -300,3 +300,7 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .tasks-forecast-track{height:8px;overflow:hidden;border-radius:8px;background:color-mix(in srgb,var(--fg) 10%,transparent)}
 .tasks-forecast-track i{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#f19b4a,#de5c28)}
 .tasks-forecast-day.overload .tasks-forecast-track i{background:linear-gradient(90deg,#dc5129,#af2424)}
+
+.tasks-scenario-controls{display:flex;flex-wrap:wrap;gap:5px}
+.tasks-scenario-controls .chip{font-size:.72rem;padding:5px 8px}
+.tasks-scenario-controls .chip.on,.tasks-scenario-controls .chip[aria-pressed=true]{border-color:#e76b34;background:color-mix(in srgb,#e76b34 15%,var(--bg));color:var(--fg)}
