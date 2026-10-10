@@ -13,6 +13,7 @@ describe("automatic memory proposals", () => {
     const assistant = new Assistant({ llm, memory });
     expect((await assistant.ask("Я предпочитаю тёмную тему интерфейса")).reply).toBe("Хорошо");
     expect(await memory.search("тёмную тему")).toHaveLength(0);
+    await assistant.idle();
     const proposed = await memory.list("pending");
     expect(proposed).toHaveLength(1);
     await memory.approve(proposed[0]!.id);
@@ -27,6 +28,7 @@ describe("automatic memory proposals", () => {
     const m = new Memory();
     const a = new Assistant({ llm, memory: m });
     expect((await a.ask("Я постоянно использую тёмную тему")).reply).toBe("Готово");
+    await a.idle();
     expect(await m.list()).toEqual([]);
   });
   it("ignores questions and unrelated short commands", async () => {
@@ -45,6 +47,7 @@ describe("automatic memory proposals", () => {
     const memory = new Memory();
     const assistant = new Assistant({ llm, memory });
     await assistant.ask("Мне требуется краткий ответ в каждом разговоре");
+    await assistant.idle();
     expect(calls).toBe(2);
     expect((await memory.list("pending")).map(x => x.text)).toEqual(["Мне требуется краткий ответ"]);
     expect(await memory.search("ответ")).toEqual([]);
