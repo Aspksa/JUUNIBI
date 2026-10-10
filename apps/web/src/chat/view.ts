@@ -221,7 +221,7 @@ export class ChatView {
     this.maxBtn.replaceChildren(icon(s.chatMax ? "minimize" : "maximize", 18));
     this.maxBtn.title = s.chatMax ? "Свернуть окно" : "На весь экран";
     this.maxBtn.setAttribute("aria-label", this.maxBtn.title);
-    const model = s.status?.model?.split("/").pop() ?? "";
+    const model = (s.assistantSettings?.chat.model || s.status?.model)?.split("/").pop() ?? "";
     const typing = busy && this.ctl.store.get().busyId === conv?.id;
     const lastMsg = conv?.messages[conv.messages.length - 1];
     const running = typing ? lastMsg?.steps?.find((st) => st.status === "running") : undefined;

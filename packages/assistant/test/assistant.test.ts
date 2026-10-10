@@ -223,7 +223,7 @@ describe("streaming", () => {
       { type: "tool", phase: "end", id: "1", name: "list_modules", status: "ok", ms: expect.any(Number) },
       { type: "delta", text: "Готово" },
     ]);
-    expect(r.reply).toBe("Готово");
+    expect(r.reply).toBe("Смотрю…\n\nГотово"); // text written before a tool call stays part of the reply
     expect(seen[0]!.map((m) => m.content).slice(1)).toEqual(["привет", "здравствуйте", "что нового?"]);
     // server-side session memory was NOT touched: a later call without history starts clean
     seen.length = 0;

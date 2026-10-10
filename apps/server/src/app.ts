@@ -150,7 +150,7 @@ export function createApp(deps: AppDeps): http.Server {
       if (p.startsWith("/api/")) {
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
         const a = deps.getAssistant?.() ?? deps.assistant;
-        if (req.method === "GET" && p === "/api/status") return send(res, 200, { assistant: !!a, ...deps.configured });
+        if (req.method === "GET" && p === "/api/status") return send(res, 200, { assistant: !!a, ...deps.configured, ...(deps.cloudStatus ? { model: deps.cloudStatus().model } : {}) });
         if (req.method === "GET" && p === "/api/cloudru/models") {
           if (!deps.cloudModels) return send(res, 503, { error: "Список моделей недоступен" });
           try { return send(res, 200, { models: await deps.cloudModels() }); }

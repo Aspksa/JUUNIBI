@@ -26,9 +26,11 @@ export const BUILTIN_COMMAND_NAMES = ["новый", "new", "запомни", "re
 const err = (message: string) => Object.assign(new Error(message), { status: 400 });
 
 export function defaultSettings(env: NodeJS.ProcessEnv = process.env): AssistantSettings {
+  const model = env.CLOUDRU_MODEL?.trim() || DEFAULT_CHAT_MODEL;
+  const fallback = env.CLOUDRU_FALLBACK_MODEL?.trim() || "";
   return {
     embeddings: { enabled: true, model: env.CLOUDRU_EMBEDDING_MODEL?.trim() || DEFAULT_EMBEDDING_MODEL },
-    chat: { model: env.CLOUDRU_MODEL?.trim() || DEFAULT_CHAT_MODEL, fallbackModel: env.CLOUDRU_FALLBACK_MODEL?.trim() || "", reasoning: true },
+    chat: { model, fallbackModel: fallback === model ? "" : fallback, reasoning: true },
     suggestions: "smart", summaries: true, files: { root: "", allowWrite: false }, web: false, quickCommands: [],
   };
 }
@@ -58,6 +60,7 @@ export async function validateSettings(input: unknown, base: AssistantSettings):
       if (typeof c.fallbackModel !== "string" || (c.fallbackModel.trim() && !MODEL_NAME.test(c.fallbackModel.trim()))) throw err("Некорректное имя запасной модели");
       out.chat.fallbackModel = c.fallbackModel.trim();
     }
+    if (out.chat.fallbackModel && out.chat.fallbackModel === out.chat.model) throw err("Запасная модель совпадает с основной: выберите другую или оставьте поле пустым");
     if (c.reasoning !== undefined) { if (typeof c.reasoning !== "boolean") throw err("Некорректный переключатель размышлений"); out.chat.reasoning = c.reasoning; }
   }
   if (i.suggestions !== undefined) { if (i.suggestions !== "off" && i.suggestions !== "rules" && i.suggestions !== "smart") throw err("Режим предложений: off, rules или smart"); out.suggestions = i.suggestions; }
@@ -78,6 +81,8 @@ export async function validateSettings(input: unknown, base: AssistantSettings):
         if (real === path.parse(real).root) throw err("Корень диска нельзя открывать целиком: выберите конкретную папку");
         out.files.root = real;
       }
+      // Permission to write was given for one folder; a different folder starts read-only unless asked otherwise.
+      if (out.files.root !== base.files.root && f.allowWrite === undefined) out.files.allowWrite = false;
     }
     if (!out.files.root) out.files.allowWrite = false; // writing without a folder makes no sense
   }
@@ -116,6 +121,9 @@ export class AssistantSettingsStore {
       if (r?.files && typeof r.files === "object" && typeof r.files.root === "string") {
         try { await stat(r.files.root); } catch { (cleaned.files as Record<string, unknown>).root = ""; }
       }
+      // A fallback equal to the main model (saved before that was refused) is dropped rather than failing the whole file.
+      const chat = cleaned?.chat as Record<string, unknown> | undefined;
+      if (chat && typeof chat === "object" && typeof chat.fallbackModel === "string" && chat.fallbackModel.trim() === String(chat.model ?? this.value.chat.model).trim()) chat.fallbackModel = "";
       this.value = await validateSettings(cleaned, this.value);
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }

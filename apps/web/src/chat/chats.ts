@@ -16,17 +16,41 @@ const MAX_CONVERSATIONS = 100;
 const MAX_MESSAGES = 300;
 const uid = () => crypto.randomUUID();
 
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+const strings = (x: unknown): string[] | undefined => (Array.isArray(x) ? x.filter((v): v is string => typeof v === "string") : undefined);
+const STEP_STATUS = ["running", "ok", "error", "denied"];
+
+/** One stored message with every optional field checked: a damaged file or storage must never break rendering. */
+function cleanMessage(m: unknown): ChatMsg | null {
+  if (!isObj(m) || typeof m.id !== "string" || (m.role !== "user" && m.role !== "assistant" && m.role !== "note") || typeof m.content !== "string") return null;
+  const out: ChatMsg = { id: m.id, role: m.role, content: m.content, at: Number(m.at) || Date.now() };
+  if (typeof m.turnId === "string") out.turnId = m.turnId;
+  if (m.rating === 1 || m.rating === -1) out.rating = m.rating;
+  if (isObj(m.scene) && typeof m.scene.action === "string") out.scene = { action: m.scene.action, ...(typeof m.scene.phrase === "string" ? { phrase: m.scene.phrase } : {}) };
+  const tools = strings(m.tools); if (tools) out.tools = tools;
+  const used = strings(m.memoryUsed); if (used) out.memoryUsed = used;
+  if (Array.isArray(m.steps)) {
+    // a step that was running when the page closed is finished by definition
+    out.steps = m.steps.filter((st): st is Step => isObj(st) && typeof st.id === "string" && typeof st.name === "string" && STEP_STATUS.includes(st.status as string))
+      .map((st) => ({ id: st.id, name: st.name, status: st.status === "running" ? "error" : st.status, ...(typeof st.ms === "number" ? { ms: st.ms } : {}) }));
+  }
+  if (Array.isArray(m.files)) out.files = m.files.filter((f): f is { name: string; size: number; text: string } => isObj(f) && typeof f.name === "string" && typeof f.text === "string")
+    .map((f) => ({ name: f.name, size: Number(f.size) || f.text.length, text: f.text }));
+  if (typeof m.error === "string") out.error = m.error;
+  if (m.stopped === true) out.stopped = true;
+  // a message that was streaming when the page closed is finished by definition
+  if (out.role === "assistant" && !out.turnId && !out.error && !out.content) out.error = "Ответ не был получен.";
+  return out;
+}
+
 function sanitize(raw: unknown): Conversation[] {
   if (!Array.isArray(raw)) return [];
   const out: Conversation[] = [];
+  const seen = new Set<string>();
   for (const c of raw) {
-    if (!c || typeof c.id !== "string" || !Array.isArray(c.messages)) continue;
-    const messages: ChatMsg[] = c.messages.filter((m: ChatMsg) => m && typeof m.id === "string" && (m.role === "user" || m.role === "assistant" || m.role === "note") && typeof m.content === "string");
-    // a message that was streaming when the page closed is finished by definition
-    for (const m of messages) {
-      if (m.role === "assistant" && !m.turnId && !m.error && !m.content) m.error = "Ответ не был получен.";
-      if (m.steps) m.steps = m.steps.map((st) => (st.status === "running" ? { ...st, status: "error" as const } : st));
-    }
+    if (!isObj(c) || typeof c.id !== "string" || !Array.isArray(c.messages) || seen.has(c.id)) continue;
+    seen.add(c.id);
+    const messages = c.messages.map(cleanMessage).filter((m): m is ChatMsg => m !== null);
     out.push({ id: c.id, title: typeof c.title === "string" && c.title ? c.title.slice(0, 120) : DEFAULT_TITLE, createdAt: Number(c.createdAt) || Date.now(), updatedAt: Number(c.updatedAt) || Date.now(), messages });
   }
   return out.slice(0, MAX_CONVERSATIONS);
@@ -39,7 +63,8 @@ export class Chats {
 
   constructor() {
     const r = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "null") as { items?: unknown; activeId?: unknown } | null);
-    const items = r.ok && r.value ? sanitize(r.value.items) : [];
+    const clean = r.ok && r.value ? attempt(() => sanitize(r.value!.items)) : null;
+    const items = clean?.ok ? clean.value : [];
     const activeId = r.ok && r.value && typeof r.value.activeId === "string" && items.some((c) => c.id === r.value!.activeId) ? (r.value.activeId as string) : (items[0]?.id ?? null);
     this.store = new Store<ChatsState>({ items, activeId });
     this.store.subscribe(() => this.schedulePersist());
@@ -69,16 +94,20 @@ export class Chats {
   clearAll() { this.store.set({ items: [], activeId: null }); }
   /** Puts back conversations removed by `clearAll` (the "Отменить" in the toast). */
   restore(items: Conversation[]) { this.store.set((s) => ({ items: [...s.items, ...items.filter((c) => !s.items.some((x) => x.id === c.id))].slice(0, MAX_CONVERSATIONS), activeId: s.activeId ?? items[0]?.id ?? null })); }
-  /** Adds conversations from an exported JSON file; ones already here (same id) are skipped. Returns how many were added. */
-  importJson(raw: unknown): number {
+  /**
+   * Adds conversations from an exported JSON file; ones already here (same id) are skipped.
+   * Chats already in this browser are never pushed out: only as many as fit under MAX_CONVERSATIONS are added
+   * (newest first), and `dropped` says how many did not fit.
+   */
+  importJson(raw: unknown): { added: number; dropped: number } {
     const have = new Set(this.store.get().items.map((c) => c.id));
-    const fresh = sanitize(raw).filter((c) => !have.has(c.id));
-    if (!fresh.length) return 0;
-    this.store.set((s) => {
-      const items = [...s.items, ...fresh].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_CONVERSATIONS);
+    const fresh = sanitize(raw).filter((c) => !have.has(c.id)).sort((a, b) => b.updatedAt - a.updatedAt);
+    const fit = fresh.slice(0, Math.max(0, MAX_CONVERSATIONS - have.size));
+    if (fit.length) this.store.set((s) => {
+      const items = [...s.items, ...fit].sort((a, b) => b.updatedAt - a.updatedAt);
       return { items, activeId: s.activeId ?? items[0]?.id ?? null };
     });
-    return fresh.filter((c) => this.get(c.id)).length;
+    return { added: fit.length, dropped: fresh.length - fit.length };
   }
 
   append(id: string, msg: Omit<ChatMsg, "id" | "at"> & Partial<Pick<ChatMsg, "id" | "at">>): ChatMsg {

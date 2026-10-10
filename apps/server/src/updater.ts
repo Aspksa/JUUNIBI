@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile, rm, readFile, appendFile, copyFile, rename } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptionsWithStdioTuple } from "node:child_process";
 
 const REPO = "Aspksa/JUUNIBI";
 const API = "https://api.github.com/repos/" + REPO;
@@ -138,7 +138,7 @@ export class ProjectUpdater {
     return { ...this.state, latest: this.latest, localVersion: this.localVersion(), config: this.getConfig(), rollbackPending: this.rollbackPending, blocked: this.blocked() };
   }
   private localVersion(): string {
-    try { return requireMarker(this.root); } catch { return "не определена"; }
+    try { return requireMarker(this.root); } catch { return UNKNOWN_VERSION; }
   }
 
   /** Why the newest version cannot be installed right now (null = it can). */
@@ -187,6 +187,7 @@ export class ProjectUpdater {
     }
     if (!/^[a-f0-9]{40}$/.test(target.sha)) throw new Error("Неверный идентификатор GitHub");
     const title = target.message.split("\n")[0]!.slice(0, 160);
+    await this.adoptIfIdentical(target.sha);
     const [ci, notes] = await Promise.all([this.ciState(target.sha), this.whatChanged(target.sha)]);
     this.latest = {
       sha: target.sha, version: target.tag ?? target.sha.slice(0, 8), channel: this.config.channel, ...(target.tag ? { tag: target.tag } : {}),
@@ -195,6 +196,25 @@ export class ProjectUpdater {
     };
     this.checkedAt = Date.now();
     return this.status();
+  }
+
+  /**
+   * An install without a version marker (a ZIP copy, no .git) whose files are exactly the files of `sha` IS that
+   * version: the marker is written so no update that changes nothing is offered. Best effort.
+   */
+  private async adoptIfIdentical(sha: string) {
+    if (this.localVersion() !== UNKNOWN_VERSION) return;
+    try {
+      const tree = await this.getJson(API + "/git/trees/" + sha + "?recursive=1");
+      if (tree.truncated || !Array.isArray(tree.tree)) return;
+      const blobs = (tree.tree as Entry[]).filter((x) => x.type === "blob" && safeRelative(x.path) && /^[0-9a-f]{40}$/.test(x.sha));
+      if (!blobs.length || blobs.length > 2500) return;
+      for (const e of blobs) {
+        const bytes = await readFile(path.join(this.root, e.path)).catch(() => null);
+        if (!bytes || gitHash(bytes) !== e.sha) return; // something differs: this is not that version
+      }
+      await writeFile(path.join(this.root, ".juunibi-version"), sha + "\n");
+    } catch { /* the version stays unknown */ }
   }
 
   /** CI verdict of a commit. Any failure to find out is "unknown", never a silent pass. */
@@ -440,7 +460,13 @@ export class ProjectUpdater {
   private async run(cwd: string, command: string, args: string[]) {
     if (this.runner) return this.runner(cwd, command, args, this.abort?.signal ?? new AbortController().signal);
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(command, args, { cwd, shell: process.platform === "win32", stdio: ["ignore", "pipe", "pipe"], timeout: 900_000, env: scrubbedEnv() });
+      const env = scrubbedEnv();
+      const opts: SpawnOptionsWithStdioTuple<"ignore", "pipe", "pipe"> = { cwd, stdio: ["ignore", "pipe", "pipe"], timeout: 900_000, env };
+      // Windows runs npm through its .cmd wrapper, which needs cmd.exe. It is invoked explicitly instead of
+      // spawn(shell: true), which Node 24 deprecates (DEP0190). Commands and arguments here are fixed literals.
+      const child = process.platform === "win32"
+        ? spawn(env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", [command, ...args].join(" ")], { ...opts, windowsVerbatimArguments: true })
+        : spawn(command, args, opts);
       this.child = child;
       let output = "";
       const capture = (chunk: Buffer) => { output = (output + chunk.toString("utf8")).slice(-32_000); };
@@ -486,12 +512,41 @@ function gitHash(buf: Buffer) {
 function safeRelative(p: string) {
   return !!p && p.length < 1024 && !p.startsWith("/") && !p.includes("\\") && !p.includes(":") && p.split("/").every(s => !!s && s !== "." && s !== ".." && ![".git", ".updates", ".env", "data", ".runtime", "node_modules", ".juunibi-version"].includes(s) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(s) && !/[. ]$/.test(s));
 }
-function requireMarker(root: string): string {
+const UNKNOWN_VERSION = "не определена";
+/** Installed version: the marker written by the installer, else the commit checked out by git. */
+export function requireMarker(root: string): string {
   try { return readFileSync(path.join(root, ".juunibi-version"), "utf8").trim().slice(0, 40); }
-  catch {
-    try {
-      const head = readFileSync(path.join(root, ".git", "HEAD"), "utf8").trim();
-      return /^[a-f0-9]{40}$/.test(head) ? head : (head.startsWith("ref: ") ? readFileSync(path.join(root, ".git", head.slice(5)), "utf8").trim() : "не определена");
-    } catch { return "не определена"; }
-  }
+  catch { return gitHead(root) ?? UNKNOWN_VERSION; }
+}
+/** Commit of HEAD without running git: follows a worktree's "gitdir:" file and refs packed by `git gc`. */
+function gitHead(root: string): string | null {
+  const dotGit = path.join(root, ".git");
+  const direct = headIn(dotGit);
+  if (direct) return direct;
+  try { // a worktree or submodule has a FILE ".git" that points to the real folder
+    const link = readFileSync(dotGit, "utf8").trim();
+    return link.startsWith("gitdir: ") ? headIn(path.resolve(root, link.slice(8).trim())) : null;
+  } catch { return null; }
+}
+function headIn(gitDir: string): string | null {
+  try {
+    const head = readFileSync(path.join(gitDir, "HEAD"), "utf8").trim();
+    if (/^[a-f0-9]{40}$/.test(head)) return head;
+    if (!head.startsWith("ref: ")) return null;
+    const ref = head.slice(5).trim();
+    if (!/^refs\/[\w./-]+$/.test(ref) || ref.includes("..")) return null;
+    // A worktree keeps branch refs in the main repository (commondir).
+    let common = gitDir;
+    try { common = path.resolve(gitDir, readFileSync(path.join(gitDir, "commondir"), "utf8").trim()); } catch { /* not a worktree */ }
+    for (const dir of common === gitDir ? [gitDir] : [common, gitDir]) {
+      try { const sha = readFileSync(path.join(dir, ref), "utf8").trim(); if (/^[a-f0-9]{40}$/.test(sha)) return sha; } catch { /* packed */ }
+      try {
+        for (const line of readFileSync(path.join(dir, "packed-refs"), "utf8").split(/\r?\n/)) {
+          const m = /^([a-f0-9]{40}) (\S+)$/.exec(line.trim());
+          if (m && m[2] === ref) return m[1]!;
+        }
+      } catch { /* no packed refs */ }
+    }
+    return null;
+  } catch { return null; }
 }
