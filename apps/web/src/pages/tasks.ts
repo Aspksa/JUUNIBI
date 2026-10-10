@@ -31,22 +31,60 @@ export function tasksPage(): HTMLElement {
 
   const month = el("input", { type:"month",value:new Date().toISOString().slice(0,7),cls:"mem-select",attrs:{"aria-label":"Месяц календаря"} });
   const calendarHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Календарь и продуктивность"}});
+  let selectedDay = new Date().toLocaleDateString("sv-SE");
+  const selectedHost = el("div",{cls:"tasks-selected-day"});
+  const renderSelectedDay = () => {
+    selectedHost.replaceChildren(el("h3",{textContent:"Выбранный день: "+selectedDay}),
+      el("p",{cls:"muted small",textContent:"Перенесите дело на этот день — укажите его в списке ниже."}));
+    if (!data) return;
+    const due = data.notes.filter(n=>n.kind==="todo"&&!n.done&&n.dueAt?.startsWith(selectedDay));
+    const options = data.notes.filter(n=>n.kind==="todo"&&!n.done);
+    const task = el("select",{cls:"mem-select",attrs:{"aria-label":"Дело для переноса"}},
+      el("option",{value:"",textContent:"Выберите дело"}),...options.map(n=>el("option",{value:n.id,textContent:n.text.slice(0,90)})));
+    selectedHost.append(el("p",{cls:"muted small",textContent:due.length?"На этот день назначено: "+due.map(n=>n.text).join("; "):"На этот день пока нет дел"}),task,
+      btn("Перенести на этот день",()=>{if(!task.value)return;const original=data!.notes.find(n=>n.id===task.value);const hours=original?.dueAt?new Date(original.dueAt).toTimeString().slice(0,5):"10:00";const iso=fromLocal(selectedDay+"T"+hours);if(iso)void act(()=>api.updateTask(task.value,{dueAt:iso}),"Дело перенесено");},{small:true,primary:true}));
+  };
+  const blocksHost = el("section",{cls:"pg-card",attrs:{"aria-label":"Свободное время"}});
+  const loadBlocks = async () => {
+    const r=await api.timeBlocks(selectedDay);
+    if(!r.ok){blocksHost.replaceChildren(el("p",{cls:"muted",textContent:"План времени недоступен"}));return;}
+    const v=r.value;
+    blocksHost.replaceChildren(el("h2",{textContent:"План свободного времени · "+selectedDay}),
+      el("p",{cls:"muted small",textContent:`Рабочий период: 09:00–18:00 · В плане: ${v.plannedMinutes} мин · Осталось: ${v.remainingMinutes} мин`}),
+      el("p",{cls:"muted small",textContent:v.note}),
+      el("ul",{cls:"org-list"},...v.blocks.map(b=>el("li",{cls:"org-row"},el("span",{cls:"br-tag",textContent:new Date(b.start).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"})}),el("span",{cls:"grow",textContent:b.text}),el("span",{cls:"muted small",textContent:b.minutes+" мин"})))));
+  };
   const renderInsights = async () => {
     const r = await api.taskInsights(month.value);
     if (!r.ok) { calendarHost.replaceChildren(el("p",{cls:"muted",textContent:"Календарь временно недоступен"})); return; }
     const {statistics:stats, items,brainRecommendations} = r.value;
     const days = new Map<string, typeof items>();
     for(const item of items){const day=item.at.slice(0,10);days.set(day,[...(days.get(day)??[]),item]);}
+    const [year, mon] = month.value.split("-").map(Number);
+    const first = new Date(year!,mon!-1,1);
+    const cells: HTMLElement[] = [];
+    for (let i=0;i<(first.getDay()+6)%7;i++) cells.push(el("div",{cls:"tasks-calendar-empty"}));
+    for (let day=1;day<=new Date(year!,mon!,0).getDate();day++) {
+      const date = month.value+"-"+String(day).padStart(2,"0");
+      const entries = days.get(date) ?? [];
+      const cell = el("button",{type:"button",cls:"tasks-calendar-day"+(date===new Date().toLocaleDateString("sv-SE")?" today":""),
+        attrs:{"aria-label":date+": "+entries.length+" записей"},
+      },el("strong",{textContent:String(day)}),...entries.slice(0,3).map(x=>el("span",{cls:"tasks-calendar-event"+(x.done?" done":""),textContent:(x.kind==="reminder"?"◷ ":"✓ ")+x.text.slice(0,28)})),
+      ...(entries.length>3?[el("small",{textContent:"Ещё "+(entries.length-3)})]:[]));
+      cell.addEventListener("click",()=>{selectedDay=date;renderSelectedDay();void loadBlocks();});
+      cells.push(cell);
+    }
     calendarHost.replaceChildren(
       el("h2",{textContent:"Календарь · "+month.value}),
-      el("p",{cls:"muted small",textContent:`Выполнено: ${stats.completed} из ${stats.all} (${stats.completionPercent}%) · За месяц: ${stats.completedThisMonth} · Просрочено: ${stats.overdue}`}),
-      el("ul",{cls:"org-list"},...[...days.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([day,entries])=>
-        el("li",{cls:"org-row"},el("span",{cls:"br-tag",textContent:day}),
-          el("span",{cls:"grow",textContent:entries.map(x=>(x.done?"✓ ":"")+x.text).join(" · ").slice(0,450)})))),
+      el("div",{cls:"tasks-stat-strip"},
+        ...([["Выполнено",String(stats.completed)],["В работе",String(stats.open)],["Просрочено",String(stats.overdue)],["Готовность",stats.completionPercent+"%"]] as const).map(([label,value])=>el("div",{cls:"tasks-stat"},el("span",{textContent:label}),el("strong",{textContent:value})))),
+      el("div",{cls:"tasks-calendar-weekdays"},...["Пн","Вт","Ср","Чт","Пт","Сб","Вс"].map(x=>el("span",{textContent:x}))),
+      el("div",{cls:"tasks-calendar-grid"},...cells),
+      selectedHost,
       el("h3",{textContent:"Рекомендации JUUNIBI · Brain"}),
-      el("p",{cls:"muted small",textContent:"Основаны на реальных сроках и приоритетах. Дела не меняются автоматически."}),
-      el("ul",{cls:"org-list"},...brainRecommendations.map(x=>
-        el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})))));
+      el("p",{cls:"muted small",textContent:"Приоритеты и сроки из данных дел. Рекомендации не изменяют расписание автоматически."}),
+      el("ul",{cls:"org-list"},...brainRecommendations.map(x=>el("li",{cls:"org-row"},el("span",{cls:"grow",textContent:x.text}),el("span",{cls:"br-tag",textContent:x.reason})))));
+    renderSelectedDay();
   };
   month.addEventListener("change",()=>void renderInsights());
   const load = async () => {
@@ -54,6 +92,7 @@ export function tasksPage(): HTMLElement {
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
     render();
     void renderInsights();
+    void loadBlocks();
     const plan = await api.taskPlan();
     if (plan.ok) {
       const v = plan.value;
@@ -211,6 +250,7 @@ export function tasksPage(): HTMLElement {
     planHost,
     el("section",{cls:"pg-card"},el("label",{textContent:"Месяц календаря"}),month),
     calendarHost,
+    blocksHost,
     el("div", { cls: "mem-toolbar" }, search, chipsHost, perm),
     listHost);
 }
