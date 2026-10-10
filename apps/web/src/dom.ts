@@ -12,6 +12,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props =
 const NS = "http://www.w3.org/2000/svg";
 const ICONS = {
   home: "M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10",
+  star: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z",
   memory: "M12 3a6 6 0 0 0-3 11.2V17h6v-2.8A6 6 0 0 0 12 3zM9 20h6",
   modules: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
   pin: "M9 3h6l-1 7 3 3H7l3-3zM12 13v8",
