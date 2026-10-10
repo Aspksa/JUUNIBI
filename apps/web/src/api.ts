@@ -134,6 +134,10 @@ export const api = {
   memoryExpiry: (id: string, until: number | null) => attemptAsync(() => call<{ ok: boolean }>(`/api/memory/${encodeURIComponent(id)}/expiry`, post({ until }))),
   memoryExport: () => attemptAsync(() => call<unknown>("/api/memory/export")),
   memoryImport: (data: unknown) => attemptAsync(() => call<{ added: number; duplicates: number; skipped: number }>("/api/memory/import", post(data))),
+  missions: () => attemptAsync(() => call<{id:string;title:string;description:string;status:"active"|"paused"|"complete";total:number;done:number;percent:number;blocked:number;next:{id:string;text:string;reason:string}|null;stages:{id:string;text:string;done:boolean;parentId:string|null;priority:string}[]}[]>("/api/organizer/missions")),
+  addMission: (title:string,description:string) => attemptAsync(() => call<{id:string;title:string}>("/api/organizer/missions",post({title,description}))),
+  addMissionStage: (id:string,text:string) => attemptAsync(() => call<Note>(`/api/organizer/missions/${encodeURIComponent(id)}/stages`,post({text}))),
+  changeMissionStatus: (id:string,status:"active"|"paused"|"complete") => attemptAsync(() => call<{id:string;status:string}>(`/api/organizer/missions/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})})),
   organizer: () => attemptAsync(() => call<{ notes: Note[]; reminders: Reminder[] }>("/api/organizer")),
   taskInsights: (month: string) => attemptAsync(() => call<{
     month:string;
