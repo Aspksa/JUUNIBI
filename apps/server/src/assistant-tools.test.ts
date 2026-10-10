@@ -93,7 +93,8 @@ describe("инструменты", () => {
       await by.add_reminder!.run({ text: "Пить воду", at: "2026-10-10T10:00:00+03:00", repeat: "daily" });
       expect(organizer.listReminders()[0]!.repeat).toBe("daily");
       expect(await by.list_reminders!.run({})).toEqual([expect.objectContaining({ repeat: "daily" })]);
-      await expect(by.add_reminder!.run({ text: "x", at: "2026-10-10T10:00:00+03:00", repeat: "monthly" })).rejects.toThrow(/Повтор/);
+      expect(await by.add_reminder!.run({ text: "x", at: "2026-10-10T10:00:00+03:00", repeat: "monthly" })).toMatchObject({ repeat: "monthly" });
+      await expect(by.add_reminder!.run({ text: "x", at: "2026-10-10T10:00:00+03:00", repeat: "hourly" })).rejects.toThrow(/Повтор/);
     } finally { await done(); }
   });
   it("заметки, дела и напоминания через инструменты", async () => {

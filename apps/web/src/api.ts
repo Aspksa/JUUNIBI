@@ -38,7 +38,7 @@ export interface AssistantSettings {
   quickCommands: QuickCommand[];
 }
 export type SearchProvider = "duckduckgo" | "brave";
-export type Repeat = "daily" | "weekdays" | "weekly";
+export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days";
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string }
 export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string }
 export interface Brief {
@@ -135,6 +135,13 @@ export const api = {
   memoryExport: () => attemptAsync(() => call<unknown>("/api/memory/export")),
   memoryImport: (data: unknown) => attemptAsync(() => call<{ added: number; duplicates: number; skipped: number }>("/api/memory/import", post(data))),
   organizer: () => attemptAsync(() => call<{ notes: Note[]; reminders: Reminder[] }>("/api/organizer")),
+  taskInsights: (month: string) => attemptAsync(() => call<{
+    month:string;
+    items:{id:string;text:string;at:string;kind:"todo"|"reminder";done:boolean}[];
+    statistics:{all:number;completed:number;open:number;overdue:number;completedThisMonth:number;completionPercent:number};
+    brainRecommendations:{id:string;text:string;score:number;reason:string;evidence:string;source:string}[];
+    advisoryOnly:boolean;
+  }>(`/api/organizer/insights?month=${encodeURIComponent(month)}`)),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
   updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
   addNote: (kind: "note" | "todo", text: string) => attemptAsync(() => call<Note>("/api/organizer/notes", post({ kind, text }))),
