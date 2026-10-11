@@ -269,6 +269,15 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             if(Date.now()-lastTrashSweep>3600000){lastTrashSweep=Date.now();await disk.purgeExpired().catch(()=>undefined);}
             return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
           }
+          if(req.method==="GET"&&p==="/api/disk/intelligence/compare"){
+            if(!deps.documentIntelligence)return send(res,503,{error:"Сервис сравнения недоступен"});
+            const id=url.searchParams.get("id")??"";
+            const from=Number(url.searchParams.get("from")),to=Number(url.searchParams.get("to"));
+            if(!/^[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(from)||!Number.isSafeInteger(to))return send(res,400,{error:"Некорректная редакция"});
+            const before=await disk.readRevisionText(id,from);
+            const after=await disk.readRevisionText(id,to);
+            return send(res,200,await deps.documentIntelligence.compare(id,before.text,after.text));
+          }
           if(req.method==="GET"&&p==="/api/disk/intelligence")return deps.documentIntelligence ? send(res,200,await deps.documentIntelligence.get()) : send(res,503,{error:"Индекс недоступен"});
           if(req.method==="POST"&&p==="/api/disk/intelligence/cloud"){
             if(!deps.documentIntelligence||!deps.documentCloudAnalysis)return send(res,503,{error:"Облачный анализ недоступен"});
