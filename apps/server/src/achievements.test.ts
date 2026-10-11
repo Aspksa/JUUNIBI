@@ -239,7 +239,7 @@ describe("устойчивость архива рекордов", () => {
       }));
       await a.load();
       const view = await a.refresh();
-      expect(view.metrics.find((x) => x.id === "records")?.value).not.toBe("1");
+      expect(view.metrics.find((x) => x.id === "starweek")?.value).toBe("0");
     } finally { await done(); }
   });
 });
