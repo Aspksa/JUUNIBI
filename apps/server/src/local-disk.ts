@@ -5,10 +5,10 @@ import path from "node:path";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
 export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string };
-const LIMIT = 10 * 1024 * 1024;
+const LIMIT = 50 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
-  if (typeof name!=="string" || name.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]*$/.test(name) || name==="." || name===".." || name.includes("..")) throw bad("Имя папки: до 80 букв или цифр, без пути");
+  if (typeof name!=="string" || name.length>240 || name.split("/").some(part=>!part || part.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]+$/.test(part) || part==="." || part==="..") || name.includes("\\")) throw bad("Имя папки: до 80 букв или цифр, без пути");
   return name.trim();
 };
 const validName = (v:unknown) => {
@@ -48,15 +48,44 @@ export class LocalDisk {
     const f=validFolder(name);
     if(!f)throw bad("Укажите название папки");
     if(this.folders.includes(f))throw bad("Такая папка уже есть",409);
+    const parent=f.includes("/")?f.slice(0,f.lastIndexOf("/")):"";
+    if(parent&&!this.folders.includes(parent))throw bad("Сначала создайте родительскую папку",404);
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
     this.folders.push(f);await this.save();return {name:f};
   }
   async upload(name:unknown,folder:unknown,data:unknown){
     const filename=validName(name), f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
-    if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит 10 МБ",413);
+    if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит 50 МБ",413);
     const buf=Buffer.from(data,"base64");
     if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 10 МБ",413);
+    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    const entry:DiskEntry={id:randomUUID(),name:filename,folder:f,size:buf.length,uploadedAt:new Date().toISOString(),sha256:createHash("sha256").update(buf).digest("hex")};
+    await mkdir(path.join(this.root,"objects"),{recursive:true});
+    await writeFile(this.file(entry.id),buf,{flag:"wx",mode:0o600});
+    this.entries.push(entry);
+    try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==entry.id);await rm(this.file(entry.id),{force:true});throw e;}
+    return {...entry};
+  }
+  /** Search small text documents on disk; never sends their contents to a model. */
+  async searchContent(query:string):Promise<string[]>{
+    const q=query.trim().toLocaleLowerCase();
+    if(q.length<2||q.length>160)throw bad("Поиск: от 2 до 160 символов");
+    const ids:string[]=[];
+    for(const entry of this.entries){
+      if(entry.deletedAt || !/\.(txt|md|csv|json|log|ts|tsx|js|mjs|css|html)$/i.test(entry.name) || entry.size>1024*1024)continue;
+      try {
+        const buf=await readFile(this.file(entry.id));
+        if(createHash("sha256").update(buf).digest("hex")===entry.sha256 && buf.toString("utf8").toLocaleLowerCase().includes(q))ids.push(entry.id);
+      } catch { /* An unreadable file is never reported as a match. */ }
+    }
+    return ids;
+  }
+  /** Binary upload path shared by the streaming endpoint. */
+  async uploadBytes(name:unknown,folder:unknown,buf:Buffer){
+    const filename=validName(name),f=validFolder(folder);
+    if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
+    if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 50 МБ",413);
     if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
     const entry:DiskEntry={id:randomUUID(),name:filename,folder:f,size:buf.length,uploadedAt:new Date().toISOString(),sha256:createHash("sha256").update(buf).digest("hex")};
     await mkdir(path.join(this.root,"objects"),{recursive:true});
