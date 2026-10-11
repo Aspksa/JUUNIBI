@@ -33,18 +33,23 @@ export function mobilePage(): HTMLElement {
     apply(r);
   };
 
+  /** The state in large type with one button; while it is off, the three steps to a phone. */
   const accessCard = (s: MobileStatus) => {
-    const input = el("input", { type: "checkbox", checked: s.enabled, disabled: busy, attrs: { role: "switch" } });
-    input.addEventListener("change", () => void act(() => api.mobileEnable(input.checked), input.checked ? "Доступ по Wi-Fi открыт" : "Доступ по Wi-Fi закрыт"));
-    const state = s.error ? [dot("bad"), s.error]
-      : s.running ? [dot("ok"), `Работает: телефоны в вашей сети могут подключиться (порт ${s.port}).`]
-      : s.enabled ? [dot("warn"), "Включается…"]
-      : [dot("off"), "Выключено: JUUNIBI открывается только на этом компьютере."];
-    return section("Доступ по Wi-Fi",
-      el("label", { cls: "set-row switch-row mob-first" },
-        el("span", { cls: "grow" }, el("strong", { textContent: "Открыть доступ с телефона" }), el("small", { cls: "muted", textContent: "Подключиться смогут только устройства, которые вы добавите по коду." })),
-        el("span", { cls: "switch" }, input)),
-      el("p", { cls: "mob-state" }, ...state));
+    const tone = s.error ? "bad" : s.running ? "ok" : s.enabled ? "warn" : "off";
+    const title = s.error ? "Доступ не запустился" : s.running ? "Доступ по Wi-Fi включён" : s.enabled ? "Включается…" : "Доступ по Wi-Fi выключен";
+    const sub = s.error ? s.error : s.running ? `Телефоны в вашей сети могут подключиться (порт ${s.port}). Подключатся только устройства, которые вы добавите по коду.`
+      : "JUUNIBI открывается только на этом компьютере.";
+    const toggle = btn(s.enabled ? "Выключить" : "Включить", () => void act(() => api.mobileEnable(!s.enabled), s.enabled ? "Доступ по Wi-Fi закрыт" : "Доступ по Wi-Fi открыт"),
+      { primary: !s.enabled, icon: s.enabled ? "x" : "phone", disabled: busy });
+    const steps = !s.enabled ? el("ol", { cls: "mob-how", attrs: { "aria-label": "Как подключить телефон" } },
+      ...([["phone", "Включите доступ"], ["view", "Отсканируйте QR-код телефоном"], ["check", "Готово: JUUNIBI на телефоне"]] as const).map(([ic, t], k) =>
+        el("li", {}, el("span", { cls: "mob-how-ic" }, icon(ic, 18)), el("small", { cls: "muted", textContent: "Шаг " + (k + 1) }), el("strong", { textContent: t })))) : null;
+    return el("section", { cls: "pg-card mob-hero " + tone },
+      el("div", { cls: "mob-hero-top" },
+        el("span", { cls: "mob-hero-ic" }, icon("phone", 26), dot(tone)),
+        el("div", { cls: "grow" }, el("h2", { textContent: title }), el("p", { cls: "muted", textContent: sub })),
+        toggle),
+      steps);
   };
 
   const pairCard = (s: MobileStatus) => {

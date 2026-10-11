@@ -115,11 +115,13 @@ const MODULE_META: Record<string, { short: string; icon: IconName; what: string 
   approvals: { short: "Допуск", icon: "shield", what: "Ваше «Да» на действия" },
   scenes: { short: "Сцены", icon: "scenes", what: "Образы и реплики" },
   updater: { short: "Обновления", icon: "update", what: "Проверка GitHub" },
+  mobile: { short: "Телефон", icon: "phone", what: "Доступ по домашнему Wi-Fi" },
 };
 export function moduleMeta(m: Pick<ModView, "name" | "title" | "kind">): { short: string; icon: IconName; what: string } {
   const known = MODULE_META[m.name];
   if (known) return known;
-  const short = m.title.length > 14 ? m.title.slice(0, 13).trimEnd() + "…" : m.title;
+  // the tile wraps the name onto two lines, so it is cut only when it is really long
+  const short = m.title.length > 28 ? m.title.slice(0, 27).trimEnd() + "…" : m.title;
   return { short, icon: m.kind === "manifest" ? "puzzle" : "modules", what: "" };
 }
 /** Share of each status for the stacked health bar; empty statuses are omitted and the shares add up to 100. */

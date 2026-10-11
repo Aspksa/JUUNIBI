@@ -1,6 +1,4 @@
 /* «Мобильное приложение» page. Kept separate so it does not touch the shared stylesheet. */
-.mob-page .mob-first{border-top:0;padding-top:0}
-.mob-state{display:flex;align-items:center;gap:10px;margin:10px 0 0;color:var(--muted)}
 .mob-pair{display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start}
 .mob-qr-box{display:flex;flex-direction:column;align-items:center;gap:12px;width:244px}
 .mob-qr{display:block;width:220px;height:220px;padding:8px;border-radius:var(--r-lg);background:#fff;box-shadow:0 0 0 1px var(--line)}
@@ -24,3 +22,15 @@
   .mob-qr-box{width:100%}
   .mob-devices li{flex-wrap:wrap}.mob-devices li .btn{margin-left:48px}
 }
+/* the state card: large status, one button, the three steps while it is off */
+.mob-hero .mob-hero-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.mob-hero h2{margin:0 0 2px;font-size:var(--fs-lg)}
+.mob-hero p{margin:0;font-size:var(--fs-md);max-width:62ch}
+.mob-hero-ic{position:relative;flex:none;display:grid;place-items:center;width:52px;height:52px;border-radius:var(--r-lg);background:var(--surface-2);color:var(--muted)}
+.mob-hero.ok .mob-hero-ic{color:var(--ok);background:var(--tint-ok)}
+.mob-hero.bad .mob-hero-ic{color:var(--danger);background:var(--tint-danger)}
+.mob-hero-ic .sdot{position:absolute;right:-2px;bottom:-2px;border:2px solid var(--surface)}
+.mob-how{list-style:none;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:18px 0 0;padding:0}
+.mob-how li{display:flex;flex-direction:column;gap:2px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg)}
+.mob-how-ic{display:grid;place-items:center;width:32px;height:32px;margin-bottom:6px;border-radius:var(--r-sm);background:var(--tint-brand);color:var(--brand)}
+@media (max-width:640px){.mob-how{grid-template-columns:1fr}.mob-hero .btn{width:100%}}

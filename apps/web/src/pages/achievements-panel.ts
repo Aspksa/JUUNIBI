@@ -1,18 +1,17 @@
 /**
- * The left column of «Дела»: «Дела и достижения» in short — the kitsune with her twelve tails, the chosen title,
- * the surprise of the day, what JUUNIBI noticed, a few figures, the newest awards and the way into the whole collection.
+ * The left column of «Дела»: «Дела и достижения» in short — the kitsune with her twelve tails, a few figures,
+ * one card of the day (the quest, else the surprise), the newest awards and the way into the whole collection.
  * New awards are celebrated here as soon as they come; new notices come as a toast.
  */
 import { el, icon, type IconName } from "../dom";
 import { showToast } from "../toast";
 import { achData, awardBadge, playPending } from "./achievements";
-import { freshNotices, needText } from "./achievements-model";
+import { freshNotices } from "./achievements-model";
 import { tailsEmblem } from "./tails";
 
 const SEEN = "juunibi.ach.noticeSeen";
 /** The panel folded down to its title, so the left column of «Дела» stays short (remembered in the browser). */
 const FOLDED = "juunibi.ach.panelFolded";
-const HIGHLIGHTS = ["keeper", "octopus", "planner", "twelve"];
 const store = {
   get(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } },
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
@@ -40,20 +39,7 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
     const won = d.awards.filter((a) => a.level > 0).sort((a, b) => (b.lastAt ?? "").localeCompare(a.lastAt ?? "")).slice(0, 6);
 
     const stat = (v: string, l: string) => el("div", { cls: "ach-panel-stat" }, el("b", { textContent: v }), el("span", { textContent: l }));
-    const tile = (id: string) => {
-      const m = d.metrics.find((x) => x.id === id);
-      if (!m) return null;
-      const a = d.awards.find((x) => x.id === id);
-      const b = el("button", { type: "button", cls: "ach-mini" + (m.ready ? "" : " waiting"), title: m.hint + (m.ready ? "" : ". " + needText(m.detail)) },
-        el("span", { cls: "ach-mini-top" }, el("span", { cls: "ach-mini-ic", attrs: { "aria-hidden": "true" }, textContent: m.emoji }), el("small", { textContent: m.title })),
-        el("b", { textContent: m.ready ? m.value : "копим данные" }),
-        el("span", { cls: "ach-mini-bar", attrs: { "aria-hidden": "true" } }, el("i")));
-      b.style.setProperty("--p", String(Math.round((a?.level ? 1 : a?.progress ?? 0) * 100)));
-      b.addEventListener("click", () => o.open("metrics"));
-      return b;
-    };
     const action = (label: string, ic: IconName, tab: string) => el("button", { type: "button", cls: "ach-panel-act", onclick: () => o.open(tab) }, icon(ic, 18), el("span", { textContent: label }));
-    const notices = d.notices.slice(0, 2);
 
     host.replaceChildren(...([head,
       el("button", { type: "button", cls: "ach-panel-scene" + (awake ? "" : " asleep"), title: "Двенадцать хвостов достижений", onclick: () => o.open("tails") },
@@ -62,15 +48,14 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
           el("b", { textContent: awake ? `Проснулось хвостов: ${awake} из 12` : "Кицунэ спит" }),
           el("small", { textContent: awake === 12 ? "Её сила достаёт до города" : awake ? "Каждое направление дел будит свой хвост" : "Хвосты проснутся с первыми сделанными делами" }))),
       el("div", { cls: "ach-panel-stats" }, stat(`${d.stats.won}/${d.stats.total}`, "наград"), stat(String(d.stats.rare), "редких"), stat(String(d.sparks), "искр")),
-      el("div", { cls: "ach-panel-surprise" }, el("span", { cls: "ach-panel-surprise-ic", attrs: { "aria-hidden": "true" } }, icon("sparkle", 18)),
-        el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))),
+      // one card of the day, not two: the quest while there is one, the surprise otherwise
+      !d.quest ? el("div", { cls: "ach-panel-surprise" }, el("span", { cls: "ach-panel-surprise-ic", attrs: { "aria-hidden": "true" } }, icon("sparkle", 18)),
+        el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))) : null,
       d.quest ? el("button", { type: "button", cls: "ach-panel-quest" + (d.quest.done ? " done" : ""), onclick: () => o.open("metrics") },
         el("span", { cls: "ach-panel-quest-ic", attrs: { "aria-hidden": "true" } }, icon(d.quest.done ? "circleCheck" : "target", 18)),
         el("span", {}, el("b", { textContent: d.quest.done ? "Задание дня выполнено" : "Задание дня" }), el("small", { textContent: d.quest.done ? `Искр: ${d.sparks}` : d.quest.text }))) : null,
-      notices.length ? el("ul", { cls: "ach-panel-notices", attrs: { "aria-label": "JUUNIBI замечает" } }, ...notices.map((n) => el("li", {}, el("span", { cls: "ach-panel-notice-ic", attrs: { "aria-hidden": "true" }, textContent: n.emoji }), el("span", { textContent: n.text })))) : null,
-      el("div", { cls: "ach-minis" }, ...HIGHLIGHTS.map(tile).filter((x): x is HTMLButtonElement => !!x)),
       won.length ? el("div", { cls: "ach-panel-badges", attrs: { "aria-label": "Новые награды" } }, ...won.map((a) => { const b = awardBadge(a, d, true); b.removeAttribute("aria-hidden"); b.setAttribute("role", "img"); b.setAttribute("aria-label", a.title); return b; })) : null,
-      el("div", { cls: "ach-panel-actions" }, action("Коллекция", "trophy", "book"), action("Рекорды", "star", "records"), action("Машина времени", "clock", "time"))] as (HTMLElement | null)[]).filter((x): x is HTMLElement => !!x));
+      el("div", { cls: "ach-panel-actions" }, action("Вся коллекция", "trophy", "book"))] as (HTMLElement | null)[]).filter((x): x is HTMLElement => !!x));
     // what JUUNIBI noticed since the last look (an award has its own celebration)
     const fresh = freshNotices(d.notices, store.get(SEEN)).filter((n) => n.kind !== "award");
     if (d.notices[0]) store.set(SEEN, d.notices[0].at);

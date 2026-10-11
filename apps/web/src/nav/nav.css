@@ -1,5 +1,5 @@
 /* ---------- left menu: groups, counters, collapsed mode, edit mode, status, phone bottom bar, Ctrl+K ---------- */
-.app{transition:grid-template-columns .22s var(--ease2,ease)}
+.app{transition:grid-template-columns var(--dur) var(--ease2,ease)}
 html.nav-collapsed .app{grid-template-columns:72px minmax(0,1fr)}
 .nav{gap:4px;padding:12px 10px}
 .nav-head{display:flex;align-items:center;gap:6px;padding:2px 2px 6px 0}

@@ -81,3 +81,57 @@ select option{background:var(--bg);color:var(--fg)}
 
 /* ---------- motion ---------- */
 @media (prefers-reduced-motion:reduce){.btn,select{transition:none}}
+/* 24. durations come from --dur-fast (hover, 150 ms) and --dur (appear, 250 ms) */
+
+/* ---------- 11–14. phone ---------- */
+@media (max-width:860px){
+  /* the top bar carries the title, so the page header keeps only its text and actions */
+  .pg-head-icon,.pg-head-text h1,.dk-hero h1{display:none}
+  .pg-head{margin-bottom:14px}
+  .pg-head-actions,.pg-head .set-pill{margin-left:0}
+  .topbar-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* «Мозг»: one compact row per tile instead of a tall card for a «0» */
+  .brain .mod-grid{grid-template-columns:1fr;gap:8px}
+  .brain .mtile.bt{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"ic title value" "ic note value";align-items:center;column-gap:12px;row-gap:0;min-height:0;padding:10px 14px}
+  .brain .mtile.bt .mt-top{grid-area:ic;margin:0}
+  .brain .mtile.bt .mt-ic{width:38px;height:38px}
+  .brain .mtile.bt .mt-badges{display:none}
+  .brain .mtile.bt .mt-title{grid-area:title}
+  .brain .mtile.bt .mt-note{grid-area:note;-webkit-line-clamp:1}
+  .brain .mtile.bt .bt-value{grid-area:value;font-size:var(--fs-lg)}
+  /* «Модули»: tools and filters in one scrolling line */
+  .mod-tools-row,.mod-filters .chips,.mod-filters>div{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .mod-tools-row::-webkit-scrollbar,.mod-filters>div::-webkit-scrollbar{display:none}
+  .mod-tools-row>*,.mod-filters .chip{flex:none}
+  .chat-title-text{min-width:0}
+}
+
+/* ---------- 17–18. «Модули» and «Мозг» tiles: calm surface, colour only on the status ---------- */
+.mtile{background:var(--surface);box-shadow:none}
+.mtile:focus-visible{box-shadow:0 0 0 2px var(--brand)}
+.mt-ic{color:var(--fg);background:var(--surface-2);border-color:var(--line)}
+.mt-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;text-overflow:clip}
+@media (min-width:861px){.brain .mod-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+/* ---------- 19. «Обновление»: details only under the current step ---------- */
+.upd-step:not(.active):not(.error) .upd-step-text .muted{display:none}
+
+/* ---------- 21. «Достижения»: readable small text on the dark hero ---------- */
+.ach-hero .ach-stat span{color:rgba(236,222,230,.86)}
+.ach-hero p.muted,.ach-hero .muted{color:rgba(236,222,230,.82)}
+.ach-path-track small{font-size:var(--fs-xs)}
+
+/* ---------- 16. «Дела»: the achievements card stays short ---------- */
+.ach-panel-scene{max-height:220px;overflow:hidden}
+
+/* ---------- 22. chat open: the page under it keeps a quiet mark ---------- */
+.nav-item.here{font-weight:600}
+.nav-item.here .nav-ic{color:var(--brand)}
+
+/* ---------- 23. one empty state ---------- */
+.empty-icon,.life-empty>span:first-child{display:grid;place-items:center;width:56px;height:56px;border-radius:var(--r-lg);color:var(--brand);background:var(--tint-brand);border:0}
+.empty-state,.life-empty{border:1px dashed var(--line);border-radius:var(--r-xl);background:transparent}
+.empty-state strong{font-size:var(--fs-base)}
+.empty-state p{font-size:var(--fs-md)}
+/* «Диск» on the phone: the sort list shows its whole label */
+.dk-select{min-width:150px;flex:none}

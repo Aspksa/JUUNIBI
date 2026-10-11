@@ -17,6 +17,7 @@ let loadedAt = 0;
 let data: ProjectStatsData | null = null;
 let error = "";
 let loading = false;
+let slow = false;
 
 const readOpen = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(OPEN_KEY) ?? '["anatomy","mind"]') as string[]); } catch { return new Set(["anatomy", "mind"]); } };
 const saveOpen = (s: Set<string>) => { try { localStorage.setItem(OPEN_KEY, JSON.stringify([...s])); } catch { /* private mode */ } };
@@ -75,6 +76,7 @@ function render() {
   if (!data) {
     host.replaceChildren(head, error
       ? el("div", { cls: "life-empty" }, el("span", {}, icon("cloud", 28)), el("p", { textContent: error }))
+      : slow ? el("div", { cls: "life-empty" }, el("span", {}, icon("cloud", 28)), el("p", { textContent: "Нет связи с GitHub. Показатели появятся, когда вернётся интернет." }))
       : el("div", { cls: "life-skeleton", attrs: { "aria-label": "Загрузка показателей" } }, ...Array.from({ length: 6 }, () => el("i"))));
     return;
   }
@@ -98,9 +100,12 @@ function render() {
 
 async function load(force = false) {
   if (loading) return;
-  loading = true; render();
+  loading = true; slow = false; render();
+  // without internet the figures can take long: say so instead of leaving grey blocks forever
+  const timer = setTimeout(() => { if (loading && !data) { slow = true; render(); } }, 8000);
   const r = await api.projectStats(force);
-  loading = false;
+  clearTimeout(timer);
+  loading = false; slow = false;
   loadedAt = Date.now(); // a failure waits too, the page is redrawn often while an update runs
   if (r.ok) { data = r.value; error = ""; }
   else error = data ? "Не удалось обновить: " + r.error.message : r.error.message;
