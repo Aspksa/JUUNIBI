@@ -184,6 +184,11 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="POST"&&p==="/api/disk/metadata"){const body=await readJson(req);return send(res,200,await disk.setMetadata(String(body.id??""),body));}
           if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
           if(req.method==="POST"&&p==="/api/disk/folders/rename"){const body=await readJson(req);return send(res,200,await disk.renameFolder(body.from,body.to));}
+          if(req.method==="GET"&&p==="/api/disk/folders/styles")return send(res,200,disk.folderDecorations());
+          if(req.method==="POST"&&p==="/api/disk/folders/style"){const b=await readJson(req);return send(res,200,await disk.setFolderStyle(b.name,b.color,b.pinned,b.cover));}
+          if(req.method==="POST"&&p==="/api/disk/folders/move"){const b=await readJson(req);return send(res,200,await disk.moveFolder(b.from,b.parent));}
+          if(req.method==="POST"&&p==="/api/disk/folders/copy"){const b=await readJson(req);return send(res,201,await disk.copyFolder(b.from,b.parent));}
+          if(req.method==="POST"&&p==="/api/disk/folders/trash"){const b=await readJson(req);return send(res,200,await disk.trashFolder(b.name));}
           if(req.method==="POST"&&p==="/api/disk/files/binary"){
             const name=url.searchParams.get("name"),folder=url.searchParams.get("folder")??"";
             const limit=50*1024*1024;
