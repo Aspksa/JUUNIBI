@@ -47,6 +47,7 @@ export function diskPage():HTMLElement {
   let viewFilter:"all"|"favorites"|"trash"="all";
   let gridMode=localStorage.getItem("juunibi.disk.grid")!=="false";
   const selected=new Set<string>();
+  let lastSelectedId:string|null=null;
   let clipboard:{ids:string[];cut:boolean}|null=null;
   let extensionFilter="";
   let groupBy:"none"|"type"|"date"="none";
@@ -199,6 +200,13 @@ export function diskPage():HTMLElement {
     d.append(el("h3",{textContent:"История файлов"}),...r.value.actions.slice(0,50).map(a=>el("p",{textContent:a.before.name+" · "+a.before.folder+" → "+a.after.folder+" · "+new Date(a.at).toLocaleString("ru-RU")})),button("Закрыть",()=>d.close()));
     d.addEventListener("close",()=>d.remove(),{once:true});page.append(d);d.showModal();
   });
+  page.addEventListener("keydown",e=>{
+    const target=e.target;
+    if(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement||target instanceof HTMLSelectElement||target instanceof HTMLElement&&target.isContentEditable)return;
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="c"&&selected.size){e.preventDefault();clipboard={ids:[...selected],cut:false};status.textContent="Скопировано файлов: "+selected.size;}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="x"&&selected.size){e.preventDefault();clipboard={ids:[...selected],cut:true};status.textContent="Вырезано файлов: "+selected.size;}
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="v"&&clipboard){e.preventDefault();pasteButton.click();}
+  });
   const statsButton=button("Хроники Диска",()=>void openStatistics());
   statsButton.prepend(diskIcon("constellation"));statsButton.classList.add("disk-chronicles-button");
   page.append(statistics);
@@ -243,6 +251,15 @@ export function diskPage():HTMLElement {
       card.dataset.fileId=f.id;
       if(firstPaint&&index<16)card.style.setProperty("--disk-order",String(index));
       const choose=el("input",{type:"checkbox",checked:selected.has(f.id),attrs:{"aria-label":"Выбрать "+f.name}});
+      choose.addEventListener("click",e=>{
+        if(e.shiftKey&&lastSelectedId){
+          const start=visible.findIndex(x=>x.id===lastSelectedId);
+          const end=visible.findIndex(x=>x.id===f.id);
+          if(start>=0&&end>=0)for(const file of visible.slice(Math.min(start,end),Math.max(start,end)+1))selected.add(file.id);
+          renderFiles();
+        }
+        lastSelectedId=f.id;
+      });
       choose.addEventListener("change",()=>{if(choose.checked)selected.add(f.id);else selected.delete(f.id);card.classList.toggle("disk-selected",choose.checked);renderBulk();});
       card.classList.toggle("disk-selected",selected.has(f.id));
       const ext=f.name.split(".").pop()?.toLowerCase()??"";
