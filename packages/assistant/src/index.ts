@@ -8,3 +8,4 @@ export * from "./redact";
 
 export { ApprovalGate, validateToolArgs } from "./security";
 export type { PendingApproval, AuditEvent } from "./security";
+export * from "./evidence-reasoning";
