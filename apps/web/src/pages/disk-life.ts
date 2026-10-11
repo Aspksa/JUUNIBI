@@ -247,7 +247,6 @@ const CATEGORIES = [
 ] as const;
 const STORAGE_KEY = "juunibi.disk.life.open";
 const numeric = (n: number) => n.toLocaleString("ru-RU");
-const days = (d: string): number => Math.max(0, Math.floor((Date.now() - Date.parse(d)) / 86400000));
 
 export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => string[], getTrash: () => DiskFile[]): {root: HTMLElement; refresh: () => void} {
   const root = el("aside", { cls: "dk-life", attrs: { "aria-label": "Жизнь документов" } });
