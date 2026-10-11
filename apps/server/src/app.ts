@@ -1,4 +1,5 @@
 import type { LocalDisk } from "./local-disk";
+import { runDeepAgents } from "./deepagents-runner";
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -231,6 +232,18 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
       if (p.startsWith("/api/")) {
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
         const a = deps.getAssistant?.() ?? deps.assistant;
+        // Explicitly opt-in local-only API: never reachable through the paired LAN/mobile server.
+        if (p === "/api/deepagents/status" && req.method === "GET") {
+          if (lan) return send(res, 403, { error: "Local-only agent endpoint" });
+          return send(res, 200, { enabled: process.env.JUUNIBI_DEEPAGENTS_ENABLED === "1", installed: "not_checked" });
+        }
+        if (p === "/api/deepagents/run" && req.method === "POST") {
+          if (lan) return send(res, 403, { error: "Local-only agent endpoint" });
+          const body = await readJson(req);
+          if (typeof body.prompt !== "string") return send(res, 400, { error: "prompt must be a string" });
+          const answer = await runDeepAgents(body.prompt);
+          return send(res, 200, { answer });
+        }
         if (p.startsWith("/api/disk")) {
           const disk=deps.disk;
           if(!disk)return send(res,503,{error:"Диск недоступен"});

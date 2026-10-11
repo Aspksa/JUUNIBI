@@ -8,3 +8,6 @@ dist
 data
 .updates
 .juunibi-version
+
+# Optional Deep Agents Python environment
+.venv-deepagents/
