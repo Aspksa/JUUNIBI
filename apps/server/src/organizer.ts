@@ -660,6 +660,21 @@ export class Organizer {
   /** Quiet hours are on and `now` is inside them. */
   isQuiet(now = this.now()): boolean { const a = this.automation; return a.quiet && inQuiet(now, a.quietFrom, a.quietTo); }
 
+  /** Brain evidence: deterministic audit metrics, not a claim of model training. */
+  automationEvidence() {
+    const active = this.log.filter(e => !e.undone);
+    const undone = this.log.filter(e => e.undone);
+    const automaticMoves = this.history.filter(h => h.kind === "move" && h.auto);
+    const totals = { logged:this.log.length, active:active.length, undone:undone.length,
+      automaticMoves:automaticMoves.length, taskCompletion:this.notes.filter(n=>n.kind==="todo"&&n.done).length };
+    const warnings: string[] = [];
+    if (this.automation.rollOverdue) warnings.push("Автоперенос включён: просроченные сроки могут меняться без отдельного подтверждения");
+    const frequent = this.notes.filter(n=>n.kind==="todo"&&!n.done&&(n.rolled??0)>=3);
+    if (frequent.length) warnings.push("Дела с тремя и более переносами: "+frequent.length);
+    return { totals, permissions: { rollOverdue:this.automation.rollOverdue, reminders:this.automation.dueReminder!=="off",
+      brief:this.automation.brief, rules:this.automation.rules.length },
+      warnings, evidence:"task-history-and-automation-log", advisoryOnly:true as const };
+  }
   /** «Что сделала автоматика», newest first. */
   listLog(): AutoLogEntry[] { return this.log.map((e) => ({ ...e })).reverse(); }
   private addLog(kind: AutoLogEntry["kind"], text: string, undo?: AutoLogEntry["undo"]) {
