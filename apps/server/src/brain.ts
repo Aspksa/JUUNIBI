@@ -77,6 +77,19 @@ export class BrainCore {
     this.toolObservations=this.toolObservations.slice(0,100);
     this.persist();
   }
+  /** Incomplete work survives restart, but no external action is replayed automatically. */
+  pendingWork() {
+    return this.plans.filter(p => p.status !== "completed").map(p => {
+      const next = p.steps.find(s => s.status !== "done");
+      return {
+        id: p.id, goal: p.goal, status: p.status,
+        completed: p.steps.filter(s => s.status === "done").length,
+        total: p.steps.length,
+        nextStep: next ? { id: next.id, title: next.title, status: next.status, lastError: next.lastError ?? null } : null,
+        requiresExplicitExecution: true as const
+      };
+    });
+  }
   history() { return this.logs.map(e => ({ ...e })); }
   reviewToolOutcome(input: ToolOutcomeEvidence) { return reviewToolOutcome(input); }
   previewThoughtCycle(input: UnifiedThoughtInput) { return previewUnifiedThought(input); }
