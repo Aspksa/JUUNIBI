@@ -125,6 +125,11 @@ export function diskPage():HTMLElement {
     localStorage.setItem("juunibi.disk.grid",String(gridMode));
     renderFiles();
   });
+  const minSize=el("input",{type:"number",min:0,step:1,cls:"mem-input",placeholder:"Мин. КБ",attrs:{"aria-label":"Минимальный размер в КБ"}});
+  const maxSize=el("input",{type:"number",min:0,step:1,cls:"mem-input",placeholder:"Макс. КБ",attrs:{"aria-label":"Максимальный размер в КБ"}});
+  const afterDate=el("input",{type:"date",cls:"mem-input",attrs:{"aria-label":"Загружено после даты"}});
+  const extraFilters=el("details",{cls:"disk-extra-filters"},el("summary",{textContent:"Фильтры"}),el("div",{cls:"disk-extra-filter-controls"},minSize,maxSize,afterDate));
+  for(const input of [minSize,maxSize,afterDate])input.addEventListener("input",()=>{visibleLimit=100;renderFiles();});
   const sortSelect=el("select",{cls:"mem-select",attrs:{"aria-label":"Сортировать файлы"}},el("option",{value:"new",textContent:"Сначала новые"}),el("option",{value:"name",textContent:"По имени"}),el("option",{value:"size",textContent:"По размеру"}));
   sortSelect.addEventListener("change",()=>renderFiles());
   const breadcrumb=el("span",{cls:"muted small"});
@@ -272,7 +277,7 @@ export function diskPage():HTMLElement {
   const renderFiles=()=>{
     thumbnailGeneration++;
     const q=search.value.trim().toLocaleLowerCase();
-    const shown=allFiles().filter(f=>(!extensionFilter||f.name.toLowerCase().endsWith("."+extensionFilter))&&(!q||f.name.toLocaleLowerCase().includes(q)||(contentIds?.has(f.id)??false))).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
+    const shown=allFiles().filter(f=>(!minSize.value||f.size>=Number(minSize.value)*1024)&&(!maxSize.value||f.size<=Number(maxSize.value)*1024)&&(!afterDate.value||f.uploadedAt.slice(0,10)>=afterDate.value)&&(!extensionFilter||f.name.toLowerCase().endsWith("."+extensionFilter))&&(!q||f.name.toLocaleLowerCase().includes(q)||(contentIds?.has(f.id)??false))).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
     files.classList.toggle("disk-grid",gridMode);
     files.classList.toggle("disk-list",!gridMode);
     files.classList.toggle("disk-large",displayMode==="large");
@@ -628,12 +633,16 @@ export function diskPage():HTMLElement {
       }));
   };
   const refresh=async()=>{
-    const r=await api.diskList(viewFilter==="all"&&!allSearch.checked?current:undefined);
+    const scoped=viewFilter==="all"&&!allSearch.checked?current:undefined;
+    const [r,full,styles]=await Promise.all([
+      api.diskList(scoped),
+      scoped===undefined?Promise.resolve(null):api.diskList(),
+      api.diskFolderStyles()
+    ]);
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
     items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
-    const full=await api.diskList();
-    treeFiles=full.ok?full.value.files:items;
-    const styles=await api.diskFolderStyles();if(styles.ok)folderStyles=styles.value;
+    treeFiles=full?.ok?full.value.files:items;
+    if(styles.ok)folderStyles=styles.value;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
@@ -711,7 +720,7 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
   const hideTree=button("Скрыть / показать дерево",()=>{treeHidden=!treeHidden;tree.hidden=treeHidden;});
-  const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files,details));
+  const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton,extraFilters),drop,bulkBar,files,details));
   page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton,backupButton,restoreBackupButton,hideTree,clipboardButton,cutButton,pasteButton,undoButton,historyButton,extension,grouping),catalog);
   void refresh();
   return page;
