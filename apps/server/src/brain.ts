@@ -417,6 +417,7 @@ export class BrainCore {
     this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "retry: " + action });
     this.logs = this.logs.slice(0, 200);
     this.persist();
+    await this.flush(); // retry authorization and count must survive a restart before execution
     return this.executeReadStep(planId, stepId, action, readModules, searchMemory);
   }
   /** Shared fail-closed validation across sequence, resume, and agent batch. */
