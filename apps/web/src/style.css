@@ -1813,3 +1813,15 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-tree-select svg{flex-shrink:0}
 .disk-folder-actions:focus-within{z-index:30}
 @media(max-width:800px){.disk-folder-popover{right:0}}
+
+
+/* Extended Disk folder tree. */
+.disk-tree[hidden]{display:none!important}
+.disk-catalog:has(>.disk-tree[hidden]){grid-template-columns:minmax(0,1fr)}
+.disk-tree-operations{display:grid;gap:7px;border-top:1px solid rgba(160,160,160,.2);padding-top:8px}
+.disk-tree-operations .mem-btn{width:100%;text-align:left}
+.disk-tree-operations label{display:flex;align-items:center;gap:7px;font-size:12px}
+.disk-tree-cover{height:24px;width:24px;object-fit:cover;border-radius:5px;flex-shrink:0;border:1px solid rgba(150,150,150,.25)}
+.disk-tree-recovery{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;border-bottom:1px solid rgba(150,150,150,.2)}
+.disk-tree-recovery>span{min-width:0;overflow-wrap:anywhere}
+.disk-tree .mem-input,.disk-tree .mem-select{width:100%;max-width:100%;box-sizing:border-box}
