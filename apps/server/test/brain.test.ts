@@ -152,6 +152,20 @@ describe("BrainCore", () => {
     expect(() => brain.updateStep(plan.id, plan.steps[0]!.id, "failed")).toThrow("Ошибка допустима");
     expect(brain.status().plans[0]?.steps.map(step => step.status)).toEqual(["done", "pending"]);
   });
+  it("never invokes a tool if the initial active checkpoint cannot be persisted", async () => {
+    let writes = 0;
+    const brain = new BrainCore(() => true, {
+      load: async () => null,
+      save: async () => { writes++; throw new Error("disk unavailable"); },
+    });
+    const plan = brain.plan("inspect", ["modules"]);
+    let invoked = 0;
+    await expect(brain.executeReadStep(plan.id, plan.steps[0]!.id, "list_modules",
+      () => { invoked++; return []; }, async () => [])).rejects.toThrow("disk unavailable");
+    expect(invoked).toBe(0);
+    expect(brain.status().plans[0]?.status).toBe("failed");
+    expect(writes).toBeGreaterThan(0);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };

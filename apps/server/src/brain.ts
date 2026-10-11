@@ -357,8 +357,8 @@ export class BrainCore {
     if (plan.steps.some(s => s !== step && s.status === "active") || plan.steps.slice(0, plan.steps.indexOf(step)).some(s => s.status !== "done"))
       throw Object.assign(new Error("Предыдущие шаги ещё не завершены"), { status: 409 });
     this.updateStep(planId, stepId, "active");
-    await this.flush(); // durable active checkpoint before invoking the tool
     try {
+      await this.flush(); // no tool executes if its active checkpoint cannot be saved
       const result = action === "list_modules" ? readModules() : await searchMemory(step.title);
       const serialized = JSON.stringify(result);
       if (serialized === undefined || serialized === "null" ||
