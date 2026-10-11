@@ -44,7 +44,9 @@ export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days" 
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string;
   repeat?: Repeat; rolled?: number; auto?: "brief" | "evening" | "week"; streak?: number;
   /** Work or personal (unset: from the project, see tasks-model areaOf); «В работе» / «Жду ответа»; a meeting (dueAt + estimateMinutes). */
-  area?: Area; status?: TaskStatus; waitingFor?: string; followUpAt?: string; meeting?: boolean }
+  area?: Area; status?: TaskStatus; waitingFor?: string; followUpAt?: string; meeting?: boolean;
+  /** When the status last changed; the place on the board within its column (see api.orderTasks). */
+  statusAt?: string; rank?: number }
 export type Area = "work" | "personal";
 export type TaskStatus = "doing" | "waiting";
 /** A project's colour, deadline (YYYY-MM-DD) and sphere (server: ProjectMeta). */
@@ -310,6 +312,7 @@ export const api = {
   undoAuto: (id: string) => attemptAsync(() => call<AutoLogEntry>(`/api/organizer/log/${encodeURIComponent(id)}/undo`, post({}))),
   dayLoad: (day: string) => attemptAsync(() => call<DayLoad>(`/api/organizer/load?day=${encodeURIComponent(day)}`)),
   arrangeDay: (day: string, apply = false, ids?: string[]) => attemptAsync(() => call<ArrangePlan>("/api/organizer/arrange", post({ day, apply, ...(ids ? { ids } : {}) }))),
+  orderTasks: (ids: string[]) => attemptAsync(() => call<{ ok: true }>("/api/organizer/order", post({ ids }))),
   moveTasks: (ids: string[], to: "tomorrow" | "workday" | `${number}-${number}-${number}`) => { const requestId = "move_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2); return attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to, requestId }))); },
   runEvening: () => attemptAsync(() => call<Note>("/api/organizer/evening", post({}))),
   runWeek: () => attemptAsync(() => call<Note>("/api/organizer/week", post({}))),
