@@ -1786,3 +1786,15 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-tree>.mem-btn{display:block;width:100%;text-align:left;margin-top:8px}
 @media(max-width:800px){.disk-catalog{grid-template-columns:minmax(0,1fr)}.disk-tree{position:static;max-height:270px}.disk-tree-heading{padding:4px 7px 8px}}
 @media(prefers-reduced-motion:reduce){.disk-tree *{transition:none!important;animation:none!important}}
+
+
+/* Disk tree action menu and metadata inspector */
+.disk-tree-line .disk-folder-menu{border:0;background:transparent;color:inherit;padding:2px 8px;border-radius:7px;opacity:.55;cursor:pointer}
+.disk-tree-line:hover .disk-folder-menu,.disk-folder-menu:focus-visible{opacity:1}
+.disk-tree-line.disk-tree-drop{outline:2px dashed var(--accent,#c3a5fc);background:rgba(180,145,80,.15)}
+.disk-file[draggable=true]{cursor:grab}
+.disk-file[draggable=true]:active{cursor:grabbing}
+.disk-file-details{margin-top:12px;border:1px solid var(--line,rgba(155,140,112,.25));border-radius:12px;padding:12px;overflow-wrap:anywhere}
+.disk-file-details:empty{display:none}
+.disk-file-details p{margin:6px 0;font-size:13px}
+.disk-file-details small{opacity:.7}
