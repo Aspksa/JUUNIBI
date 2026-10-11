@@ -109,6 +109,40 @@ describe("BrainCore", () => {
     });
     expect(first.status().plans[0]?.status).toBe("completed");
   });
+  it("runs a verified cognitive batch without repeating finished steps", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("inspect", ["modules", "memory", "modules again"]);
+    const first = await brain.runCognitiveCycleBatch(plan.id, ["list_modules", "search_memory"], 2,
+      () => ["brain"], async query => [query]);
+    expect(first.checkpoints.map(x => x.result)).toEqual([["brain"], ["memory"]]);
+    expect(first.remaining).toBe(1);
+    expect(first.cognitiveState.verification.completedSteps).toHaveLength(2);
+    let calls = 0;
+    const last = await brain.runCognitiveCycleBatch(plan.id, ["list_modules"], 1,
+      () => { calls++; return ["brain"]; }, async () => []);
+    expect(calls).toBe(1);
+    expect(last.skippedVerifiedSteps).toBe(2);
+    expect(last.remaining).toBe(0);
+    expect(last.cognitiveState.phase).toBe("completed");
+  });
+  it("rejects an unsafe cognitive batch before invoking any tools", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("inspect", ["one", "two"]);
+    let calls = 0;
+    await expect(brain.runCognitiveCycleBatch(plan.id, ["list_modules", "shell"], 2,
+      () => { calls++; return []; }, async () => [])).rejects.toThrow();
+    expect(calls).toBe(0);
+    expect(brain.status().plans[0]?.steps.map(x => x.status)).toEqual(["pending", "pending"]);
+  });
+  it("stops the cognitive batch on a failed tool and never runs later steps", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("inspect", ["one", "two"]);
+    let calls = 0;
+    await expect(brain.runCognitiveCycleBatch(plan.id, ["search_memory", "list_modules"], 2,
+      () => { calls++; return []; }, async () => { throw new Error("offline"); })).rejects.toThrow("offline");
+    expect(calls).toBe(0);
+    expect(brain.status().plans[0]?.steps.map(x => x.status)).toEqual(["failed", "pending"]);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
