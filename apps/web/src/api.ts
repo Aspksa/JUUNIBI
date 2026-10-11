@@ -161,6 +161,7 @@ export const api = {
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
   diskGet: (id:string) => attemptAsync(()=>call<{entry:DiskFile;base64:string}>("/api/disk/files/"+encodeURIComponent(id))),
   diskRename: (id:string,name:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({name})})),
+  diskBulk: (ids:string[],action:"trash"|"restore"|"move"|"favorite"|"unfavorite",folder?:string) => attemptAsync(()=>call<{updated:number}>("/api/disk/bulk",post({ids,action,folder}))),
   diskMove: (id:string,folder:string) => attemptAsync(()=>call<DiskFile>("/api/disk/move",post({id,folder}))),
   diskFavorite: (id:string,favorite:boolean) => attemptAsync(()=>call<DiskFile>("/api/disk/favorite",post({id,favorite}))),
   diskRestore: (id:string) => attemptAsync(()=>call<DiskFile>("/api/disk/restore",post({id}))),
