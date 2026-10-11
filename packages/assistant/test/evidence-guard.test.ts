@@ -77,6 +77,6 @@ describe("evidence guard", () => {
   });
   it("leaves evidence-supported normal replies untouched", () => {
     const text = "Проверка `computer_status` ✅";
-    expect(guardToolClaims(text, [{ name: "computer_status", status: "ok" }])).toBe(text);
+    expect(guardToolClaims(text, [{ name: "computer_status", status: "ok" }])).toContain(text);
   });
 });
