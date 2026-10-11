@@ -118,3 +118,21 @@ describe("запись", () => {
   });
   it("без выбранной папки запись невозможна", async () => { await refused(writeText("", "a.txt", "x", backups), 403); });
 });
+
+// Junctions work without elevated symlink privileges on Windows CI.
+describe("resolved write paths", () => {
+  it("refuses aliases into denied directories before creating, overwriting or making parents", async () => {
+    await mkdir(path.join(root, "data"));
+    await writeFile(path.join(root, "data", "existing.json"), "original");
+    await symlink(path.join(root, "data"), path.join(root, "alias"), process.platform === "win32" ? "junction" : "dir");
+    for (const rel of ["alias/new.json", "alias/existing.json", "alias/nested/new.json"])
+      await refused(writeText(root, rel, "changed", backups), 403);
+    expect(await readFile(path.join(root, "data", "existing.json"), "utf8")).toBe("original");
+    expect(await readdir(path.join(root, "data"))).toEqual(["existing.json"]);
+  });
+  it("continues to allow links to ordinary folders within the selected root", async () => {
+    await symlink(path.join(root, "sub"), path.join(root, "alias"), process.platform === "win32" ? "junction" : "dir");
+    expect((await writeText(root, "alias/nested/new.md", "ok", backups)).path).toBe("sub/nested/new.md");
+    expect(await readFile(path.join(root, "sub", "nested", "new.md"), "utf8")).toBe("ok");
+  });
+});

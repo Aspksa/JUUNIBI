@@ -257,7 +257,15 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             res.writeHead(200,{"Content-Type":"application/x-ndjson; charset=utf-8","Content-Disposition":'attachment; filename="JUUNIBI-backup.ndjson"',"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"});
             try{
               for await(const line of disk.exportBackup()){
-                if(!res.write(line))await new Promise<void>(resolve=>res.once("drain",resolve));
+                if(res.destroyed)throw new Error("Загрузка архива прервана");
+                if(!res.write(line))await new Promise<void>((resolve,reject)=>{
+                  const cleanup=()=>{res.off("drain",drained);res.off("close",closed);res.off("error",failed);};
+                  const drained=()=>{cleanup();resolve();};
+                  const closed=()=>{cleanup();reject(new Error("Загрузка архива прервана"));};
+                  const failed=(error:Error)=>{cleanup();reject(error);};
+                  res.once("drain",drained);res.once("close",closed);res.once("error",failed);
+                  if(res.destroyed)closed();
+                });
               }
               res.end();
             }catch(e){res.destroy(e as Error);}

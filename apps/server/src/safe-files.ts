@@ -139,7 +139,9 @@ export async function writeText(root: string, relInput: unknown, content: unknow
   const missing: string[] = [];
   for (let d = parent; ;) {
     try {
-      if (!inside(base, await realpath(d))) throw new FileAccessError("Ссылка ведёт за пределы разрешённой папки", 403);
+      const resolved = await realpath(d);
+      if (!inside(base, resolved)) throw new FileAccessError("Ссылка ведёт за пределы разрешённой папки", 403);
+      cleanRelative(path.relative(base, resolved).split(path.sep).join("/"));
       break;
     } catch (e) {
       if (e instanceof FileAccessError) throw e;
@@ -152,6 +154,7 @@ export async function writeText(root: string, relInput: unknown, content: unknow
   const parentReal = await realpath(parent);
   if (!inside(base, parentReal)) throw new FileAccessError("Ссылка ведёт за пределы разрешённой папки", 403);
   const finalPath = path.join(parentReal, path.basename(target));
+  cleanRelative(path.relative(base, finalPath).split(path.sep).join("/"));
   let existed = false, backup: string | undefined;
   try {
     const st = await lstat(finalPath);
