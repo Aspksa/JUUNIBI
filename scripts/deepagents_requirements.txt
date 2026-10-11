@@ -1,0 +1,4 @@
+# Optional Python sidecar; not part of JUUNIBI's npm installation.
+deepagents>=0.7,<1
+langchain-openai>=0.3,<2
+python-dotenv>=1,<2
