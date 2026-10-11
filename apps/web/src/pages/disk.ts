@@ -69,7 +69,7 @@ export function diskPage():HTMLElement {
     const candidates=entries.filter(f=>/\.(png|jpe?g|webp|gif)$/i.test(f.name)).slice(0,12);
     for(const f of candidates){
       if(generation!==thumbnailGeneration||!page.isConnected)return;
-      if(thumbnailUrls.has(f.id)){const img=files.querySelector<HTMLImageElement>('img[data-disk-id="'+f.id+'"]');if(img)img.src=thumbnailUrls.get(f.id)!;continue;}
+      if(thumbnailUrls.has(f.id)){const img=files.querySelector<HTMLImageElement>('img[data-disk-id="'+f.id+'"]');if(img){img.src=thumbnailUrls.get(f.id)!;img.classList.add("disk-thumbnail-loaded");}continue;}
       if(pendingThumbnails.has(f.id))continue;
       pendingThumbnails.add(f.id);
       try{
@@ -179,7 +179,7 @@ export function diskPage():HTMLElement {
       const thumbnail=el("span",{cls:"disk-file-icon"},diskIcon("vault"));
       if(/\.(png|jpe?g|webp|gif)$/i.test(f.name) && viewFilter!=="trash"){
         const img=el("img",{cls:"disk-thumbnail",alt:"",attrs:{"data-disk-id":f.id}});
-        const url=thumbnailUrls.get(f.id);if(url)img.src=url;
+        const url=thumbnailUrls.get(f.id);if(url){img.src=url;img.classList.add("disk-thumbnail-loaded");}
         thumbnail.replaceChildren(img);
       }
       const actions=el("details",{cls:"disk-actions"});
