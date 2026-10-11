@@ -166,6 +166,8 @@ export function diskPage():HTMLElement {
     const output=el("div",{cls:"disk-tool-report"},
       el("strong",{textContent:"Файлов проверено: "+audit.value.total+" · Исправных: "+audit.value.ok}),
       el("p",{textContent:failures.length?"Проблемы: "+failures.map(x=>x.name+" ("+x.status+")").join("; "):"Повреждённых и отсутствующих файлов не обнаружено"}),
+      el("strong",{textContent:"Исторических редакций проверено: "+(audit.value.revisionsChecked??0)}),
+      el("p",{textContent:audit.value.revisionIssues?.length?"Проблемы с версиями: "+audit.value.revisionIssues.map(v=>v.fileId.slice(0,8)+" · редакция "+v.revision+" ("+v.status+")").join("; "):"Архивные редакции без ошибок"}),
       el("strong",{textContent:"Группы одинаковых файлов: "+duplicates.value.groups.length}),
       ...duplicates.value.groups.map(g=>el("p",{textContent:g.map(x=>x.name).join(" / ")}))
     );
