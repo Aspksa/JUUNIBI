@@ -1,4 +1,5 @@
 import { recallConfirmedExperience, evaluateExperienceRecall } from "./memory-experience-recall";
+import { reviewSixSkills, type CognitiveInput } from "./brain-six-skills";
 import { randomUUID } from "node:crypto";
 import { comparePlanVariants } from "./plan-34-comparison";
 import { proposePlanRepair } from "./plan-repair";
@@ -47,6 +48,7 @@ export class BrainCore {
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   recallExperience(query: string) { return recallConfirmedExperience(this.decisions.snapshot(), query); }
+  reviewSixCognitiveSkills(input: CognitiveInput) { return reviewSixSkills(input); }
   evaluateExperienceRecall(samples: {query:string;expectedId:string}[]) { return evaluateExperienceRecall(this.decisions.snapshot(), samples); }
   taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
   reviewRepairs(input: LearningCase) { return reviewLearningCase(input, this.decisions.snapshot()); }
