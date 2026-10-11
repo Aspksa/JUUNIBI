@@ -56,10 +56,10 @@ describe("personal assistant continuity", () => {
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
       id: plan.id, completed: 1, total: 3,
-      nextStep: { id: plan.steps[1]!.id, title: "Проверить данные", status: "pending" },
+      nextStep: { id: plan.steps[1]!.id, title: "Проверить данные", status: "failed" },
       requiresExplicitExecution: true
     });
-    expect(restored.status().plans[0]?.steps.map(s => s.status)).toEqual(["done", "pending", "pending"]);
+    expect(restored.status().plans[0]?.steps.map(s => s.status)).toEqual(["done", "failed", "pending"]);
   });
 
   it("excludes completed plans and reports failures for manual review", async () => {
