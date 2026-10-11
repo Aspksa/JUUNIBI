@@ -1677,3 +1677,25 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-stats-tile strong{font-size:19px;overflow-wrap:anywhere}
 .disk-stats-tile small{line-height:1.35}
 @media(max-width:600px){.disk-stats-tiles{grid-template-columns:1fr 1fr}.disk-stats-tile{padding:10px;min-height:120px}.disk-stats-tile strong{font-size:16px}}
+
+/* Disk 3.1 · Nocturne: spatial hierarchy with no added navigation clutter. */
+.disk-chronicles{background:linear-gradient(140deg,#101a2b 0%,#151628 54%,#201b32 100%);color:#f6f0e8;border:1px solid #65577a;box-shadow:0 26px 95px #030514a8}
+.disk-chronicles-heading strong{font-size:clamp(17px,2vw,24px);letter-spacing:-.03em}
+.disk-chronicles-hero{position:relative;overflow:hidden;min-height:154px;border-radius:24px;padding:28px;display:flex;align-items:center;gap:28px;background:radial-gradient(circle at 14% 45%,#7057aa50,transparent 42%),radial-gradient(circle at 88% 10%,#e8be7b33,transparent 38%),#1c2340;border:1px solid #8274a744}
+.disk-chronicles-orbit{display:grid;place-items:center;flex:none;width:92px;height:92px;border:1px solid #ddb99e8a;border-radius:50%;font-size:42px;color:#e8c690;box-shadow:0 0 0 13px #d9b57a13,0 0 38px #dbb78b31;animation:disk-orbit-breathe 6s ease-in-out infinite}
+.disk-chronicles-hero>div{display:flex;flex-direction:column;gap:7px}
+.disk-chronicles-hero small{font-size:10px;letter-spacing:.24em;color:#c7bedc}
+.disk-chronicles-hero strong{font-size:clamp(25px,4vw,44px);line-height:1.1;letter-spacing:-.05em}
+.disk-chronicles-hero span:last-child{color:#c8c6d5;font-size:12px}
+.disk-chronicles .mem-input{background:#ffffff0c;border-color:#b7a8c444;color:#fff}
+.disk-chronicles .disk-stats-group{background:#ffffff06;border-color:#ffffff24}
+.disk-chronicles .disk-stats-group>summary{background:transparent;color:#f5e8d9;letter-spacing:.005em;font-size:15px;padding:17px}
+.disk-chronicles .disk-stats-group[open]>summary{border-bottom:1px solid #ffffff1b;color:#eac79e}
+.disk-chronicles .disk-stats-tile{background:linear-gradient(140deg,#ffffff12,#ffffff03);border:1px solid #ffffff12;border-radius:15px;transition:transform .22s ease,border-color .22s ease,background .22s ease}
+.disk-chronicles .disk-stats-tile:hover{transform:translateY(-3px);border-color:#dbbd8866;background:#ffffff16}
+.disk-chronicles .disk-stats-tile strong{font-variant-numeric:tabular-nums;color:#f9e4c4}
+.disk-chronicles .disk-stats-tile.is-pending strong{color:#a9a4b7}
+.disk-chronicles .disk-stats-tile small{color:#bbb5cb}
+@keyframes disk-orbit-breathe{50%{box-shadow:0 0 0 19px #d9b57a0c,0 0 55px #dbb78b55;transform:rotate(8deg)}}
+@media(max-width:600px){.disk-chronicles-hero{padding:17px;gap:18px;min-height:115px}.disk-chronicles-orbit{width:62px;height:62px;font-size:29px}.disk-chronicles-hero small{letter-spacing:.12em}}
+@media(prefers-reduced-motion:reduce){.disk-chronicles-orbit{animation:none}.disk-chronicles .disk-stats-tile{transition:none}.disk-chronicles .disk-stats-tile:hover{transform:none}}
