@@ -59,6 +59,36 @@ export function diskPage():HTMLElement {
   sortSelect.addEventListener("change",()=>renderFiles());
   const breadcrumb=el("span",{cls:"muted small"});
   const drop=el("div",{cls:"disk-drop"},icon("folder",24),el("strong",{textContent:"Перетащи файлы сюда"}),el("span",{cls:"muted small",textContent:"До 10 МБ на файл"}));
+  const statistics=el("dialog",{cls:"disk-preview disk-chronicles"});
+  const openStatistics=async()=>{
+    const response=await api.diskChronicles();
+    if(!response.ok){showToast(response.error.message);return;}
+    const data=response.value;
+    const toolbar=el("div",{cls:"disk-preview-head"},el("strong",{textContent:"Хроники Диска · 90 показателей"}),button("Закрыть",()=>statistics.close()));
+    const summary=el("p",{cls:"muted small",textContent:"Файлов: "+data.summary.files+" · Папок: "+data.summary.folders+" · Рассчитано: "+data.summary.ready+" из "+data.summary.total});
+    const q=el("input",{type:"search",placeholder:"Поиск показателя",cls:"mem-input",attrs:{"aria-label":"Поиск показателя"}});
+    const content=el("div",{cls:"disk-stats-groups"});
+    const render=()=>{
+      const text=q.value.toLocaleLowerCase().trim();
+      content.replaceChildren(...data.groups.flatMap(g=>{
+        const metrics=data.metrics.filter(m=>m.id&&Number(m.id.slice(1))>data.groups.findIndex(x=>x.id===g.id)*9&&Number(m.id.slice(1))<=(data.groups.findIndex(x=>x.id===g.id)+1)*9).filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
+        if(!metrics.length)return [];
+        const section=el("details",{cls:"disk-stats-group",open:!!text});
+        section.append(el("summary",{textContent:g.title+" · "+metrics.length}));
+        section.append(el("div",{cls:"disk-stats-tiles"},...metrics.map(m=>{
+          const tile=el("div",{cls:"disk-stats-tile"});
+          tile.append(el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),el("strong",{textContent:m.value}),el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}));
+          return tile;
+        })));
+        return [section];
+      }));
+    };
+    q.addEventListener("input",render);render();
+    statistics.replaceChildren(toolbar,summary,q,content);
+    statistics.showModal();
+  };
+  const statsButton=button("📊 Хроники Диска",()=>void openStatistics());
+  page.append(statistics);
   const preview=el("dialog",{cls:"disk-preview"});
   const openPreview=async(f:DiskFile)=>{
     const r=await api.diskGet(f.id);
@@ -192,7 +222,7 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
   page.append(el("h1",{textContent:"Диск"}),el("p",{cls:"muted",textContent:"Документы и файлы в одном месте. Создавай папки, находи нужное, скачивай и удаляй."}),
-    status,el("div",{cls:"disk-toolbar"},newFolder,create,upload),folders,el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),sortSelect,viewButton),drop,bulkBar,files);
+    status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton),folders,el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),sortSelect,viewButton),drop,bulkBar,files);
   void refresh();
   return page;
 }

@@ -1666,3 +1666,14 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-file>input[type=checkbox]{accent-color:var(--accent,#8c7cf9);width:17px;height:17px;flex:none;cursor:pointer}
 .disk-bulk-bar:not([hidden]){display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px 12px;border:1px solid var(--border,rgba(128,128,128,.2));border-radius:13px;background:var(--surface-2,rgba(128,128,128,.06))}
 .disk-controls label{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px}
+
+/* Disk Chronicles: one entrance, ten restrained metric chapters. */
+.disk-chronicles{width:min(1040px,96vw)}
+.disk-stats-groups{display:grid;gap:10px;margin-top:12px}
+.disk-stats-group{border:1px solid var(--border,rgba(128,128,128,.2));border-radius:14px;overflow:hidden}
+.disk-stats-group>summary{cursor:pointer;padding:13px 15px;font-weight:650;background:var(--surface-2,rgba(128,128,128,.045))}
+.disk-stats-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px;padding:12px}
+.disk-stats-tile{display:flex;flex-direction:column;gap:8px;justify-content:space-between;border-radius:11px;padding:13px;background:var(--surface-2,rgba(128,128,128,.055));min-height:113px}
+.disk-stats-tile strong{font-size:19px;overflow-wrap:anywhere}
+.disk-stats-tile small{line-height:1.35}
+@media(max-width:600px){.disk-stats-tiles{grid-template-columns:1fr 1fr}.disk-stats-tile{padding:10px;min-height:120px}.disk-stats-tile strong{font-size:16px}}
