@@ -143,6 +143,15 @@ describe("BrainCore", () => {
     expect(calls).toBe(0);
     expect(brain.status().plans[0]?.steps.map(x => x.status)).toEqual(["failed", "pending"]);
   });
+  it("does not allow manually failing a pending or completed step", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("audit", ["one", "two"]);
+    expect(() => brain.updateStep(plan.id, plan.steps[0]!.id, "failed")).toThrow("Ошибка допустима");
+    expect(() => brain.updateStep(plan.id, plan.steps[1]!.id, "failed")).toThrow("Ошибка допустима");
+    await brain.executeReadStep(plan.id, plan.steps[0]!.id, "list_modules", () => [], async () => []);
+    expect(() => brain.updateStep(plan.id, plan.steps[0]!.id, "failed")).toThrow("Ошибка допустима");
+    expect(brain.status().plans[0]?.steps.map(step => step.status)).toEqual(["done", "pending"]);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
