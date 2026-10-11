@@ -25,7 +25,7 @@ export function installDiskSprite():void{
 }
 export function diskIcon(name:DiskIcon,label?:string):SVGSVGElement{
   installDiskSprite();
-  const node=svg("svg");node.setAttribute("viewBox","0 0 24 24");node.classList.add("disk-glyph");
+  const node=document.createElementNS(NS,"svg") as SVGSVGElement;node.setAttribute("viewBox","0 0 24 24");node.classList.add("disk-glyph");
   if(label){node.setAttribute("role","img");node.setAttribute("aria-label",label);}else node.setAttribute("aria-hidden","true");
   const use=svg("use");use.setAttribute("href","#disk-icon-"+name);node.append(use);
   return node;
