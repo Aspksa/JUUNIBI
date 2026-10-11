@@ -256,7 +256,6 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
   const headline = el("small", { cls: "dk-life-sub", textContent: "150 уникальных показателей · только реальные данные" });
   const asMetric = (id: number, files: DiskFile[], folders: string[], trash: DiskFile[]): string | null => {
     const thirty = Date.now() - 30 * 86400000;
-    const ext = (name: string) => name.split(".").pop()?.toLowerCase() ?? "";
     const sizes = files.map(f => f.size);
     const countByFolder = new Map<string,number>();
     for (const f of files) countByFolder.set(f.folder, (countByFolder.get(f.folder) ?? 0) + 1);
@@ -268,19 +267,13 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
       3: () => numeric(trash.length),
       7: () => sizes.length ? human(Math.max(...sizes)) : "0 Б",
       8: () => sizes.length ? human(Math.min(...sizes)) : "0 Б",
-      10: () => files.length ? files.slice().sort((a,b)=>Date.parse(a.uploadedAt)-Date.parse(b.uploadedAt))[0]!.name : "—",
       11: () => numeric(folders.length),
       14: () => numeric(folders.reduce((m,f) => Math.max(m,f.split("/").length),0)),
       15: () => folders.length ? (folders.slice().sort((a,b)=>(countByFolder.get(b)??0)-(countByFolder.get(a)??0))[0] ?? "—") : "—",
       16: () => numeric(folders.filter(f => !countByFolder.get(f)).length),
       41: () => numeric([...duplicates.values()].reduce((sum,n)=>sum+Math.max(0,n-1),0)),
-      64: () => numeric(files.filter(f=>!!f.sha256).length),
-      71: () => files.length ? files.slice().sort((a,b)=>Date.parse(a.uploadedAt)-Date.parse(b.uploadedAt))[0]!.name : "—",
       81: () => numeric(new Set(files.flatMap(f => f.tags ?? [])).size),
-      83: () => numeric(files.filter(f => Date.parse(f.uploadedAt) >= thirty).length),
-      90: () => files.length ? Math.round(100*files.filter(f => !!f.name && !!f.uploadedAt && !!f.folder && !!f.sha256).length/files.length)+"%" : "—",
-      103: () => sizes.length ? human(Math.max(...sizes)) : "0 Б",
-      106: () => numeric(new Set(files.map(f => ext(f.name))).size)
+      83: () => numeric(files.filter(f => Date.parse(f.uploadedAt) >= thirty).length)
     };
     // Catalogue metadata is not evidence of document content, reading time, revisions or semantic analysis.
     return values[id]?.() ?? null;
