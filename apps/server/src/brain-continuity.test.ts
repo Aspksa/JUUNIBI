@@ -2,6 +2,26 @@ import { describe, expect, it } from "vitest";
 import { BrainCore } from "./brain";
 
 describe("personal assistant continuity", () => {
+  it("resumes only pending steps after restart, preserving verified progress", async () => {
+    let snapshot: string | null = null;
+    const storage = { load: async () => snapshot, save: async (v: string) => { snapshot = v; } };
+    const before = new BrainCore(() => true, storage);
+    const plan = before.plan("Report", ["Already checked", "Next check"]);
+    before.updateStep(plan.id, plan.steps[0]!.id, "active");
+    before.updateStep(plan.id, plan.steps[0]!.id, "done");
+    await before.flush();
+    const after = new BrainCore(() => true, storage);
+    await after.load();
+    let reads = 0;
+    await expect(after.resumeReadSequence(plan.id, ["list_modules", "list_modules"], () => { reads++; return ["ok"]; }, async () => ["ok"])).rejects.toThrow();
+    expect(reads).toBe(0);
+    const result = await after.resumeReadSequence(plan.id, ["list_modules"], () => { reads++; return ["ok"]; }, async () => ["ok"]);
+    expect(reads).toBe(1);
+    expect(result.skippedCompleted).toBe(1);
+    expect(result.plan?.status).toBe("completed");
+    await expect(after.resumeReadSequence(plan.id, ["list_modules"], () => ["ok"], async () => ["ok"])).rejects.toThrow();
+  });
+
   it("prioritizes failures, then partial plans, then untouched plans without side effects", async () => {
     const brain = new BrainCore(() => true);
     const newPlan = brain.plan("Начать новый проект", ["Составить цели"]);
