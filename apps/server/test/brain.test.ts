@@ -166,6 +166,14 @@ describe("BrainCore", () => {
     expect(brain.status().plans[0]?.status).toBe("failed");
     expect(writes).toBeGreaterThan(0);
   });
+  it("rejects oversized tool responses without storing them as verified evidence", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("audit", ["read memory"]);
+    await expect(brain.executeReadStep(plan.id, plan.steps[0]!.id, "search_memory",
+      () => [], async () => ["x".repeat(70_000)])).rejects.toThrow("64 КиБ");
+    expect(brain.status().plans[0]?.steps[0]?.status).toBe("failed");
+    expect(brain.history().some(entry => entry.outcome.startsWith("verified:"))).toBe(false);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
