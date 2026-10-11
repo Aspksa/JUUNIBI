@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { groupLabel, titleFrom, uid } from "../src/chat/chats";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Chats, groupLabel, titleFrom, uid } from "../src/chat/chats";
 import { webcrypto } from "node:crypto";
 
 describe("titleFrom", () => {
@@ -31,5 +31,29 @@ describe("uid", () => {
     const ids = new Set(Array.from({ length: 50 }, () => uid(insecure)));
     expect(ids.size).toBe(50);
     for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("chat recovery checkpoint", () => {
+  it("recovers previous conversations when the primary archive is malformed", () => {
+    const data = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, value: string) => { data.set(key, value); },
+    };
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("addEventListener", vi.fn());
+    const first = new Chats();
+    const conversation = first.create();
+    first.append(conversation.id, {role:"user", content:"Сохранённое сообщение"});
+    first.persistNow();
+    first.rename(conversation.id, "Запись");
+    first.persistNow();
+    data.set("juunibi:chats:v1", "corrupted json");
+    const second = new Chats();
+    expect(second.get(conversation.id)?.messages[0]?.content).toBe("Сохранённое сообщение");
+    expect(second.get(conversation.id)?.title).toBe("Новый чат");
   });
 });
