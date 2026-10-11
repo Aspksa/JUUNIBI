@@ -27,6 +27,7 @@ import { Organizer, buildBrief } from "./organizer";
 import { Achievements } from "./achievements";
 import { OpenableUrls, webSearch } from "./web-access";
 import { runSelfTest } from "./self-test";
+import { functionalHealthCheck } from "./functional-health";
 import { EvalHistory, EvalService } from "./evals";
 import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
 import { composeBrief, splitIntoSteps } from "./task-helpers";
@@ -253,6 +254,24 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
   currentPersona = persona;
   assistant = new Assistant({ persona, instructions: () => instructionsPrompt(settings.get()), llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
   for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable })) assistant.tools.register(tool);
+  assistant.tools.register({
+    name: "functional_health_check", risk: "read",
+    description: "Безопасная функциональная диагностика семи модулей: PASS/FAIL/SKIPPED с источниками. Без записи, перезапуска и внешних запросов.",
+    parameters: { type: "object", properties: {} },
+    run: async () => {
+      const results = await functionalHealthCheck([
+        { module: "brain", check: () => { const b = brain.status(); return b && typeof b.mode === "string" && Array.isArray(b.plans) ? { detail: "Чтение режима и списка планов работает" } : { status: "FAIL", detail: "Некорректный снимок мозга" }; } },
+        { module: "memory", check: async () => { const entries = await memory.list("active"); return Array.isArray(entries) ? { detail: "Чтение активной памяти работает; записей: " + entries.length } : { status: "FAIL", detail: "Память не вернула список" }; } },
+        { module: "assistant", check: () => cloudConfigured ? { status: "SKIPPED", detail: "Модель настроена, но сетевой запрос Cloud.ru намеренно не выполнялся" } : { status: "FAIL", detail: "Ключ модели не настроен" } },
+        { module: "approvals", check: () => { const p = modules.promptView(); return p ? { status: "SKIPPED", detail: "Согласование действий не запускается без реального пользовательского разрешения" } : { status: "FAIL", detail: "Реестр модулей недоступен" }; } },
+        { module: "scenes", check: () => { const x = scenes.stats(); return x.total >= 365 && x.phrases >= 452 ? { detail: "Каталоги сцен читаются: " + x.total + " действий, " + x.phrases + " реплик" } : { status: "FAIL", detail: "Каталог сцен неполон" }; } },
+        { module: "updater", check: () => { const x = updater.status(); return x.phase === "error" ? { status: "FAIL", detail: x.error ?? "Ошибка обновлений" } : x.phase === "testing" || x.phase === "downloading" ? { status: "SKIPPED", detail: "Обновление занято: " + x.phase + "; без вмешательства" } : { detail: "Чтение статуса обновлений: " + x.phase }; } },
+        { module: "mobile", check: () => { const x = mobile.status(); return x.error ? { status: "FAIL", detail: x.error } : !x.running ? { status: "SKIPPED", detail: "Wi-Fi доступ выключен владельцем; включение не выполнялось" } : { detail: "Мобильный сервис активен, порт " + x.port }; } },
+      ]);
+      return { checkedAt: new Date().toISOString(), results, summary: { passed: results.filter(x=>x.status==="PASS").length, failed: results.filter(x=>x.status==="FAIL").length, skipped: results.filter(x=>x.status==="SKIPPED").length }, note: "PASS означает прохождение указанной безопасной проверки, а не полную исправность модуля." };
+    },
+  });
+
   assistant.tools.register({
     name: "brain_v4_unified_review", risk: "read",
     description: "Выполнить один безопасный обзор задачи по 20 контрольным этапам: контекст, знания, логика, риски, план, опыт и обучение. Только рекомендации, не автоматическое выполнение.",
