@@ -153,14 +153,18 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string}
-export interface DiskListing {folders:string[];files:DiskFile[];usedBytes:number;maxFileBytes:number}
+export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string}
+export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
   diskList: (folder?:string) => attemptAsync(()=>call<DiskListing>("/api/disk"+(folder!==undefined?"?folder="+encodeURIComponent(folder):""))),
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
   diskGet: (id:string) => attemptAsync(()=>call<{entry:DiskFile;base64:string}>("/api/disk/files/"+encodeURIComponent(id))),
   diskRename: (id:string,name:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({name})})),
+  diskMove: (id:string,folder:string) => attemptAsync(()=>call<DiskFile>("/api/disk/move",post({id,folder}))),
+  diskFavorite: (id:string,favorite:boolean) => attemptAsync(()=>call<DiskFile>("/api/disk/favorite",post({id,favorite}))),
+  diskRestore: (id:string) => attemptAsync(()=>call<DiskFile>("/api/disk/restore",post({id}))),
+  diskPurge: (id:string) => attemptAsync(()=>call<{ok:boolean}>("/api/disk/purge",post({id}))),
   diskDelete: (id:string) => attemptAsync(()=>call<{ok:boolean}>("/api/disk/files/"+encodeURIComponent(id),{method:"DELETE"})),
   mobile: () => attemptAsync(() => call<MobileStatus>("/api/mobile")),
   mobileEnable: (enabled: boolean) => attemptAsync(() => call<MobileStatus>("/api/mobile", post({ enabled }))),
