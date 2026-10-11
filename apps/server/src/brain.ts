@@ -120,6 +120,28 @@ export class BrainCore {
       throw new Error("Результат шага не подтверждён журналом выполнения");
     return { result: result.result, verified: true as const, before, after };
   }
+  /** Unified bounded cognitive execution. All actions are validated before any tool runs.
+   * The caller must explicitly invoke this method; no autonomous continuation or write access.
+   */
+  async runCognitiveCycleBatch(planId: string, actions: unknown, maxSteps: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    if (!Number.isSafeInteger(maxSteps) || (maxSteps as number) < 1 || (maxSteps as number) > 5)
+      throw Object.assign(new Error("Лимит когнитивного цикла: 1–5 шагов"), { status: 400 });
+    const { plan, firstPending } = this.validatedPendingSuffix(planId);
+    const count = Math.min(maxSteps as number, plan.steps.length - firstPending);
+    const safeActions = this.validateReadActions(actions, count);
+    const checkpoints: { stepId: string; action: string; result: unknown }[] = [];
+    for (let i = 0; i < count; i++) {
+      const step = plan.steps[firstPending + i]!;
+      const action = safeActions[i]!;
+      const outcome = await this.runCognitiveCycleStep(planId, step.id, action, readModules, searchMemory);
+      checkpoints.push({ stepId: step.id, action, result: outcome.result });
+    }
+    return { checkpoints, skippedVerifiedSteps: firstPending,
+      remaining: plan.steps.filter(s => s.status === "pending").length,
+      cognitiveState: this.previewCognitiveCycle(planId),
+      requiresExplicitExecution: true as const };
+  }
   evaluateExperienceRecall(samples: {query:string;expectedId:string}[]) { return evaluateExperienceRecall(this.decisions.snapshot(), samples); }
   taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
   reviewRepairs(input: LearningCase) { return reviewLearningCase(input, this.decisions.snapshot()); }
