@@ -418,6 +418,40 @@ export class BrainCore {
     }
     return { plan: this.status().plans.find(p => p.id === planId), skippedCompleted: firstPending, results };
   }
+  /** Agent 4.2: bounded, explicitly approved read-only execution with checkpoints.
+   * An interrupted or failed step is never automatically retried.
+   */
+  async executeAgentBatch(planId: string, actions: unknown, maxSteps: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    if (!Number.isSafeInteger(maxSteps) || (maxSteps as number) < 1 || (maxSteps as number) > 5)
+      throw Object.assign(new Error("Лимит выполнения: от 1 до 5 шагов"), { status: 400 });
+    if (plan.status === "failed" || plan.status === "completed" ||
+        plan.steps.some(s => s.status === "failed" || s.status === "active"))
+      throw Object.assign(new Error("План требует проверки перед запуском"), { status: 409 });
+    const firstPending = plan.steps.findIndex(s => s.status === "pending");
+    if (firstPending < 0 || plan.steps.slice(0, firstPending).some(s => s.status !== "done") ||
+        plan.steps.slice(firstPending).some(s => s.status !== "pending"))
+      throw Object.assign(new Error("Нарушена последовательность"), { status: 409 });
+    const allowed = Math.min(maxSteps as number, plan.steps.length - firstPending);
+    if (!Array.isArray(actions) || actions.length !== allowed ||
+        !actions.every(a => a === "list_modules" || a === "search_memory"))
+      throw Object.assign(new Error("Разрешены только безопасные действия чтения для выбранного пакета"), { status: 400 });
+    const completed: { stepId: string; action: string }[] = [];
+    for (let offset = 0; offset < allowed; offset++) {
+      const step = plan.steps[firstPending + offset]!;
+      const action = actions[offset] as string;
+      await this.executeReadStep(planId, step.id, action, readModules, searchMemory);
+      await this.flush();
+      completed.push({ stepId: step.id, action });
+    }
+    const state = this.previewCognitiveCycle(planId);
+    return { completed, skippedPreviouslyCompleted: firstPending,
+      remaining: plan.steps.filter(s => s.status === "pending").length,
+      verifiedStepIds: state.verification.evidence.map(e => e.stepId),
+      nextAction: state.planning.nextStep, requiresExplicitExecution: true as const };
+  }
   updateStep(planId: string, stepId: string, status: unknown) {
     if (status !== "active" && status !== "done" && status !== "failed") throw Object.assign(new Error("Недопустимый статус"), { status: 400 });
     const plan = this.plans.find(p => p.id === planId);
