@@ -85,7 +85,7 @@ export class LocalDisk {
   /** Restore only to an empty vault; validate all bytes before committing the new index. */
   async importBackup(lines:AsyncIterable<string>){
     if(this.entries.length||this.folders.length||Object.keys(this.versions).length)throw bad("Для восстановления требуется пустой Диск",409);
-    const staged:string[]=[];let manifest:unknown=null;let active:{id:string;size:number;sha256:string;bytes:number;hash:ReturnType<typeof createHash>;handle:Awaited<ReturnType<typeof open>>}|null=null;
+    const staged:string[]=[];const verified=new Map<string,{size:number;sha256:string}>();let committed=false;let manifest:unknown=null;let active:{id:string;size:number;sha256:string;bytes:number;hash:ReturnType<typeof createHash>;handle:Awaited<ReturnType<typeof open>>}|null=null;
     let count=0,complete=false;
     await mkdir(path.join(this.root,"objects"),{recursive:true});
     try{
@@ -112,7 +112,7 @@ export class LocalDisk {
         if(rec.type==="end"&&active){
           const item=active;active=null;await item.handle.close();
           if(item.bytes!==item.size||item.hash.digest("hex")!==item.sha256)throw bad("Контрольная сумма резервного файла не совпадает",409);
-          count++;continue;
+          verified.set(item.id,{size:item.size,sha256:item.sha256});count++;continue;
         }
         if(rec.type==="complete"&&!active&&Number.isSafeInteger(rec.objects)&&rec.objects===count){complete=true;continue;}
         throw bad("Повреждённая последовательность архива");
@@ -123,26 +123,42 @@ export class LocalDisk {
       if(state.entries.length>1000||state.folders.length>100)throw bad("Архив превышает лимиты хранилища",409);
       const entries=state.entries as DiskEntry[];
       const versions=state.versions as Record<string,DiskRevision[]>;
+      const folders=state.folders as string[];
       const referenced=new Set<string>();
+      const entryIds=new Set<string>();
       for(const e of entries){
         validName(e.name);validFolder(e.folder);
         if(typeof e.id!=="string"||!/^[0-9a-f-]{36}$/.test(e.id)||!Number.isSafeInteger(e.size)||e.size<0||e.size>LIMIT||!/^[0-9a-f]{64}$/.test(e.sha256))throw bad("Некорректный файл в индексе");
+        if(entryIds.has(e.id))throw bad("Повторный идентификатор файла",409);
+        entryIds.add(e.id);
+        if(e.folder&&!folders.includes(e.folder))throw bad("Отсутствует каталог файла",409);
+        const object=verified.get(e.objectId??e.id);
+        if(!object||object.size!==e.size||object.sha256!==e.sha256)throw bad("Индекс не совпадает с содержимым файла",409);
         referenced.add(e.objectId??e.id);
-        for(const v of versions[e.id]??[])referenced.add(v.objectId);
+        const seenRevisions=new Set<number>();
+        for(const v of versions[e.id]??[]){
+          if(!Number.isSafeInteger(v.revision)||v.revision<1||seenRevisions.has(v.revision))throw bad("Некорректная история версий",409);
+          seenRevisions.add(v.revision);
+          const previous=verified.get(v.objectId);
+          if(!previous||previous.size!==v.size||previous.sha256!==v.sha256)throw bad("Индекс не совпадает с архивной редакцией",409);
+          referenced.add(v.objectId);
+        }
       }
       if(referenced.size!==count||[...referenced].some(id=>!staged.includes(id)))throw bad("Архив не содержит все объекты индекса",409);
-      const folders=state.folders as string[];
       for(const folder of folders)if(!folder||validFolder(folder)!==folder)throw bad("Некорректная папка архива");
       this.entries=entries;this.folders=folders;this.versions=versions;
       this.folderStyles=(state.folderStyles??{}) as typeof this.folderStyles;
       this.deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
       this.folderActions=Array.isArray(state.folderActions)?state.folderActions as typeof this.folderActions:[];
       this.fileActions=Array.isArray(state.fileActions)?state.fileActions as typeof this.fileActions:[];
-      await this.save();
+      await this.save();committed=true;
       return {files:entries.length,folders:folders.length,objects:count};
     }catch(e){
       if(active)await active.handle.close().catch(()=>{});
-      if(!this.entries.length)for(const id of staged)await rm(this.objectPath(id),{force:true});
+      if(!committed){
+        this.entries=[];this.versions={};this.folders=[];this.folderStyles={};this.deletedFolders=[];this.folderActions=[];this.fileActions=[];
+        for(const id of staged)await rm(this.objectPath(id),{force:true});
+      }
       throw e;
     }
   }
