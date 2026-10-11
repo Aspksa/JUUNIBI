@@ -5,7 +5,7 @@
  * The data comes from the server (achievements.ts there); `achData` keeps one copy for this page and the panel on «Дела».
  */
 import { api, type AchAward, type AchDay, type AchievementsData, type AchMetric, type AchTail } from "../api";
-import { el, icon, iconButton, settleAnimations } from "../dom";
+import { el, icon, iconButton, settleAnimations, type IconName } from "../dom";
 import { showToast } from "../toast";
 import { celebrate } from "./celebrate";
 import { FOX_PATH, effectFor, filterAwards, foxPath, freshCount, galleryAwards, medalPips, needText, nextCelebration, nextSteps, quickDays, rarityOf, safeHex, sameData, wrapText, type AwardFilter } from "./achievements-model";
@@ -226,7 +226,9 @@ function saveWeekCard(d: AchievementsData) {
 // ------------------------------------------------------------------ the page
 type Tab = "metrics" | "book" | "tails" | "records" | "time" | "discover" | "gallery" | "titles" | "rarity";
 const SEEN_KEY = "juunibi.ach.seen.";
-const TABS: [Tab, string, string][] = [["metrics", "Показатели", "📊"], ["book", "Книга", "📖"], ["tails", "Хвосты", "🦊"], ["records", "Рекорды", "🏆"], ["time", "Машина времени", "🕰️"], ["discover", "Открытия", "🔮"], ["gallery", "Галерея", "🖼️"], ["titles", "Титулы", "👑"], ["rarity", "Редкость", "✨"]];
+/** Tabs, stats and steps use the app's line icons; emoji stay on the awards and tails themselves. */
+const TABS: [Tab, string, IconName][] = [["metrics", "Показатели", "pulse"], ["book", "Книга", "book"], ["tails", "Хвосты", "flame"], ["records", "Рекорды", "trophy"], ["time", "Машина времени", "clock"], ["discover", "Открытия", "eye"], ["gallery", "Галерея", "image"], ["titles", "Титулы", "star"], ["rarity", "Редкость", "sparkle"]];
+const STEP_ICON: Record<string, IconName> = { goal: "target", due: "calendar", steps: "list", estimate: "clock", notes: "edit", priority: "pin", done: "circleCheck" };
 
 export interface AchievementsDeps { back(): void }
 export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLElement {
@@ -269,8 +271,7 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
     const share = d.stats.total ? d.stats.won / d.stats.total : 0;
     const bar = el("div", { cls: "ach-hero-progress", attrs: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(d.stats.total), "aria-valuenow": String(d.stats.won), "aria-label": "Собрано наград" } }, el("i"));
     bar.style.setProperty("--p", String(Math.round(share * 100)));
-    const surpriseEmoji = d.surprise.emoji === "🦊" ? "✨" : d.surprise.emoji;
-    const medal = (v: string, l: string, e: string) => el("div", { cls: "ach-stat" }, el("span", { cls: "ach-stat-ic", attrs: { "aria-hidden": "true" }, textContent: e }), el("b", { textContent: v }), el("span", { textContent: l }));
+    const medal = (v: string, l: string, e: IconName) => el("div", { cls: "ach-stat" }, el("span", { cls: "ach-stat-ic", attrs: { "aria-hidden": "true" } }, icon(e, 16)), el("b", { textContent: v }), el("span", { textContent: l }));
     const sound = store.get(SOUND_KEY) === "1";
     head.replaceChildren(
       el("div", { cls: "ach-hero-text" },
@@ -280,8 +281,8 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
         el("p", { cls: "ach-hero-lead", textContent: "60 необычных показателей ваших дел, награды двенадцати уровней редкости и кицунэ, чьи хвосты просыпаются вместе с вашими делами." }),
         el("div", { cls: "ach-hero-collected" }, el("span", {}, el("b", { textContent: String(d.stats.won) }), ` из ${d.stats.total} наград собрано`), el("small", { textContent: `${Math.round(share * 100)}%` })),
         bar,
-        el("div", { cls: "ach-stats" }, medal(String(d.stats.rare), "редких наград", "💎"), medal(String(d.stats.medals), "ступеней медалей", "🏅"), medal(`${d.stats.ready}/60`, "показателей считается", "📊"), medal(`${awake}/12`, "хвостов проснулось", "🦊")),
-        el("div", { cls: "ach-surprise" }, el("span", { cls: "ach-surprise-ic", attrs: { "aria-hidden": "true" }, textContent: surpriseEmoji }), el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))),
+        el("div", { cls: "ach-stats" }, medal(String(d.stats.rare), "редких наград", "sparkle"), medal(String(d.stats.medals), "ступеней медалей", "trophy"), medal(`${d.stats.ready}/60`, "показателей считается", "pulse"), medal(`${awake}/12`, "хвостов проснулось", "flame")),
+        el("div", { cls: "ach-surprise" }, el("span", { cls: "ach-surprise-ic", attrs: { "aria-hidden": "true" } }, icon("sparkle", 22)), el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))),
         el("div", { cls: "ach-hero-actions" },
           btn("Карточка недели", () => saveWeekCard(d), { small: true, icon: "download" }),
           btn(sound ? "Звук наград: вкл." : "Звук наград: выкл.", () => { store.set(SOUND_KEY, sound ? "0" : "1"); renderHead(); if (!sound) chime(6); }, { small: true, icon: sound ? "bell" : "bellOff" }))),
@@ -311,14 +312,14 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
     const stepsCard = el("article", { cls: "ach-steps" },
       el("span", { cls: "ach-eyebrow", textContent: "Следующие шаги" }),
       steps.length ? el("ol", {}, ...steps.map((s) => el("li", { title: s.titles.join(", ") },
-        el("span", { cls: "ach-step-ic", attrs: { "aria-hidden": "true" }, textContent: s.emoji }),
+        el("span", { cls: "ach-step-ic", attrs: { "aria-hidden": "true" } }, icon(STEP_ICON[s.key] ?? "sparkle", 18)),
         el("span", { cls: "grow" }, el("b", { textContent: s.text }), el("small", { textContent: `оживит ${s.count} ${plural(s.count, ["показатель", "показателя", "показателей"])}` })))))
         : el("p", { cls: "muted small", textContent: "Все показатели уже считаются. Остаётся собирать медали." }),
       btn("К делам", () => deps.back(), { small: true, icon: "chevronLeft" }));
     const q = d.quest;
     const questCard = el("article", { cls: "ach-quest" + (q?.done ? " done" : "") },
       el("div", { cls: "ach-quest-head" }, el("span", { cls: "ach-eyebrow", textContent: "Задание дня" }), el("span", { cls: "ach-sparks", title: "Искры за выполненные задания", textContent: `✨ ${d.sparks}` })),
-      q ? el("p", { cls: "ach-quest-text" }, el("span", { cls: "ach-quest-ic", attrs: { "aria-hidden": "true" }, textContent: q.done ? "✅" : q.emoji }), el("span", { textContent: q.done ? `Выполнено: «${q.title}» сдвинулся. Завтра будет новое задание.` : q.text }))
+      q ? el("p", { cls: "ach-quest-text" }, el("span", { cls: "ach-quest-ic", attrs: { "aria-hidden": "true" } }, icon(q.done ? "circleCheck" : "target", 20)), el("span", { textContent: q.done ? `Выполнено: «${q.title}» сдвинулся. Завтра будет новое задание.` : q.text }))
         : el("p", { cls: "muted small", textContent: "Задание появится завтра утром." }),
       el("small", { cls: "muted", textContent: "За каждое выполненное задание — искра." }));
     extras.replaceChildren(pathCard, el("div", { cls: "ach-extras-row" }, stepsCard, questCard));
@@ -333,7 +334,7 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
     tabs.replaceChildren(...TABS.map(([t, label, e]) => {
       const fresh = d && t !== tab ? freshCount(d, t, store.get(SEEN_KEY + t)) : 0;
       const b = el("button", { type: "button", cls: "ach-tab", attrs: { role: "tab", "aria-selected": String(tab === t), "aria-label": label + (fresh ? `, новых: ${fresh}` : "") } },
-        el("span", { cls: "ach-tab-ic", attrs: { "aria-hidden": "true" }, textContent: e }), el("span", { cls: "ach-tab-label", textContent: label }),
+        el("span", { cls: "ach-tab-ic", attrs: { "aria-hidden": "true" } }, icon(e, 16)), el("span", { cls: "ach-tab-label", textContent: label }),
         fresh ? el("span", { cls: "ach-tab-new", attrs: { "aria-hidden": "true" }, textContent: fresh > 9 ? "9+" : String(fresh) }) : null);
       b.addEventListener("click", () => setTab(t));
       return b;

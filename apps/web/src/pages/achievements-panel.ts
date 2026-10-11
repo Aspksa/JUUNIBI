@@ -54,7 +54,6 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
     };
     const action = (label: string, ic: IconName, tab: string) => el("button", { type: "button", cls: "ach-panel-act", onclick: () => o.open(tab) }, icon(ic, 18), el("span", { textContent: label }));
     const notices = d.notices.slice(0, 2);
-    const surpriseEmoji = d.surprise.emoji === "🦊" ? "✨" : d.surprise.emoji;
 
     host.replaceChildren(...([head,
       el("button", { type: "button", cls: "ach-panel-scene" + (awake ? "" : " asleep"), title: "Двенадцать хвостов достижений", onclick: () => o.open("tails") },
@@ -63,10 +62,10 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
           el("b", { textContent: awake ? `Проснулось хвостов: ${awake} из 12` : "Кицунэ спит" }),
           el("small", { textContent: awake === 12 ? "Её сила достаёт до города" : awake ? "Каждое направление дел будит свой хвост" : "Хвосты проснутся с первыми сделанными делами" }))),
       el("div", { cls: "ach-panel-stats" }, stat(`${d.stats.won}/${d.stats.total}`, "наград"), stat(String(d.stats.rare), "редких"), stat(String(d.sparks), "искр")),
-      el("div", { cls: "ach-panel-surprise" }, el("span", { cls: "ach-panel-surprise-ic", attrs: { "aria-hidden": "true" }, textContent: surpriseEmoji }),
+      el("div", { cls: "ach-panel-surprise" }, el("span", { cls: "ach-panel-surprise-ic", attrs: { "aria-hidden": "true" } }, icon("sparkle", 18)),
         el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))),
       d.quest ? el("button", { type: "button", cls: "ach-panel-quest" + (d.quest.done ? " done" : ""), onclick: () => o.open("metrics") },
-        el("span", { cls: "ach-panel-quest-ic", attrs: { "aria-hidden": "true" }, textContent: d.quest.done ? "✅" : "✨" }),
+        el("span", { cls: "ach-panel-quest-ic", attrs: { "aria-hidden": "true" } }, icon(d.quest.done ? "circleCheck" : "target", 18)),
         el("span", {}, el("b", { textContent: d.quest.done ? "Задание дня выполнено" : "Задание дня" }), el("small", { textContent: d.quest.done ? `Искр: ${d.sparks}` : d.quest.text }))) : null,
       notices.length ? el("ul", { cls: "ach-panel-notices", attrs: { "aria-label": "JUUNIBI замечает" } }, ...notices.map((n) => el("li", {}, el("span", { cls: "ach-panel-notice-ic", attrs: { "aria-hidden": "true" }, textContent: n.emoji }), el("span", { textContent: n.text })))) : null,
       el("div", { cls: "ach-minis" }, ...HIGHLIGHTS.map(tile).filter((x): x is HTMLButtonElement => !!x)),

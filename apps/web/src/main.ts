@@ -28,6 +28,7 @@ import { showToast } from "./toast";
 import { api } from "./api";
 import "./style.css";
 import "./nav/nav.css";
+import "./design.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
 const chats = new Chats();

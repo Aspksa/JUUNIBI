@@ -244,18 +244,19 @@ export class ChatView {
     const typing = busy && this.ctl.store.get().busyId === conv?.id;
     const lastMsg = conv?.messages[conv.messages.length - 1];
     const running = typing ? lastMsg?.steps?.find((st) => st.status === "running") : undefined;
-    const sub = !configured ? (s.status ? "нужен ключ Cloud.ru" : "подключение…") : running ? stepLabel(running.name) : typing ? "печатает" : `на связи${model ? " · " + model : ""}`;
+    const sub = !configured ? (s.status ? "" : "подключение…") : running ? stepLabel(running.name) : typing ? "печатает" : `на связи${model ? " · " + model : ""}`;
     this.root.classList.toggle("generating", typing);
     this.titleEl.replaceChildren(characterAvatar(34, "head-av"), el("div", { cls: "chat-title-text" }, el("strong", { textContent: "JUUNIBI" }),
       el("span", { cls: "chat-sub", attrs: { "aria-live": "polite" } }, el("i", { cls: "dot " + (configured ? (typing ? "busy" : "on") : "off") }), sub, typing ? el("span", { cls: "dots", attrs: { "aria-hidden": "true" } }, el("i"), el("i"), el("i")) : null)));
-    this.sideStatus.textContent = configured ? "На связи" : "Не подключена";
-    this.sideStatus.classList.toggle("off", !configured);
+    // the banner below already says what is missing; the side panel only confirms a working link
+    this.sideStatus.textContent = configured ? "На связи" : "";
+    this.sideStatus.hidden = !configured;
 
     this.banner.hidden = configured || s.status === null;
     if (!this.banner.hidden && !this.banner.firstChild) {
       const go = el("button", { type: "button", textContent: "Открыть настройки" });
       go.addEventListener("click", () => this.onNavigate("settings"));
-      this.banner.replaceChildren(icon("alert", 18), el("span", { textContent: "Ключ Cloud.ru не задан — помощник пока не может отвечать." }), go);
+      this.banner.replaceChildren(icon("alert", 18), el("span", { textContent: "Чтобы JUUNIBI отвечала, добавьте ключ Cloud.ru." }), go);
     }
     this.composer.loadDraft(conv?.id ?? null);
     this.composer.setState({ configured, busy });

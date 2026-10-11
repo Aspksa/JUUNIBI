@@ -17,12 +17,8 @@ describe("Требует внимания: каждый повод ровно о
     expect(text({ blocked: "CI ещё идёт" })[0]).toMatch(/ещё не пройдены/);
     expect(text({})[0]).toMatch(/Доступна новая версия/);
   });
-  it("нет ключа — одна строка и переход в настройки", () => {
-    const d = deps();
-    const items = buildAttention(state({ status: { assistant: false } as AppState["status"] }), d);
-    expect(items.map((a) => a.id)).toEqual(["key"]);
-    items[0]!.run();
-    expect(d.go).toHaveBeenCalledWith("settings");
+  it("нет ключа — без отдельной строки: об этом уже говорят карточка в меню и чат", () => {
+    expect(buildAttention(state({ status: { assistant: false } as AppState["status"] }), deps())).toEqual([]);
   });
   it("пока статус неизвестен, про ключ не говорим", () => { expect(ids(state({ status: null }))).toEqual([]); });
   it("новая версия и готовое обновление не дублируются", () => {
@@ -76,7 +72,7 @@ describe("Требует внимания: каждый повод ровно о
       modules: [{ name: "a", deps: [], status: "failed" }] as never });
     const list = ids(s);
     expect(new Set(list).size).toBe(list.length);
-    expect(list).toEqual(["key", "approvals", "update", "memory", "modules"]);
+    expect(list).toEqual(["approvals", "update", "memory", "modules"]);
   });
 });
 

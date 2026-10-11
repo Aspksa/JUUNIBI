@@ -21,7 +21,7 @@ export function buildAttention(s: AppState, d: Pick<HomeDeps, "go" | "openChat">
   const pending = s.memory.filter((m) => m.status === "pending").length;
   const failed = buildModules(s.modules).counts.failed;
   const out: Attention[] = [];
-  if (s.status && !ok) out.push({ id: "key", tone: "warn", icon: "settings", text: "Помощница не подключена: нужен ключ Cloud.ru.", action: "Подключить", run: () => d.go("settings") });
+  // «не подключена» lives in the menu's profile card (one click to connect) and in the chat banner; no third copy here
   if (s.approvals.length && !s.chatOpen) out.push({ id: "approvals", tone: "bad", icon: "alert", text: `Ждёт вашего решения действий: ${s.approvals.length}.`, action: "Открыть чат", run: () => d.openChat() });
   if (u?.phase === "ready") out.push({ id: "update", tone: "info", icon: "update", text: "Обновление скачано и проверено — его можно установить.", action: "Установить", run: () => d.go("update") });
   else if (u?.rollbackPending) out.push({ id: "update", tone: "warn", icon: "update", text: "Запланирован откат на предыдущую версию.", action: "Подробнее", run: () => d.go("update") });
