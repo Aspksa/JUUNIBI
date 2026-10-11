@@ -2,8 +2,8 @@ import { Store, attempt } from "@juunibi/core";
 import { ACCENT_IDS, DEFAULT_CUSTOM_ACCENT, isHexColor, type AccentId } from "./accents";
 import { api, type AssistantSettings, type Brief, type RepeatSuggestion, type ModuleInfo, type ApprovalItem, type MemoryItem, type Status, type UpdateEvent, type UpdateHistory, type UpdateStatus } from "./api";
 
-export type Route = "tasks" | "disk" | "achievements" | "vault" | "memory" | "quality" | "modules" | "brain" | "mobile" | "update" | "settings";
-export const ROUTES: Route[] = ["tasks", "disk", "achievements", "vault", "memory", "quality", "modules", "brain", "mobile", "update", "settings"];
+export type Route = "tasks" | "disk" | "achievements" | "vault" | "memory" | "quality" | "modules" | "brain" | "mobile" | "fox-network" | "update" | "settings";
+export const ROUTES: Route[] = ["tasks", "disk", "achievements", "vault", "memory", "quality", "modules", "brain", "mobile", "fox-network", "update", "settings"];
 /** Pages that belong to a menu item without being one: «Дела и достижения» lights up «Дела». */
 export const SUB_ROUTES: Partial<Record<Route, Route>> = { achievements: "tasks", vault: "tasks" };
 /** Older addresses that now open another page. */
