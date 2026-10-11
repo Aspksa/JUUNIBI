@@ -366,7 +366,7 @@ export function diskPage():HTMLElement {
           else{menu.open=false;current="";void refresh();}
         });
         const remove=button("Удалить папку",async()=>{
-          if(!confirm("Удалить папку «"+folder+"» и все подпапки? Файлы попадут в корзину, но структура папок пока не восстанавливается."))return;
+          if(!confirm("Переместить папку «"+folder+"» вместе с подпапками и файлами в корзину? Восстановление доступно в разделе удалённых папок."))return;
           const r=await api.diskFolderTrash(folder);
           if(!r.ok)feedback.textContent=r.error.message;
           else{menu.open=false;current="";void refresh();}
@@ -406,7 +406,16 @@ export function diskPage():HTMLElement {
     tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),filter,sort,
       draw("",0),
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
-      button("Корзина · "+trash.length,()=>{viewFilter="trash";current="";void refresh();}));
+      button("Корзина · "+trash.length,()=>{viewFilter="trash";current="";void refresh();}),
+      button("Удалённые папки",async()=>{
+        const r=await api.diskDeletedFolders();if(!r.ok){showToast(r.error.message);return;}
+        const dialog=el("dialog",{cls:"disk-preview"});
+        const rows=r.value.folders.map(item=>el("div",{cls:"disk-tree-recovery"},
+          el("span",{textContent:item.root+" · "+item.count+" каталогов"}),
+          button("Восстановить",async()=>{const result=await api.diskFolderRestore(item.root);if(!result.ok)showToast(result.error.message);else{dialog.close();void refresh();}})));
+        dialog.append(el("h3",{textContent:"Удалённые папки"}),...rows,button("Закрыть",()=>dialog.close()));
+        dialog.addEventListener("close",()=>dialog.remove(),{once:true});page.append(dialog);dialog.showModal();
+      }));
   };
   const refresh=async()=>{
     const r=await api.diskList(viewFilter==="all"&&!allSearch.checked?current:undefined);
