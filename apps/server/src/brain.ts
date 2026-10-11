@@ -260,7 +260,7 @@ export class BrainCore {
     if (!Array.isArray(saved.plans) || !Array.isArray(saved.logs) || saved.plans.length > 30 || saved.logs.length > 200) throw new Error("Неверный формат мозга");
     this.mode = saved.mode === "agent" || saved.mode === "analysis" || saved.mode === "creative" ? saved.mode : "chat";
     if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2)) && (s.lastError === undefined || (typeof s.lastError === "string" && s.lastError.length <= 300))))) throw new Error("Некорректные планы");
-    this.plans = (saved.plans as BrainPlan[]).map(p => ({ ...p, status: p.status === "running" ? "planned" : p.status, steps: p.steps.map(s => ({ ...s, status: s.status === "active" ? "pending" : s.status })) }));
+    this.plans = (saved.plans as BrainPlan[]).map(p => { const interrupted = p.steps.some(s => s.status === "active"); return { ...p, status: interrupted ? "failed" as const : p.status === "running" ? "planned" as const : p.status, steps: p.steps.map(s => s.status === "active" ? { ...s, status: "failed" as const, lastError: "Выполнение прервано. Проверьте результат перед повтором." } : s) }; });
     this.logs = saved.logs as typeof this.logs;
     this.decisions.load((state as { decisions?: unknown }).decisions);
     this.revisions.load((state as { revisions?: unknown }).revisions);
@@ -300,6 +300,7 @@ export class BrainCore {
     if (plan.steps.some(s => s !== step && s.status === "active") || plan.steps.slice(0, plan.steps.indexOf(step)).some(s => s.status !== "done"))
       throw Object.assign(new Error("Предыдущие шаги ещё не завершены"), { status: 409 });
     this.updateStep(planId, stepId, "active");
+    await this.flush(); // durable active checkpoint before invoking the tool
     try {
       const result = action === "list_modules" ? readModules() : await searchMemory(step.title);
       const serialized = JSON.stringify(result);
@@ -312,6 +313,7 @@ export class BrainCore {
       this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "verified: " + action + ": " + summary });
       this.logs = this.logs.slice(0, 200);
       this.persist();
+      await this.flush(); // do not acknowledge success before the verified result is durable
       return { plan: this.status().plans.find(p => p.id === planId), result };
     } catch (error) {
       step.lastError = error instanceof Error ? error.message.slice(0, 300) : "Неизвестная ошибка";
