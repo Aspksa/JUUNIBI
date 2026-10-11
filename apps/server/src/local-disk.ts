@@ -1,5 +1,6 @@
 import { diskChronicles } from "./disk-chronicles";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
@@ -51,6 +52,99 @@ export class LocalDisk {
       await rename(tmp,this.index);
     });
     return this.writes;
+  }
+
+  /** Portable newline-delimited archive: immutable object checksums are verified on both sides. */
+  async *exportBackup():AsyncGenerator<string>{
+    const state={
+      entries:this.entries.map(e=>({...e})),
+      versions:JSON.parse(JSON.stringify(this.versions)) as Record<string,DiskRevision[]>,
+      folders:[...this.folders],folderStyles:{...this.folderStyles},
+      deletedFolders:this.deletedFolders.map(d=>({...d})),
+      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a}))
+    };
+    yield JSON.stringify({type:"manifest",format:1,state})+"\n";
+    const objects=new Map<string,{size:number;sha256:string}>();
+    for(const e of state.entries)objects.set(e.objectId??e.id,{size:e.size,sha256:e.sha256});
+    for(const history of Object.values(state.versions))for(const v of history)objects.set(v.objectId,{size:v.size,sha256:v.sha256});
+    let count=0;
+    for(const [id,expected] of objects){
+      if(!/^[0-9a-f-]{36}$/.test(id))throw bad("Недопустимый объект архива",409);
+      yield JSON.stringify({type:"object",id,...expected})+"\n";
+      const hash=createHash("sha256");let size=0;
+      for await(const chunk of createReadStream(this.objectPath(id),{highWaterMark:256*1024})){
+        const buf=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+        size+=buf.length;hash.update(buf);
+        yield JSON.stringify({type:"chunk",data:buf.toString("base64")})+"\n";
+      }
+      if(size!==expected.size||hash.digest("hex")!==expected.sha256)throw bad("Файл изменён или повреждён во время резервирования",409);
+      yield '{"type":"end"}\n';count++;
+    }
+    yield JSON.stringify({type:"complete",objects:count})+"\n";
+  }
+  /** Restore only to an empty vault; validate all bytes before committing the new index. */
+  async importBackup(lines:AsyncIterable<string>){
+    if(this.entries.length||this.folders.length||Object.keys(this.versions).length)throw bad("Для восстановления требуется пустой Диск",409);
+    const staged:string[]=[];let manifest:unknown=null;let active:{id:string;size:number;sha256:string;bytes:number;hash:ReturnType<typeof createHash>;handle:Awaited<ReturnType<typeof open>>}|null=null;
+    let count=0,complete=false;
+    await mkdir(path.join(this.root,"objects"),{recursive:true});
+    try{
+      for await(const line of lines){
+        if(line.length>17*1024*1024)throw bad("Превышен допустимый размер строки архива",413);
+        const rec=JSON.parse(line) as Record<string,unknown>;
+        if(!manifest){
+          if(rec.type!=="manifest"||rec.format!==1||typeof rec.state!=="object"||!rec.state)throw bad("Неверный формат архива");
+          manifest=rec.state;continue;
+        }
+        if(complete)throw bad("Данные после конца архива");
+        if(rec.type==="object"&&!active){
+          if(typeof rec.id!=="string"||!/^[0-9a-f-]{36}$/.test(rec.id)||!Number.isSafeInteger(rec.size)||Number(rec.size)>LIMIT||Number(rec.size)<0||typeof rec.sha256!=="string"||!/^[a-f0-9]{64}$/.test(rec.sha256))throw bad("Неверная запись файла в архиве");
+          if(staged.includes(rec.id))throw bad("Повторный объект архива");
+          const handle=await open(this.objectPath(rec.id),"wx",0o600);
+          staged.push(rec.id);active={id:rec.id,size:Number(rec.size),sha256:rec.sha256,bytes:0,hash:createHash("sha256"),handle};continue;
+        }
+        if(rec.type==="chunk"&&active){
+          if(typeof rec.data!=="string"||rec.data.length>800000||!/^([a-zA-Z0-9+/]*={0,2})$/.test(rec.data))throw bad("Неверный блок данных архива");
+          const buf=Buffer.from(rec.data,"base64");
+          active.bytes+=buf.length;if(active.bytes>active.size)throw bad("Размер файла не совпадает с архивом");
+          active.hash.update(buf);await active.handle.writeFile(buf);continue;
+        }
+        if(rec.type==="end"&&active){
+          const item=active;active=null;await item.handle.close();
+          if(item.bytes!==item.size||item.hash.digest("hex")!==item.sha256)throw bad("Контрольная сумма резервного файла не совпадает",409);
+          count++;continue;
+        }
+        if(rec.type==="complete"&&!active&&Number.isSafeInteger(rec.objects)&&rec.objects===count){complete=true;continue;}
+        throw bad("Повреждённая последовательность архива");
+      }
+      if(!complete||active)throw bad("Неполная резервная копия",409);
+      const state=manifest as Record<string,unknown>;
+      if(!Array.isArray(state.entries)||!Array.isArray(state.folders)||typeof state.versions!=="object"||!state.versions)throw bad("Неверный индекс архива");
+      if(state.entries.length>1000||state.folders.length>100)throw bad("Архив превышает лимиты хранилища",409);
+      const entries=state.entries as DiskEntry[];
+      const versions=state.versions as Record<string,DiskRevision[]>;
+      const referenced=new Set<string>();
+      for(const e of entries){
+        validName(e.name);validFolder(e.folder);
+        if(typeof e.id!=="string"||!/^[0-9a-f-]{36}$/.test(e.id)||!Number.isSafeInteger(e.size)||e.size<0||e.size>LIMIT||!/^[0-9a-f]{64}$/.test(e.sha256))throw bad("Некорректный файл в индексе");
+        referenced.add(e.objectId??e.id);
+        for(const v of versions[e.id]??[])referenced.add(v.objectId);
+      }
+      if(referenced.size!==count||[...referenced].some(id=>!staged.includes(id)))throw bad("Архив не содержит все объекты индекса",409);
+      const folders=state.folders as string[];
+      for(const folder of folders)if(!folder||validFolder(folder)!==folder)throw bad("Некорректная папка архива");
+      this.entries=entries;this.folders=folders;this.versions=versions;
+      this.folderStyles=(state.folderStyles??{}) as typeof this.folderStyles;
+      this.deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
+      this.folderActions=Array.isArray(state.folderActions)?state.folderActions as typeof this.folderActions:[];
+      this.fileActions=Array.isArray(state.fileActions)?state.fileActions as typeof this.fileActions:[];
+      await this.save();
+      return {files:entries.length,folders:folders.length,objects:count};
+    }catch(e){
+      if(active)await active.handle.close().catch(()=>{});
+      if(!this.entries.length)for(const id of staged)await rm(this.objectPath(id),{force:true});
+      throw e;
+    }
   }
   chronicles(){return diskChronicles(this.entries,this.folders);}
   list(folder?:string){
