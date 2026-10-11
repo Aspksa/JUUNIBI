@@ -188,4 +188,32 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("exports and restores a portable full-content backup with old versions",async()=>{
+   const source=await mkdtemp(path.join(os.tmpdir(),"juunibi-export-"));
+   const target=await mkdtemp(path.join(os.tmpdir(),"juunibi-import-"));
+   const broken=await mkdtemp(path.join(os.tmpdir(),"juunibi-broken-"));
+   try{
+     const original=new LocalDisk(source);
+     await original.createFolder("Проекты");
+     const file=await original.uploadBytes("notes.txt","Проекты",Buffer.from("initial"));
+     await original.replaceStream(file.id,(async function*(){yield Buffer.from("updated");})(),file.sha256);
+     const lines:string[]=[];
+     for await(const line of original.exportBackup())lines.push(line);
+     const restored=new LocalDisk(target);
+     const result=await restored.importBackup((async function*(){for(const line of lines)yield line.trimEnd();})());
+     expect(result.files).toBe(1);
+     expect(result.folders).toBe(1);
+     expect(restored.fileVersions(file.id)).toHaveLength(2);
+     expect(Buffer.from((await restored.download(file.id)).base64,"base64").toString()).toBe("updated");
+     const old=await restored.restoreFileVersion(file.id,1);
+     expect(old.revision).toBe(3);
+     expect(Buffer.from((await restored.download(file.id)).base64,"base64").toString()).toBe("initial");
+     await expect(restored.importBackup((async function*(){for(const line of lines)yield line.trimEnd();})())).rejects.toMatchObject({status:409});
+     const altered=lines.map(line=>line.replace("dXBkYXRlZA==","dXBkYXRlYg=="));
+     const bad=new LocalDisk(broken);
+     await expect(bad.importBackup((async function*(){for(const line of altered)yield line.trimEnd();})())).rejects.toThrow();
+     expect(bad.list().files).toHaveLength(0);
+   }finally{await rm(source,{recursive:true,force:true});await rm(target,{recursive:true,force:true});await rm(broken,{recursive:true,force:true});}
+ });
+
 });
