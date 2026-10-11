@@ -69,6 +69,46 @@ describe("BrainCore", () => {
     const reloaded = new BrainCore(() => true, { load: async () => JSON.stringify(corrupt), save: async () => {} });
     await expect(reloaded.load()).rejects.toThrow("Повторные идентификаторы");
   });
+  it("restores a partially completed plan as running, preserving verified steps", async () => {
+    let data: string | null = null;
+    const storage = { load: async () => data, save: async (value: string) => { data = value; } };
+    const first = new BrainCore(() => true, storage);
+    const plan = first.plan("audit", ["first", "second"]);
+    await first.executeReadStep(plan.id, plan.steps[0]!.id, "list_modules", () => [], async () => []);
+    const restarted = new BrainCore(() => true, storage);
+    await restarted.load();
+    expect(restarted.status().plans[0]).toMatchObject({ status: "running", steps: [{status: "done"}, {status: "pending"}] });
+    const result = await restarted.resumeReadSequence(plan.id, ["search_memory"], () => [], async q => [q]);
+    expect(result.skippedCompleted).toBe(1);
+    expect(result.results).toEqual([["second"]]);
+    expect(restarted.status().plans[0]?.status).toBe("completed");
+  });
+  it("marks interrupted active step failed without rerunning it on load", async () => {
+    let data: string | null = null;
+    const storage = { load: async () => data, save: async (value: string) => { data = value; } };
+    const first = new BrainCore(() => true, storage);
+    const plan = first.plan("check", ["read"]);
+    first.updateStep(plan.id, plan.steps[0]!.id, "active");
+    await first.flush();
+    const restored = new BrainCore(() => true, storage);
+    await restored.load();
+    expect(restored.status().plans[0]).toMatchObject({status: "failed",steps:[{status: "failed"}]});
+    await expect(restored.executeReadStep(plan.id, plan.steps[0]!.id, "list_modules", () => [], async () => [])).rejects.toThrow();
+  });
+  it("saves a retry counter before re-invoking a failed tool", async () => {
+    let data: string | null = null;
+    const storage = {load:async()=>data,save:async(v:string)=>{data=v;}};
+    const first = new BrainCore(() => true, storage);
+    const plan = first.plan("check", ["memory"]);
+    await expect(first.executeReadStep(plan.id, plan.steps[0]!.id, "search_memory", () => [], async () => {throw Error("offline");})).rejects.toThrow();
+    await first.retryFailedReadStep(plan.id, plan.steps[0]!.id, "search_memory", () => [], async () => {
+      const snap = JSON.parse(data!);
+      expect(snap.plans[0].steps[0].retries).toBe(1);
+      expect(snap.plans[0].steps[0].status).toBe("active");
+      return ["recovered"];
+    });
+    expect(first.status().plans[0]?.status).toBe("completed");
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
