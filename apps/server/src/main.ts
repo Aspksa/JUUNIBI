@@ -264,6 +264,24 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     }),
   });
   assistant.tools.register({
+    name: "brain_cognitive_cycle_preview", risk: "read",
+    description: "Посмотреть единый цикл интеллекта по существующему плану: наблюдения, причины, следующий шаг, проверки, опыт, пробелы знаний и варианты восстановления. Ничего не исполняет.",
+    parameters: { type: "object", properties: {planId: {type:"string"}}, required:["planId"] },
+    run: args => brain.previewCognitiveCycle(typeof args.planId === "string" ? args.planId : ""),
+  });
+  assistant.tools.register({
+    name: "brain_cognitive_cycle_step", risk: "write",
+    description: "После явного подтверждения владельца выполнить ровно один следующий безопасный шаг чтения, сохранить контрольную точку и проверить журнал. Запрещены произвольные команды, пропуск шагов и автоматический повтор после ошибки.",
+    parameters: { type: "object", properties: {
+      planId:{type:"string"},stepId:{type:"string"},action:{type:"string",enum:["list_modules","search_memory"]}
+    },required:["planId","stepId","action"] },
+    run: args => brain.runCognitiveCycleStep(
+      typeof args.planId === "string" ? args.planId : "",
+      typeof args.stepId === "string" ? args.stepId : "",
+      args.action, () => moduleList(),
+      async query => (await memory.search(query,8)).map(item=>item.text)),
+  });
+  assistant.tools.register({
     name: "brain_review_live_plan", risk: "read",
     description: "Проанализировать сохранённый план на основании реальных статусов шагов и истории результатов инструментов. Не выполняет действия и не доказывает причинность.",
     parameters: { type: "object", properties: { planId: {type:"string"} }, required:["planId"] },
