@@ -83,7 +83,7 @@ export function openPalette(base: PaletteEntry[], more?: Promise<PaletteEntry[]>
   openNow = close;
   draw();
   input.focus();
-  void more?.then((extra) => { if (openNow === close && extra.length) { entries = [...entries, ...extra]; draw(); } });
+  void more?.then((extra) => { if (openNow === close && extra.length) { entries = [...entries, ...extra]; draw(); } }).catch(() => { if (openNow === close) { status.textContent = "Не удалось загрузить дополнительные результаты поиска"; } });
 }
 
 /** What Enter does when nothing matched: ask the assistant in the chat. Set by the menu. */
