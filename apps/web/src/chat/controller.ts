@@ -109,7 +109,7 @@ export class ChatController {
           finished = true;
           thought();
           const patch: Partial<ChatMsg> = { turnId: e.turnId, tools: e.tools, ...(e.memory?.length ? { memoryUsed: e.memory } : {}) };
-          if (!text && e.reply) patch.content = e.reply; // server returned a reply without deltas
+          if (e.reply && e.reply !== text) patch.content = e.reply; // the server may append evidence corrections after streaming
           this.chats.patch(convId, reply.id, patch);
         } else if (e.type === "error") {
           finished = true;
