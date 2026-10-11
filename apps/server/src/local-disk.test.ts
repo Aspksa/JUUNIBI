@@ -12,9 +12,13 @@ describe("Local Disk",()=>{
    await disk.createFolder("Документы");
    const uploaded=await disk.upload("запись.txt","Документы",Buffer.from("Привет JUUNIBI").toString("base64"));
    expect(disk.list("Документы").files[0]?.name).toBe("запись.txt");
+   await disk.renameFile(uploaded.id,"новое имя.txt");
+   expect(disk.list("Документы").files[0]?.name).toBe("новое имя.txt");
+   await expect(disk.renameFile(uploaded.id,"../secret")).rejects.toMatchObject({status:400});
    expect(Buffer.from((await disk.download(uploaded.id)).base64,"base64").toString()).toBe("Привет JUUNIBI");
    const fresh=new LocalDisk(dir);await fresh.load();
    expect(fresh.list("Документы").files).toHaveLength(1);
+   expect(fresh.list("Документы").files[0]?.name).toBe("новое имя.txt");
    await expect(fresh.createFolder("../escape")).rejects.toMatchObject({status:400});
    await expect(fresh.upload("../bad","Документы","YQ==")).rejects.toMatchObject({status:400});
    await fresh.remove(uploaded.id);
