@@ -116,7 +116,7 @@ export class ChatController {
           this.chats.patch(convId, reply.id, { error: /(?:503|временно недоступен|connection timeout)/i.test(e.message) ? "Cloud.ru временно недоступен. Ваше сообщение сохранено в истории чата. Повторите запрос после восстановления связи. " + e.message : e.message, ...(ctl.signal.aborted ? { stopped: true } : {}) });
         }
       });
-      if (!finished) this.chats.patch(convId, reply.id, { error: "Соединение прервано." });
+      if (!finished) this.chats.patch(convId, reply.id, { error: text.trim() ? "Поток прервался. Полученная часть ответа сохранена. Нажмите «Повторить», чтобы создать новый ответ." : "Соединение прервано. Сообщение сохранено — нажмите «Повторить»." });
     } catch (e) {
       if (ctl.signal.aborted) this.chats.patch(convId, reply.id, { stopped: true });
       else {

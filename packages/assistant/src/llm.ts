@@ -154,7 +154,8 @@ export class CloudRuProvider implements LlmProvider {
         });
       }
       const ctl = new AbortController();
-      let timer = setTimeout(() => ctl.abort(), timeoutMs);
+      let timedOut = false;
+      let timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
       const onAbort = () => ctl.abort();
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       try {
@@ -177,7 +178,7 @@ export class CloudRuProvider implements LlmProvider {
           throw new LlmError(`Cloud.ru вернул ${res.status}: ${text}`, res.status);
         }
         if (opts.onText && /text\/event-stream/i.test(res.headers.get("content-type") ?? "") && res.body) {
-          const r = await readStream(res.body, onText!, () => { clearTimeout(timer); timer = setTimeout(() => ctl.abort(), timeoutMs); }, opts.onReasoning);
+          const r = await readStream(res.body, onText!, () => { clearTimeout(timer); timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs); }, opts.onReasoning);
           this.lastModel = model;
           return model === this.cfg.model ? r : { ...r, model };
         }
@@ -187,8 +188,9 @@ export class CloudRuProvider implements LlmProvider {
         return model === this.cfg.model ? parsed : { ...parsed, model };
       } catch (e) {
         if (e instanceof LlmError && e.status && e.status < 500 && e.status !== 429) throw this.safeError(e);
-        if (opts.signal?.aborted) throw new LlmError("Запрос отменён");
-        lastErr = e;
+        if (opts.signal?.aborted) throw new LlmError("Запрос отменён пользователем");
+        if (timedOut) lastErr = new LlmError(`Cloud.ru: тайм-аут ожидания следующей части ответа (${Math.round(timeoutMs / 1000)} с). Уже полученный текст сохранён; повторите запрос для нового ответа.`);
+        else lastErr = e;
         if (state.streamed) break;
       } finally {
         clearTimeout(timer);
