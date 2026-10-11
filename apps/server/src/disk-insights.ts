@@ -1,6 +1,6 @@
 import type { LocalDisk } from "./local-disk";
 
-export type DiskInsight = { id: number; value: string; detail?: string };
+export type DiskInsight = { id: number; value: string; detail?: string | undefined };
 export type DiskInsights = { generatedAt: string; analyzed: number; eligible: number; skipped: number; metrics: DiskInsight[]; links: { from: string; to: string; score: number }[]; findings: { kind: string; text: string; ids: string[] }[] };
 const num = (n: number) => n.toLocaleString("ru-RU");
 const words = (s: string) => s.toLocaleLowerCase("ru-RU").match(/[\p{L}\p{N}]{3,}/gu) ?? [];
