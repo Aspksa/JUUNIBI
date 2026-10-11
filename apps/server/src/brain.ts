@@ -348,6 +348,29 @@ export class BrainCore {
       note: "Диагностика не запускает инструменты и не выдаёт разрешений.",
     };
   }
+  /** Produces a bounded, read-only recovery proposal; never retries tools automatically. */
+  recoveryPreview(planId: string) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден",), {status:404});
+    const readiness = this.executionReadiness(planId);
+    const firstFailed = plan.steps.findIndex(s => s.status === "failed");
+    const failedStep = firstFailed < 0 ? null : plan.steps[firstFailed]!;
+    const canRetry = !!failedStep && firstFailed >= 0 &&
+      plan.steps.slice(0, firstFailed).every(s => s.status === "done") &&
+      plan.steps.slice(firstFailed + 1).every(s => s.status === "pending") &&
+      (failedStep.retries ?? 0) < 2;
+    return {
+      planId, phase: plan.status,
+      proposedAction: canRetry ? {stepId:failedStep!.id, title:failedStep!.title,
+        attemptsRemaining:2 - (failedStep!.retries ?? 0),
+        permittedActions:["list_modules","search_memory"] as const} : null,
+      readyForContinuation: readiness.canResumeReadOnly,
+      verifiedCompleted: readiness.verifiedCompleted,
+      missingEvidence: readiness.missingEvidence,
+      requiresExplicitApproval: true as const,
+      note:"Предложение восстановления не выполняет инструменты и не подтверждает результат.",
+    };
+  }
   /** Evidence quality indicators, not an LLM intelligence score. */
   brainEvaluation() {
     const plans = this.plans.map(p => this.executionReadiness(p.id));
