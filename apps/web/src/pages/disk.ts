@@ -47,6 +47,15 @@ export function diskPage():HTMLElement {
   let firstPaint=true;
   const setBusy=(busy:boolean)=>{drop.classList.toggle("disk-is-busy",busy);drop.setAttribute("aria-busy",String(busy));};
   const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>viewFilter!=="favorites"||f.favorite);
+  /** Animate only after a successful mutation; reduced-motion skips the transition. */
+  const exitFile=async(id:string)=>{
+    const node=[...files.querySelectorAll<HTMLElement>(".disk-file")].find(card=>card.dataset.fileId===id);
+    if(!node||!page.isConnected||window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+    try{
+      await node.animate([{opacity:1,transform:"translateX(0) scale(1)"},{opacity:0,transform:"translateX(16px) scale(.96)"}],
+        {duration:190,easing:"cubic-bezier(.3,0,.7,1)",fill:"forwards"}).finished;
+    }catch{/* Page was removed or animation cancelled: proceed with the update. */}
+  };
   const renderBulk=()=>{
     const count=selected.size;
     bulkBar.hidden=!count;
@@ -57,7 +66,7 @@ export function diskPage():HTMLElement {
       if(type==="move"){const name=prompt("Папка назначения: "+["Главная",...allFolders].join(", ")+". Пустое поле — главная.","");if(name===null)return;folder=name.trim();}
       const r=await api.diskBulk([...selected],type,folder);
       if(!r.ok){showToast(r.error.message);return;}
-      selected.clear();void refresh();
+      selected.clear();status.textContent="Изменено файлов: "+r.value.updated;void refresh();
     });
     bulkBar.replaceChildren(el("strong",{textContent:"Выбрано: "+count}),
       ...(viewFilter==="trash"?[action("Восстановить","restore")]:[
@@ -172,6 +181,7 @@ export function diskPage():HTMLElement {
     files.replaceChildren(...(visible.length?visible.map((f,index)=>{
       const name=el("strong",{textContent:f.name});
       const card=el("div",{cls:"disk-file"+(firstPaint&&index<16?" disk-reveal":"")});
+      card.dataset.fileId=f.id;
       if(firstPaint&&index<16)card.style.setProperty("--disk-order",String(index));
       const choose=el("input",{type:"checkbox",checked:selected.has(f.id),attrs:{"aria-label":"Выбрать "+f.name}});
       choose.addEventListener("change",()=>{if(choose.checked)selected.add(f.id);else selected.delete(f.id);card.classList.toggle("disk-selected",choose.checked);renderBulk();});
@@ -196,7 +206,7 @@ export function diskPage():HTMLElement {
         actions.open=false;
         if(!confirm("Переместить файл «"+f.name+"» в корзину?"))return;
         const r=await api.diskDelete(f.id);
-        if(!r.ok)showToast(r.error.message);else void refresh();
+        if(!r.ok)showToast(r.error.message);else {await exitFile(f.id);void refresh();}
       });
       const show=button("Просмотр",()=>{actions.open=false;void openPreview(f);});
       const rename=button("Переименовать",async()=>{
@@ -215,9 +225,9 @@ export function diskPage():HTMLElement {
         const folder=prompt("Папка (доступные: "+["Главная",...allFolders].join(", ")+"). Пустое поле — главная.",f.folder);
         if(folder===null)return;
         const r=await api.diskMove(f.id,folder.trim());
-        if(!r.ok)showToast(r.error.message);else void refresh();
+        if(!r.ok)showToast(r.error.message);else {await exitFile(f.id);void refresh();}
       });
-      const restore=button("Восстановить",async()=>{actions.open=false;const r=await api.diskRestore(f.id);if(!r.ok)showToast(r.error.message);else void refresh();});
+      const restore=button("Восстановить",async()=>{actions.open=false;const r=await api.diskRestore(f.id);if(!r.ok)showToast(r.error.message);else {await exitFile(f.id);void refresh();}});
       const purge=button("Удалить навсегда",async()=>{
         actions.open=false;if(!confirm("Безвозвратно удалить «"+f.name+"»?"))return;
         const r=await api.diskPurge(f.id);if(!r.ok)showToast(r.error.message);else void refresh();
@@ -269,8 +279,11 @@ export function diskPage():HTMLElement {
   const uploadFiles=async(fileList:File[])=>{
     if(!fileList.length)return;
     setBusy(true);
+    const original=drop.querySelector("strong")?.textContent??"Перетащи файлы сюда";
+    let completed=0;
     try{for(const file of fileList){
-      if(file.size>10*1024*1024){showToast(file.name+": размер больше 10 МБ");continue;}
+      const title=drop.querySelector("strong");if(title)title.textContent="Загрузка "+(completed+1)+" из "+fileList.length;
+      if(file.size>10*1024*1024){showToast(file.name+": размер больше 10 МБ");completed++;continue;}
       const encoded=await new Promise<string>((resolve,reject)=>{
         const reader=new FileReader();
         reader.onload=()=>resolve(String(reader.result).split(",")[1]??"");
@@ -279,8 +292,9 @@ export function diskPage():HTMLElement {
       });
       const r=await api.diskUpload(file.name,current,encoded);
       if(!r.ok)showToast(r.error.message);
+      completed++;
     }
-    }finally{setBusy(false);upload.value="";void refresh();}
+    }finally{const title=drop.querySelector("strong");if(title)title.textContent=original;setBusy(false);upload.value="";void refresh();}
   };
   upload.addEventListener("change",()=>void uploadFiles([...(upload.files??[])]));
   drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("active");});
