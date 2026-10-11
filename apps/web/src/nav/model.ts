@@ -58,6 +58,9 @@ export function arrange(p: NavPrefs, all = false): { group: NavGroup; items: Nav
 /** Visible items top to bottom: Alt+1 is the first of them. */
 export const visibleItems = (p: NavPrefs): NavItem[] => arrange(p).flatMap((g) => g.items);
 
+/** Compare the pointer with the whole row, not a nested icon or label. */
+export const dropAfter = (clientY: number, top: number, height: number): boolean => clientY > top + height / 2;
+
 /** Moves an item one step up or down inside its own group. */
 export function move(p: NavPrefs, id: NavId, dir: -1 | 1): NavPrefs {
   const same = arrange(p, true).find((g) => g.items.some((n) => n.id === id))!.items.map((n) => n.id);

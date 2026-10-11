@@ -9,7 +9,7 @@ import { el, icon, iconButton, type IconName } from "../dom";
 import { buildModules } from "../pages/models";
 import { BRAIN_TILE_ROUTES, SUB_ROUTES, app, persistPrefs, type AppState, type Route, type Theme } from "../state";
 import {
-  arrange, badges, cleanPrefs, hotkeyLabel, loadPrefs, move, placeBefore, recentChats, savePrefs, todayLine, toggleHidden, visibleItems,
+  arrange, badges, cleanPrefs, dropAfter, hotkeyLabel, loadPrefs, move, placeBefore, recentChats, savePrefs, todayLine, toggleHidden, visibleItems,
   UNHIDEABLE, type NavBadge, type NavId, type NavItem, type NavPrefs,
 } from "./model";
 
@@ -127,7 +127,9 @@ export class Menu {
     }
     if (active) attrs["aria-current"] = "page";
     // while the chat window is open only «Беседа» is filled; the page under it keeps a quieter mark
-    return el("a", { href: "#/" + n.route, cls: "nav-item" + (active ? (s.chatOpen ? " here" : " active") : ""), title: tip, attrs }, ...kids);
+    const link = el("a", { href: "#/" + n.route, cls: "nav-item" + (active ? (s.chatOpen ? " here" : " active") : ""), title: tip, attrs }, ...kids);
+    link.addEventListener("click", () => app.set({ navOpen: false }));
+    return link;
   }
 
   private statusPlate(s: AppState): HTMLElement {
@@ -185,7 +187,8 @@ export class Menu {
     row.addEventListener("dragover", (e) => {
       if (!this.dragId || this.dragId === id || row.parentElement !== this.nav.querySelector(`[data-id="${this.dragId}"]`)?.parentElement) return;
       e.preventDefault();
-      const after = e.offsetY > row.offsetHeight / 2;
+      const rect = row.getBoundingClientRect();
+      const after = dropAfter(e.clientY, rect.top, rect.height);
       row.classList.toggle("drop-after", after); row.classList.toggle("drop-before", !after);
     });
     row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
@@ -217,6 +220,9 @@ export class Menu {
       cell("Добавить", "plus", false, undefined, () => this.d.quickAdd()),
       cell("Ещё", "menu", s.navOpen, undefined, () => app.set((x) => ({ navOpen: !x.navOpen }))),
     );
+    const more = this.bottom.lastElementChild;
+    more?.setAttribute("aria-expanded", String(s.navOpen));
+    more?.setAttribute("aria-controls", "juunibi-main-nav");
   }
 }
 
