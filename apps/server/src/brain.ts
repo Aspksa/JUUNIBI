@@ -90,6 +90,20 @@ export class BrainCore {
       };
     });
   }
+  /** Stable, read-only attention feed. Never queues or executes an action. */
+  attentionFeed(limit = 5) {
+    const count = Number.isSafeInteger(limit) ? Math.max(1, Math.min(limit, 20)) : 5;
+    const items = this.pendingWork().map(p => ({
+      id: p.id,
+      kind: p.status === "failed" ? "needs-review" as const : "resume" as const,
+      priority: p.status === "failed" ? 0 : p.completed > 0 ? 1 : 2,
+      goal: p.goal,
+      detail: p.nextStep?.lastError ?? p.nextStep?.title ?? "Проверьте план",
+      progress: { completed: p.completed, total: p.total },
+      requiresExplicitExecution: true as const
+    }));
+    return items.sort((a,b) => a.priority - b.priority || a.id.localeCompare(b.id)).slice(0, count);
+  }
   history() { return this.logs.map(e => ({ ...e })); }
   reviewToolOutcome(input: ToolOutcomeEvidence) { return reviewToolOutcome(input); }
   previewThoughtCycle(input: UnifiedThoughtInput) { return previewUnifiedThought(input); }
