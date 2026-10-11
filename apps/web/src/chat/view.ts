@@ -138,6 +138,8 @@ export class ChatView {
   send(text: string) { return this.sendText(text); }
   /** A fresh chat, as Ctrl+Shift+O does inside the window. */
   startNew() { this.newChat(); }
+  /** «Спросить JUUNIBI о файле» from the Disk: a fresh chat with the file's text attached and the question sent. */
+  askAbout(name: string, text: string, question: string) { this.newChat(); return this.sendText(question, [{ name, size: new Blob([text]).size, text }]); }
   resetPosition() { this.frame.reset(); }
   /** Esc: close the innermost transient thing first; "close" means nothing was open. */
   escape(): "handled" | "close" {

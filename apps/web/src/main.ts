@@ -159,7 +159,7 @@ kernel.register({
       pageSig = sig;
       const page =
         BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
-        : s.route === "disk" ? diskPage()
+        : s.route === "disk" ? diskPage({ ask: (name, text, question) => { openChat(); void chatWin.askAbout(name, text, question); } })
         : s.route === "tasks" ? tasksPage({ go, openChat })
         : s.route === "achievements" ? achievementsPage({ back: () => go("tasks") })
         : s.route === "mobile" ? mobilePage()
