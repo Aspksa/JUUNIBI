@@ -25,7 +25,7 @@ export function guardToolClaims(reply: string, evidence: ToolEvidence[], request
     return appendLedger(base + "\n\n**Протокол функциональной диагностики (журнал вызовов):**\n\n| Инструмент | Статус вызова | Источник |\n|---|---|---|\n| functional_health_check | " + status + " | " + source + " |\n\nУспешный вызов инструмента не означает PASS каждого внутреннего теста: смотрите результаты семи проверок.");
   }
   const inspection = /(?:проверь|проверить|выполни|выполнить|диагностик|аудит|проверку)/iu.test(request) && /модул|систем|компьютер|процесс/iu.test(request) && !/(?:составь|напиши|предложи)\s+(?:мне\s+)?план/iu.test(request);
-  if (!inspection) return appendLedger(base);
+  if (!inspection) return deniesOtherTools && allNames.some(n => n !== "functional_health_check") ? appendLedger(base) : base;
   const categories = [
     { label: "Инвентаризация модулей", tool: "list_modules" },
     { label: "Зависимости модулей", tool: "list_modules" },
