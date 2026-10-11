@@ -17,8 +17,8 @@ describe("local computer bridge", () => {
 
 describe("Windows process inventory", () => {
   it("extracts only safe image names and numeric PIDs", () => {
-    const csv = '"chrome.exe","1234","Console","1","22,000 K"\\n' +
-      '"unsafe/path.exe","44","Console","1","10 K"\\n' +
+    const csv = '"chrome.exe","1234","Console","1","22,000 K"\n' +
+      '"unsafe/path.exe","44","Console","1","10 K"\n' +
       '"notepad.exe","2345","Console","1","2 K"';
     expect(parseTasklistCsv(csv)).toEqual([{ name: "chrome.exe", pid: 1234 }, { name: "notepad.exe", pid: 2345 }]);
     expect(parseTasklistCsv(csv, 1)).toHaveLength(1);
