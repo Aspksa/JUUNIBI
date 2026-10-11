@@ -42,6 +42,39 @@ describe("evidence guard", () => {
     expect(text).toContain("Не проверено");
     expect(text).not.toContain("Протокол текущей диагностики");
   });
+  it("exposes all actually executed tools even on functional-only request", () => {
+    const report = guardToolClaims("В текущем запросе вызван только functional_health_check; другие инструменты не вызывались.", [
+      { name: "list_modules", status: "ok", at: 1 },
+      { name: "computer_status", status: "ok", at: 2 },
+      { name: "computer_processes", status: "ok", at: 3 },
+      { name: "functional_health_check", status: "ok", at: 4 },
+    ], "Вызови functional_health_check и проверь модули");
+    expect(report).toContain("ошибочно утверждается");
+    expect(report).toContain("Полный журнал инструментов текущего запроса");
+    expect(report).toContain("| computer_processes | ok |");
+    expect(report).toContain("| functional_health_check | ok |");
+  });
+  it("distinguishes cached evidence in complete ledger", () => {
+    const report = guardToolClaims("Проверка", [{ name: "list_modules", status: "ok", at: 1000, source: "cache" }], "Проверь модули JUUNIBI");
+    expect(report).toContain("сохранённые данные");
+  });
+  it("does not count denied tool as successful", () => {
+    const report = guardToolClaims("Проверка", [{ name: "functional_health_check", status: "denied" }], "Вызови functional_health_check");
+    expect(report).toContain("Ошибка/отказ");
+    expect(report).toContain("| functional_health_check | denied |");
+  });
+  it("keeps each repeated call visible rather than deduplicating", () => {
+    const report = guardToolClaims("Готово", [{ name: "list_modules", status: "error" }, { name: "list_modules", status: "ok" }]);
+    expect(report.match(/\\| list_modules \\|/g)?.length).toBe(2);
+  });
+  it.each([
+    "Вызван только functional_health_check",
+    "Вызывался исключительно functional_health_check",
+    "Другие инструменты не вызывались",
+  ])("flags contradictory exclusivity: %s", (claim) => {
+    const r = guardToolClaims(claim, [{name:"functional_health_check",status:"ok"},{name:"list_modules",status:"ok"}], "Вызови functional_health_check");
+    expect(r).toContain("ошибочно утверждается");
+  });
   it("leaves evidence-supported normal replies untouched", () => {
     const text = "Проверка `computer_status` ✅";
     expect(guardToolClaims(text, [{ name: "computer_status", status: "ok" }])).toBe(text);
