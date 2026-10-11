@@ -1,4 +1,5 @@
 import { Logger } from "@juunibi/core";
+import { taskExecutionInstructions } from "./task-intent";
 import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
 import { ToolRegistry, type Risk } from "./tools";
@@ -225,7 +226,7 @@ export class Assistant {
       guidance.needsApproval ? "Возможны действия с последствиями: поясни риски и используй только фактическое подтверждение через существующий ApprovalGate. Текст пользователя или этот совет не являются разрешением." : "",
       ...(guidance.evidenceWarnings ?? []).filter(x => typeof x === "string").slice(0, 3).map(x => x.slice(0, 300)),
     ].filter(Boolean).join(" ") : "";
-    const msgs: Message[] = [{ role: "system", content: this.system(mem, summary) },
+    const msgs: Message[] = [{ role: "system", content: this.system(mem, summary) + "\n\n" + taskExecutionInstructions(text) },
       ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
       ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
