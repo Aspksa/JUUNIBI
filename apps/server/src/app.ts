@@ -213,6 +213,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             return send(res,200,await disk.importBackup(backupLines()));
           }
           if(req.method==="GET"&&p==="/api/disk/snapshot")return send(res,200,disk.snapshot());
+          if(req.method==="GET"&&p==="/api/disk/backup")return send(res,200,await disk.exportBackup());
           if(req.method==="POST"&&p==="/api/disk/metadata"){const body=await readJson(req);return send(res,200,await disk.setMetadata(String(body.id??""),body));}
           if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
           if(req.method==="POST"&&p==="/api/disk/folders/rename"){const body=await readJson(req);return send(res,200,await disk.renameFolder(body.from,body.to));}
