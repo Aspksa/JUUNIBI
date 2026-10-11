@@ -20,6 +20,30 @@ export function diskPage():HTMLElement {
   sortSelect.addEventListener("change",()=>renderFiles());
   const breadcrumb=el("span",{cls:"muted small"});
   const drop=el("div",{cls:"disk-drop"},icon("folder",24),el("strong",{textContent:"Перетащи файлы сюда"}),el("span",{cls:"muted small",textContent:"До 10 МБ на файл"}));
+  const preview=el("dialog",{cls:"disk-preview"});
+  const openPreview=async(f:DiskFile)=>{
+    const r=await api.diskGet(f.id);
+    if(!r.ok){showToast(r.error.message);return;}
+    const binary=atob(r.value.base64);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    const ext=f.name.split(".").pop()?.toLowerCase()??"";
+    const isImage=["png","jpg","jpeg","webp","gif"].includes(ext);
+    const isPdf=ext==="pdf";
+    const isText=["txt","md","csv","json","log"].includes(ext);
+    const mime=isPdf?"application/pdf":({png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",webp:"image/webp",gif:"image/gif"} as Record<string,string>)[ext]??"application/octet-stream";
+    const url=URL.createObjectURL(new Blob([bytes],{type:mime}));
+    const content=isImage?el("img",{src:url,alt:f.name,cls:"disk-preview-image"}):
+      isPdf?el("iframe",{src:url,cls:"disk-preview-document",title:f.name}):
+      isText?el("pre",{cls:"disk-preview-text",textContent:new TextDecoder().decode(bytes)}):
+      el("p",{cls:"muted",textContent:"Для этого формата предварительный просмотр пока недоступен. Файл можно скачать."});
+    const close=()=>{preview.close();URL.revokeObjectURL(url);};
+    preview.replaceChildren(el("div",{cls:"disk-preview-head"},el("strong",{textContent:f.name}),button("Закрыть",close)),content,
+      el("p",{cls:"muted small",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleString("ru-RU")}));
+    preview.showModal();
+    preview.addEventListener("close",()=>URL.revokeObjectURL(url),{once:true});
+  };
+  page.append(preview);
   const renderFiles=()=>{
     const q=search.value.trim().toLocaleLowerCase();
     const shown=items.filter(f=>!q||f.name.toLocaleLowerCase().includes(q)).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
@@ -29,21 +53,26 @@ export function diskPage():HTMLElement {
     files.replaceChildren(...(shown.length?shown.map(f=>{
       const name=el("strong",{textContent:f.name});
       const card=el("div",{cls:"disk-file"});
+      const actions=el("details",{cls:"disk-actions"});
+      const summary=el("summary",{textContent:"⋯",attrs:{"aria-label":"Действия с файлом "+f.name}});
       const download=button("Скачать",async()=>{
+        actions.open=false;
         const r=await api.diskGet(f.id);
         if(!r.ok){showToast(r.error.message);return;}
-        const binary=atob(r.value.base64);
-        const bytes=new Uint8Array(binary.length);
-        for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+        const bytes=Uint8Array.from(atob(r.value.base64),c=>c.charCodeAt(0));
         const url=URL.createObjectURL(new Blob([bytes]));
         const link=document.createElement("a");link.href=url;link.download=f.name;document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
       });
       const del=button("Удалить",async()=>{
+        actions.open=false;
         if(!confirm("Удалить файл «"+f.name+"» без возможности восстановления?"))return;
         const r=await api.diskDelete(f.id);
         if(!r.ok)showToast(r.error.message);else void refresh();
       });
-      card.append(el("span",{cls:"disk-file-icon"},icon("folder",20)),el("div",{cls:"disk-file-info"},name,el("small",{cls:"muted",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleDateString("ru-RU")})),download,del);
+      const show=button("Просмотр",()=>{actions.open=false;void openPreview(f);});
+      actions.append(summary,el("div",{cls:"disk-actions-menu"},show,download,del));
+      const open=button("Открыть",()=>void openPreview(f));
+      card.append(el("span",{cls:"disk-file-icon"},icon("folder",20)),el("div",{cls:"disk-file-info"},name,el("small",{cls:"muted",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleDateString("ru-RU")})),open,actions);
       return card;
     }):[el("p",{cls:"muted",textContent:q?"Ничего не найдено":"Здесь пока нет файлов."})]));
   };
