@@ -184,3 +184,15 @@ export function previewOf(messages: { role: string; content: string }[]): string
   const t = speechText(last.content, 80);
   return last.role === "user" ? `Вы: ${t}` : t;
 }
+
+/** Compact, human-readable summary for the assistant tool timeline. */
+export function actionSummary(steps: { name: string; status: "running" | "ok" | "error" | "denied" }[]): string {
+  const current = steps.find((step) => step.status === "running");
+  if (current) return stepLabel(current.name) + "…";
+  const errors = steps.filter((step) => step.status === "error").length;
+  const denied = steps.filter((step) => step.status === "denied").length;
+  const completed = steps.filter((step) => step.status === "ok").length;
+  if (errors) return `Действия ИИ · ошибок: ${errors}`;
+  if (denied) return `Действия ИИ · отклонено: ${denied}`;
+  return `Действия ИИ · готово: ${completed}`;
+}
