@@ -19,20 +19,22 @@ export class LocalDisk {
   private entries:DiskEntry[]=[];
   private folders:string[]=[];
   private folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+  private deletedFolders:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]=[];
   private writes:Promise<void>=Promise.resolve();
   constructor(private readonly root:string) {}
   private get index(){return path.join(this.root,"index.json");}
   private file(id:string){return path.join(this.root,"objects",id);}
   async load(){
     try {
-      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>};
+      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
       if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
       if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
+      if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
     }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
-    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles});
+    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,deletedFolders:this.deletedFolders});
     this.writes=this.writes.catch(()=>{}).then(async()=>{
       await mkdir(this.root,{recursive:true});
       const tmp=path.join(this.root,randomUUID()+".tmp");
@@ -110,13 +112,31 @@ export class LocalDisk {
     this.entries.push(...entries.map((e,i)=>({...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString()})));
     await this.save();return {name:target,files:copied.length};
   }
+  listDeletedFolders(){return this.deletedFolders.map(({root,paths,at})=>({root,count:paths.length,at}));}
+  async restoreFolder(name:unknown){
+    const root=validFolder(name),index=this.deletedFolders.findIndex(f=>f.root===root);
+    if(index<0)throw bad("Удалённая папка не найдена",404);
+    const item=this.deletedFolders[index]!;
+    const parent=root.includes("/")?root.slice(0,root.lastIndexOf("/")):"";
+    if(parent&&!this.folders.includes(parent))throw bad("Сначала восстановите родительскую папку",409);
+    if(item.paths.some(p=>this.folders.includes(p))||this.folders.length+item.paths.length>100)throw bad("Пути папок заняты или превышен лимит",409);
+    this.folders.push(...item.paths);
+    Object.assign(this.folderStyles,item.styles);
+    for(const e of this.entries)if(e.deletedAt===item.at&&(e.folder===root||e.folder.startsWith(root+"/")))delete e.deletedAt;
+    this.deletedFolders.splice(index,1);
+    await this.save();return {root,files:this.entries.filter(e=>!e.deletedAt&&(e.folder===root||e.folder.startsWith(root+"/"))).length};
+  }
   async trashFolder(name:unknown){
     const folder=validFolder(name);
     if(!folder||!this.folders.includes(folder))throw bad("Папка не найдена",404);
     const entries=this.entries.filter(e=>!e.deletedAt&&(e.folder===folder||e.folder.startsWith(folder+"/")));
     const at=new Date().toISOString();
     for(const e of entries)e.deletedAt=at;
-    this.folders=this.folders.filter(f=>f!==folder&&!f.startsWith(folder+"/"));
+    const paths=this.folders.filter(f=>f===folder||f.startsWith(folder+"/"));
+    const styles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+    for(const p of paths){if(this.folderStyles[p]){styles[p]=this.folderStyles[p]!;delete this.folderStyles[p];}}
+    this.deletedFolders.push({root:folder,paths,at,styles});
+    this.folders=this.folders.filter(f=>!paths.includes(f));
     await this.save();return {files:entries.length,folder};
   }
   async upload(name:unknown,folder:unknown,data:unknown){
