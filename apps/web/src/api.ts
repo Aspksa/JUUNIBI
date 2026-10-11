@@ -88,7 +88,7 @@ export interface ProjectStatsData { generatedAt: string; head: string; commits: 
 export interface Automation {
   brief: boolean; briefTime: string; rollOverdue: boolean; dueReminder: "off" | "15" | "60" | "morning"; workdays: boolean;
   evening: boolean; eveningTime: string; quiet: boolean; quietFrom: string; quietTo: string;
-  stuckAfter: number; holidayWarn: boolean; weekly: boolean; goalNudge: number; chatPromises: boolean; dayHours: number; streaks: boolean;
+  stuckAfter: number; holidayWarn: boolean; weekly: boolean; goalNudge: number; chatPromises: boolean; dayHours: number; weekHours: 40 | 36 | 24; streaks: boolean;
   rules: AutoRule[];
 }
 /** «Если — то» (server: AutoRule). */

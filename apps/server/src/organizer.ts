@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { isWorkday, prodDay } from "@juunibi/core";
+import { isWorkday, nextHoliday, prodDay } from "@juunibi/core";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -76,6 +76,8 @@ export interface Automation {
   chatPromises: boolean;
   /** Hours free for to-dos on a working day (the day load); 0 = do not count. */
   dayHours: number;
+  /** The working week for the production calendar's hour norm in «Дела»: 40, 36 or 24 hours. */
+  weekHours: 40 | 36 | 24;
   /** Streaks of repeating to-dos. */
   streaks: boolean;
   rules: AutoRule[];
@@ -83,7 +85,7 @@ export interface Automation {
 export const DEFAULT_AUTOMATION: Automation = {
   brief: true, briefTime: "09:00", rollOverdue: true, dueReminder: "15", workdays: true,
   evening: true, eveningTime: "21:00", quiet: true, quietFrom: "23:00", quietTo: "08:00",
-  stuckAfter: 3, holidayWarn: true, weekly: true, goalNudge: 3, chatPromises: true, dayHours: 8, streaks: true, rules: [],
+  stuckAfter: 3, holidayWarn: true, weekly: true, goalNudge: 3, chatPromises: true, dayHours: 8, weekHours: 40, streaks: true, rules: [],
 };
 /** One line of «Что сделала автоматика», with what is needed to take it back. */
 export interface AutoLogEntry {
@@ -178,6 +180,7 @@ function cleanAutomation(v: unknown): Automation {
   if (o.dueReminder === "off" || o.dueReminder === "15" || o.dueReminder === "60" || o.dueReminder === "morning") a.dueReminder = o.dueReminder;
   if ([0, 2, 3, 5].includes(o.stuckAfter as number)) a.stuckAfter = o.stuckAfter as number;
   if ([0, 3, 7, 14].includes(o.goalNudge as number)) a.goalNudge = o.goalNudge as number;
+  if (o.weekHours === 40 || o.weekHours === 36 || o.weekHours === 24) a.weekHours = o.weekHours;
   if (Number.isInteger(o.dayHours) && (o.dayHours as number) >= 0 && (o.dayHours as number) <= 16) a.dayHours = o.dayHours as number;
   if (Array.isArray(o.rules)) a.rules = o.rules.map(cleanRule).filter((r): r is AutoRule => !!r).slice(0, 20);
   return a;
@@ -829,7 +832,7 @@ export class Organizer {
     const important = open.filter((n) => n.priority === "high" && !todays.includes(n)).slice(0, 2);
     const item = (n: Note) => (n.dueAt && !dateOnly(n.dueAt) ? hhmm(Date.parse(n.dueAt)) + " " : "") + n.text;
     const lines = [dayName[0]!.toUpperCase() + dayName.slice(1) + " — " + kind + "."];
-    lines.push(todays.length ? `Дела на сегодня (${todays.length}): ` + todays.slice(0, 5).map(item).join("; ") + (todays.length > 5 ? "…" : ".") : dk.work ? "На сегодня дел со сроком нет." : "Дел на сегодня нет, можно отдохнуть.");
+    lines.push(todays.length ? `Дела на сегодня (${todays.length}): ` + todays.slice(0, 5).map(item).join("; ") + (todays.length > 5 ? "…" : ".") : dk.work ? "На сегодня дел со сроком нет." : "Дел на сегодня нет.");
     if (rolled) lines.push(`Из них перенесено со вчера: ${rolled}.`);
     if (overdue.length) lines.push(dk.work ? `Просрочено: ${overdue.length} (${overdue.slice(0, 3).map((n) => n.text).join("; ")}).` : `Просрочено: ${overdue.length}.`);
     if (rems.length) lines.push("Напоминания: " + rems.slice(0, 4).map((r) => hhmm(Date.parse(r.at)) + " " + r.text).join("; ") + ".");
@@ -851,10 +854,25 @@ export class Organizer {
       for (const m of g) lines.push(`Цель «${m.title}» стоит ${m.idleDays} ${dayWord(m.idleDays)}. Следующий шаг: ${m.next!.text}.`);
     }
     if (a.holidayWarn) { const w = this.tomorrowWarning(now); if (w) lines.push(w); }
-    if (!dk.work) lines.push("Хорошего выходного!");
+    if (!dk.work) lines.push(...this.dayOffAhead(now));
     const text = lines.join("\n").slice(0, MAX_AUTO_TEXT);
     const short = `Сегодня ${todays.length ? "дел: " + todays.length : "дел со сроком нет"}` + (overdue.length ? `, просрочено: ${overdue.length}` : "") + (rems.length ? `, напоминаний: ${rems.length}` : "") + ` · ${kind}`;
     return { text, short };
+  }
+  /** On a day off, a look ahead instead of «можно отдохнуть»: the next working day, a goal's next step, the next holiday. */
+  private dayOffAhead(now: number): string[] {
+    const out: string[] = [];
+    let d = dayStart(now) + 86_400_000 + 3_600_000;
+    for (let i = 0; i < 14 && !this.dayKind(localKey(d)).work; i++) d += 86_400_000;
+    const key = localKey(d);
+    const todos = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localKey(Date.parse(n.dueAt)) === key).sort((x, y) => x.dueAt!.localeCompare(y.dueAt!));
+    const when = key === localKey(dayStart(now) + 86_400_000 + 3_600_000) ? "завтра" : new Date(d).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    out.push(`Следующий рабочий день — ${when}: ` + (todos.length ? `дел ${todos.length}, первое — ${todos[0]!.text}.` : "дел со сроком пока нет."));
+    const g = this.missionBoard().find((m) => m.status === "active" && m.next);
+    if (g) out.push(`Цель «${g.title}»: следующий шаг — ${g.next!.text}.`);
+    const h = nextHoliday(localKey(now), 60);
+    if (h) out.push(`Ближайший праздник: ${new Date(h.key + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}, ${h.note}, через ${h.days} ${dayWord(h.days)}.`);
+    return out;
   }
   /** «Завтра праздник…» when tomorrow is a holiday, a moved day off or a short day; null otherwise. */
   tomorrowWarning(now = this.now()): string | null {
@@ -885,7 +903,8 @@ export class Organizer {
     try {
       this.autoState.briefDay = localKey(now);
       const facts = this.briefFacts(now);
-      let body = facts.text;
+      // the date and the kind of day are in the page's header already: the brief starts with what matters
+      let body = facts.text.split("\n").slice(1).join("\n") || facts.text;
       if (this.composeBrief) {
         const words = await Promise.race([this.composeBrief(facts.text).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 25_000))]);
         if (words && words.trim()) body = words.trim().slice(0, MAX_AUTO_TEXT);

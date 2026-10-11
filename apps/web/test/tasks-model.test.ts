@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Note, Reminder } from "../src/api";
-import { buildTasks, isDateOnly, localDay, toLocalInput } from "../src/pages/tasks-model";
+import { buildTasks, isDateOnly, localDay, planWeek, recognizedSpans, toLocalInput, weekProgress } from "../src/pages/tasks-model";
 
 // Суббота, 10 октября 2026, 12:00 по местному времени
 const now = new Date(2026, 9, 10, 12, 0);
@@ -56,5 +56,28 @@ describe("страница «Дела»", () => {
     expect(localDay(new Date(2026, 9, 10, 0, 30))).toBe("2026-10-10");
     expect(isDateOnly(iso(10, 23, 59))).toBe(true);
     expect(isDateOnly(iso(10, 9))).toBe(false);
+  });
+});
+
+describe("ввод, неделя и план недели", () => {
+  it("подсвечивает распознанное вокруг текста дела", () => {
+    const s = "завтра в 10 позвонить маме";
+    expect(recognizedSpans(s, "позвонить маме").map(([a, b]) => s.slice(a, b))).toEqual(["завтра в 10"]);
+    const t = "отчёт в пятницу !";
+    expect(recognizedSpans(t, "Отчёт").map(([a, b]) => t.slice(a, b))).toEqual(["в пятницу !"]);
+    expect(recognizedSpans("просто дело", "просто дело")).toEqual([]);
+  });
+  it("считает дела этой недели", () => {
+    const notes = [note("a", "todo", { dueAt: iso(12, 10) }), note("b", "todo", { dueAt: iso(8, 10), done: true, completedAt: iso(8, 11) }), note("c", "todo", { dueAt: iso(20, 10) })];
+    // неделя с 5 по 11 октября
+    expect(weekProgress(notes, now)).toEqual({ done: 1, total: 1 });
+  });
+  it("раскладывает дела без срока по рабочим дням, важные первыми", () => {
+    const notes = [note("x", "todo"), note("y", "todo", { priority: "high" }), note("z", "todo", { estimateMinutes: 400 }), note("busy", "todo", { dueAt: iso(12, 10), estimateMinutes: 450 })];
+    const p = planWeek(notes, ["2026-10-12", "2026-10-13"], 480);
+    expect(p[0]).toMatchObject({ id: "y", day: "2026-10-13" });
+    expect(p.find((x) => x.id === "z")?.day).toBe("2026-10-13");
+    expect(p.find((x) => x.id === "x")?.day).toBe("2026-10-13");
+    expect(planWeek([note("big", "todo", { estimateMinutes: 600 })], ["2026-10-12"], 480)).toEqual([{ id: "big", text: "big", day: "2026-10-12" }]);
   });
 });
