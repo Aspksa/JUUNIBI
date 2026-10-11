@@ -79,6 +79,46 @@ export class BrainCore {
     return { planId, source: "saved-plan-and-tool-outcomes" as const, observationsCount: evidence.length,
       ...review, requiresExplicitExecution: true as const };
   }
+  /** 4.1 unified cognitive preview: orchestrate six reviews over persisted evidence. */
+  previewCognitiveCycle(planId: string) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    const grounded = this.reviewLivePlan(planId);
+    const incomplete = plan.steps.find(s => s.status !== "done");
+    const warnings = this.toolConfidenceWarnings(5);
+    return {
+      planId, phase: plan.status, observation: { progress: plan.steps.filter(s => s.status === "done").length,
+        total: plan.steps.length, toolWarnings: warnings },
+      reasoning: { causes: grounded.causalAnalysis, evidence: grounded.evidenceReview },
+      planning: { nextStep: incomplete ? { id: incomplete.id, title: incomplete.title, status: incomplete.status } : null,
+        blocked: grounded.replanning.needsReplan },
+      execution: { allowedActions: ["list_modules", "search_memory"] as const, requiresOwnerApproval: true as const },
+      verification: { completedSteps: plan.steps.filter(s => s.status === "done").map(s => s.id),
+        failedSteps: plan.steps.filter(s => s.status === "failed").map(s => s.id),
+        evidence: this.logs.filter(x => x.planId === planId && x.outcome.startsWith("verified:")).slice(0, 20).map(x => ({stepId:x.stepId, at:x.at})) },
+      experience: { confirmedMemory: this.recallExperience(plan.goal) },
+      research: { openQuestions: grounded.researchGaps, requiresSourceCheck: true as const },
+      adaptiveRecovery: plan.status === "failed" ? {
+        failedStepId: incomplete?.id ?? null, needsOwnerReview: true as const
+      } : null,
+      requiresExplicitExecution: true as const,
+    };
+  }
+  /** Executes one explicitly approved safe step; checkpoints and validates its result. */
+  async runCognitiveCycleStep(planId: string, stepId: string, action: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    const before = this.previewCognitiveCycle(planId);
+    if (before.planning.blocked || before.planning.nextStep?.id !== stepId ||
+      before.planning.nextStep.status !== "pending")
+      throw Object.assign(new Error("Требуется пересмотр плана или другой следующий шаг"), { status: 409 });
+    const result = await this.executeReadStep(planId, stepId, action, readModules, searchMemory);
+    await this.flush();
+    const after = this.previewCognitiveCycle(planId);
+    if (!after.verification.completedSteps.includes(stepId) ||
+      !after.verification.evidence.some(e => e.stepId === stepId))
+      throw new Error("Результат шага не подтверждён журналом выполнения");
+    return { result: result.result, verified: true as const, before, after };
+  }
   evaluateExperienceRecall(samples: {query:string;expectedId:string}[]) { return evaluateExperienceRecall(this.decisions.snapshot(), samples); }
   taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
   reviewRepairs(input: LearningCase) { return reviewLearningCase(input, this.decisions.snapshot()); }
