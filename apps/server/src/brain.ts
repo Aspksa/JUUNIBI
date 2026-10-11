@@ -295,6 +295,32 @@ export class BrainCore {
     }
     return { plan: this.status().plans.find(p => p.id === planId), results };
   }
+  /** Continue only the pending suffix of an explicitly selected read-only plan.
+   * Completed steps are never replayed. No automatic restart is performed on load.
+   */
+  async resumeReadSequence(planId: string, actions: unknown,
+    readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    if (plan.status === "failed" || plan.status === "completed" ||
+        plan.steps.some(s => s.status === "active" || s.status === "failed"))
+      throw Object.assign(new Error("Продолжение этого плана недоступно"), { status: 409 });
+    const firstPending = plan.steps.findIndex(s => s.status === "pending");
+    if (firstPending < 0 || plan.steps.slice(0, firstPending).some(s => s.status !== "done") ||
+        plan.steps.slice(firstPending).some(s => s.status !== "pending"))
+      throw Object.assign(new Error("Нарушена последовательность шагов"), { status: 409 });
+    if (!Array.isArray(actions) || actions.length !== plan.steps.length - firstPending ||
+        !actions.every(a => a === "list_modules" || a === "search_memory"))
+      throw Object.assign(new Error("Нужны только безопасные действия для оставшихся шагов"), { status: 400 });
+    const results: unknown[] = [];
+    for (let i = firstPending; i < plan.steps.length; i++) {
+      const output = await this.executeReadStep(planId, plan.steps[i]!.id,
+        actions[i - firstPending], readModules, searchMemory);
+      results.push(output.result);
+      await this.flush();
+    }
+    return { plan: this.status().plans.find(p => p.id === planId), skippedCompleted: firstPending, results };
+  }
   updateStep(planId: string, stepId: string, status: unknown) {
     if (status !== "active" && status !== "done" && status !== "failed") throw Object.assign(new Error("Недопустимый статус"), { status: 400 });
     const plan = this.plans.find(p => p.id === planId);
