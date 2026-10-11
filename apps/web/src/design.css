@@ -87,7 +87,7 @@ select option{background:var(--bg);color:var(--fg)}
 /* ---------- 11–14. phone ---------- */
 @media (max-width:860px){
   /* the top bar carries the title, so the page header keeps only its text and actions */
-  .pg-head-icon,.pg-head-text h1,.dk-hero h1{display:none}
+  .pg-head-icon,.pg-head-text h1{display:none}
   .pg-head{margin-bottom:14px}
   .pg-head-actions,.pg-head .set-pill{margin-left:0}
   .topbar-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -11,15 +11,7 @@ import { agoText } from "./project-life";
 
 const GROUP_KEY = "juunibi.disk.life.group";
 const HOURS_LABEL = ["0", "6", "12", "18", "23"];
-const low = (s: string) => s.toLocaleLowerCase("ru-RU");
 
-/** Figures whose title, hint or group name has the query; an empty query keeps them all. */
-export function findMetrics(metrics: DiskLifeMetric[], groups: { id: string; title: string }[], query: string): DiskLifeMetric[] {
-  const q = low(query.trim());
-  if (!q) return metrics;
-  const title = new Map(groups.map((g) => [g.id, low(g.title)]));
-  return metrics.filter((m) => low(m.title).includes(q) || low(m.hint).includes(q) || (title.get(m.group) ?? "").includes(q));
-}
 /** How many figures of a group have something to show. */
 export const readyIn = (metrics: DiskLifeMetric[], group: string) => metrics.filter((m) => m.group === group && !m.empty).length;
 
@@ -49,13 +41,13 @@ function chart(m: DiskLifeMetric): Element | null {
   return miniChart(m.kind, m.series, m.labels, m.list);
 }
 
-function tile(m: DiskLifeMetric, color: string, i: number, groupTitle?: string): HTMLElement {
+function tile(m: DiskLifeMetric, color: string, i: number): HTMLElement {
   const ring = typeof m.ring === "number" && !m.empty ? ringChart(m.ring) : null;
   const c = chart(m);
   const t = el("article", { cls: "dkl-tile" + (m.empty ? " is-empty" : ""), title: m.hint, attrs: { tabindex: "0", "data-id": m.id } },
     el("div", { cls: "dkl-tile-top" },
       el("span", { cls: "dkl-ic" }, lifeGlyph(m.icon, m.group, 22)),
-      el("div", { cls: "dkl-name" }, el("strong", { textContent: m.title }), el("small", { textContent: groupTitle ? `${groupTitle} · ${m.hint}` : m.hint }))),
+      el("div", { cls: "dkl-name" }, el("strong", { textContent: m.title }), el("small", { textContent: m.hint }))),
     el("div", { cls: "dkl-value-row" }, el("div", { cls: "dkl-value", textContent: m.value }), ring),
     m.detail && !m.empty ? el("p", { cls: "dkl-detail", textContent: m.detail }) : null,
     c ? el("div", { cls: "dkl-chart" }, c) : null);
@@ -68,15 +60,12 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
   const root = el("section", { cls: "dkl", attrs: { id: "disk-life", "aria-label": "Жизнь документов" } });
   let data: DiskLife | null = null, error = "", loading = false, stale = true, visible = false, timer = 0;
   let group = store.get();
-  const search = el("input", { type: "search", cls: "dkl-search-input", placeholder: "Найти показатель…", attrs: { "aria-label": "Найти показатель" } }) as HTMLInputElement;
-  const searchBox = el("label", { cls: "dkl-search" }, icon("search", 16), search);
   const body = el("div", { cls: "dkl-body" });
-  const sub = el("p", { cls: "dkl-sub" });
   const refreshBtn = iconButton("refresh", "Пересчитать показатели", () => void load(), "icon-btn dkl-refresh");
   const head = el("header", { cls: "dkl-head" },
     el("span", { cls: "dkl-mark" }, lifeGlyph("pulse", "core", 26)),
-    el("div", { cls: "dkl-title" }, el("h2", {}, "Жизнь документов", el("span", { cls: "life-pulse", attrs: { "aria-hidden": "true" } })), sub),
-    searchBox, refreshBtn);
+    el("div", { cls: "dkl-title" }, el("h2", {}, "Жизнь документов", el("span", { cls: "life-pulse", attrs: { "aria-hidden": "true" } }))),
+    refreshBtn);
   root.append(head, body);
 
   const color = (id: string) => data?.groups.find((g) => g.id === id)?.color ?? "var(--brand)";
@@ -92,7 +81,6 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     refreshBtn.classList.toggle("spin", loading);
     refreshBtn.disabled = loading;
     if (!data) {
-      sub.textContent = "150 показателей · только реальные данные";
       body.replaceChildren(error
         ? el("div", { cls: "life-empty dkl-empty" }, el("span", {}, icon("alert", 26)), el("p", { textContent: error }))
         : el("div", { cls: "dkl-skeleton", attrs: { "aria-label": "Считаю показатели" } }, ...Array.from({ length: 10 }, () => el("i"))));
@@ -100,14 +88,13 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     }
     const d = data;
     const a = d.analysis;
-    sub.textContent = [
-      `${d.metrics.length} показателей · только реальные данные`,
-      agoText(d.generatedAt),
+    refreshBtn.title = [
+      "Пересчитать показатели",
+      `посчитано ${agoText(d.generatedAt)}`,
       a.documents ? `прочитано ${a.read} из ${a.documents} документов` : "",
       a.images ? `измерено ${a.measured} из ${a.images} снимков` : "",
     ].filter(Boolean).join(" · ");
     if (!d.groups.some((g) => g.id === group)) group = d.groups[0]!.id;
-    const query = search.value;
     const byId = new Map(d.metrics.map((m) => [m.id, m]));
     const hl = el("div", { cls: "dkl-hl" }, ...d.highlights.map((id) => byId.get(id)).filter((m): m is DiskLifeMetric => !!m).map((m, i) => {
       const g = d.groups.find((x) => x.id === m.group)!;
@@ -118,23 +105,15 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
         c ? el("span", { cls: "dkl-hl-chart" }, c) : null);
       card.style.setProperty("--g", g.color);
       card.style.setProperty("--i", String(i));
-      card.addEventListener("click", () => { search.value = ""; group = m.group; store.set(group); render(); flash(m.id); });
+      card.addEventListener("click", () => { group = m.group; store.set(group); render(); flash(m.id); });
       return card;
     }));
-    if (query.trim()) {
-      const found = findMetrics(d.metrics, d.groups, query);
-      const titles = new Map(d.groups.map((g) => [g.id, g.title]));
-      body.replaceChildren(hl,
-        el("div", { cls: "dkl-group-head" }, el("h3", { textContent: found.length ? `Найдено: ${found.length}` : "Ничего не нашлось" }), el("p", { textContent: found.length ? "по названию, подсказке и группе" : "Попробуйте другое слово" })),
-        el("div", { cls: "dkl-grid" }, ...found.map((m, i) => tile(m, color(m.group), i, titles.get(m.group)))));
-      return;
-    }
     const tabs = el("div", { cls: "dkl-tabs", attrs: { role: "tablist", "aria-label": "Группы показателей" } }, ...d.groups.map((g) => {
       const ready = readyIn(d.metrics, g.id), total = d.metrics.filter((m) => m.group === g.id).length;
-      const b = el("button", { type: "button", cls: "dkl-tab", attrs: { role: "tab", "aria-selected": String(g.id === group), title: `${g.title}: ${g.note} · ${ready} из ${total}` } },
-        el("span", { cls: "dkl-ic sm" }, lifeGlyph(g.icon, g.id, 18)),
-        el("span", { cls: "dkl-tab-text" }, el("b", { textContent: g.title }), el("small", { textContent: `${ready} из ${total}` })),
-        el("i", { cls: "dkl-tab-bar", attrs: { "aria-hidden": "true" } }));
+      // the ring around the glyph fills with the share of figures that already have data
+      const b = el("button", { type: "button", cls: "dkl-tab", attrs: { role: "tab", "aria-selected": String(g.id === group), title: `${g.title}: ${g.note} · с данными ${ready} из ${total}` } },
+        el("span", { cls: "dkl-tab-ring" }, el("span", { cls: "dkl-ic" }, lifeGlyph(g.icon, g.id, 20))),
+        el("span", { cls: "dkl-tab-name", textContent: g.title }));
       b.style.setProperty("--g", g.color);
       b.style.setProperty("--p", String(total ? Math.round((100 * ready) / total) : 0));
       b.addEventListener("click", () => { group = g.id; store.set(group); render(); });
@@ -162,8 +141,6 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     else error = data ? "" : "Не удалось посчитать: " + (r.ok ? "пустой ответ" : r.error.message);
     render();
   }
-  let searchTimer = 0;
-  search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = window.setTimeout(render, 120); });
   // figures are counted only when the block is on screen, and again after the catalogue changes
   const io = typeof IntersectionObserver === "function" ? new IntersectionObserver((es) => { visible = es.some((e) => e.isIntersecting); if (visible && stale) void load(); }, { rootMargin: "300px" }) : null;
   if (io) io.observe(root); else visible = true;
