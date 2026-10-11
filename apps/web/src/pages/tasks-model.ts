@@ -179,3 +179,54 @@ export function heroFallback(o: { now: Date; brief: boolean; briefTime: string; 
 export function stuckTodos(notes: Note[], after: number): Note[] {
   return after ? notes.filter((n) => n.kind === "todo" && !n.done && (n.rolled ?? 0) >= after) : [];
 }
+
+/**
+ * Where the quick-entry parser found the date, time and other words it understood: the parts of `input` around the
+ * task text it kept. Empty when nothing was understood or the kept text is not a plain piece of the input.
+ */
+export function recognizedSpans(input: string, kept: string): [number, number][] {
+  const k = kept.trim();
+  if (!k || k.length >= input.trim().length) return [];
+  const at = input.toLowerCase().indexOf(k.toLowerCase());
+  if (at < 0) return [];
+  const out: [number, number][] = [];
+  const push = (a: number, b: number) => {
+    while (a < b && /\s/.test(input[a]!)) a++;
+    while (b > a && /\s/.test(input[b - 1]!)) b--;
+    if (b > a) out.push([a, b]);
+  };
+  push(0, at);
+  push(at + k.length, input.length);
+  return out;
+}
+
+/** This week (Monday to Sunday): to-dos due in it and how many of them are done; for the hero ring on an empty day. */
+export function weekProgress(notes: Note[], now = new Date()): { done: number; total: number } {
+  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const from = mon.getTime(), to = from + 7 * 86_400_000;
+  const inWeek = (iso?: string) => !!iso && Date.parse(iso) >= from && Date.parse(iso) < to;
+  const todos = notes.filter((n) => n.kind === "todo" && (inWeek(n.dueAt) || (n.done && inWeek(n.completedAt))));
+  return { done: todos.filter((n) => n.done).length, total: todos.length };
+}
+
+/**
+ * «Спланировать неделю»: open to-dos without a due date spread over the next working days, important first,
+ * each day filled up to `dayMinutes` (30 minutes for a to-do without an estimate). Never writes anything.
+ */
+export function planWeek(notes: Note[], workdays: string[], dayMinutes = 480): { id: string; text: string; day: string }[] {
+  const free = notes.filter((n) => n.kind === "todo" && !n.done && !n.dueAt && !n.parentId)
+    .sort((a, b) => (a.priority === "high" ? 0 : a.priority === "low" ? 2 : 1) - (b.priority === "high" ? 0 : b.priority === "low" ? 2 : 1) || a.createdAt.localeCompare(b.createdAt));
+  const load = new Map<string, number>();
+  for (const n of notes) if (n.kind === "todo" && !n.done && n.dueAt) { const k = localDay(n.dueAt); load.set(k, (load.get(k) ?? 0) + (n.estimateMinutes || 30)); }
+  const out: { id: string; text: string; day: string }[] = [];
+  for (const n of free) {
+    const need = n.estimateMinutes || 30;
+    // the least loaded day that still has room; ties go to the earlier day
+    let best: string | null = null;
+    for (const d of workdays) if ((load.get(d) ?? 0) + need <= Math.max(dayMinutes, need) && (best === null || (load.get(d) ?? 0) < (load.get(best) ?? 0))) best = d;
+    if (!best) continue;
+    load.set(best, (load.get(best) ?? 0) + need);
+    out.push({ id: n.id, text: n.text, day: best });
+  }
+  return out;
+}

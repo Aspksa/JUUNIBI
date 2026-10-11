@@ -941,8 +941,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-editor-grid label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--muted);min-width:0}
 .tasks-editor-grid .wide{grid-column:1/-1}
 .tasks-est{width:100%}
-.tasks-foot{margin:20px 0 0;text-align:center}
-@media (max-width:600px){.tasks-summary{font-size:.86rem}.tasks-quick{padding:12px}.tasks-quick-input{flex-basis:0}.tasks-add-row>.btn{flex:none;padding-inline:14px}.tasks-add-opts{flex-direction:column;align-items:stretch}.tasks-kinds{display:flex}.tasks-kinds button{flex:1}.tasks-when,.tasks-when>*{flex:1 1 100%}
+@media (max-width:600px){.tasks-summary{font-size:.86rem}.tasks-quick{padding:12px}.tasks-quick-input{flex-basis:0}.tasks-add-row>.btn{flex:none;padding-inline:14px}.tasks-add-opts{flex-direction:column;align-items:stretch}.tasks-when,.tasks-when>*{flex:1 1 100%}
   .org-row{flex-wrap:wrap;gap:8px}.org-row .grow{flex:1 1 0}.org-row.due .grow{flex-basis:70%}.org-row .icon-btn.sm{margin:0 -4px}.tasks-children{margin-left:12px}}
 .eval-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
 .eval-list li{display:grid;grid-template-columns:24px 1fr;gap:8px;padding:8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--bg);align-items:start}
@@ -1766,3 +1765,87 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
  .disk-preview[open]:not(.disk-dialog-enter){animation:none!important}
  .disk-thumbnail{opacity:1}
 }
+
+/* ---------- «Дела»: quick entry with highlighted words, preview tags, a compact kind switch */
+.tasks-quick-field{position:relative;flex:1 1 260px;min-width:0;display:flex}
+.tasks-quick-field .tasks-quick-input{flex:1;width:100%}
+.tasks-quick-mirror{position:absolute;inset:0;display:flex;align-items:center;overflow:hidden;z-index:1;white-space:pre;color:transparent;pointer-events:none;border:0 solid transparent;box-sizing:border-box}
+.tasks-quick-mirror mark{color:transparent;background:color-mix(in srgb,var(--brand) 24%,transparent);border-radius:5px;box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 24%,transparent)}
+.tasks-add-row .tasks-kind{flex:none;width:auto;min-width:0;max-width:140px;padding-inline:12px 30px;font-size:.88rem;color:var(--muted)}
+.tasks-add-row .tasks-kind.on{color:var(--fg);border-color:var(--brand)}
+.tasks-preview{display:flex;flex-wrap:wrap;gap:6px;margin:10px 2px 0;min-height:0}
+.tasks-preview[hidden]{display:none}
+.tasks-pv{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:.8rem;background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--fg);animation:tasks-pv-in .18s ease}
+.tasks-pv.kind{background:var(--brand);color:var(--accent-fg,#fff);font-weight:600}
+@keyframes tasks-pv-in{from{opacity:0;transform:translateY(3px)}}
+.tasks-add-opts{margin-top:10px}
+.tasks-add-opts[hidden]{display:none}
+.tasks-quick .tasks-hint:not([hidden]){margin-top:10px}
+.tasks-examples{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:4px}
+.tasks-examples .chip{border-style:dashed}
+.tasks-examples .chip:hover{border-style:solid;border-color:var(--brand)}
+.mem-toolbar[hidden]{display:none}
+.tasks-page.tasks-dragging .tasks-calendar-day:not(.outside){outline:1px dashed color-mix(in srgb,var(--brand) 35%,transparent);outline-offset:-2px}
+.tasks-list .org-row[draggable=true]{cursor:grab}
+.tasks-list .org-row[draggable=true]:active{cursor:grabbing}
+
+/* ---------- the hero: a menu instead of a row of tools, a calm look on an empty day */
+.tasks-hero-menu{position:relative;flex:none;align-self:flex-start}
+.tasks-hero-menu summary{list-style:none;display:grid;place-items:center;width:32px;height:32px;border-radius:10px;color:var(--muted);cursor:pointer}
+.tasks-hero-menu summary::-webkit-details-marker{display:none}
+.tasks-hero-menu summary:hover,.tasks-hero-menu[open] summary{background:var(--hover);color:var(--fg)}
+.tasks-hero-menu summary:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.tasks-hero-menu-list{position:absolute;right:0;top:calc(100% + 6px);z-index:30;display:flex;flex-direction:column;align-items:stretch;gap:4px;min-width:230px;padding:8px;border-radius:14px;border:1px solid var(--line);background:var(--surface);box-shadow:0 14px 34px -14px rgba(0,0,0,.45);animation:tasks-pv-in .15s ease}
+.tasks-hero-menu-list small{padding:2px 6px 4px}
+.tasks-hero-menu-list .btn{justify-content:flex-start;border-color:transparent;background:transparent}
+.tasks-hero-menu-list .btn:hover{background:var(--hover)}
+.tasks-hero-stats.is-empty{min-height:34px}
+.tasks-hero-none{color:var(--muted);font-size:.92rem}
+.tasks-hero.quiet{padding-block:16px;gap:18px}
+.tasks-hero.quiet .tasks-hero-main{gap:10px}
+.tasks-hero.quiet .tasks-ring{--size:92px}
+.tasks-hero.quiet .tasks-ring::before{inset:8px}
+.tasks-ring.week{background:conic-gradient(color-mix(in srgb,var(--brand) 55%,transparent) calc(var(--p)*1%),color-mix(in srgb,var(--fg) 8%,transparent) 0)}
+.tasks-ring.rest{background:color-mix(in srgb,var(--brand) 14%,transparent)}
+.tasks-ring.rest::before{display:none}
+.tasks-ring-fox{width:calc(var(--size)*.8);height:calc(var(--size)*.8);border-radius:50%;background-size:250% auto;background-position:50% 22%;background-repeat:no-repeat;box-shadow:0 0 0 2px color-mix(in srgb,var(--brand) 40%,transparent),0 0 22px -6px var(--brand)}
+.tasks-ring.rest small{display:none}
+.tasks-weekplan .tasks-evening-open li{align-items:center}
+
+/* ---------- the month calendar: heat, overdue, stars, the neighbours' days, a hover card */
+.tasks-cal{position:relative}
+.tasks-calendar-grid{touch-action:pan-y}
+.tasks-calendar-day.outside{opacity:.32}
+.tasks-calendar-day.outside:hover{opacity:.6}
+.tasks-calendar-day.h1{background:color-mix(in srgb,var(--brand) 7%,transparent)}
+.tasks-calendar-day.h2{background:color-mix(in srgb,var(--brand) 13%,transparent)}
+.tasks-calendar-day.h3{background:color-mix(in srgb,var(--brand) 20%,transparent)}
+.tasks-calendar-day.h4{background:color-mix(in srgb,var(--brand) 28%,transparent)}
+.tasks-calendar-day.holiday.h1,.tasks-calendar-day.holiday.h2,.tasks-calendar-day.holiday.h3,.tasks-calendar-day.holiday.h4,.tasks-calendar-day.off.h1,.tasks-calendar-day.off.h2,.tasks-calendar-day.off.h3,.tasks-calendar-day.off.h4{background:color-mix(in srgb,var(--danger) 14%,transparent)}
+.tasks-calendar-day.selected{background:var(--accent)}
+.tasks-calendar-day.drop{background:color-mix(in srgb,var(--brand) 35%,transparent);border-color:var(--brand)}
+.tasks-calendar-more{position:absolute;bottom:2px;right:4px;font-size:.6rem;line-height:1;color:var(--muted);font-variant-numeric:tabular-nums}
+.tasks-calendar-day.selected .tasks-calendar-more{color:inherit;opacity:.8}
+.tasks-calendar-late{position:absolute;top:4px;left:5px;width:6px;height:6px;border-radius:50%;background:var(--danger)}
+.tasks-calendar-star{position:absolute;top:1px;left:4px;font-size:.62rem;line-height:1;color:#e0a526}
+.tasks-calendar-late+.tasks-calendar-star{left:auto;right:4px}
+.tasks-calendar-legend .late::before{border-radius:50%;background:var(--danger)}
+.tasks-calendar-legend .star::before{content:"★";width:auto;height:auto;background:none;color:#e0a526;font-size:.7rem;line-height:1}
+.tasks-prod span{display:block}
+.tasks-prod-next b{font-weight:600;color:var(--danger)}
+.tasks-cal-tip{position:absolute;z-index:40;display:flex;flex-direction:column;gap:3px;max-width:260px;padding:9px 11px;border-radius:12px;border:1px solid var(--line);background:var(--surface);box-shadow:0 14px 30px -14px rgba(0,0,0,.5);font-size:.8rem;pointer-events:none}
+.tasks-cal-tip b{font-weight:600;margin-bottom:2px}
+.tasks-cal-tip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tasks-cal-tip[hidden]{display:none}
+
+/* ---------- «Неделя вперёд» */
+.tasks-forecast-total{cursor:help;font-variant-numeric:tabular-nums}
+.tasks-forecast-list{display:grid;gap:6px}
+.tasks-forecast .tasks-forecast-day{grid-template-columns:44px minmax(24px,1fr) 44px}
+.tasks-forecast-day small{text-align:right}
+.tasks-forecast-day.off{opacity:.45}
+.tasks-forecast-day.overload small{color:#e75a30;font-weight:600}
+.tasks-forecast .tasks-scenario-controls{align-items:center;margin-top:4px}
+@media (max-width:700px){.tasks-hero.quiet .tasks-ring{--size:64px}.tasks-hero-top{position:relative}.tasks-hero-menu{position:absolute;right:72px;top:-4px}}
+@media (max-width:600px){.tasks-kind{flex:1 1 auto}.tasks-quick-field{flex-basis:100%}}
+@media (prefers-reduced-motion:reduce){.tasks-pv,.tasks-hero-menu-list{animation:none}}

@@ -84,3 +84,33 @@ export function nextWorkday(d: Date): Date {
   for (let i = 0; i < 30 && !isWorkday(x); i++) x.setDate(x.getDate() + 1);
   return x;
 }
+
+const keyOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (key: string, n: number) => { const d = new Date(key + "T12:00"); d.setDate(d.getDate() + n); return keyOf(d); };
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b + "T12:00") - Date.parse(a + "T12:00")) / 86_400_000);
+
+/** The first public holiday after `from` (YYYY-MM-DD), within the years that have data; `days` counts from `from`. */
+export function nextHoliday(from: string, maxDays = 400): { key: string; note: string; days: number } | undefined {
+  for (let i = 1; i <= maxDays; i++) {
+    const key = addDays(from, i);
+    const p = prodDay(key);
+    if (!p) return undefined;
+    if (p.kind === "holiday") return { key, note: p.note ?? "Праздник", days: i };
+  }
+  return undefined;
+}
+
+/** The next run of three or more days off in a row that starts after `from` (an ordinary weekend is two days). */
+export function nextLongRest(from: string, maxDays = 400): { from: string; to: string; length: number; days: number } | undefined {
+  let start: string | null = null, len = 0;
+  for (let i = 1; i <= maxDays + 10; i++) {
+    const key = addDays(from, i);
+    const p = prodDay(key);
+    if (!p) return undefined;
+    if (p.kind === "weekend" || p.kind === "holiday" || p.kind === "off") { if (!start) start = key; len++; continue; }
+    if (start && len >= 3) return { from: start, to: addDays(start, len - 1), length: len, days: daysBetween(from, start) };
+    if (i > maxDays) return undefined;
+    start = null; len = 0;
+  }
+  return undefined;
+}

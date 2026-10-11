@@ -49,6 +49,7 @@ const ICONS = {
   arrowUp: "M12 19V5M5 12l7-7 7 7",
   eyeOff: "M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2",
   grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
   check: "M5 13l4 4L19 7",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
   alert: "M12 8v5M12 17h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z",
@@ -98,7 +99,7 @@ export function icon(name: IconName, size = 20): SVGSVGElement {
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", String(size)); svg.setAttribute("height", String(size));
   svg.setAttribute("fill", FILLED.has(name) ? "currentColor" : "none");
-  svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.8");
+  svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", name === "more" ? "3" : "1.8");
   svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
   svg.setAttribute("aria-hidden", "true"); svg.setAttribute("focusable", "false");
   const p = document.createElementNS(NS, "path");

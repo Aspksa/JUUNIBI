@@ -25,7 +25,7 @@ describe("автоматизация дел", () => {
       set(local(10, 12, 9, 1)); await o.tick();
       const brief = o.listNotes().filter((n) => n.auto === "brief");
       expect(brief).toHaveLength(1);
-      expect(brief[0]!.text).toMatch(/Понедельник, 12 октября — рабочий день/);
+      expect(brief[0]!.text).toMatch(/^Дела на сегодня \(1\)/); // the date and the kind of day are in the header
       expect(brief[0]!.text).toMatch(/20:00 Позвонить маме/);
       expect(o.listReminders().filter((r) => r.source === "brief" && r.status === "due")).toHaveLength(1);
       set(local(10, 12, 10)); await o.tick();
@@ -45,7 +45,7 @@ describe("автоматизация дел", () => {
       expect(o.listNotes().find((n) => n.auto === "brief")!.text).toMatch(/^Доброе утро! Понедельник/);
       o.composeBrief = async () => { throw new Error("сеть"); };
       set(local(10, 13, 9, 5)); await o.tick();
-      expect(o.listNotes().find((n) => n.auto === "brief")!.text).toMatch(/^Вторник, 13 октября/);
+      expect(o.listNotes().find((n) => n.auto === "brief")!.text).toMatch(/^На сегодня дел со сроком нет\./);
     } finally { await done(); }
   });
 

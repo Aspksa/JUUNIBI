@@ -1,4 +1,5 @@
 /** Conservative, explainable seven-day load forecast based on real outstanding tasks. */
+import { isWorkday } from "@juunibi/core";
 import type { Note } from "../api";
 export interface ForecastDay { day: string; planned: number; capacity: number; count: number; overload: boolean; excess: number }
 export function forecastWeek(notes: Note[], start: Date, dailyCapacityMinutes = 480): ForecastDay[] {
@@ -9,7 +10,8 @@ export function forecastWeek(notes: Note[], start: Date, dailyCapacityMinutes = 
     const pending = notes.filter(n => n.kind === "todo" && !n.done && !!n.dueAt && !Number.isNaN(Date.parse(n.dueAt)) &&
       (new Date(n.dueAt).getFullYear() + "-" + String(new Date(n.dueAt).getMonth()+1).padStart(2,"0") + "-" + String(new Date(n.dueAt).getDate()).padStart(2,"0")) === day);
     const planned = pending.reduce((total,n) => total + (Number.isFinite(n.estimateMinutes) && n.estimateMinutes! > 0 ? Math.min(1440,n.estimateMinutes!) : 30), 0);
-    const capacity = d.getDay() === 0 || d.getDay() === 6 ? 0 : Math.max(0, dailyCapacityMinutes);
+    // holidays and moved days off have no working hours either (production calendar)
+    const capacity = isWorkday(d) ? Math.max(0, dailyCapacityMinutes) : 0;
     return { day, planned, capacity, count: pending.length, overload: planned > capacity, excess: Math.max(0, planned-capacity) };
   });
 }
