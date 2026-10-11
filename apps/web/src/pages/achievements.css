@@ -52,7 +52,7 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .ach-mini b{font-size:1rem;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ach-mini.waiting b{align-self:flex-start;font-size:.68rem;font-weight:600;color:var(--muted);padding:2px 8px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--fg) 22%,transparent)}
 .ach-mini-bar{display:block;height:4px;border-radius:4px;background:color-mix(in srgb,var(--fg) 9%,transparent);overflow:hidden;margin-top:auto}
-.ach-mini-bar i{display:block;height:100%;width:var(--p,0%);border-radius:4px;background:linear-gradient(90deg,#c2341c,#f18e3b)}
+.ach-mini-bar i{display:block;height:100%;width:calc(var(--p,0) * 1%);border-radius:4px;background:linear-gradient(90deg,#c2341c,#f18e3b)}
 .ach-panel-badges{display:flex;flex-wrap:wrap;gap:6px}
 .ach-panel-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .ach-panel-act{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:58px;padding:8px 4px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:.72rem;line-height:1.2;text-align:center;cursor:pointer;transition:border-color .15s,background-color .15s}
@@ -73,7 +73,9 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
   background:radial-gradient(40% 34% at 50% 42%,rgba(255,214,140,.45),transparent 70%)}
 .kitsune-art.asleep .kitsune-glow{opacity:0}
 .kitsune-spots{position:absolute;inset:0;width:100%;height:100%}
-.kitsune-spot{cursor:pointer;outline:none}
+.kitsune-spots[aria-hidden]{pointer-events:none}
+.kitsune-spot{outline:none}
+.kitsune-spot[tabindex]{cursor:pointer}
 .kitsune-hit{fill:transparent}
 .kitsune-ring{fill:rgba(255,226,150,0);stroke:#ffe29a;stroke-width:5;stroke-dasharray:14 10;opacity:0;transition:opacity .2s,fill .2s;filter:drop-shadow(0 0 8px #ffb02e)}
 .kitsune-spot:hover .kitsune-ring,.kitsune-spot:focus-visible .kitsune-ring{opacity:.8;fill:rgba(255,226,150,.12)}
@@ -103,7 +105,7 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .ach-hero-collected b{font-size:1.5rem;margin-right:2px;font-variant-numeric:tabular-nums}
 .ach-hero-collected small{color:var(--muted);font-variant-numeric:tabular-nums}
 .ach-hero-progress{width:100%;height:8px;border-radius:8px;background:color-mix(in srgb,var(--fg) 10%,transparent);overflow:hidden}
-.ach-hero-progress i{display:block;height:100%;width:max(var(--p,0%),4px);border-radius:inherit;background:linear-gradient(90deg,#a92c20,#e3501f 55%,#f9a648);box-shadow:0 0 12px rgba(240,96,40,.5)}
+.ach-hero-progress i{display:block;height:100%;width:max(calc(var(--p,0) * 1%),4px);border-radius:inherit;background:linear-gradient(90deg,#a92c20,#e3501f 55%,#f9a648);box-shadow:0 0 12px rgba(240,96,40,.5)}
 .ach-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;width:100%}
 .ach-stat{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 80%,transparent);min-width:0}
 .ach-stat b{font-size:1.15rem;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -134,8 +136,6 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .ach-group-head h2{margin:0;font-size:1.02rem}
 .ach-group-head small{color:var(--muted);font-size:.74rem}
 .ach-group-head .life-group-ic{background:color-mix(in srgb,var(--g) 16%,transparent)}
-.ach-group-prog{flex:none;width:90px;height:6px;border-radius:6px;background:color-mix(in srgb,var(--fg) 10%,transparent);overflow:hidden}
-.ach-group-prog i{display:block;height:100%;width:var(--p,0%);border-radius:inherit;background:var(--g)}
 .ach-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;align-items:stretch}
 .ach-metric-filters .chips{justify-content:flex-start}
 .ach-grid .life-tile{--g:inherit}
@@ -144,11 +144,6 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .ach-tile .ach-badge{margin-left:auto}
 .ach-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .ach-filters .chips{margin:0}
-.ach-tile.waiting{text-align:left;background:color-mix(in srgb,var(--bg) 70%,transparent);border-style:dashed}
-.ach-tile.waiting .life-tile-top,.ach-tile.waiting .life-value-row{justify-content:flex-start}
-.ach-tile.waiting .life-value{align-self:flex-start;font-size:.72rem;font-weight:600;color:var(--muted);padding:2px 9px;border-radius:999px;border:1px dashed color-mix(in srgb,var(--fg) 22%,transparent);letter-spacing:0}
-.ach-tile.waiting .life-detail{font-size:.76rem}
-.ach-tile.waiting .life-emoji{filter:grayscale(.5);opacity:.8}
 .ach-tier-chips .chip{--tier:var(--brand)}
 .ach-tier-chips .chip[aria-pressed=true]{border-color:var(--tier);box-shadow:inset 0 0 0 1px var(--tier)}
 .ach-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
@@ -262,7 +257,7 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .cel-p.m-march{top:auto;bottom:16%;left:-40px;animation-name:cel-march;animation-duration:2.6s;animation-timing-function:linear}
 @keyframes cel-in{from{opacity:0}}
 @keyframes cel-out{to{opacity:0}}
-@keyframes cel-card{from{opacity:0;transform:scale(.6) translateY(30px)}}
+@keyframes cel-card{0%{opacity:0;transform:perspective(900px) rotateY(88deg) scale(.78)}55%{opacity:1;transform:perspective(900px) rotateY(-14deg) scale(1.04)}78%{transform:perspective(900px) rotateY(6deg)}100%{transform:none}}
 @keyframes cel-emoji{0%{opacity:0;transform:scale(.2) rotate(-30deg)}60%{transform:scale(1.25) rotate(8deg)}100%{opacity:1;transform:none}}
 @keyframes cel-flash{0%{opacity:0}15%{opacity:.85}100%{opacity:0}}
 @keyframes cel-burst{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}12%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--x)*1.6),calc(-50% + var(--y)*1.6 + 60px)) rotate(var(--rot)) scale(1)}}
@@ -372,3 +367,119 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .ach-hero-cap b{font-size:1.05rem;font-weight:800;color:#fff}
 .ach-hero-cap small{font-size:.82rem;color:rgba(236,222,230,.72)}
 .ach-tails-art p{position:relative;margin:-10px 0 0;padding:0 16px 16px;color:rgba(236,222,230,.75)}
+
+/* ---------- 2026-10-11: the collection made calmer and richer */
+/* the hero is a night scene in both themes, in the colours of the kitsune picture */
+.ach-hero{grid-template-columns:minmax(0,1fr) minmax(320px,1.08fr);gap:30px;color:#f6ecf2;border-color:rgba(255,150,110,.24);
+  background:radial-gradient(60% 90% at 82% 40%,rgba(255,170,80,.16),transparent 65%),radial-gradient(70% 110% at 0% 100%,rgba(124,29,111,.28),transparent 60%),linear-gradient(160deg,#1f0f26,#150a18 60%,#220c1c);
+  box-shadow:0 30px 60px -40px rgba(226,90,31,.55)}
+.ach-hero .ach-hero-lead{margin:0;max-width:58ch;line-height:1.55;color:rgba(236,222,230,.78)}
+.ach-hero .ach-title-chip{color:#ffe2a8;border-color:rgba(242,194,90,.5);background:rgba(242,194,90,.12)}
+.ach-hero-collected small{color:rgba(236,222,230,.7)}
+.ach-hero-progress{background:rgba(255,255,255,.1)}
+.ach-hero-progress i{background:linear-gradient(90deg,#b8862e,#f2c25a 55%,#fff0b8);box-shadow:0 0 14px rgba(242,194,90,.55)}
+.ach-eyebrow{color:#f2b65a}
+.ach-hero .ach-stat{position:relative;align-items:center;text-align:center;padding:12px 8px 10px;border-radius:18px;border:1px solid rgba(242,194,90,.35);
+  background:radial-gradient(90% 80% at 50% 0%,rgba(242,194,90,.18),transparent 70%),rgba(255,255,255,.04);box-shadow:inset 0 1px 0 rgba(255,240,184,.18)}
+.ach-stat-ic{font-size:1.05rem;line-height:1;margin-bottom:2px}
+.ach-hero .ach-stat b{font-size:1.25rem;color:#fff3cf}
+.ach-hero .ach-stat span{color:rgba(236,222,230,.72)}
+.ach-hero .ach-surprise{border-color:rgba(242,194,90,.3);background:rgba(242,194,90,.08)}
+.ach-hero .ach-surprise b{color:#f2b65a}
+.ach-hero-actions{display:flex;flex-wrap:wrap;gap:8px}
+.ach-hero-actions .btn{color:#f6ecf2;border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.06)}
+.ach-hero-actions .btn:hover{border-color:rgba(242,194,90,.6);background:rgba(242,194,90,.12)}
+.ach-hero-tails{box-shadow:0 0 0 1px rgba(255,170,110,.2),0 24px 50px -30px rgba(242,150,60,.7)}
+
+/* «Путь кицунэ», next steps and today's task */
+.ach-extras{display:flex;flex-direction:column;gap:12px;margin:0 0 16px}
+.ach-extras-row{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:12px}
+.ach-path,.ach-steps,.ach-quest{min-width:0;padding:16px 18px;border-radius:22px;border:1px solid var(--line);background:var(--surface,var(--bg))}
+.ach-path{background:radial-gradient(70% 120% at 0% 0%,color-mix(in srgb,#f2c25a 12%,transparent),transparent 60%),var(--surface,var(--bg))}
+.ach-path-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 10px}
+.ach-path-head h2{margin:2px 0 0;font-size:1.1rem}
+.ach-path-head small{color:var(--muted);font-size:.78rem}
+.ach-path-bar{display:block;height:6px;border-radius:6px;background:color-mix(in srgb,var(--fg) 9%,transparent);overflow:hidden;margin:0 0 12px}
+.ach-path-bar i{display:block;height:100%;width:max(calc(var(--p,0) * 1%),3px);border-radius:inherit;background:linear-gradient(90deg,#b8862e,#f2c25a,#fff0b8)}
+.ach-path-track{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px}
+.ach-path-track li{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;text-align:center}
+.ach-path-dot{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;font-size:1rem;background:color-mix(in srgb,var(--fg) 6%,transparent);border:1px solid var(--line);filter:grayscale(1);opacity:.55}
+.ach-path-track small{font-size:.62rem;line-height:1.2;color:var(--muted);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ach-path-track li.past .ach-path-dot{filter:none;opacity:.9;border-color:color-mix(in srgb,#f2c25a 50%,var(--line))}
+.ach-path-track li.now .ach-path-dot{filter:none;opacity:1;width:40px;height:40px;margin-top:-3px;border:2px solid #f2c25a;background:radial-gradient(circle,rgba(242,194,90,.35),transparent 70%);box-shadow:0 0 16px -2px rgba(242,194,90,.8)}
+.ach-path-track li.now small{color:var(--fg);font-weight:700}
+.ach-steps{display:flex;flex-direction:column;gap:10px}
+.ach-steps ol{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ach-steps li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:color-mix(in srgb,var(--fg) 4%,transparent)}
+.ach-step-ic{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:10px;background:color-mix(in srgb,#f2c25a 16%,transparent);font-size:1rem}
+.ach-steps li .grow{display:flex;flex-direction:column;gap:1px;min-width:0}
+.ach-steps li b{font-size:.86rem;line-height:1.3}
+.ach-steps li small{font-size:.74rem;color:var(--muted)}
+.ach-steps>.btn{align-self:flex-start}
+.ach-quest{display:flex;flex-direction:column;gap:8px;background:radial-gradient(90% 120% at 100% 0%,color-mix(in srgb,#a855f7 12%,transparent),transparent 60%),var(--surface,var(--bg))}
+.ach-quest.done{border-color:color-mix(in srgb,#22c55e 40%,var(--line))}
+.ach-quest-head{display:flex;justify-content:space-between;align-items:center}
+.ach-sparks{padding:2px 10px;border-radius:999px;font-size:.78rem;font-weight:700;background:color-mix(in srgb,#f2c25a 16%,transparent);color:color-mix(in srgb,#b8862e 70%,var(--fg))}
+.ach-quest-text{display:flex;gap:10px;align-items:flex-start;margin:0;font-size:.92rem;line-height:1.5}
+.ach-quest-ic{flex:none;font-size:1.4rem;line-height:1.1}
+.ach-panel-quest{display:flex;gap:10px;align-items:flex-start;width:100%;padding:10px 12px;border-radius:14px;border:1px dashed color-mix(in srgb,#a855f7 40%,var(--line));background:color-mix(in srgb,#a855f7 7%,transparent);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.ach-panel-quest.done{border-style:solid;border-color:color-mix(in srgb,#22c55e 40%,var(--line));background:color-mix(in srgb,#22c55e 7%,transparent)}
+.ach-panel-quest:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.ach-panel-quest-ic{font-size:1.15rem;line-height:1.2}
+.ach-panel-quest>span:last-child{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ach-panel-quest b{font-size:.74rem;text-transform:uppercase;letter-spacing:.04em}
+.ach-panel-quest small{font-size:.78rem;line-height:1.4;color:var(--muted)}
+
+/* tabs as tiles with a count of what is new */
+.ach-tabs{grid-template-columns:repeat(9,minmax(0,1fr))}
+.ach-tab{position:relative;flex-direction:column;gap:3px;padding:10px 4px 9px;white-space:normal;line-height:1.15;text-align:center}
+.ach-tab-ic{font-size:1.25rem;line-height:1}
+.ach-tab-label{font-size:.78rem}
+.ach-tab-new{position:absolute;top:5px;right:calc(50% - 26px);min-width:18px;height:18px;padding:0 5px;border-radius:999px;display:grid;place-items:center;font-size:.66rem;font-weight:800;color:#fff;background:#e11d48;box-shadow:0 0 0 2px var(--surface,var(--bg))}
+
+/* groups: a ring of what counts, a seal when all six count; the waiting ones below as fog */
+.ach-group{content-visibility:auto;contain-intrinsic-size:auto 520px}
+.ach-group-ring{position:relative;display:grid;place-items:center;flex:none;width:44px;height:44px}
+.ach-group-ring .life-ring{position:absolute;inset:0;width:100%;height:100%}
+.ach-group-ring b{position:relative;font-size:.68rem;font-variant-numeric:tabular-nums}
+.ach-group-seal{font-size:1.4rem;line-height:1;filter:drop-shadow(0 0 6px rgba(242,194,90,.7))}
+.ach-group.complete{border-color:color-mix(in srgb,#f2c25a 50%,var(--line))}
+.ach-grid+.ach-fog-wrap{margin-top:12px}
+.ach-fog-label{display:block;margin:0 0 6px 2px;font-size:.72rem;font-weight:600;letter-spacing:.03em;color:var(--muted)}
+.ach-fog-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.ach-fog{display:flex;align-items:flex-start;gap:10px;min-width:0;padding:10px 12px;border-radius:14px;border:1px dashed color-mix(in srgb,var(--fg) 16%,transparent);
+  background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--fg) 2.5%,transparent) 0 8px,transparent 8px 16px),color-mix(in srgb,var(--bg) 70%,transparent)}
+.ach-fog:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.ach-fog-ic{flex:none;font-size:1.15rem;line-height:1.2;filter:grayscale(1);opacity:.55}
+.ach-fog-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.ach-fog-text strong{font-size:.8rem;line-height:1.3;color:color-mix(in srgb,var(--fg) 75%,transparent)}
+.ach-fog-text small{font-size:.74rem;line-height:1.35;color:var(--muted)}
+.ach-fog-lock{flex:none;color:color-mix(in srgb,var(--fg) 30%,transparent);margin-top:2px}
+
+/* won tiles dressed by rarity: a gold frame from «Эпическая», a slow shimmer from «Легендарная» */
+.ach-tile[data-rarity]{border-color:color-mix(in srgb,var(--tier) 45%,var(--line));background:radial-gradient(110% 70% at 100% 0%,color-mix(in srgb,var(--tier) 10%,transparent),transparent 60%),var(--bg)}
+.ach-tile[data-rarity=rare],.ach-tile[data-rarity=legend]{border:1.5px solid transparent;
+  background:radial-gradient(110% 70% at 100% 0%,color-mix(in srgb,var(--tier) 14%,transparent),transparent 60%) padding-box,var(--bg) padding-box,linear-gradient(135deg,#fff0b8,#c99a38 35%,#f2c25a 60%,#8a5d1a) border-box;
+  box-shadow:0 10px 26px -20px #f2c25a}
+.ach-tile[data-rarity=legend]::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;background:linear-gradient(105deg,transparent 35%,rgba(255,240,190,.22) 50%,transparent 65%);transform:translateX(-120%)}
+@media (prefers-reduced-motion:no-preference){.ach-tile[data-rarity=legend]::after{animation:ach-shine 5s ease-in-out infinite;will-change:transform}}
+@keyframes ach-shine{0%,60%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+
+/* the secret badge: a question in a dashed gold circle, no emoji */
+.ach-badge.secret{filter:none;opacity:.8;font-weight:800;font-size:1.1rem;color:#c99a38;background:none;box-shadow:inset 0 0 0 2px transparent;border:2px dashed color-mix(in srgb,#c99a38 70%,transparent)}
+.ach-badge.secret.sm{font-size:.85rem}
+
+/* seasonal cards: their own frames */
+.ach-card.season{border-width:1.5px}
+.ach-card.season-winter{--tier:#7dd3fc}.ach-card.season-spring{--tier:#86efac}.ach-card.season-summer{--tier:#fbbf24}.ach-card.season-autumn{--tier:#f97316}.ach-card.season-newyear{--tier:#ef4444}
+.ach-card.season.won{background:radial-gradient(120% 80% at 0% 0%,color-mix(in srgb,var(--tier) 22%,transparent),transparent 65%),var(--bg)}
+
+/* awake tails glow on the picture, sleeping ones are dimmed */
+.kitsune-lit{mix-blend-mode:screen;opacity:calc(.35 + var(--lv,1) * .12)}
+.kitsune-dim{mix-blend-mode:multiply}
+.kitsune-glow{will-change:opacity}
+
+@media (max-width:1100px){.ach-tabs{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media (max-width:900px){.ach-hero{grid-template-columns:1fr;gap:14px}.ach-extras-row{grid-template-columns:1fr}.ach-path-track{grid-template-columns:repeat(6,minmax(0,1fr));row-gap:10px}}
+@media (max-width:520px){.ach-path-track small{display:none}.ach-path-track li.now small{display:block;position:absolute;margin-top:46px;white-space:nowrap}.ach-path-track li{position:relative}.ach-path-track{padding-bottom:16px}.ach-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}.ach-tab-label{font-size:.72rem}.ach-fog-grid{grid-template-columns:1fr}.ach-path,.ach-steps,.ach-quest{padding:14px}.ach-hero .ach-stat{padding:10px 6px}}
+.ach-group-ring .life-ring text{display:none}

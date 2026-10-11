@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Organizer } from "./organizer";
-import { Achievements, computeMetrics, dayKey, directionOf, plural } from "./achievements";
+import { Achievements, computeMetrics, dayKey, directionOf, plural, seasonKey } from "./achievements";
 import { EFFECTS, METRICS, TIERS } from "./achievements-catalog";
 
 const local = (m: number, d: number, h = 9, min = 0, y = 2026) => new Date(y, m - 1, d, h, min).getTime();
@@ -174,6 +174,38 @@ describe("показатели из настоящих дел", () => {
       await o.addNote("note", "ещё одна");
       expect(o.listNotes()).toHaveLength(500);
       expect(dayKey(local(9, 1, 23, 59))).toBe("2026-09-01");
+    } finally { await done(); }
+  });
+});
+
+describe("сезоны, задание дня и итоги недели", () => {
+  it("сезон дела: декабрь идёт в зиму следующего года, праздники — с 25 декабря по 8 января", () => {
+    expect(seasonKey(local(12, 20, 12, 0, 2026), "winter")).toBe("2027-winter");
+    expect(seasonKey(local(2, 10, 12, 0, 2027), "winter")).toBe("2027-winter");
+    expect(seasonKey(local(10, 11), "autumn")).toBe("2026-autumn");
+    expect(seasonKey(local(10, 11), "spring")).toBeNull();
+    expect(seasonKey(local(12, 28, 12, 0, 2026), "newyear")).toBe("2027-newyear");
+    expect(seasonKey(local(1, 8, 12, 0, 2027), "newyear")).toBe("2027-newyear");
+    expect(seasonKey(local(1, 9, 12, 0, 2027), "newyear")).toBeNull();
+  });
+  it("хвосты в шапке и в показателе #45 считаются одинаково; сезонная награда, задание дня и неделя", async () => {
+    const { o, a, set, done } = await setup(local(10, 1, 9));
+    try {
+      for (let i = 0; i < 10; i++) { set(local(10, 1 + i, 10)); const n = await o.addTask("Позвонить маме " + i); await o.setDone(n.id, true); }
+      set(local(10, 11, 12));
+      const v = await a.refresh();
+      const awake = v.tails.filter((t) => t.level > 0).length;
+      expect(awake).toBeGreaterThan(0);
+      expect(v.metrics.find((m) => m.id === "twelve")!.value).toBe(`${awake} из 12`);
+      expect(v.awards.find((x) => x.id === "season-autumn")!.level).toBe(1);
+      expect(v.stats.total).toBe(78);
+      expect(v.quest).not.toBeNull();
+      expect(v.quest!.text).not.toMatch(/^Копим данные/);
+      expect(v.week.done).toBe(6); // 5–10 October of the last seven days
+      expect(v.week.perDay).toHaveLength(7);
+      // the same task all day
+      expect((await a.refresh()).quest!.metric).toBe(v.quest!.metric);
+      for (const m of v.metrics.filter((x) => !x.ready)) expect(m.detail).not.toMatch(/: нет /);
     } finally { await done(); }
   });
 });

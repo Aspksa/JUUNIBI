@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AchAward, AchNotice, AchPending } from "../src/api";
-import { effectFor, filterAwards, freshNotices, galleryAwards, medalPips, nextCelebration, quickDays, safeHex, wrapText } from "../src/pages/achievements-model";
+import { FOX_PATH, effectFor, filterAwards, foxPath, freshCount, freshNotices, galleryAwards, medalPips, needText, nextCelebration, nextSteps, quickDays, safeHex, sameData, wrapText } from "../src/pages/achievements-model";
 import { tailAngle } from "../src/pages/tails";
 
 const award = (o: Partial<AchAward>): AchAward => ({ id: "a", n: 1, emoji: "⭐", title: "A", tier: 0, group: "g", metric: "m", goal: "", nextGoal: null, levels: 4, hidden: false, riddle: null,
@@ -60,5 +60,36 @@ describe("«Дела и достижения» в интерфейсе", () => {
     expect(tailAngle(0)).toBe(-78);
     expect(tailAngle(11)).toBe(78);
     expect(tailAngle(0, 1)).toBe(-78);
+  });
+});
+
+describe("коллекция: туман, шаги, путь и новинки", () => {
+  it("«Копим данные: …» становится предложением", () => {
+    expect(needText("Копим данные: нужны выполненные дела")).toBe("Нужны выполненные дела");
+    expect(needText("Копим данные: добавьте цель")).toBe("Добавьте цель");
+  });
+  it("следующие шаги: самые полезные действия первыми", () => {
+    const w = (detail: string, title = "x") => ({ ready: false, detail: "Копим данные: " + detail, title });
+    const s = nextSteps([w("поставьте цель"), w("добавьте цель или #проект"), w("нужны дела со сроком"), w("нужны выполненные дела"), { ready: true, detail: "", title: "y" }]);
+    expect(s[0]).toMatchObject({ key: "goal", count: 2 });
+    expect(s.map((x) => x.key)).toEqual(["goal", "due", "done"]);
+  });
+  it("путь кицунэ: двенадцать ступеней", () => {
+    expect(FOX_PATH).toHaveLength(12);
+    expect(foxPath(0)).toMatchObject({ index: 0, progress: 0 });
+    expect(foxPath(5).index).toBe(1);
+    expect(foxPath(1000)).toMatchObject({ index: 11, next: null, progress: 1 });
+  });
+  it("новое на вкладке считается только после первого визита", () => {
+    const d = { awards: [{ level: 1, tier: 5, lastAt: "2026-10-11T10:00:00Z" }, { level: 0, tier: 5, lastAt: null }], records: [], titles: [], notices: [] } as never;
+    expect(freshCount(d, "book", null)).toBe(0);
+    expect(freshCount(d, "book", "2026-10-10T00:00:00Z")).toBe(1);
+    expect(freshCount(d, "gallery", "2026-10-12T00:00:00Z")).toBe(0);
+  });
+  it("одинаковые данные не перерисовываются", () => {
+    const a = { generatedAt: "1", stats: { won: 1 } } as never, b = { generatedAt: "2", stats: { won: 1 } } as never, c = { generatedAt: "3", stats: { won: 2 } } as never;
+    expect(sameData(a, b)).toBe(true);
+    expect(sameData(a, c)).toBe(false);
+    expect(sameData(null, a)).toBe(false);
   });
 });

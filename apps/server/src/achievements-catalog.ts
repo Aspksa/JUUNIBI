@@ -125,7 +125,7 @@ export const METRICS: MetricDef[] = [
   m(42, "dark", "space", "🌑", "Тёмная сторона", "Проекты, которые давно не получали внимания", "Светлая сторона", 4, [1, 3, 6, 12], "месяц, когда ни одна цель не простаивала 2 недели", { repeat: "month" }),
   m(43, "ears", "fox", "👂", "Чуткие ушки", "Заранее замечено приближение срока", "Чуткие ушки", 2, [1, 5, 20, 50], "N дел сделано вовремя после напоминания о сроке"),
   m(44, "tracks", "fox", "🐾", "Лисьи следы", "Последовательность шагов к большой цели", "Следопыт", 2, [3, 7, 15, 30], "N шагов к одной цели"),
-  m(45, "twelve", "fox", "🦊", "Двенадцать хвостов", "Завершены задачи из 12 разных направлений", "Двенадцать хвостов", 9, [4, 7, 10, 12], "по три дела и больше в N направлениях из 12"),
+  m(45, "twelve", "fox", "🦊", "Двенадцать хвостов", "Завершены задачи из 12 разных направлений", "Двенадцать хвостов", 9, [4, 7, 10, 12], "проснулись хвосты N направлений из 12"),
   m(46, "dropped", "fox", "🍂", "Сброшенный груз", "Удалены или осознанно отменены ненужные дела", "Осенний лист", 1, [1, 5, 15, 40], "N ненужных дел убрано"),
   m(47, "bloom", "fox", "🌸", "Цветение идей", "Сколько идей превратилось в реальные действия", "Сакура", 3, [1, 3, 10, 25], "N заметок стали делами"),
   m(48, "light", "fox", "🏮", "Свет в темноте", "Найдена следующая конкретная задача для застрявшего проекта", "Фонарщик", 5, [1, 3, 6], "достигнуть N целей, которые когда-то стояли", { hidden: true, riddle: "Фонарь светит тем, кто не бросил путь в темноте." }),
@@ -167,6 +167,20 @@ export const TAIL_PATTERNS = ["Спит", "Искра", "Узор", "Сияни�
 export interface ExtraAwardDef { id: string; emoji: string; title: string; tier: number; goal: string; hidden?: boolean; riddle?: string }
 export const TAIL_AWARD_TIER = 3;
 export const ALL_TAILS_AWARD: ExtraAwardDef = { id: "tails-all", emoji: "🦊", title: "Двенадцать хвостов сияют", tier: 10, goal: "все двенадцать хвостов в «Сиянии»", hidden: true, riddle: "Когда засияют все двенадцать, случится что-то вечное." };
+
+/**
+ * Seasonal awards, one per season of the year and one for the New Year holidays. Each is earned again every year:
+ * the medal grows with the number of years (1, 2, 3, 5). `need` is how many to-dos to finish within the season.
+ */
+export interface SeasonDef extends ExtraAwardDef { season: "winter" | "spring" | "summer" | "autumn" | "newyear"; need: number }
+export const SEASONS: SeasonDef[] = [
+  { id: "season-winter", season: "winter", emoji: "❄️", title: "Зимняя сказка", tier: 2, need: 10, goal: "10 дел за зиму (декабрь — февраль)" },
+  { id: "season-spring", season: "spring", emoji: "🌱", title: "Весеннее пробуждение", tier: 2, need: 10, goal: "10 дел за весну (март — май)" },
+  { id: "season-summer", season: "summer", emoji: "☀️", title: "Летний зной", tier: 2, need: 10, goal: "10 дел за лето (июнь — август)" },
+  { id: "season-autumn", season: "autumn", emoji: "🍁", title: "Золотая осень", tier: 2, need: 10, goal: "10 дел за осень (сентябрь — ноябрь)" },
+  { id: "season-newyear", season: "newyear", emoji: "🎄", title: "Новогоднее чудо", tier: 4, need: 3, goal: "3 дела в новогодние праздники (25 декабря — 8 января)" },
+];
+export const SEASON_LEVELS = [1, 2, 3, 5];
 
 /** Titles: won by awards; one can be chosen to stand under the greeting. */
 export interface TitleDef { id: string; title: string; emoji: string; how: string; needs: { award: string; level: number }[]; groupCount?: { group: string; count: number } }

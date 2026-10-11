@@ -70,6 +70,13 @@ export interface AchievementsData {
   metrics: AchMetric[]; awards: AchAward[]; tails: AchTail[]; titles: { id: string; title: string; emoji: string; how: string; at: string | null }[]; title: string | null;
   records: AchRecord[]; notices: AchNotice[]; surprise: { emoji: string; text: string }; discoveries: string[]; pending: AchPending[];
   stats: { won: number; total: number; rare: number; medals: number; ready: number };
+  /** Today's small task from JUUNIBI and the sparks it has given. */
+  quest: { metric: string; emoji: string; title: string; text: string; done: boolean } | null; sparks: number;
+  week: AchWeek;
+}
+export interface AchWeek {
+  from: string; to: string; done: number; perDay: number[]; labels: string[]; added: number;
+  bestDay: { label: string; count: number } | null; awards: string[]; awake: number; topTail: { title: string; emoji: string; count: number } | null;
 }
 export interface AchDay {
   day: string; date: string; story: string; prev: string; next: string | null;
