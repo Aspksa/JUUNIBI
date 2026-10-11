@@ -3,7 +3,7 @@ import { characterAvatar } from "./art";
 import { renderMarkdownInto } from "../markdown";
 import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
-import { formatBytes, stepLabel } from "./helpers";
+import { actionSummary, formatBytes, stepLabel } from "./helpers";
 import { speechSupported } from "./voice";
 import { promiseCard, toTasksButton } from "./to-tasks";
 
@@ -59,17 +59,6 @@ function fillUser(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
   root.append(actions);
   const promise = m.content.trim() ? promiseCard(m.id, m.content, m.at) : null;
   if (promise) root.append(promise);
-}
-
-export function actionSummary(steps: Step[]): string {
-  const current = steps.find((step) => step.status === "running");
-  if (current) return stepLabel(current.name) + "…";
-  const errors = steps.filter((step) => step.status === "error").length;
-  const denied = steps.filter((step) => step.status === "denied").length;
-  const completed = steps.filter((step) => step.status === "ok").length;
-  if (errors) return `Действия ИИ · ошибок: ${errors}`;
-  if (denied) return `Действия ИИ · отклонено: ${denied}`;
-  return `Действия ИИ · готово: ${completed}`;
 }
 
 function stepsBlock(steps: Step[], expanded = false): HTMLElement {
