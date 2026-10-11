@@ -177,6 +177,7 @@ export const api = {
   diskFolderStyle: (name:string,color:string,pinned:boolean,cover:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/style",post({name,color,pinned,cover}))),
   diskFolderMove: (from:string,parent:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/move",post({from,parent}))),
   diskFolderCopy: (from:string,parent:string) => attemptAsync(()=>call<{name:string;files:number}>("/api/disk/folders/copy",post({from,parent}))),
+  diskFolderSync: (from:string,to:string,apply:boolean) => attemptAsync(()=>call<{copied:number;pending:number;unchanged:number;conflicts:{name:string;reason:string}[]}>("/api/disk/folders/sync",post({from,to,apply}))),
   diskFolderTrash: (name:string) => attemptAsync(()=>call<{folder:string;files:number}>("/api/disk/folders/trash",post({name}))),
   diskDeletedFolders: () => attemptAsync(()=>call<{folders:{root:string;count:number;at:string}[]}>("/api/disk/folders/deleted")),
   diskFolderRestore: (name:string) => attemptAsync(()=>call<{root:string;files:number}>("/api/disk/folders/restore",post({name}))),

@@ -390,6 +390,51 @@ export class LocalDisk {
   /** Export an explicit snapshot of metadata; bytes are not included. */
   snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
   /** Copy a file under a new identity without changing its original. */
+  /** Sync two local folders without ever overwriting a conflicting filename. */
+  async syncFolders(from:unknown,to:unknown,apply:unknown=false){
+    const source=validFolder(from),target=validFolder(to);
+    if(source===target)throw bad("Нельзя синхронизировать папку саму с собой");
+    if(source&&!this.folders.includes(source))throw bad("Исходная папка не найдена",404);
+    if(target&&!this.folders.includes(target))throw bad("Папка назначения не найдена",404);
+    if(typeof apply!=="boolean")throw bad("Недопустимый режим синхронизации");
+    const originals=this.entries.filter(e=>!e.deletedAt&&e.folder===source);
+    const incoming=this.entries.filter(e=>!e.deletedAt&&e.folder===target);
+    const candidate:DiskEntry[]=[],conflicts:{name:string;reason:string}[]=[];
+    let unchanged=0;
+    const seen=new Set<string>();
+    for(const entry of originals){
+      const key=entry.name.toLocaleLowerCase();
+      if(seen.has(key)){conflicts.push({name:entry.name,reason:"Повторяющееся имя в источнике"});continue;}
+      seen.add(key);
+      const matches=incoming.filter(e=>e.name.toLocaleLowerCase()===key);
+      if(matches.some(e=>e.sha256===entry.sha256&&e.size===entry.size)){unchanged++;continue;}
+      if(matches.length){conflicts.push({name:entry.name,reason:"Различается содержимое"});continue;}
+      candidate.push(entry);
+    }
+    if(!apply)return {copied:0,pending:candidate.length,unchanged,conflicts};
+    if(conflicts.length)throw bad("Обнаружены конфликты. Синхронизация отменена",409);
+    if(this.entries.length+candidate.length>1000)throw bad("Недостаточно свободных слотов в хранилище",409);
+    const written:string[]=[];const copied:DiskEntry[]=[];
+    try{
+      for(const e of candidate){
+        const bytes=await readFile(this.file(e.id));
+        if(bytes.length!==e.size||createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Исходный файл повреждён",409);
+        const id=randomUUID();
+        await writeFile(this.objectPath(id),bytes,{flag:"wx",mode:0o600});
+        written.push(id);
+        const copy:DiskEntry={...e,id,folder:target,revision:1,uploadedAt:new Date().toISOString()};
+        delete copy.objectId;delete copy.deletedAt;
+        copied.push(copy);
+      }
+      this.entries.push(...copied);
+      await this.save();
+    }catch(e){
+      this.entries=this.entries.filter(e=>!written.includes(e.id));
+      for(const id of written)await rm(this.objectPath(id),{force:true});
+      throw e;
+    }
+    return {copied:copied.length,pending:0,unchanged,conflicts};
+  }
   async copyFile(id:string,folder:unknown){
     const original=this.entries.find(e=>e.id===id&&!e.deletedAt);
     if(!original)throw bad("Файл не найден",404);

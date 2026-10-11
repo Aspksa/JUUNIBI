@@ -113,7 +113,23 @@ export function diskPage():HTMLElement {
   const allSearch=el("input",{type:"checkbox",attrs:{"aria-label":"Искать по всем папкам"}});
   allSearch.addEventListener("change",()=>{selected.clear();void refresh();});
 
-  const viewButton=button("Вид: плитка",()=>{gridMode=!gridMode;localStorage.setItem("juunibi.disk.grid",String(gridMode));renderFiles();});
+  type DiskView="tiles"|"large"|"list"|"table";
+  const savedView=localStorage.getItem("juunibi.disk.view");
+  let displayMode:DiskView=savedView==="tiles"||savedView==="large"||savedView==="list"||savedView==="table"?savedView:gridMode?"tiles":"list";
+  const modes:DiskView[]=["tiles","large","list","table"];
+  const labels:Record<DiskView,string>={tiles:"Плитка",large:"Крупные плитки",list:"Список",table:"Таблица"};
+  const viewButton=button("Вид: "+labels[displayMode],()=>{
+    displayMode=modes[(modes.indexOf(displayMode)+1)%modes.length]!;
+    gridMode=displayMode==="tiles"||displayMode==="large";
+    localStorage.setItem("juunibi.disk.view",displayMode);
+    localStorage.setItem("juunibi.disk.grid",String(gridMode));
+    renderFiles();
+  });
+  const minSize=el("input",{type:"number",min:0,step:1,cls:"mem-input",placeholder:"Мин. КБ",attrs:{"aria-label":"Минимальный размер в КБ"}});
+  const maxSize=el("input",{type:"number",min:0,step:1,cls:"mem-input",placeholder:"Макс. КБ",attrs:{"aria-label":"Максимальный размер в КБ"}});
+  const afterDate=el("input",{type:"date",cls:"mem-input",attrs:{"aria-label":"Загружено после даты"}});
+  const extraFilters=el("details",{cls:"disk-extra-filters"},el("summary",{textContent:"Фильтры"}),el("div",{cls:"disk-extra-filter-controls"},minSize,maxSize,afterDate));
+  for(const input of [minSize,maxSize,afterDate])input.addEventListener("input",()=>{visibleLimit=100;renderFiles();});
   const sortSelect=el("select",{cls:"mem-select",attrs:{"aria-label":"Сортировать файлы"}},el("option",{value:"new",textContent:"Сначала новые"}),el("option",{value:"name",textContent:"По имени"}),el("option",{value:"size",textContent:"По размеру"}));
   sortSelect.addEventListener("change",()=>renderFiles());
   const breadcrumb=el("span",{cls:"muted small"});
@@ -261,10 +277,12 @@ export function diskPage():HTMLElement {
   const renderFiles=()=>{
     thumbnailGeneration++;
     const q=search.value.trim().toLocaleLowerCase();
-    const shown=allFiles().filter(f=>(!extensionFilter||f.name.toLowerCase().endsWith("."+extensionFilter))&&(!q||f.name.toLocaleLowerCase().includes(q)||(contentIds?.has(f.id)??false))).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
+    const shown=allFiles().filter(f=>(!minSize.value||f.size>=Number(minSize.value)*1024)&&(!maxSize.value||f.size<=Number(maxSize.value)*1024)&&(!afterDate.value||f.uploadedAt.slice(0,10)>=afterDate.value)&&(!extensionFilter||f.name.toLowerCase().endsWith("."+extensionFilter))&&(!q||f.name.toLocaleLowerCase().includes(q)||(contentIds?.has(f.id)??false))).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
     files.classList.toggle("disk-grid",gridMode);
     files.classList.toggle("disk-list",!gridMode);
-    viewButton.textContent=gridMode?"Вид: плитка":"Вид: список";
+    files.classList.toggle("disk-large",displayMode==="large");
+    files.classList.toggle("disk-table",displayMode==="table");
+    viewButton.textContent="Вид: "+labels[displayMode];
     const visible=shown.slice(0,visibleLimit);
     files.replaceChildren(...(visible.length?visible.map((f,index)=>{
       const name=el("strong",{textContent:f.name});
@@ -520,6 +538,19 @@ export function diskPage():HTMLElement {
           const r=await api.diskFolderCopy(folder,parentName);
           if(!r.ok)feedback.textContent=r.error.message;else{menu.open=false;void refresh();}
         });
+        const synchronize=button("Синхронизировать в…",async()=>{
+          const destination=await pickDestination(folder);if(destination===null)return;
+          const planned=await api.diskFolderSync(folder,destination,false);
+          if(!planned.ok){feedback.textContent=planned.error.message;return;}
+          const plan=planned.value;
+          const summary="Копировать: "+plan.pending+" · Уже одинаковые: "+plan.unchanged+" · Конфликты: "+plan.conflicts.length;
+          if(plan.conflicts.length){feedback.textContent=summary+"; "+plan.conflicts.map(x=>x.name+" ("+x.reason+")").join("; ");return;}
+          if(!plan.pending){feedback.textContent="Синхронизация не требуется. "+summary;return;}
+          if(!confirm("Без перезаписи файлов: «"+folder+"» → «"+(destination||"Корень")+"». "+summary+". Выполнить?"))return;
+          const result=await api.diskFolderSync(folder,destination,true);
+          if(!result.ok){feedback.textContent=result.error.message;return;}
+          menu.open=false;status.textContent="Синхронизировано файлов: "+result.value.copied;void refresh();
+        });
         const move=button("Переместить папку",async()=>{
           const destination=await pickDestination(folder);
           if(destination===null)return;
@@ -544,7 +575,7 @@ export function diskPage():HTMLElement {
           if(!r.ok)feedback.textContent=r.error.message;
           else{folderStyles[folder]={color:color.value,pinned:pinned.checked,cover:cover.value};menu.open=false;renderTree();}
         });
-        operations.append(copy,move,remove,color,el("label",{},pinned," Закрепить"),cover,style);
+        operations.append(copy,move,synchronize,remove,color,el("label",{},pinned," Закрепить"),cover,style);
         controls.append(field,submit,rename,operations,feedback);menu.append(summary,controls);
         line.append(menu);
         line.addEventListener("dragover",e=>{if(e.dataTransfer?.types.includes("application/x-juunibi-file")||e.dataTransfer?.types.includes("application/x-juunibi-folder")){e.preventDefault();line.classList.add("disk-tree-drop");}});
@@ -602,12 +633,16 @@ export function diskPage():HTMLElement {
       }));
   };
   const refresh=async()=>{
-    const r=await api.diskList(viewFilter==="all"&&!allSearch.checked?current:undefined);
+    const scoped=viewFilter==="all"&&!allSearch.checked?current:undefined;
+    const [r,full,styles]=await Promise.all([
+      api.diskList(scoped),
+      scoped===undefined?Promise.resolve(null):api.diskList(),
+      api.diskFolderStyles()
+    ]);
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
     items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
-    const full=await api.diskList();
-    treeFiles=full.ok?full.value.files:items;
-    const styles=await api.diskFolderStyles();if(styles.ok)folderStyles=styles.value;
+    treeFiles=full?.ok?full.value.files:items;
+    if(styles.ok)folderStyles=styles.value;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
@@ -685,7 +720,7 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
   const hideTree=button("Скрыть / показать дерево",()=>{treeHidden=!treeHidden;tree.hidden=treeHidden;});
-  const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files,details));
+  const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton,extraFilters),drop,bulkBar,files,details));
   page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton,backupButton,restoreBackupButton,hideTree,clipboardButton,cutButton,pasteButton,undoButton,historyButton,extension,grouping),catalog);
   void refresh();
   return page;
