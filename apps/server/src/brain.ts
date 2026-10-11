@@ -325,6 +325,42 @@ export class BrainCore {
     const observations = (state as {toolObservations?:unknown}).toolObservations;
     if (Array.isArray(observations)) this.toolObservations=observations.filter(e=>e&&typeof e==="object"&&/^[a-zA-Z0-9_-]{1,64}$/.test(e.tool)&&["ok","error","denied"].includes(e.status)&&["read","write","danger"].includes(e.risk)&&Number.isFinite(e.elapsedMs)&&e.elapsedMs>=0&&e.elapsedMs<=3600000&&typeof e.at==="string"&&!Number.isNaN(Date.parse(e.at))).slice(0,100);
   }
+  /** Read-only Brain Next diagnostics. Never executes, grants permissions or mutates plans. */
+  executionReadiness(planId: string) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    const completed = plan.steps.filter(s => s.status === "done").length;
+    const failed = plan.steps.filter(s => s.status === "failed");
+    const active = plan.steps.filter(s => s.status === "active");
+    const next = plan.steps.find(s => s.status === "pending");
+    const previousComplete = next ? plan.steps.slice(0, plan.steps.indexOf(next)).every(s => s.status === "done") : false;
+    const resumable = failed.length === 0 && active.length === 0 && previousComplete && !!next;
+    const verified = new Set(this.logs.filter(e => e.planId === planId && e.outcome.startsWith("verified:")).map(e => e.stepId));
+    const missingEvidence = plan.steps.filter(s => s.status === "done" && !verified.has(s.id)).map(s => s.id);
+    return {
+      planId, phase: plan.status, completed, total: plan.steps.length,
+      verifiedCompleted: plan.steps.filter(s => s.status === "done" && verified.has(s.id)).length,
+      missingEvidence, failedSteps: failed.map(s => s.id), interruptedSteps: active.map(s => s.id),
+      nextStepId: resumable ? next!.id : null,
+      canResumeReadOnly: resumable && missingEvidence.length === 0,
+      requiresOwnerReview: failed.length > 0 || active.length > 0 || missingEvidence.length > 0,
+      supportedActions: ["list_modules", "search_memory"] as const,
+      note: "Диагностика не запускает инструменты и не выдаёт разрешений.",
+    };
+  }
+  /** Evidence quality indicators, not an LLM intelligence score. */
+  brainEvaluation() {
+    const plans = this.plans.map(p => this.executionReadiness(p.id));
+    const completed = plans.filter(p => p.phase === "completed").length;
+    const failed = plans.filter(p => p.phase === "failed").length;
+    const gaps = plans.reduce((total, p) => total + p.missingEvidence.length, 0);
+    return { plans: { total: plans.length, completed, failed, resumable: plans.filter(p => p.canResumeReadOnly).length },
+      evidence: { missingVerifiedSteps: gaps, verifiedCompletedSteps: plans.reduce((total, p) => total + p.verifiedCompleted, 0) },
+      decisions: this.decisions.summary(),
+      security: { writeActionsAvailable: false, explicitExecutionRequired: true },
+      note: "Это состояние планов и подтверждений, а не независимая оценка качества мышления.",
+    };
+  }
   status() {
     return { mode: this.mode, assistantReady: this.assistantReady(), plans: this.plans.map(p => ({ ...p, steps: p.steps.map(s => ({ ...s })) })), capabilities: ["memory", "planning", "tools", "approvals", "scenes"] };
   }

@@ -189,6 +189,36 @@ describe("BrainCore", () => {
     expect(saved).not.toContain(privateValue);
     expect(JSON.stringify(brain.history())).toContain("items=1");
   });
+  it("reports verified readiness and evidence quality without running tools", async () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("prepare", ["modules", "memory"]);
+    expect(brain.executionReadiness(p.id)).toMatchObject({
+      completed: 0, total: 2, canResumeReadOnly: true, requiresOwnerReview: false,
+    });
+    expect(brain.brainEvaluation().plans.total).toBe(1);
+    expect(brain.brainEvaluation().security.writeActionsAvailable).toBe(false);
+    await brain.executeReadStep(p.id, p.steps[0]!.id, "list_modules", () => [], async () => []);
+    expect(brain.executionReadiness(p.id)).toMatchObject({
+      completed: 1, verifiedCompleted: 1, canResumeReadOnly: true, missingEvidence: [],
+    });
+    await brain.executeReadStep(p.id, p.steps[1]!.id, "search_memory", () => [], async () => []);
+    expect(brain.brainEvaluation()).toMatchObject({
+      plans: {total:1,completed:1,failed:0,resumable:0},
+      evidence: {verifiedCompletedSteps:2,missingVerifiedSteps:0},
+    });
+    expect(() => brain.executionReadiness("absent")).toThrow("План не найден");
+  });
+  it("detects inconsistent manual completion without verified evidence", () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("review", ["first", "second"]);
+    brain.updateStep(p.id, p.steps[0]!.id, "active");
+    brain.updateStep(p.id, p.steps[0]!.id, "done");
+    const status = brain.executionReadiness(p.id);
+    expect(status.missingEvidence).toEqual([p.steps[0]!.id]);
+    expect(status.canResumeReadOnly).toBe(false);
+    expect(status.requiresOwnerReview).toBe(true);
+    expect(brain.brainEvaluation().evidence.missingVerifiedSteps).toBe(1);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
