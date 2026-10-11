@@ -4,7 +4,7 @@
  */
 import { api, type Area, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type DayOff, type Note, type Organizer, type Reminder, type Repeat, type TaskStatus } from "../api";
 import { el, icon, iconButton } from "../dom";
-import { app, refreshBrief, type AppState, type Route } from "../state";
+import { app, dismissSuggestion, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
 import { buildAttention } from "./home";
 import { achievementsPanel } from "./achievements-panel";
@@ -14,7 +14,7 @@ import { openSheet, type Sheet } from "./sheet";
 import { isWorkday, nextHoliday, nextLongRest, nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import kitsuneUrl from "../assets/kitsune.webp";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
-import { REPEAT_LABEL, REPEAT_OPTIONS, STATUS_LABEL, areaOf, awayOn, boardColumns, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, meetingSpan, memoryDates, monthItems, moveTargets, planWeek, preferredArea, projectList, recognizedSpans, toLocalInput, weekProgress, workWeek, type AreaFilter, type ProjectInfo, type TaskFilter, type TimedItem } from "./tasks-model";
+import { REPEAT_LABEL, REPEAT_OPTIONS, STATUS_LABEL, areaOf, dropDismissed, awayOn, boardColumns, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, meetingSpan, memoryDates, monthItems, moveTargets, planWeek, preferredArea, projectList, recognizedSpans, toLocalInput, weekProgress, workWeek, type AreaFilter, type ProjectInfo, type TaskFilter, type TimedItem } from "./tasks-model";
 
 type Mission = { id: string; title: string; description: string; status: "active" | "paused" | "complete"; total: number; done: number; percent: number; blocked: number; idleDays?: number; next: { id: string; text: string; reason: string } | null; stages: { id: string; text: string; done: boolean }[] };
 const KINDS: [QuickKind, string][] = [["auto", "Авто"], ["todo", "Дело"], ["reminder", "Напоминание"], ["note", "Заметка"]];
@@ -32,6 +32,9 @@ const store = {
 };
 const AREA = "juunibi.tasks.area", VIEW = "juunibi.tasks.view", WORK_EVE = "juunibi.tasks.workEve";
 { const a = store.get(AREA); if (a === "work" || a === "personal") UI.area = a; if (store.get(VIEW) === "board") UI.view = "board"; }
+const DISMISSED = "juunibi.tasks.dismissed";
+/** Fired reminders «Готово» was pressed on (see dropDismissed). */
+const dismissedIds = (): Set<string> => new Set((store.get(DISMISSED) ?? "").split(",").filter(Boolean));
 const SKIP_DATES = "juunibi.tasks.skipDates", EVENING_SEEN = "juunibi.tasks.eveningSeen", FOLDED = "juunibi.tasks.folded", AUTO_TAB = "juunibi.tasks.autoTab", STUCK_SKIP = "juunibi.tasks.stuckSkip", FOCUS = "juunibi.tasks.focus";
 /** Side cards folded down to their title. */
 const folded = new Set((store.get(FOLDED) ?? "").split(",").filter(Boolean));
@@ -146,7 +149,13 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   /** The calendar, the day's load and the forecast are counted here from the list itself: a change costs two requests, not eight. */
   const load = async () => {
     const [r, m, a] = await Promise.all([api.organizer(), api.missions(), automation ? Promise.resolve(null) : api.automation()]);
-    if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
+    if (r.ok) {
+      // a reminder «Готово» was pressed on never comes back: hide it and tell the server again
+      const d = dropDismissed(r.value.reminders, dismissedIds());
+      store.set(DISMISSED, d.keep.join(","));
+      for (const id of d.resend) void api.dismissReminder(id);
+      data = { ...r.value, reminders: d.shown }; loadError = "";
+    } else loadError = r.error.message;
     if (autoSheet?.open && autoTab === "log") void loadLog();
     if (m.ok) missions = m.value;
     if (a?.ok) { automation = a.value; renderAuto(); }
@@ -165,6 +174,13 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     await load();
     void refreshBrief();
     return r.ok;
+  };
+  /** «Готово» on a fired reminder: gone from the list at once and for good, whatever the server answers. */
+  const dismiss = (id: string) => {
+    const ids = dismissedIds(); ids.add(id);
+    store.set(DISMISSED, [...ids].slice(-100).join(","));
+    if (data) { data = { ...data, reminders: data.reminders.filter((x) => x.id !== id) }; render(); }
+    void act(() => api.dismissReminder(id));
   };
   /** Hides the entry at once and deletes it only when "Отменить" was not pressed in time. */
   const removeLater = (id: string, label: string, run: () => ReturnType<typeof api.removeNote>) => {
@@ -551,7 +567,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       el("span", { cls: "org-ic", attrs: { "aria-hidden": "true" } }, icon("clock", 16)),
       body(r.text, meta(r.status === "due" ? "сработало " + whenLabel(r.firedAt ?? r.at, false) : whenLabel(r.at, false), r.repeat ? "↻ " + REPEAT_LABEL[r.repeat] : null)),
       r.status === "due" ? snooze : null,
-      r.status === "due" ? markAct(btn("Готово", () => void act(() => api.dismissReminder(r.id)), { small: true, primary: true }), "done") : null,
+      r.status === "due" ? markAct(btn("Готово", () => dismiss(r.id), { small: true, primary: true }), "done") : null,
       r.status === "scheduled" ? markAct(iconButton("edit", "Изменить напоминание: " + r.text, () => { editing = r.id; render(); }, "icon-btn sm"), "edit") : null,
       markAct(iconButton("trash", r.repeat ? "Удалить повторяющееся напоминание" : "Удалить напоминание", () =>
         removeLater(r.id, r.repeat ? "Повторяющееся напоминание удалено" : "Напоминание удалено", () => api.removeReminder(r.id)), "icon-btn sm"), "trash"));
@@ -1110,7 +1126,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const items = buildAttention(s, { go: deps.go, openChat: deps.openChat, saveQuickCommand: (name, text) => {
       const cur = app.get().assistantSettings?.quickCommands ?? [];
       void api.saveAssistantSettings({ quickCommands: [...cur, { name, text }] }).then((r) => { if (r.ok) { app.set({ assistantSettings: r.value }); showToast(`Команда /${name} сохранена`); } else showToast(r.error.message); });
-    }, dismissSuggestion: (name) => app.set((st) => ({ repeatSuggestions: st.repeatSuggestions.filter((x) => x.name !== name) })) })
+    }, dismissSuggestion })
       .filter((a) => a.id !== "reminder"); // fired reminders are already the first group of the list
     attHost.replaceChildren(...(items.length ? [el("ul", { cls: "attn" }, ...items.map((a) => {
       const b = btn(a.action, a.run, { small: true });

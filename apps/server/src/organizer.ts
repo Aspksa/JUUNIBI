@@ -191,6 +191,19 @@ export function alignStart(at: number, repeat: Repeat | undefined, workday: (d: 
 }
 /** Monday to Friday; with the production calendar, holidays are skipped and working Saturdays count. */
 export const weekday = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6;
+/**
+ * Windows (antivirus, OneDrive, an open editor) can hold the file for a moment: a rename that fails then
+ * would leave the old file on disk, and a dismissed reminder would come back after a restart.
+ */
+async function renameRetry(from: string, to: string, tries = 6) {
+  for (let i = 1; ; i++) {
+    try { return await rename(from, to); } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i >= tries || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw e;
+      await new Promise((r) => setTimeout(r, 40 * i));
+    }
+  }
+}
 const localKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const dayStart = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const hhmm = (t: number) => new Date(t).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -354,11 +367,11 @@ export class Organizer {
         JSON.parse(previous);
         const backupTmp = this.file + "." + randomUUID() + ".bak.tmp";
         await writeFile(backupTmp, previous, { mode: 0o600 });
-        await rename(backupTmp, this.file + ".bak");
+        await renameRetry(backupTmp, this.file + ".bak");
       } catch (error) {
         if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
-      await rename(tmp, this.file);
+      await renameRetry(tmp, this.file);
     });
     return this.writes;
   }
@@ -1068,6 +1081,8 @@ export class Organizer {
     const note: Note = { id: randomUUID(), kind: "note", text: body.slice(0, MAX_AUTO_TEXT), done: false, createdAt: new Date(now).toISOString(), auto: kind };
     this.notes.push(note);
     const stamp = new Date(now).toISOString();
+    // yesterday's «Итог дня» nobody pressed «Готово» on is out of date once today's rings
+    if (!force) for (const r of this.reminders) if (r.source === kind && r.status === "due") r.status = "done";
     if (!force) this.reminders.push({ id: randomUUID(), text: ring.slice(0, MAX_TEXT), at: stamp, createdAt: stamp, status: "due", firedAt: stamp, source: kind });
     const what = kind === "brief" ? "утреннюю сводку" : kind === "evening" ? "итог дня" : "обзор недели";
     if (!force) this.addLog(kind, "Составила " + what, { created: [note.id] });

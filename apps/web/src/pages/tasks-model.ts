@@ -383,3 +383,14 @@ export function projectList(notes: Note[], projects: ProjectMeta[], goalTitle: (
   }
   return out.sort((a, b) => Number(a.goal) - Number(b.goal) || b.open - a.open || a.label.localeCompare(b.label, "ru"));
 }
+
+/**
+ * Fired reminders the owner pressed «Готово» on stay hidden even when the server still reports them as due
+ * (the request failed or the saved file was not replaced): `resend` are the ones to dismiss again,
+ * `keep` the remembered ids that still matter (the rest are forgotten so the list stays short).
+ */
+export function dropDismissed(reminders: Reminder[], hidden: ReadonlySet<string>): { shown: Reminder[]; resend: string[]; keep: string[] } {
+  const resend = reminders.filter((r) => r.status === "due" && hidden.has(r.id)).map((r) => r.id);
+  const gone = new Set(resend);
+  return { shown: reminders.filter((r) => !gone.has(r.id)), resend, keep: resend };
+}
