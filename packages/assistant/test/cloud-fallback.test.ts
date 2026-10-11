@@ -55,6 +55,20 @@ describe("Cloud.ru diagnostics and fallback", () => {
     expect(await p.listModels()).toEqual(["a", "b"]);
   });
 
+  it("reports stalled streaming as timeout while keeping emitted text", async () => {
+    const emitted: string[] = [];
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"начало"}}]}\\n\\n'));
+      },
+    });
+    const fetcher = vi.fn(async () => new Response(stalled, { headers: { "content-type": "text/event-stream" } }));
+    const provider = new CloudRuProvider({ apiKey: "k", model: "main", fetch: fetcher as never });
+    await expect(provider.chat([], { timeoutMs: 30, retries: 0, onText: (t) => emitted.push(t) })).rejects.toThrow(/тайм-аут/);
+    expect(emitted).toEqual(["начало"]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("reports streamed reasoning before the answer text", async () => {
     const seen: string[] = [];
     const res = sse([{ choices: [{ delta: { reasoning_content: "хм" } }] }, { choices: [{ delta: { content: "Ответ" } }] }]);
