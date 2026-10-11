@@ -177,6 +177,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           const disk=deps.disk;
           if(!disk)return send(res,503,{error:"Диск недоступен"});
           if(req.method==="GET"&&p==="/api/disk")return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
+          if(req.method==="GET"&&p==="/api/disk/chronicles")return send(res,200,disk.chronicles());
           if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
           if(req.method==="POST"&&p==="/api/disk/files"){const body=await readJson(req,14*1024*1024);return send(res,201,await disk.upload(body.name,body.folder,body.base64));}
           if(req.method==="POST"&&p==="/api/disk/bulk"){const b=await readJson(req);return send(res,200,await disk.bulk(b.ids,b.action,b.folder));}
