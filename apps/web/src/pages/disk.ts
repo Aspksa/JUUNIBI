@@ -314,7 +314,7 @@ export function diskPage():HTMLElement {
     }
     for(const list of children.values())list.sort((a,b)=>folderSort==="files"?(counts.get(b)??0)-(counts.get(a)??0):folderSort==="size"?(bytes.get(b)??0)-(bytes.get(a)??0):folderSort==="pinned"?Number(!!folderStyles[b]?.pinned)-Number(!!folderStyles[a]?.pinned)||a.localeCompare(b,"ru"):a.localeCompare(b,"ru"));
     const openFolder=(folder:string)=>{
-      current=folder;viewFilter="all";virtualFilter="none";selected.clear();visibleLimit=100;
+      current=folder;viewFilter="all";virtualFilter="none";allSearch.checked=false;selected.clear();visibleLimit=100;
       for(let p=folder;p.includes("/");p=p.slice(0,p.lastIndexOf("/")))treeExpanded.add(p.slice(0,p.lastIndexOf("/")));
       void refresh();
     };
@@ -336,10 +336,15 @@ export function diskPage():HTMLElement {
         const cached=thumbnailUrls.get(coverId);
         if(cached)pic.src=cached;
         else void (async()=>{
+          if(pendingThumbnails.has(coverId))return;
+          pendingThumbnails.add(coverId);
           const r=await api.diskGet(coverId);
+          pendingThumbnails.delete(coverId);
           if(!r.ok||!page.isConnected)return;
           const bytes=Uint8Array.from(atob(r.value.base64),c=>c.charCodeAt(0));
-          const url=URL.createObjectURL(new Blob([bytes],{type:"image/png"}));
+          const coverName=treeFiles.find(x=>x.id===coverId)?.name??"";
+          const coverMime=/\\.png$/i.test(coverName)?"image/png":/\\.webp$/i.test(coverName)?"image/webp":/\\.gif$/i.test(coverName)?"image/gif":"image/jpeg";
+          const url=URL.createObjectURL(new Blob([bytes],{type:coverMime}));
           if(thumbnailUrls.size>=MAX_THUMBNAILS){const old=thumbnailUrls.keys().next().value;if(old){URL.revokeObjectURL(thumbnailUrls.get(old)!);thumbnailUrls.delete(old);}}
           thumbnailUrls.set(coverId,url);pic.src=url;
         })();
@@ -423,6 +428,16 @@ export function diskPage():HTMLElement {
         });
       }
       if(folder){select.draggable=true;select.addEventListener("dragstart",e=>e.dataTransfer?.setData("application/x-juunibi-folder",folder));}
+      if(!folder){
+        line.addEventListener("dragover",e=>{if(e.dataTransfer?.types.includes("application/x-juunibi-file")||e.dataTransfer?.types.includes("application/x-juunibi-folder"))e.preventDefault();});
+        line.addEventListener("drop",async e=>{
+          const folderPath=e.dataTransfer?.getData("application/x-juunibi-folder");
+          const id=e.dataTransfer?.getData("application/x-juunibi-file");if(!folderPath&&!id)return;
+          e.preventDefault();
+          const r=folderPath?await api.diskFolderMove(folderPath,""):await api.diskMove(id!,"");
+          if(!r.ok)showToast(r.error.message);else{current="";void refresh();}
+        });
+      }
       line.append(toggle,select);line.style.paddingLeft=String(Math.min(depth,10)*13)+"px";node.append(line);
       if(folderQuery && folder && !folder.toLocaleLowerCase().includes(folderQuery) && ![...allFolders].some(f=>f.startsWith(folder+"/")&&f.toLocaleLowerCase().includes(folderQuery)))return el("span",{});
       if((expanded||!!folderQuery) && expandable){const subtree=el("div",{cls:"disk-tree-children"});for(const child of descendants)subtree.append(draw(child,depth+1));node.append(subtree);}
@@ -434,7 +449,7 @@ export function diskPage():HTMLElement {
     sort.value=folderSort;sort.addEventListener("change",()=>{folderSort=sort.value as typeof folderSort;renderTree();});
     tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),filter,sort,
       draw("",0),
-      button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
+      button("★ Избранное",()=>{viewFilter="favorites";virtualFilter="none";current="";void refresh();}),
       button("Корзина · "+trash.length,()=>{viewFilter="trash";virtualFilter="none";current="";void refresh();}),
       ...([["images","Изображения"],["documents","Документы"],["large","Крупные файлы"]] as const).map(([kind,title])=>button("◇ "+title,()=>{virtualFilter=kind;viewFilter="all";allSearch.checked=true;current="";void refresh();})),
       button("Журнал папок",async()=>{
