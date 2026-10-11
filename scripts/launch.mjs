@@ -1,6 +1,7 @@
 // JUUNIBI launcher: install -> checks (typecheck + tests) -> build -> free port -> serve -> open browser.
 // Usage: node scripts/launch.mjs [--dev] [--no-open] [--skip-checks] [--port N]
 import { spawn, spawnSync } from "node:child_process";
+import { missingWorkspaceLinks } from "./workspace-health.mjs";
 import { applyPreparedUpdate, applyRollbackRequest, confirmUpdate, rollbackFailedStart } from "./apply-update.mjs";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -128,7 +129,9 @@ const lockStamp = bin(".juunibi-lock");
 const lockNow = existsSync(lockFile) ? createHash("sha1").update(readFileSync(lockFile)).digest("hex") : "";
 const stamped = (() => { try { return readFileSync(lockStamp, "utf8").trim(); } catch { return ""; } })();
 const forced = process.env.JUUNIBI_REINSTALL === "1";
-if (!existsSync(bin("vite", "bin", "vite.js")) || forced || (touched && stamped !== lockNow)) {
+const brokenWorkspaces = missingWorkspaceLinks(root);
+if (brokenWorkspaces.length) console.log(`[!] Недоступны npm workspace-пакеты: ${brokenWorkspaces.join(", ")}. Восстанавливаю зависимости.`);
+if (!existsSync(bin("vite", "bin", "vite.js")) || brokenWorkspaces.length > 0 || forced || (touched && stamped !== lockNow)) {
   // Install scripts are never needed (esbuild ships its binary as an optional package; the updater installs the
   // same way), so they are skipped every time: nothing from npm runs, and npm has nothing to warn about.
   const npmArgs = [lockNow ? "ci" : "install", "--no-audit", "--no-fund", "--ignore-scripts"];
@@ -137,6 +140,8 @@ if (!existsSync(bin("vite", "bin", "vite.js")) || forced || (touched && stamped 
     // All command arguments here are fixed literals, never user-supplied text.
     await run("Установка зависимостей", process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `npm ${npmArgs.join(" ")}`]);
   } else await run("Установка зависимостей", "npm", npmArgs);
+  const remainingWorkspaces = missingWorkspaceLinks(root);
+  if (remainingWorkspaces.length) await fail(`Установка не восстановила пакеты: ${remainingWorkspaces.join(", ")}. Проверьте npm workspaces и права доступа.`);
   try { writeFileSync(lockStamp, lockNow + "\n"); } catch { /* the stamp only saves time */ }
 }
 
