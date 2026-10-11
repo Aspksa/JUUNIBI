@@ -238,7 +238,19 @@ export class LocalDisk {
         results.push({id:e.id,name:e.name,status:valid?"ok":"corrupt"});
       }catch{results.push({id:e.id,name:e.name,status:"missing"});}
     }
-    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results};
+    const revisionIssues:{fileId:string;revision:number;status:"missing"|"corrupt"}[]=[];
+    let revisionsChecked=0;
+    for(const [fileId,history] of Object.entries(this.versions)){
+      for(const v of history){
+        revisionsChecked++;
+        try{
+          const bytes=await readFile(this.objectPath(v.objectId));
+          if(bytes.length!==v.size||createHash("sha256").update(bytes).digest("hex")!==v.sha256)
+            revisionIssues.push({fileId,revision:v.revision,status:"corrupt"});
+        }catch{revisionIssues.push({fileId,revision:v.revision,status:"missing"});}
+      }
+    }
+    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results,revisionsChecked,revisionIssues};
   }
   duplicates(){
     const groups=new Map<string,DiskEntry[]>();
