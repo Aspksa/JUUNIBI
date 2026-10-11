@@ -23,7 +23,7 @@ describe("Disk startup recovery", () => {
       await cp(path.join(project, "apps", "server", "assets"), path.join(root, "apps", "server", "assets"), { recursive: true });
       const disk = path.join(root, "data", "disk"); await mkdir(path.join(disk, "objects"), { recursive: true });
       await writeFile(path.join(disk, "index.json"), "{broken");
-      await writeFile(path.join(path.dirname(disk), preserved!, "objects", "preserved"), "original bytes");
+      await writeFile(path.join(disk, "objects", "preserved"), "original bytes");
       child = spawn(process.execPath, [outfile], { cwd: root, env: { ...process.env, PORT: String(port), CLOUDRU_API_KEY: "" }, stdio: ["ignore", "pipe", "pipe"] });
       let output = "";
       await new Promise<void>((resolve, reject) => {
@@ -38,7 +38,7 @@ describe("Disk startup recovery", () => {
       expect((await catalog.json() as { files: unknown[] }).files).toEqual([]);
       const preserved = (await readdir(path.dirname(disk))).find(name => name.startsWith("disk.corrupt-")); expect(preserved).toBeDefined();
       expect(await readFile(path.join(path.dirname(disk), preserved!, "index.json"), "utf8")).toBe("{broken");
-      expect(await readFile(path.join(disk, "objects", "preserved"), "utf8")).toBe("original bytes");
+      expect(await readFile(path.join(path.dirname(disk), preserved!, "objects", "preserved"), "utf8")).toBe("original bytes");
       expect(output).toContain("Диск");
     } finally {
       if (child && child.exitCode === null) { const stopped = once(child, "exit"); child.kill(); await stopped; }
