@@ -259,4 +259,45 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("round-trips nested folders, file revisions and bytes through a streamed backup",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-backup-src-"));
+   const target=await mkdtemp(path.join(os.tmpdir(),"juunibi-backup-dst-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Работа");await disk.createFolder("Работа/Документы");
+     const entry=await disk.uploadBytes("draft.txt","Работа/Документы",Buffer.from("first"));
+     await disk.replaceStream(entry.id,(async function*(){yield Buffer.from("second");})(),entry.sha256);
+     const lines:string[]=[];for await(const line of disk.exportBackup())lines.push(line);
+     const restored=new LocalDisk(target);
+     const result=await restored.importBackup((async function*(){yield* lines;})());
+     expect(result.files).toBe(1);
+     expect(restored.list().folders).toContain("Работа/Документы");
+     expect(restored.fileVersions(entry.id).map(v=>v.revision)).toEqual([1,2]);
+     expect(Buffer.from((await restored.download(entry.id)).base64,"base64").toString()).toBe("second");
+     const original=await restored.restoreFileVersion(entry.id,1);
+     expect(original.revision).toBe(3);
+     expect(Buffer.from((await restored.download(entry.id)).base64,"base64").toString()).toBe("first");
+     const reopened=new LocalDisk(target);await reopened.load();
+     expect(reopened.fileVersions(entry.id)).toHaveLength(3);
+   }finally{await rm(dir,{recursive:true,force:true});await rm(target,{recursive:true,force:true});}
+ });
+ it("refuses a tampered backup without importing partial files",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-backup-src-"));
+   const target=await mkdtemp(path.join(os.tmpdir(),"juunibi-backup-dst-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.uploadBytes("report.txt","",Buffer.from("valuable"));
+     const lines:string[]=[];for await(const line of disk.exportBackup())lines.push(line);
+     const tampered=lines.map(line=>{
+       const item=JSON.parse(line) as {type:string;data?:string};
+       return item.type==="chunk"?JSON.stringify({...item,data:Buffer.from("evil").toString("base64")})+"\n":line;
+     });
+     const restored=new LocalDisk(target);
+     await expect(restored.importBackup((async function*(){yield* tampered;})())).rejects.toMatchObject({status:409});
+     expect(restored.list().files).toHaveLength(0);
+     const check=new LocalDisk(target);await check.load();
+     expect(check.list().files).toHaveLength(0);
+   }finally{await rm(dir,{recursive:true,force:true});await rm(target,{recursive:true,force:true});}
+ });
+
 });
