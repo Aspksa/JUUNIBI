@@ -76,10 +76,8 @@ export class BrainCore {
         new Set(options.map((o:string)=>o.trim().toLocaleLowerCase("ru"))).size !== options.length)
       throw Object.assign(new Error("Укажите от 2 до 8 различных стратегий"), {status:400});
     const tokenize = (value:string) => new Set(value.toLocaleLowerCase("ru").match(/[\p{L}\p{N}]{2,}/gu) ?? []);
-    const goalWords = tokenize(plan.goal);
     const confirmed = this.decisions.snapshot().filter(r => r.observed !== undefined &&
-      (taskType === undefined || r.taskType === taskType) &&
-      r.goal.trim().toLowerCase() === plan.goal.trim().toLowerCase() || [...goalWords].some(word => tokenize(r.goal).has(word)));
+      (taskType === undefined || r.taskType === taskType));
     const ranked = (options as string[]).map((option,index) => {
       const words = tokenize(option);
       const evidence = confirmed.filter(item => {
