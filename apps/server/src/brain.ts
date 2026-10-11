@@ -67,6 +67,34 @@ export class BrainCore {
       note: "Подтверждённые владельцем решения служат подсказками, не доказательством и не разрешением на действие.",
     };
   }
+  /** Compare bounded candidate strategies using only owner-confirmed historical outcomes. */
+  compareExperienceStrategies(planId: string, options: unknown, taskType?: unknown) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), {status:404});
+    if (!Array.isArray(options) || options.length < 2 || options.length > 8 ||
+        !options.every((o:unknown) => typeof o === "string" && !!o.trim() && o.length <= 150) ||
+        new Set(options.map((o:string)=>o.trim().toLocaleLowerCase("ru"))).size !== options.length)
+      throw Object.assign(new Error("Укажите от 2 до 8 различных стратегий"), {status:400});
+    const tokenize = (value:string) => new Set(value.toLocaleLowerCase("ru").match(/[\p{L}\p{N}]{2,}/gu) ?? []);
+    const confirmed = this.decisions.snapshot().filter(r => r.observed !== undefined &&
+      (taskType === undefined || r.taskType === taskType));
+    const ranked = (options as string[]).map((option,index) => {
+      // Attribute outcomes only to the same chosen strategy: shared words are not proof.
+      const evidence = confirmed.filter(item =>
+        item.chosen.trim().toLocaleLowerCase("ru") === option.trim().toLocaleLowerCase("ru"));
+      const successes = evidence.filter(item=>item.observed==="success").length;
+      const failures = evidence.filter(item=>item.observed==="failure").length;
+      return {option,originalIndex:index,successes,failures,samples:evidence.length,
+        evidenceIds:evidence.map(item=>item.id),
+        score:successes-failures,
+        insufficientEvidence:evidence.length < 3};
+    }).sort((a,b)=>b.score-a.score || b.samples-a.samples || a.originalIndex-b.originalIndex);
+    const readiness = this.executionReadiness(planId);
+    return {planId,strategies:ranked,experienceSource:"owner-confirmed-decisions" as const,
+      nextStepId:readiness.canResumeReadOnly?readiness.nextStepId:null,
+      requiresExplicitExecution:true as const,
+      note:"Эвристическое сравнение ограниченного опыта; выбор стратегии и действия требуют проверки владельцем."};
+  }
   toolRegistry() { return { tools: [{name:"list_modules",risk:"read",requiresExplicitExecution:true},{name:"search_memory",risk:"read",requiresExplicitExecution:true}], writeEnabled:false, arbitraryToolsEnabled:false } as const; }
   reviewSixCognitiveSkills(input: CognitiveInput) { return reviewSixSkills(input); }
   /** Ground six cognitive checks in saved plan steps and observed tool outcomes.

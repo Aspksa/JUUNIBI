@@ -37,7 +37,7 @@ export class DecisionMemory {
         (taskType !== undefined && !validText(taskType,60)) ||
         !Number.isSafeInteger(limit) || (limit as number) < 1 || (limit as number) > 20)
       throw Object.assign(new Error("Некорректный поиск опыта"), {status:400});
-    const tokenize = (text:string) => new Set((text.toLocaleLowerCase("ru").match(/[\\p{L}\\p{N}]{2,}/gu) ?? []));
+    const tokenize = (text:string) => new Set((text.toLocaleLowerCase("ru").match(/[\p{L}\p{N}]{2,}/gu) ?? []));
     const terms = tokenize(query);
     const candidates = this.records.filter(r => r.observed !== undefined).map(r => {
       const words = tokenize(r.goal + " " + r.chosen + " " + r.reason);
