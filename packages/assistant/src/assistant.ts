@@ -2,6 +2,7 @@ import { Logger } from "@juunibi/core";
 import { compactDiagnosticOutput } from "./diagnostic-output";
 import { DIAGNOSTIC_TOOLS, needsModuleDiagnosticExecution } from "./diagnostic-execution";
 import { guardToolClaims, type ToolEvidence } from "./evidence-guard";
+import { formatFunctionalHealthReport } from "./functional-health-report";
 import { taskExecutionInstructions } from "./task-intent";
 import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
@@ -245,6 +246,36 @@ export class Assistant {
     // Execute owner-requested diagnostics in code, rather than trusting the model to choose tool calls.
     // runTool enforces disabled tools, arguments, and risk; the allowlist is read-only.
     const diagnostics = !opts.ephemeral && needsModuleDiagnosticExecution(text, hist.map(m => ({ role: m.role, content: m.content ?? "" })));
+    // An explicit health check is run by the runtime, never narrated from chat history.
+    const functional = !opts.ephemeral && /functional_health_check/iu.test(text) && /(?:вызови|выполни|проведи|проверь|запусти)/iu.test(text);
+    if (functional) {
+      const name = "functional_health_check";
+      const spec = this.tools.get(name);
+      const id = "functional-" + crypto.randomUUID();
+      let result: { text: string; status: ToolStatus };
+      if (!spec || spec.risk !== "read") result = { status: "denied", text: "Безопасный инструмент functional_health_check недоступен" };
+      else {
+        opts.onEvent?.({ type: "tool", phase: "start", id, name, args: "{}" });
+        const started = Date.now();
+        result = await this.runTool(name, "{}", signal, true);
+        opts.onEvent?.({ type: "tool", phase: "end", id, name, status: result.status, ms: Date.now() - started });
+        used.push(name);
+      }
+      toolEvidence.push({ name, status: result.status, at: Date.now() });
+      const report = result.status === "ok" ? formatFunctionalHealthReport(result.text) : "**Функциональная диагностика не выполнена:** " + result.text;
+      const reply = guardToolClaims(report, toolEvidence, text);
+      await this.turnsReady;
+      const turn: Turn = { id: crypto.randomUUID(), session, user: text, reply, tools: used, memoryIds: mem.map(m => m.id), at: Date.now() };
+      this.turns.push(turn);
+      this.turns = this.turns.slice(-TURNS_LIMIT);
+      await this.saveTurns();
+      if (!clientHistory) {
+        const keep = this.sessions.get(session) ?? [];
+        keep.push({ role: "user", content: text }, { role: "assistant", content: reply });
+        this.sessions.set(session, keep.slice(-HISTORY_LIMIT * 2));
+      }
+      return { turnId: turn.id, reply, tools: used, memory: mem.map(m => m.text) };
+    }
     const cacheKey = session + ":" + text;
     const cached = this.diagnosticCache.get(cacheKey);
     const reuse = diagnostics && cached && Date.now() - cached.at < DIAGNOSTIC_CACHE_TTL_MS;
