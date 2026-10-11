@@ -303,6 +303,18 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
         async query => (await memory.search(query, 8)).map(item => item.text));
     },
   });
+  assistant.tools.register({
+    name: "brain_resume_safe_plan",
+    risk: "write",
+    description: "Продолжить выбранный сохранённый план только с незавершённых шагов после подтверждения владельца. Разрешены только list_modules и search_memory. Уже завершённые действия не повторяются.",
+    parameters: { type: "object", properties: {
+      planId: { type: "string" },
+      actions: { type: "array", items: { type: "string", enum: ["list_modules", "search_memory"] } },
+    }, required: ["planId", "actions"] },
+    run: async (args) => brain.resumeReadSequence(typeof args.planId === "string" ? args.planId : "", args.actions,
+      () => moduleList(),
+      async query => (await memory.search(query, 8)).map(item => item.text)),
+  });
   cloudConfigured = true;
 }
 async function saveCloud(apiKey: string) {
