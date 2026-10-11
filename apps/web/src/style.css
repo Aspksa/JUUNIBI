@@ -1631,3 +1631,16 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-file-info small{font-size:11px}
 .disk-file button{flex:none;font-size:12px}
 @media(max-width:680px){.disk-toolbar{flex-direction:column;align-items:stretch}.disk-files{grid-template-columns:1fr}.disk-file{flex-wrap:wrap}.disk-file-info{min-width:160px}}
+
+/* Disk 2.0 — clear navigation, drop target, comfortable density */
+.disk-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.disk-controls .mem-input{flex:1;min-width:170px}
+.disk-controls .muted{white-space:nowrap}
+.disk-drop{min-height:110px;border:1.5px dashed var(--border,rgba(140,140,180,.5));border-radius:17px;display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;text-align:center;padding:18px;background:var(--surface-2,rgba(128,128,128,.035));transition:background .2s,border-color .2s}
+.disk-drop.active{border-color:var(--accent,#8c7cf9);background:rgba(140,120,240,.13)}
+.disk-grid{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+.disk-list{grid-template-columns:1fr}
+.disk-list .disk-file{min-height:60px}
+.disk-file:hover{border-color:var(--accent,#8c7cf9)}
+@media(max-width:680px){.disk-controls{align-items:stretch}.disk-controls .mem-input{width:100%}.disk-controls .muted{width:100%}}
+@media(prefers-reduced-motion:reduce){.disk-drop{transition:none}}
