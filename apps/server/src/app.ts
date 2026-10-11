@@ -182,7 +182,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="GET"&&p==="/api/disk/duplicates")return send(res,200,{groups:disk.duplicates()});
           if(req.method==="GET"&&p==="/api/disk/files/history")return send(res,200,{actions:disk.fileHistory()});
           if(req.method==="POST"&&p==="/api/disk/files/undo")return send(res,200,await disk.undoFileChange());
-          if(req.method==="POST"&&p==="/api/disk/files/copy"){const b=await readJson(req);return send(res,201,await disk.copyFile(b.id,b.folder));}
+          if(req.method==="POST"&&p==="/api/disk/files/copy"){const b=await readJson(req);return send(res,201,await disk.copyFile(String(b.id??""),b.folder));}
           if(req.method==="GET"&&p==="/api/disk/snapshot")return send(res,200,disk.snapshot());
           if(req.method==="POST"&&p==="/api/disk/metadata"){const body=await readJson(req);return send(res,200,await disk.setMetadata(String(body.id??""),body));}
           if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
