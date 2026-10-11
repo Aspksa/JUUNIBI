@@ -24,6 +24,22 @@ describe("Умная автоматика 4.0",()=>{
       expect(restored.listNotes().find(x=>x.id===task.id)?.dueAt).toBe(new Date(ownerDate).toISOString());
     }finally{await rm(dir,{recursive:true,force:true});}
   });
+  it("deduplicates the same move request across application restarts",async()=>{
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-auto4-"));
+    const file=path.join(dir,"db.json");
+    try {
+      const o=new Organizer(file,()=>Date.parse("2026-10-11T10:00:00Z"));
+      const t=await o.addNote("todo","Написать тест");
+      const key="request_12345";
+      await o.moveTasks([t.id],"tomorrow",key);
+      const after=o.listNotes().find(n=>n.id===t.id)?.dueAt;
+      await expect(o.moveTasks([t.id],"tomorrow",key)).rejects.toMatchObject({status:409});
+      const restored=new Organizer(file,()=>Date.parse("2026-10-11T10:00:00Z"));
+      await restored.load();
+      await expect(restored.moveTasks([t.id],"tomorrow",key)).rejects.toMatchObject({status:409});
+      expect(restored.listNotes().find(n=>n.id===t.id)?.dueAt).toBe(after);
+    }finally{await rm(dir,{recursive:true,force:true});}
+  });
   it("supports one successful undo and then rejects replay",async()=>{
     const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-auto4-"));
     try {
