@@ -273,8 +273,7 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
       15: () => folders.length ? (folders.slice().sort((a,b)=>(countByFolder.get(b)??0)-(countByFolder.get(a)??0))[0] ?? "—") : "—",
       16: () => numeric(folders.filter(f => !countByFolder.get(f)).length),
       41: () => numeric([...duplicates.values()].reduce((sum,n)=>sum+Math.max(0,n-1),0)),
-      81: () => numeric(new Set(files.flatMap(f => f.tags ?? [])).size),
-      83: () => numeric(files.filter(f => Date.parse(f.uploadedAt) >= thirty).length)
+      81: () => numeric(new Set(files.flatMap(f => f.tags ?? [])).size)
     };
     // Catalogue metadata is not evidence of document content, reading time, revisions or semantic analysis.
     return insights.get(id)?.value ?? values[id]?.() ?? null;
