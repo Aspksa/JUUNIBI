@@ -196,3 +196,12 @@ export function actionSummary(steps: { name: string; status: "running" | "ok" | 
   if (denied) return `Действия ИИ · отклонено: ${denied}`;
   return `Действия ИИ · готово: ${completed}`;
 }
+
+/** This is progress of *observed* steps, not a prediction of how much work remains. */
+export function actionProgress(steps: { status: "running" | "ok" | "error" | "denied"; ms?: number }[]) {
+  const total = steps.length;
+  const done = steps.filter(step => step.status !== "running").length;
+  const failed = steps.filter(step => step.status === "error" || step.status === "denied").length;
+  const elapsed = steps.reduce((sum, step) => sum + (typeof step.ms === "number" && Number.isFinite(step.ms) && step.ms >= 0 ? step.ms : 0), 0);
+  return { total, done, failed, elapsed, observedPercent: total ? Math.round(done / total * 100) : 0 };
+}
