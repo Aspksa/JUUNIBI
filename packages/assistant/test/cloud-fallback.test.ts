@@ -60,7 +60,7 @@ describe("Cloud.ru diagnostics and fallback", () => {
     const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
       const stalled = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"начало"}}]}\\n\\n'));
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"начало"}}]}\n\n'));
           init.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")), { once: true });
         },
       });
