@@ -65,7 +65,7 @@ describe("evidence guard", () => {
   });
   it("keeps each repeated call visible rather than deduplicating", () => {
     const report = guardToolClaims("Готово", [{ name: "list_modules", status: "error" }, { name: "list_modules", status: "ok" }], "Проверь модули JUUNIBI");
-    expect(report.split("| list_modules |").length - 1).toBe(2);
+    expect(report.split("**Полный журнал инструментов текущего запроса:**")[1]!.split("| list_modules |").length - 1).toBe(2);
   });
   it.each([
     "Вызван только functional_health_check",
