@@ -47,5 +47,13 @@ try{
   await dialog.getByRole("button",{name:/Архив/}).click();
   await dialog.getByRole("button",{name:"Переместить сюда"}).click();
   await dialog.waitFor({state:"hidden"});
+  const view=page.getByRole("button",{name:/Вид:/});
+  await view.click();assert.ok(await page.locator(".disk-files").evaluate(node=>node.classList.contains("disk-large")));
+  await view.click();assert.ok(await page.locator(".disk-files").evaluate(node=>node.classList.contains("disk-list")));
+  await view.click();assert.ok(await page.locator(".disk-files").evaluate(node=>node.classList.contains("disk-table")));
+  await page.getByText("Фильтры",{exact:true}).click();
+  await page.getByLabel("Минимальный размер в КБ").fill("1");
+  assert.equal(await page.locator(".disk-file").count(),0);
+  await page.getByLabel("Минимальный размер в КБ").fill("");
   console.log("Browser smoke passed: creation sort, recent files, destination picker");
 }finally{await browser?.close();if(process.platform==="win32")server.kill();else if(server.pid){try{process.kill(-server.pid,"SIGTERM");}catch{}}}
