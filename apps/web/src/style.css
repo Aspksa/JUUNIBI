@@ -1747,3 +1747,22 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-chronicles .disk-stats-group>summary:hover{color:#f7dbad}
 .disk-chronicles .disk-stats-group>summary:focus-visible{outline:2px solid #e8c690;outline-offset:-3px}
 @media(prefers-reduced-motion:reduce){.disk-file.disk-reveal,.disk-dialog-enter,.disk-bulk-bar:not([hidden]),.disk-drop.disk-is-busy .disk-glyph,.disk-drop.disk-is-busy>svg{animation:none!important}.disk-file input[type=checkbox]{transition:none}}
+
+/* Disk 3.5: transform/opacity-only microinteraction layer. */
+.disk-folders button{position:relative;transition:transform .18s cubic-bezier(.2,.7,.2,1),opacity .18s ease}
+.disk-folders button:active{transform:scale(.96)}
+.disk-folders button.selected{transform:translateY(-2px)}
+.disk-folders button:focus-visible,.disk-chronicles-button:focus-visible{outline:2px solid var(--accent,#c3a5fc);outline-offset:3px}
+.disk-chronicles-button .disk-glyph{transition:transform .28s cubic-bezier(.2,.7,.2,1)}
+.disk-chronicles-button:hover .disk-glyph{transform:rotate(18deg) scale(1.1)}
+.disk-thumbnail{opacity:.15;transition:opacity .3s ease}
+.disk-thumbnail.disk-thumbnail-loaded{opacity:1}
+.disk-actions>summary{transition:transform .18s ease}
+.disk-actions[open]>summary{transform:rotate(90deg)}
+.disk-preview[open]:not(.disk-dialog-enter){animation:disk-dialog-enter .25s cubic-bezier(.2,.7,.2,1) both}
+@media(prefers-reduced-motion:reduce){
+ .disk-folders button,.disk-chronicles-button .disk-glyph,.disk-thumbnail,.disk-actions>summary{transition:none!important}
+ .disk-folders button:active,.disk-folders button.selected,.disk-chronicles-button:hover .disk-glyph,.disk-actions[open]>summary{transform:none!important}
+ .disk-preview[open]:not(.disk-dialog-enter){animation:none!important}
+ .disk-thumbnail{opacity:1}
+}
