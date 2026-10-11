@@ -806,7 +806,20 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   let autoTab = (store.get(AUTO_TAB) ?? "morning") as AutoTab;
   if (!AUTO_TABS.some(([k]) => k === autoTab)) autoTab = "morning";
   let autoLog: AutoLogEntry[] | null = null;
-  const loadLog = async () => { const r = await api.autoLog(); autoLog = r.ok ? r.value : []; if (autoTab === "log") renderAuto(); };
+  const evidenceHost=el("div",{cls:"tasks-automation-evidence"});
+  const loadEvidence=async()=>{
+    const result=await api.automationEvidence();
+    if(!result.ok){evidenceHost.replaceChildren(el("p",{cls:"muted small",textContent:"Метрики временно недоступны"}));return;}
+    const v=result.value;
+    evidenceHost.replaceChildren(
+      el("h3",{textContent:"Brain · проверяемые результаты"}),
+      el("p",{cls:"muted small",textContent:`Событий: ${v.totals.logged} · Действий отменено: ${v.totals.undone} · Автопереносов: ${v.totals.automaticMoves}`}),
+      el("p",{cls:"muted small",textContent:`Разрешения: автоперенос ${v.permissions.rollOverdue?"включён":"отключён"}, напоминания ${v.permissions.reminders?"включены":"отключены"}, правил ${v.permissions.rules}`}),
+      ...v.warnings.map(w=>el("p",{cls:"tasks-mission-next",textContent:w})),
+      el("p",{cls:"muted small",textContent:"Только наблюдение по журналу и истории задач. Не является обучением весов модели."}));
+  };
+
+  const loadLog = async () => { const r = await api.autoLog(); autoLog = r.ok ? r.value : []; if (autoTab === "log") { renderAuto(); void loadEvidence(); } };
   const LOG_ICON: Record<AutoLogEntry["kind"], string> = { roll: "↷", remind: "⏰", brief: "☀", evening: "☾", week: "▦", quiet: "☁", arrange: "▤", move: "→", rule: "✦" };
   const WEEKDAY_NAMES = ["воскресенье", "понедельник", "вторник", "среду", "четверг", "пятницу", "субботу"];
   const ruleText = (r: AutoRule) => {
@@ -870,7 +883,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     else {
       if (!autoLog) void loadLog();
       const list = autoLog ?? [];
-      body = [list.length
+      body = [evidenceHost, list.length
         ? el("ul", { cls: "tasks-auto-log" }, ...list.slice(0, 20).map((e) => el("li", { cls: e.undone ? "undone" : "" },
             el("span", { cls: "tasks-log-ic", attrs: { "aria-hidden": "true" }, textContent: LOG_ICON[e.kind] ?? "•" }),
             el("span", { cls: "grow" }, el("span", { textContent: e.text }), el("small", { cls: "muted", textContent: " · " + whenLabel(e.at, false) + (e.undone ? " · отменено" : "") })),
