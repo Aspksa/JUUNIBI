@@ -21,10 +21,12 @@ try{
     {id:"11111111-1111-4111-8111-111111111111",name:"recent.txt",folder:"Проекты",size:6,uploadedAt:new Date().toISOString(),sha256:"a".repeat(64)},
     {id:"22222222-2222-4222-8222-222222222222",name:"old.txt",folder:"Архив",size:5,uploadedAt:"2020-01-01T00:00:00.000Z",sha256:"b".repeat(64)}
   ];
+  let catalogRequests=0;
   await page.route("**/api/disk**",async route=>{
     const url=new URL(route.request().url()),pathname=url.pathname;
     let body={};
     if(pathname==="/api/disk"){
+      catalogRequests++;
       const folder=url.searchParams.get("folder");
       body={folders,files:folder===null?entries:entries.filter(e=>e.folder===folder),trash:[],usedBytes:11,maxFileBytes:52428800};
     }else if(pathname==="/api/disk/folders/styles")body={"Проекты":{color:"#b89cff",pinned:false,cover:"",createdAt:"2026-10-10T09:00:00.000Z"},"Архив":{color:"#b89cff",pinned:false,cover:"",createdAt:"2026-10-01T09:00:00.000Z"}};
@@ -39,7 +41,10 @@ try{
   await tree.getByRole("button",{name:/Недавние/}).click();
   await page.getByText("recent.txt").first().waitFor();
   assert.equal(await page.getByText("old.txt").count(),0);
-  await tree.getByRole("button",{name:/Проекты/}).first().click();
+  const beforeNavigation=catalogRequests;
+  await tree.locator(".disk-tree-select").filter({hasText:"Проекты"}).first().click();
+  await page.waitForTimeout(200);
+  assert.equal(catalogRequests-beforeNavigation,1,"Folder navigation should fetch the catalog only once");
   await tree.locator(".disk-folder-actions").first().locator("summary").click();
   await tree.getByRole("button",{name:"Переместить папку"}).click();
   const dialog=page.locator(".disk-destination-dialog");

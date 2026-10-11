@@ -645,16 +645,19 @@ export function diskPage():HTMLElement {
         dialog.addEventListener("close",()=>dialog.remove(),{once:true});page.append(dialog);dialog.showModal();
       }));
   };
+  let refreshGeneration=0;
   const refresh=async()=>{
-    const scoped=viewFilter==="all"&&!allSearch.checked?current:undefined;
-    const [r,full,styles]=await Promise.all([
-      api.diskList(scoped),
-      scoped===undefined?Promise.resolve(null):api.diskList(),
-      api.diskFolderStyles()
-    ]);
+    const generation=++refreshGeneration;
+    // One complete snapshot keeps counters and the tree consistent while avoiding
+    // duplicate /api/disk requests when navigating nested folders.
+    const [r,styles]=await Promise.all([api.diskList(),api.diskFolderStyles()]);
+    if(generation!==refreshGeneration||!page.isConnected)return;
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
-    items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
-    treeFiles=full?.ok?full.value.files:items;
+    allFolders=r.value.folders;
+    treeFiles=r.value.files;
+    const scoped=viewFilter==="all"&&!allSearch.checked?current:undefined;
+    items=scoped===undefined?treeFiles:treeFiles.filter(entry=>entry.folder===scoped);
+    trash=r.value.trash??[];
     if(styles.ok)folderStyles=styles.value;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
