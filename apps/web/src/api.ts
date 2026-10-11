@@ -185,7 +185,9 @@ const nameKey=(name:string)=>{let h=0;for(let i=0;i<name.length;i++)h=Math.imul(
 export const diskRawUrl=(f:{id:string;sha256:string;name:string},download=false)=>"/api/disk/files/"+encodeURIComponent(f.id)+"/raw?v="+f.sha256.slice(0,12)+"-"+nameKey(f.name)+(download?"&download=1":"");
 export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:string;folder:string}[]}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
+export interface FoxWifiSnapshot { supported: boolean; checkedAt: string; interfaces: string; networks: string; meshNote: string; error?: string }
 export const api = {
+  foxNetwork: () => attemptAsync(() => call<FoxWifiSnapshot>("/api/fox-network")),
   diskLife: () => attemptAsync(()=>call<DiskLife>("/api/disk/life")),
   diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[];revisionsChecked?:number;revisionIssues?:{fileId:string;revision:number;status:string}[]}>("/api/disk/audit")),
   diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),

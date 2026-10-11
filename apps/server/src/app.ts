@@ -1,3 +1,4 @@
+import { foxWifiSnapshot } from "./fox-network";
 import type { LocalDisk } from "./local-disk";
 import { collectLife } from "./disk-life";
 import http from "node:http";
@@ -233,6 +234,11 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
       if (lan && await lan.intercept(req, res, url)) return;
 
       if (p.startsWith("/api/")) {
+        if (p === "/api/fox-network") {
+          if (lan) return send(res, 403, { error: "Диагностика Wi-Fi доступна только на компьютере" });
+          if (req.method !== "GET") return send(res, 405, { error: "Разрешено только чтение" });
+          return send(res, 200, await foxWifiSnapshot());
+        }
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
         const a = deps.getAssistant?.() ?? deps.assistant;
         if (p === "/api/vault" || p.startsWith("/api/vault/")) {
