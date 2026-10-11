@@ -129,7 +129,7 @@ export class ChatController {
         this.chats.patch(convId, reply.id, { error: /(?:503|временно недоступен|connection timeout)/i.test(message) ? "Cloud.ru недоступен. Сообщение сохранено в истории. Можно повторить отправку. " + message : message });
       }
     } finally {
-      paint(true);
+      if (!finished) paint(true);
       if (steps.some((st) => st.status === "running")) this.chats.patch(convId, reply.id, { steps: steps.map((st) => (st.status === "running" ? { ...st, status: "error" as const } : st)) });
       if (this.abort === ctl) this.abort = null;
       this.store.set((s) => ({ busyId: null, unread: app.get().chatOpen ? 0 : s.unread + (ctl.signal.aborted ? 0 : 1) }));
