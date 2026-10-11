@@ -1849,3 +1849,49 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 @media (max-width:700px){.tasks-hero.quiet .tasks-ring{--size:64px}.tasks-hero-top{position:relative}.tasks-hero-menu{position:absolute;right:72px;top:-4px}}
 @media (max-width:600px){.tasks-kind{flex:1 1 auto}.tasks-quick-field{flex-basis:100%}}
 @media (prefers-reduced-motion:reduce){.tasks-pv,.tasks-hero-menu-list{animation:none}}
+
+/* JUUNIBI Disk: responsive two-pane folder explorer. */
+.disk-catalog{display:grid;grid-template-columns:minmax(190px,255px) minmax(0,1fr);gap:16px;align-items:start;margin-top:14px}
+.disk-catalog-content{min-width:0}
+.disk-tree{border:1px solid var(--line,rgba(155,140,112,.25));border-radius:16px;padding:10px;background:var(--card,rgba(127,127,127,.055));max-height:min(75vh,780px);overflow:auto;position:sticky;top:12px}
+.disk-tree-heading{display:flex;justify-content:space-between;align-items:center;padding:9px 10px 13px;gap:8px}
+.disk-tree-heading small{opacity:.65}
+.disk-tree-line{display:flex;align-items:center;gap:2px;min-height:37px;border-radius:10px}
+.disk-tree-line.is-current{background:var(--accent-soft,rgba(207,167,93,.17))}
+.disk-tree-toggle{flex:0 0 24px;border:0;background:transparent;color:inherit;opacity:.72;cursor:pointer;min-height:30px;border-radius:7px}
+.disk-tree-toggle:disabled{cursor:default;opacity:.25}
+.disk-tree-select{min-width:0;display:flex;align-items:center;gap:8px;flex:1;border:0;background:transparent;color:inherit;text-align:left;border-radius:8px;cursor:pointer;padding:7px 6px;font:inherit;font-size:13px}
+.disk-tree-select>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.disk-tree-select>small{opacity:.55;font-variant-numeric:tabular-nums}
+.disk-tree-line:hover{background:var(--accent-soft,rgba(207,167,93,.10))}
+.disk-tree button:focus-visible{outline:2px solid var(--accent,#c3a5fc);outline-offset:1px}
+.disk-tree>.mem-btn{display:block;width:100%;text-align:left;margin-top:8px}
+@media(max-width:800px){.disk-catalog{grid-template-columns:minmax(0,1fr)}.disk-tree{position:static;max-height:270px}.disk-tree-heading{padding:4px 7px 8px}}
+@media(prefers-reduced-motion:reduce){.disk-tree *{transition:none!important;animation:none!important}}
+
+
+/* Disk tree action menu and metadata inspector */
+.disk-tree-line .disk-folder-menu{border:0;background:transparent;color:inherit;padding:2px 8px;border-radius:7px;opacity:.55;cursor:pointer}
+.disk-tree-line:hover .disk-folder-menu,.disk-folder-menu:focus-visible{opacity:1}
+.disk-tree-line.disk-tree-drop{outline:2px dashed var(--accent,#c3a5fc);background:rgba(180,145,80,.15)}
+.disk-file[draggable=true]{cursor:grab}
+.disk-file[draggable=true]:active{cursor:grabbing}
+.disk-file-details{margin-top:12px;border:1px solid var(--line,rgba(155,140,112,.25));border-radius:12px;padding:12px;overflow-wrap:anywhere}
+.disk-file-details:empty{display:none}
+.disk-file-details p{margin:6px 0;font-size:13px}
+.disk-file-details small{opacity:.7}
+
+
+/* Disk inline folder menu: no browser prompt, keyboard-accessible disclosure. */
+.disk-folder-actions{position:relative;flex:0 0 auto}
+.disk-folder-actions>summary{list-style:none;cursor:pointer;padding:5px 9px;border-radius:8px}
+.disk-folder-actions>summary::-webkit-details-marker{display:none}
+.disk-folder-actions[open]>summary{background:rgba(185,150,88,.16)}
+.disk-folder-popover{position:absolute;z-index:25;right:0;top:100%;width:min(260px,75vw);padding:12px;display:grid;gap:8px;border:1px solid var(--line,rgba(155,140,112,.3));border-radius:14px;background:var(--card,#27252d);box-shadow:0 14px 40px rgba(0,0,0,.22)}
+.disk-folder-popover .mem-btn{width:100%;text-align:left}
+.disk-folder-feedback{color:var(--danger,#ef9696)}
+.disk-tree-node{position:relative}
+.disk-tree-line{position:relative}
+.disk-tree-select svg{flex-shrink:0}
+.disk-folder-actions:focus-within{z-index:30}
+@media(max-width:800px){.disk-folder-popover{right:0}}

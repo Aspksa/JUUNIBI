@@ -71,4 +71,52 @@ describe("Local Disk",()=>{
    await expect(disk.upload("x.txt","","!!!")).rejects.toMatchObject({status:413});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
+ it("supports nested folders, raw byte uploads and verified local text search",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-nested-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Проекты");
+     await disk.createFolder("Проекты/JUUNIBI");
+     await expect(disk.createFolder("Нет/Вложение")).rejects.toMatchObject({status:404});
+     const uploaded=await disk.uploadBytes("readme.md","Проекты/JUUNIBI",Buffer.from("Мозг JUUNIBI использует память"));
+     const binary=await disk.uploadStream("image.png","Проекты/JUUNIBI",(async function*(){yield Buffer.from([1,2]);yield Buffer.from([3,4]);})());
+     expect(disk.list("Проекты/JUUNIBI").files).toHaveLength(2);
+     expect(await disk.searchContent("память")).toEqual([uploaded.id]);
+     expect(await disk.searchContent("несуществующий")).toEqual([]);
+     expect(Buffer.from((await disk.download(binary.id)).base64,"base64")).toEqual(Buffer.from([1,2,3,4]));
+     const fresh=new LocalDisk(dir);await fresh.load();
+     expect(fresh.list("Проекты/JUUNIBI").files).toHaveLength(2);
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
+ it("renames a nested folder and updates file paths without losing bytes",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-rename-"));
+   try {
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Проекты");
+     await disk.createFolder("Проекты/Старое");
+     const e=await disk.upload("note.txt","Проекты/Старое",Buffer.from("data").toString("base64"));
+     await disk.renameFolder("Проекты/Старое","Проекты/Новое");
+     expect(disk.list("Проекты/Новое").files[0]?.id).toBe(e.id);
+     expect(Buffer.from((await disk.download(e.id)).base64,"base64").toString()).toBe("data");
+     await expect(disk.renameFolder("Проекты","Проекты/Новое/Сломано")).rejects.toMatchObject({status:400});
+   } finally {await rm(dir,{recursive:true,force:true});}
+ });
+
+ it("tracks exact duplicates, metadata and detects corrupt objects",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-audit-"));
+   try{
+     const disk=new LocalDisk(dir);
+     const a=await disk.uploadBytes("one.txt","",Buffer.from("same"));
+     const b=await disk.uploadBytes("two.txt","",Buffer.from("same"));
+     expect(disk.duplicates()).toHaveLength(1);
+     expect(disk.duplicates()[0]?.map(x=>x.id)).toEqual([a.id,b.id]);
+     await disk.setMetadata(a.id,{tags:["личное","важное"],color:"#abcdef",note:"Запись"});
+     expect(disk.list().files.find(x=>x.id===a.id)?.tags).toEqual(["личное","важное"]);
+     expect(disk.snapshot().folders).toEqual([]);
+     expect((await disk.audit()).ok).toBe(2);
+     await expect(disk.setMetadata(a.id,{color:"red"})).rejects.toMatchObject({status:400});
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });

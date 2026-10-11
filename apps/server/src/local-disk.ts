@@ -1,14 +1,14 @@
 import { diskChronicles } from "./disk-chronicles";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
-export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string };
-const LIMIT = 10 * 1024 * 1024;
+export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string };
+const LIMIT = 50 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
-  if (typeof name!=="string" || name.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]*$/.test(name) || name==="." || name===".." || name.includes("..")) throw bad("Имя папки: до 80 букв или цифр, без пути");
+  if (typeof name!=="string" || name.length>240 || (name!=="" && name.split("/").some(part=>!part || part.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]+$/.test(part) || part==="." || part==="..")) || name.includes("\\")) throw bad("Имя папки: до 80 букв или цифр, без пути");
   return name.trim();
 };
 const validName = (v:unknown) => {
@@ -48,15 +48,88 @@ export class LocalDisk {
     const f=validFolder(name);
     if(!f)throw bad("Укажите название папки");
     if(this.folders.includes(f))throw bad("Такая папка уже есть",409);
+    const parent=f.includes("/")?f.slice(0,f.lastIndexOf("/")):"";
+    if(parent&&!this.folders.includes(parent))throw bad("Сначала создайте родительскую папку",404);
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
     this.folders.push(f);await this.save();return {name:f};
+  }
+  async renameFolder(oldName:unknown,newName:unknown){
+    const from=validFolder(oldName),to=validFolder(newName);
+    if(!from||!to||!this.folders.includes(from))throw bad("Папка не найдена",404);
+    if(from===to)return {name:from};
+    if(to.startsWith(from+"/"))throw bad("Нельзя перенести папку внутрь себя");
+    const parent=to.includes("/")?to.slice(0,to.lastIndexOf("/")):"";
+    if(parent&&!this.folders.includes(parent))throw bad("Родительская папка не найдена",404);
+    const affected=this.folders.filter(f=>f===from||f.startsWith(from+"/"));
+    const renamed=(f:string)=>to+f.slice(from.length);
+    if(this.folders.some(f=>!affected.includes(f)&&affected.some(a=>renamed(a)===f)))throw bad("Папка с таким именем уже существует",409);
+    this.folders=this.folders.map(f=>affected.includes(f)?renamed(f):f);
+    for(const entry of this.entries)if(entry.folder===from||entry.folder.startsWith(from+"/"))entry.folder=renamed(entry.folder);
+    await this.save();return {name:to};
   }
   async upload(name:unknown,folder:unknown,data:unknown){
     const filename=validName(name), f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
-    if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит 10 МБ",413);
+    if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит 50 МБ",413);
     const buf=Buffer.from(data,"base64");
     if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 10 МБ",413);
+    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    const entry:DiskEntry={id:randomUUID(),name:filename,folder:f,size:buf.length,uploadedAt:new Date().toISOString(),sha256:createHash("sha256").update(buf).digest("hex")};
+    await mkdir(path.join(this.root,"objects"),{recursive:true});
+    await writeFile(this.file(entry.id),buf,{flag:"wx",mode:0o600});
+    this.entries.push(entry);
+    try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==entry.id);await rm(this.file(entry.id),{force:true});throw e;}
+    return {...entry};
+  }
+  /** Search small text documents on disk; never sends their contents to a model. */
+  async searchContent(query:string):Promise<string[]>{
+    const q=query.trim().toLocaleLowerCase();
+    if(q.length<2||q.length>160)throw bad("Поиск: от 2 до 160 символов");
+    const ids:string[]=[];
+    for(const entry of this.entries){
+      if(entry.deletedAt || !/\.(txt|md|csv|json|log|ts|tsx|js|mjs|css|html)$/i.test(entry.name) || entry.size>1024*1024)continue;
+      try {
+        const buf=await readFile(this.file(entry.id));
+        if(createHash("sha256").update(buf).digest("hex")===entry.sha256 && buf.toString("utf8").toLocaleLowerCase().includes(q))ids.push(entry.id);
+      } catch { /* An unreadable file is never reported as a match. */ }
+    }
+    return ids;
+  }
+  /** Bounded streaming write: bytes are never assembled into one large request buffer. */
+  async uploadStream(name:unknown,folder:unknown,stream:AsyncIterable<Buffer>){
+    const filename=validName(name),f=validFolder(folder);
+    if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
+    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    await mkdir(path.join(this.root,"objects"),{recursive:true});
+    const id=randomUUID(),temp=this.file(id)+".part";
+    const handle=await open(temp,"wx",0o600);
+    let size=0;const hash=createHash("sha256");
+    try{
+      for await(const chunk of stream){
+        size+=chunk.length;
+        if(size>LIMIT)throw bad("Файл превышает 50 МБ",413);
+        hash.update(chunk);
+        let offset=0;
+        while(offset<chunk.length){
+          const written=await handle.write(chunk,offset,chunk.length-offset,null);
+          if(!written.bytesWritten)throw new Error("Запись файла прервана");
+          offset+=written.bytesWritten;
+        }
+      }
+      if(!size)throw bad("Пустой файл",413);
+    }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
+    await handle.close();
+    await rename(temp,this.file(id));
+    const entry:DiskEntry={id,name:filename,folder:f,size,uploadedAt:new Date().toISOString(),sha256:hash.digest("hex")};
+    this.entries.push(entry);
+    try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==id);await rm(this.file(id),{force:true});throw e;}
+    return {...entry};
+  }
+  /** Binary upload path shared by the streaming endpoint. */
+  async uploadBytes(name:unknown,folder:unknown,buf:Buffer){
+    const filename=validName(name),f=validFolder(folder);
+    if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
+    if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 50 МБ",413);
     if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
     const entry:DiskEntry={id:randomUUID(),name:filename,folder:f,size:buf.length,uploadedAt:new Date().toISOString(),sha256:createHash("sha256").update(buf).digest("hex")};
     await mkdir(path.join(this.root,"objects"),{recursive:true});
@@ -72,6 +145,45 @@ export class LocalDisk {
     if(createHash("sha256").update(data).digest("hex")!==entry.sha256)throw bad("Файл повреждён: контрольная сумма не совпадает",409);
     return {entry:{...entry},base64:data.toString("base64")};
   }
+  /** Local integrity audit: file size and SHA-256 are checked without cloud transfer. */
+  async audit(){
+    const results:{id:string;name:string;status:"ok"|"missing"|"corrupt"}[]=[];
+    for(const e of this.entries){
+      try{
+        const bytes=await readFile(this.file(e.id));
+        const valid=bytes.length===e.size&&createHash("sha256").update(bytes).digest("hex")===e.sha256;
+        results.push({id:e.id,name:e.name,status:valid?"ok":"corrupt"});
+      }catch{results.push({id:e.id,name:e.name,status:"missing"});}
+    }
+    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results};
+  }
+  duplicates(){
+    const groups=new Map<string,DiskEntry[]>();
+    for(const e of this.entries.filter(x=>!x.deletedAt)){
+      const key=e.sha256+":"+e.size,group=groups.get(key)??[];
+      group.push({...e});groups.set(key,group);
+    }
+    return [...groups.values()].filter(group=>group.length>1);
+  }
+  async setMetadata(id:string,input:{tags?:unknown;color?:unknown;note?:unknown}){
+    const e=this.entries.find(x=>x.id===id&&!x.deletedAt);
+    if(!e)throw bad("Файл не найден",404);
+    if(input.tags!==undefined){
+      if(!Array.isArray(input.tags)||input.tags.length>12||input.tags.some(t=>typeof t!=="string"||t.length>32||!t.trim()))throw bad("Не более 12 тегов по 32 символа");
+      e.tags=[...new Set((input.tags as string[]).map(t=>t.trim()))];
+    }
+    if(input.color!==undefined){
+      if(typeof input.color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(input.color))throw bad("Недопустимый цвет");
+      e.color=input.color;
+    }
+    if(input.note!==undefined){
+      if(typeof input.note!=="string"||input.note.length>2000)throw bad("Описание слишком длинное");
+      e.note=input.note;
+    }
+    await this.save();return {...e};
+  }
+  /** Export an explicit snapshot of metadata; bytes are not included. */
+  snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);

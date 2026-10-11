@@ -160,13 +160,18 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string}
+export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string}
 export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:string;title:string;value:string;ready:boolean;reason?:string}[];summary:{files:number;bytes:number;folders:number;ready:number;total:number}}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
+  diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[]}>("/api/disk/audit")),
+  diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),
+  diskSnapshot: () => attemptAsync(()=>call<{exportedAt:string;files:DiskFile[];folders:string[]}>("/api/disk/snapshot")),
+  diskMetadata: (id:string,tags:string[],color:string,note:string) => attemptAsync(()=>call<DiskFile>("/api/disk/metadata",post({id,tags,color,note}))),
   diskList: (folder?:string) => attemptAsync(()=>call<DiskListing>("/api/disk"+(folder!==undefined?"?folder="+encodeURIComponent(folder):""))),
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
+  diskRenameFolder: (from:string,to:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/rename",post({from,to}))),
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
   diskGet: (id:string) => attemptAsync(()=>call<{entry:DiskFile;base64:string}>("/api/disk/files/"+encodeURIComponent(id))),
   diskRename: (id:string,name:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({name})})),
