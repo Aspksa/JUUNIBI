@@ -147,4 +147,24 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("copies verified bytes and persists undo across reload",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-fileops-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Работа");
+     const a=await disk.uploadBytes("original.txt","",Buffer.from("safe-copy"));
+     const b=await disk.copyFile(a.id,"Работа");
+     expect(b.id).not.toBe(a.id);
+     expect(Buffer.from((await disk.download(b.id)).base64,"base64").toString()).toBe("safe-copy");
+     await disk.renameFile(a.id,"renamed.txt");
+     await disk.moveFile(a.id,"Работа");
+     const loaded=new LocalDisk(dir);await loaded.load();
+     expect(loaded.fileHistory()).toHaveLength(2);
+     await loaded.undoFileChange();
+     expect(loaded.list("").files.some(x=>x.id===a.id&&x.name==="renamed.txt")).toBe(true);
+     await loaded.undoFileChange();
+     expect(loaded.list("").files.some(x=>x.id===a.id&&x.name==="original.txt")).toBe(true);
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
