@@ -365,6 +365,7 @@ export class BrainCore {
         (action === "list_modules" && !Array.isArray(result)) ||
         (action === "search_memory" && (!Array.isArray(result) || !result.every(x => typeof x === "string"))))
         throw new Error("Инструмент не вернул проверяемый результат");
+      if (serialized.length > 65_536) throw new Error("Результат инструмента превышает безопасный лимит 64 КиБ");
       const summary = serialized.slice(0, 2000);
       this.updateStep(planId, stepId, "done");
       this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "verified: " + action + ": " + summary });
