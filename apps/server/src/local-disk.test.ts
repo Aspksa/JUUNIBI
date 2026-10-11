@@ -119,4 +119,24 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("copies, moves, styles and trashes nested folder branches",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-tree12-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Главная");await disk.createFolder("Главная/Внутри");
+     const a=await disk.uploadBytes("hello.txt","Главная/Внутри",Buffer.from("hello"));
+     await disk.setFolderStyle("Главная","#abcdef",true,"Обложка");
+     expect(disk.folderDecorations()["Главная"]?.pinned).toBe(true);
+     const cp=await disk.copyFolder("Главная","");
+     expect(cp.files).toBe(1);
+     expect(disk.list("Главная - копия/Внутри").files).toHaveLength(1);
+     await disk.moveFolder("Главная - копия","Главная/Внутри");
+     expect(disk.list("Главная/Внутри/Главная - копия/Внутри").files).toHaveLength(1);
+     const removed=await disk.trashFolder("Главная/Внутри/Главная - копия");
+     expect(removed.files).toBe(1);
+     expect(disk.list().trash).toHaveLength(1);
+     expect(Buffer.from((await disk.download(a.id)).base64,"base64").toString()).toBe("hello");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
