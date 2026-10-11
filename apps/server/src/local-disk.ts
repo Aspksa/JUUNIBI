@@ -1,5 +1,5 @@
 import { diskChronicles } from "./disk-chronicles";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
@@ -80,6 +80,36 @@ export class LocalDisk {
       } catch { /* An unreadable file is never reported as a match. */ }
     }
     return ids;
+  }
+  /** Bounded streaming write: bytes are never assembled into one large request buffer. */
+  async uploadStream(name:unknown,folder:unknown,stream:AsyncIterable<Buffer>){
+    const filename=validName(name),f=validFolder(folder);
+    if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
+    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    await mkdir(path.join(this.root,"objects"),{recursive:true});
+    const id=randomUUID(),temp=this.file(id)+".part";
+    const handle=await open(temp,"wx",0o600);
+    let size=0;const hash=createHash("sha256");
+    try{
+      for await(const chunk of stream){
+        size+=chunk.length;
+        if(size>LIMIT)throw bad("Файл превышает 50 МБ",413);
+        hash.update(chunk);
+        let offset=0;
+        while(offset<chunk.length){
+          const written=await handle.write(chunk,offset,chunk.length-offset,null);
+          if(!written.bytesWritten)throw new Error("Запись файла прервана");
+          offset+=written.bytesWritten;
+        }
+      }
+      if(!size)throw bad("Пустой файл",413);
+    }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
+    await handle.close();
+    await rename(temp,this.file(id));
+    const entry:DiskEntry={id,name:filename,folder:f,size,uploadedAt:new Date().toISOString(),sha256:hash.digest("hex")};
+    this.entries.push(entry);
+    try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==id);await rm(this.file(id),{force:true});throw e;}
+    return {...entry};
   }
   /** Binary upload path shared by the streaming endpoint. */
   async uploadBytes(name:unknown,folder:unknown,buf:Buffer){
