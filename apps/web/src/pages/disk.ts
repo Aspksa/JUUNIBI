@@ -32,7 +32,8 @@ export function diskPage():HTMLElement {
   const tree=el("nav",{cls:"disk-tree",attrs:{"aria-label":"Дерево папок"}});
   const treeExpanded=new Set<string>([""]);
   let folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
-  let folderSort:"name"|"files"|"pinned"="pinned";
+  let folderSort:"name"|"files"|"size"|"pinned"="pinned";
+  let virtualFilter:"none"|"images"|"documents"|"large"="none";
   let folderQuery="";
   let treeHidden=false;
   const details=el("aside",{cls:"disk-file-details",attrs:{"aria-label":"Сведения о файле"}});
@@ -56,7 +57,7 @@ export function diskPage():HTMLElement {
   const bulkBar=el("div",{cls:"disk-bulk-bar"});
   let firstPaint=true;
   const setBusy=(busy:boolean)=>{drop.classList.toggle("disk-is-busy",busy);drop.setAttribute("aria-busy",String(busy));};
-  const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>viewFilter!=="favorites"||f.favorite);
+  const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>(viewFilter!=="favorites"||f.favorite)&&(virtualFilter==="none"||virtualFilter==="large"&&f.size>5*1024*1024||virtualFilter==="images"&&/\\.(png|jpe?g|webp|gif)$/i.test(f.name)||virtualFilter==="documents"&&/\\.(pdf|docx?|xlsx?|txt|md)$/i.test(f.name)));
   /** Animate only after a successful mutation; reduced-motion skips the transition. */
   const exitFile=async(id:string)=>{
     const node=[...files.querySelectorAll<HTMLElement>(".disk-file")].find(card=>card.dataset.fileId===id);
@@ -300,19 +301,20 @@ export function diskPage():HTMLElement {
   };
   const renderTree=()=>{
     const counts=new Map<string,number>();
+    const bytes=new Map<string,number>();
     for(const file of treeFiles){
       let p=file.folder;
-      counts.set("",(counts.get("")??0)+1);
-      while(p){counts.set(p,(counts.get(p)??0)+1);p=p.includes("/")?p.slice(0,p.lastIndexOf("/")):"";}
+      counts.set("",(counts.get("")??0)+1);bytes.set("",(bytes.get("")??0)+file.size);
+      while(p){counts.set(p,(counts.get(p)??0)+1);bytes.set(p,(bytes.get(p)??0)+file.size);p=p.includes("/")?p.slice(0,p.lastIndexOf("/")):"";}
     }
     const children=new Map<string,string[]>();
     for(const full of allFolders){
       const parent=full.includes("/")?full.slice(0,full.lastIndexOf("/")):"";
       const list=children.get(parent)??[];list.push(full);children.set(parent,list);
     }
-    for(const list of children.values())list.sort((a,b)=>folderSort==="files"?(counts.get(b)??0)-(counts.get(a)??0):folderSort==="pinned"?Number(!!folderStyles[b]?.pinned)-Number(!!folderStyles[a]?.pinned)||a.localeCompare(b,"ru"):a.localeCompare(b,"ru"));
+    for(const list of children.values())list.sort((a,b)=>folderSort==="files"?(counts.get(b)??0)-(counts.get(a)??0):folderSort==="size"?(bytes.get(b)??0)-(bytes.get(a)??0):folderSort==="pinned"?Number(!!folderStyles[b]?.pinned)-Number(!!folderStyles[a]?.pinned)||a.localeCompare(b,"ru"):a.localeCompare(b,"ru"));
     const openFolder=(folder:string)=>{
-      current=folder;viewFilter="all";selected.clear();visibleLimit=100;
+      current=folder;viewFilter="all";virtualFilter="none";selected.clear();visibleLimit=100;
       for(let p=folder;p.includes("/");p=p.slice(0,p.lastIndexOf("/")))treeExpanded.add(p.slice(0,p.lastIndexOf("/")));
       void refresh();
     };
@@ -330,6 +332,11 @@ export function diskPage():HTMLElement {
       if(folderStyles[folder]?.color)select.style.color=folderStyles[folder]!.color;
       if(folderStyles[folder]?.cover)select.title="Обложка: "+folderStyles[folder]!.cover;
       select.addEventListener("click",()=>openFolder(folder));
+      select.addEventListener("keydown",e=>{
+        if(e.key==="ArrowRight"){e.preventDefault();treeExpanded.add(folder);renderTree();}
+        if(e.key==="ArrowLeft"){e.preventDefault();treeExpanded.delete(folder);renderTree();}
+        if(e.key==="F2"&&folder){e.preventDefault();const menu=line.querySelector<HTMLDetailsElement>(".disk-folder-actions");if(menu){menu.open=true;menu.querySelector<HTMLInputElement>("input")?.focus();}}
+      });
       if(folder){
         const menu=el("details",{cls:"disk-folder-actions"});
         const summary=el("summary",{cls:"disk-folder-menu",textContent:"⋯",attrs:{"aria-label":"Действия с папкой "+label}});
@@ -400,13 +407,14 @@ export function diskPage():HTMLElement {
       return node;
     };
     const filter=el("input",{type:"search",cls:"mem-input",placeholder:"Найти папку",value:folderQuery});
-    filter.addEventListener("input",()=>{folderQuery=filter.value;renderTree();});
-    const sort=el("select",{cls:"mem-select"},...(["pinned","name","files"] as const).map(v=>el("option",{value:v,textContent:v==="name"?"По имени":v==="files"?"По файлам":"Закреплённые"})));
+    filter.addEventListener("input",()=>{const position=filter.selectionStart;folderQuery=filter.value;renderTree();const next=tree.querySelector<HTMLInputElement>("input[type=search]");next?.focus();if(position!==null)next?.setSelectionRange(position,position);});
+    const sort=el("select",{cls:"mem-select"},...(["pinned","name","files","size"] as const).map(v=>el("option",{value:v,textContent:v==="name"?"По имени":v==="files"?"По файлам":v==="size"?"По размеру":"Закреплённые"})));
     sort.value=folderSort;sort.addEventListener("change",()=>{folderSort=sort.value as typeof folderSort;renderTree();});
     tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),filter,sort,
       draw("",0),
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
-      button("Корзина · "+trash.length,()=>{viewFilter="trash";current="";void refresh();}),
+      button("Корзина · "+trash.length,()=>{viewFilter="trash";virtualFilter="none";current="";void refresh();}),
+      ...([["images","Изображения"],["documents","Документы"],["large","Крупные файлы"]] as const).map(([kind,title])=>button("◇ "+title,()=>{virtualFilter=kind;viewFilter="all";allSearch.checked=true;current="";void refresh();})),
       button("Удалённые папки",async()=>{
         const r=await api.diskDeletedFolders();if(!r.ok){showToast(r.error.message);return;}
         const dialog=el("dialog",{cls:"disk-preview"});
