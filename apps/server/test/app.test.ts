@@ -149,3 +149,21 @@ describe("Brain Next diagnostics API", () => {
     } finally { srv.close(); }
   });
 });
+
+describe("Brain recovery preview HTTP", () => {
+  it("reports recovery without executing tool adapters", async () => {
+    const brain = new BrainCore(() => true);
+    let calls = 0;
+    const srv = createApp({brain,modules:()=>{calls++;return [];},configured:{model:"m"}});
+    const url = `http://127.0.0.1:${await start(srv)}`;
+    try {
+      const plan = brain.plan("prepare",["modules"]);
+      const response = await post(url,"/api/brain/recovery-preview",{planId:plan.id});
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({proposedAction:null,readyForContinuation:true,requiresExplicitApproval:true});
+      expect(calls).toBe(0);
+      expect((await post(url,"/api/brain/recovery-preview",{planId:""})).status).toBe(400);
+      expect((await post(url,"/api/brain/recovery-preview",{planId:"missing"})).status).toBe(404);
+    } finally {srv.close();}
+  });
+});

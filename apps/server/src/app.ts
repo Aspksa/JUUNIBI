@@ -669,6 +669,13 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "GET" && p === "/api/brain/tool-outcomes") return send(res, deps.brain ? 200 : 503, deps.brain?.toolOutcomeHistory() ?? { error: "Мозг недоступен" });
         if (req.method === "GET" && p === "/api/brain/evaluation")
           return send(res, deps.brain ? 200 : 503, deps.brain?.brainEvaluation() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/recovery-preview") {
+          if (!deps.brain) return send(res, 503, {error:"Мозг недоступен"});
+          const b = await readJson(req);
+          if (typeof b.planId !== "string" || !b.planId.trim())
+            return send(res, 400, {error:"Укажите план"});
+          return send(res, 200, deps.brain.recoveryPreview(b.planId));
+        }
         if (req.method === "POST" && p === "/api/brain/readiness") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const b = await readJson(req);
