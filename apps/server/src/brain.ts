@@ -48,6 +48,8 @@ export class BrainCore {
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   recallExperience(query: string) { return recallConfirmedExperience(this.decisions.snapshot(), query); }
+  searchConfirmedExperience(query: unknown, taskType?: unknown, limit: unknown = 5) { return this.decisions.searchConfirmed(query, taskType, limit); }
+  toolRegistry() { return { tools: [{name:"list_modules",risk:"read",requiresExplicitExecution:true},{name:"search_memory",risk:"read",requiresExplicitExecution:true}], writeEnabled:false, arbitraryToolsEnabled:false } as const; }
   reviewSixCognitiveSkills(input: CognitiveInput) { return reviewSixSkills(input); }
   /** Ground six cognitive checks in saved plan steps and observed tool outcomes.
    * This is an inspection, not a claim of causal proof or permission to act.
