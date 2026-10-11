@@ -1731,3 +1731,19 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 @media(max-width:830px){.disk-hero{grid-template-columns:1fr;gap:22px}.disk-hero-intro h2{max-width:none}.disk-summary-cell{min-height:112px}}
 @media(max-width:430px){.disk-hero{padding:18px;border-radius:20px}.disk-summary{gap:6px}.disk-summary-cell{padding:10px;min-height:105px;border-radius:12px}.disk-summary-number{font-size:17px}.disk-summary-label{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.disk-summary-cell,.disk-file,.disk-drop,.disk-chronicles .disk-stats-tile{transition:none!important}.disk-summary-cell:hover,.disk-chronicles .disk-stats-tile:hover{transform:none}}
+
+/* Disk 3.4 — compositor-friendly motion, deliberately capped to first 16 cards. */
+@keyframes disk-enter{from{opacity:0;transform:translate3d(0,12px,0) scale(.985)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+@keyframes disk-dialog-enter{from{opacity:0;transform:translate3d(0,15px,0) scale(.98)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
+@keyframes disk-busy{to{transform:rotate(360deg)}}
+.disk-file.disk-reveal{animation:disk-enter .38s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--disk-order,0)*24ms)}
+.disk-file.disk-selected{box-shadow:inset 0 0 0 1px var(--accent,#9e83e0);background:var(--surface-2,rgba(135,110,230,.12))}
+.disk-file input[type=checkbox]{transition:transform .18s ease}
+.disk-file input[type=checkbox]:checked{transform:scale(1.1)}
+.disk-dialog-enter{animation:disk-dialog-enter .26s cubic-bezier(.2,.7,.2,1) both}
+.disk-drop.disk-is-busy{pointer-events:none;opacity:.7}
+.disk-drop.disk-is-busy .disk-glyph,.disk-drop.disk-is-busy>svg{animation:disk-busy 1s linear infinite}
+.disk-bulk-bar:not([hidden]){animation:disk-dialog-enter .2s ease-out both}
+.disk-chronicles .disk-stats-group>summary:hover{color:#f7dbad}
+.disk-chronicles .disk-stats-group>summary:focus-visible{outline:2px solid #e8c690;outline-offset:-3px}
+@media(prefers-reduced-motion:reduce){.disk-file.disk-reveal,.disk-dialog-enter,.disk-bulk-bar:not([hidden]),.disk-drop.disk-is-busy .disk-glyph,.disk-drop.disk-is-busy>svg{animation:none!important}.disk-file input[type=checkbox]{transition:none}}
