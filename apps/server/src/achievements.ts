@@ -787,7 +787,7 @@ export class Achievements {
       const raw = JSON.parse(await readFile(this.file, "utf8")) as Partial<StoreData>;
       const d = blank();
       if (raw.awards && typeof raw.awards === "object") for (const [k, v] of Object.entries(raw.awards)) if (v && Number.isInteger(v.level) && v.level >= 0 && v.level <= 4 && typeof v.firstAt === "string") d.awards[k] = { level: v.level, firstAt: v.firstAt, lastAt: typeof v.lastAt === "string" ? v.lastAt : v.firstAt, history: Array.isArray(v.history) ? v.history.filter((h) => h && Number.isInteger(h.level) && typeof h.at === "string").slice(-12) : [], ...(Array.isArray(v.periods) ? { periods: v.periods.filter((p): p is string => typeof p === "string").slice(-60) } : {}) };
-      if (raw.records && typeof raw.records === "object") for (const [k, v] of Object.entries(raw.records)) if (Array.isArray(v)) d.records[k] = v.filter((r) => r && typeof r.value === "number" && typeof r.at === "string" && typeof r.label === "string").slice(-MAX_RECORDS);
+      if (raw.records && typeof raw.records === "object") for (const [k, v] of Object.entries(raw.records)) if (Array.isArray(v)) { const valid = v.filter((r) => r && Number.isFinite(r.value) && typeof r.at === "string" && Number.isFinite(Date.parse(r.at)) && typeof r.label === "string"); if (valid.length) d.records[k] = valid.slice(-MAX_RECORDS); }
       if (Array.isArray(raw.notices)) d.notices = raw.notices.filter((n) => n && typeof n.id === "string" && typeof n.text === "string" && typeof n.at === "string").slice(-MAX_NOTICES);
       if (Array.isArray(raw.phrasesUsed)) d.phrasesUsed = raw.phrasesUsed.filter((x): x is string => typeof x === "string").slice(-200);
       if (typeof raw.title === "string") d.title = raw.title;
@@ -815,7 +815,7 @@ export class Achievements {
 
   private input(): Input {
     const now = this.now();
-    const recordsThisWeek = Object.values(this.data.records).flat().filter((r) => !r.first && now - Date.parse(r.at) < 7 * DAY).length;
+    const recordsThisWeek = Object.values(this.data.records).flat().filter((r) => !r.first && Date.parse(r.at) <= now && now - Date.parse(r.at) < 7 * DAY).length;
     const cat = new Map(awardCatalog().map((a) => [a.id, a.title]));
     const awardsInBook = Object.entries(this.data.awards).filter(([, s]) => s.level > 0).map(([id, s]) => ({ title: cat.get(id) ?? id, at: s.firstAt })).sort((a, b) => a.at.localeCompare(b.at));
     return { ...this.source(), recordsThisWeek, awardsInBook, ...(this.data.first ? { first: this.data.first } : {}) };
