@@ -31,7 +31,7 @@ describe("menu prefs", () => {
   });
   it("drag and drop places before a target of the same group, or last", () => {
     const p = cleanPrefs(null);
-    expect(arrange(placeBefore(p, "settings", "mobile"))[2]!.items.map((n) => n.id)).toEqual(["settings", "fox-network", "mobile", "update"]);
+    expect(arrange(placeBefore(p, "settings", "mobile"))[2]!.items.map((n) => n.id)).toEqual(["fox-network", "settings", "mobile", "update"]);
     expect(arrange(placeBefore(p, "mobile", null))[2]!.items.map((n) => n.id)).toEqual(["fox-network", "update", "settings", "mobile"]);
     expect(placeBefore(p, "mobile", "chat")).toBe(p); // other group: ignored
   });
