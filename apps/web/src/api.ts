@@ -177,6 +177,8 @@ export const api = {
   diskFolderMove: (from:string,parent:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/move",post({from,parent}))),
   diskFolderCopy: (from:string,parent:string) => attemptAsync(()=>call<{name:string;files:number}>("/api/disk/folders/copy",post({from,parent}))),
   diskFolderTrash: (name:string) => attemptAsync(()=>call<{folder:string;files:number}>("/api/disk/folders/trash",post({name}))),
+  diskDeletedFolders: () => attemptAsync(()=>call<{folders:{root:string;count:number;at:string}[]}>("/api/disk/folders/deleted")),
+  diskFolderRestore: (name:string) => attemptAsync(()=>call<{root:string;files:number}>("/api/disk/folders/restore",post({name}))),
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
   diskGet: (id:string) => attemptAsync(()=>call<{entry:DiskFile;base64:string}>("/api/disk/files/"+encodeURIComponent(id))),
   diskRename: (id:string,name:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({name})})),
