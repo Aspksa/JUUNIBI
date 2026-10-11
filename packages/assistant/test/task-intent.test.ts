@@ -8,6 +8,14 @@ describe("task completion guidance", () => {
     expect(classifyTaskIntent("Проведи проверку компьютера")).toBe("execute");
     expect(classifyTaskIntent("Привет")).toBe("answer");
   });
+  it("routes an explicit vacation record to authorized tools rather than idle dialogue", () => {
+    const request = "запиши Водитель Котов Игорь Александрович отпуск с 12 октября по 23";
+    expect(classifyTaskIntent(request)).toBe("record");
+    expect(taskExecutionInstructions(request)).toMatch(/запись через доступный инструмент/);
+    expect(taskExecutionInstructions(request)).toMatch(/отпуск владельца/);
+    expect(taskExecutionInstructions(request)).toMatch(/подтвердил сохранение/);
+    expect(classifyTaskIntent("Добавь заметку")).toBe("record");
+  });
   it("does not claim a planned check is completed", () => {
     expect(taskExecutionInstructions("Составь план")).toMatch(/не утверждай/);
     expect(taskExecutionInstructions("Проверь модули")).toMatch(/Не останавливайся/);
