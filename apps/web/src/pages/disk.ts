@@ -18,6 +18,12 @@ export function diskPage():HTMLElement {
   let gridMode=localStorage.getItem("juunibi.disk.grid")!=="false";
   const selected=new Set<string>();
   const thumbnailUrls=new Map<string,string>();
+  const pendingThumbnails=new Set<string>();
+  let thumbnailGeneration=0;
+  const MAX_THUMBNAILS=24;
+  const cleanupThumbnails=()=>{for(const url of thumbnailUrls.values())URL.revokeObjectURL(url);thumbnailUrls.clear();};
+  const observer=new MutationObserver(()=>{if(!page.isConnected){thumbnailGeneration++;cleanupThumbnails();observer.disconnect();}});
+  observer.observe(document.body,{childList:true,subtree:true});
   const bulkBar=el("div",{cls:"disk-bulk-bar"});
   const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>viewFilter!=="favorites"||f.favorite);
   const renderBulk=()=>{
@@ -38,17 +44,25 @@ export function diskPage():HTMLElement {
       button("Снять выбор",()=>{selected.clear();renderFiles();}));
   };
   const thumbnails=async(entries:DiskFile[])=>{
-    for(const f of entries.slice(0,12)){
-      if(thumbnailUrls.has(f.id))continue;
-      if(!/\.(png|jpe?g|webp|gif)$/i.test(f.name))continue;
-      const r=await api.diskGet(f.id);
-      if(!r.ok)continue;
-      const bin=atob(r.value.base64);
-      const bytes=Uint8Array.from(bin,c=>c.charCodeAt(0));
-      const url=URL.createObjectURL(new Blob([bytes],{type:"image/"+(f.name.toLowerCase().endsWith(".png")?"png":f.name.toLowerCase().endsWith(".webp")?"webp":f.name.toLowerCase().endsWith(".gif")?"gif":"jpeg")}));
-      thumbnailUrls.set(f.id,url);
-      const img=files.querySelector<HTMLImageElement>('img[data-disk-id="'+f.id+'"]');
-      if(img)img.src=url;
+    const generation=++thumbnailGeneration;
+    const candidates=entries.filter(f=>/\.(png|jpe?g|webp|gif)$/i.test(f.name)).slice(0,12);
+    for(const f of candidates){
+      if(generation!==thumbnailGeneration||!page.isConnected)return;
+      if(thumbnailUrls.has(f.id)){const img=files.querySelector<HTMLImageElement>('img[data-disk-id="'+f.id+'"]');if(img)img.src=thumbnailUrls.get(f.id)!;continue;}
+      if(pendingThumbnails.has(f.id))continue;
+      pendingThumbnails.add(f.id);
+      try{
+        const r=await api.diskGet(f.id);
+        if(!r.ok||generation!==thumbnailGeneration||!page.isConnected)return;
+        const bytes=Uint8Array.from(atob(r.value.base64),c=>c.charCodeAt(0));
+        const ext=f.name.split(".").pop()!.toLowerCase();
+        const mime=ext==="png"?"image/png":ext==="webp"?"image/webp":ext==="gif"?"image/gif":"image/jpeg";
+        const url=URL.createObjectURL(new Blob([bytes],{type:mime}));
+        if(thumbnailUrls.size>=MAX_THUMBNAILS){const first=thumbnailUrls.keys().next().value;if(first){URL.revokeObjectURL(thumbnailUrls.get(first)!);thumbnailUrls.delete(first);}}
+        thumbnailUrls.set(f.id,url);
+        const img=files.querySelector<HTMLImageElement>('img[data-disk-id="'+f.id+'"]');
+        if(img)img.src=url;
+      }finally{pendingThumbnails.delete(f.id);}
     }
   };
   const allSearch=el("input",{type:"checkbox",attrs:{"aria-label":"Искать по всем папкам"}});
@@ -68,20 +82,30 @@ export function diskPage():HTMLElement {
     const summary=el("div",{cls:"disk-chronicles-hero"},el("span",{cls:"disk-chronicles-orbit",textContent:"✦"}),el("div",{},el("small",{textContent:"ЛИЧНАЯ ВСЕЛЕННАЯ ФАЙЛОВ"}),el("strong",{textContent:data.summary.total+" показателей"}),el("span",{textContent:"Подтверждено: "+data.summary.ready+" · Ожидают данных: "+(data.summary.total-data.summary.ready)})));
     const q=el("input",{type:"search",placeholder:"Поиск показателя",cls:"mem-input",attrs:{"aria-label":"Поиск показателя"}});
     const content=el("div",{cls:"disk-stats-groups"});
+    const sections=data.groups.map((g,i)=>({
+      group:g,metrics:data.metrics.slice(i*9,i===10?100:(i+1)*9)
+    }));
     const render=()=>{
       const text=q.value.toLocaleLowerCase().trim();
-      content.replaceChildren(...data.groups.flatMap(g=>{
-        const metrics=data.metrics.filter(m=>g.id==="g10"?Number(m.id.slice(1))>=91:Number(m.id.slice(1))>data.groups.findIndex(x=>x.id===g.id)*9&&Number(m.id.slice(1))<=(data.groups.findIndex(x=>x.id===g.id)+1)*9).filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
-        if(!metrics.length)return [];
+      const nodes=sections.flatMap(({group,metrics})=>{
+        const found=metrics.filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
+        if(!found.length)return [];
         const section=el("details",{cls:"disk-stats-group",open:!!text});
-        section.append(el("summary",{textContent:g.title+" · "+metrics.length}));
-        section.append(el("div",{cls:"disk-stats-tiles"},...metrics.map(m=>{
-          const tile=el("div",{cls:"disk-stats-tile"+(m.ready?" is-ready":" is-pending")});
-          tile.append(el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),el("strong",{textContent:m.value}),el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}));
-          return tile;
-        })));
+        section.append(el("summary",{textContent:group.title+" · "+found.length}));
+        const tiles=el("div",{cls:"disk-stats-tiles"});
+        const draw=()=>{
+          if(tiles.childElementCount)return;
+          tiles.append(...found.map(m=>el("div",{cls:"disk-stats-tile"+(m.ready?" is-ready":" is-pending")},
+            el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),
+            el("strong",{textContent:m.value}),
+            el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}))));
+        };
+        section.addEventListener("toggle",()=>{if(section.open)draw();});
+        if(text)draw();
+        section.append(tiles);
         return [section];
-      }));
+      });
+      content.replaceChildren(...nodes);
     };
     q.addEventListener("input",render);render();
     statistics.replaceChildren(toolbar,summary,q,content);
@@ -114,12 +138,14 @@ export function diskPage():HTMLElement {
   };
   page.append(preview);
   const renderFiles=()=>{
+    thumbnailGeneration++;
     const q=search.value.trim().toLocaleLowerCase();
     const shown=allFiles().filter(f=>!q||f.name.toLocaleLowerCase().includes(q)).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
     files.classList.toggle("disk-grid",gridMode);
     files.classList.toggle("disk-list",!gridMode);
     viewButton.textContent=gridMode?"Вид: плитка":"Вид: список";
-    files.replaceChildren(...(shown.length?shown.map(f=>{
+    const visible=shown.slice(0,100);
+    files.replaceChildren(...(visible.length?visible.map(f=>{
       const name=el("strong",{textContent:f.name});
       const card=el("div",{cls:"disk-file"});
       const choose=el("input",{type:"checkbox",checked:selected.has(f.id),attrs:{"aria-label":"Выбрать "+f.name}});
@@ -176,8 +202,9 @@ export function diskPage():HTMLElement {
       card.append(choose,thumbnail,el("div",{cls:"disk-file-info"},name,el("small",{cls:"muted",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleDateString("ru-RU")})),open,actions);
       return card;
     }):[el("p",{cls:"muted",textContent:q?"Ничего не найдено":"Здесь пока нет файлов."})]));
+    if(shown.length>visible.length)files.append(el("p",{cls:"muted",textContent:"Показаны первые 100 файлов из "+shown.length+". Уточни поиск для остальных."}));
     renderBulk();
-    if(gridMode&&viewFilter!=="trash")void thumbnails(shown);
+    if(gridMode&&viewFilter!=="trash")void thumbnails(visible);
   };
   const refresh=async()=>{
     const r=await api.diskList(viewFilter==="all"&&!allSearch.checked?current:undefined);
