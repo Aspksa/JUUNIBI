@@ -509,6 +509,16 @@ export function diskChronicles(entries:DiskEntry[],folders:string[],now=Date.now
 
 
 
+ set(91,fmt(trash.length));
+ set(92,bytes(size(trash)));
+ set(93,bytes(Math.max(0,...trash.map(e=>e.size))));
+ set(94,size(active)?Math.round(size(favorites)/size(active)*100)+"%":"0%");
+ set(95,fmt(new Set(favorites.map(e=>e.folder).filter(Boolean)).size));
+ set(96,fmt(active.filter(e=>e.size<1024).length));
+ set(97,fmt(active.filter(e=>e.size>=1024&&e.size<=10485760).length));
+ set(98,[...extensions.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0]??"Нет");
+ set(99,fmt(new Set(active.map(e=>e.sha256)).size));
+ set(100,entries.length?Math.round(trash.length/entries.length*100)+"%":"0%");
  const metrics:DiskMetric[]=DISK_GROUPS.flatMap(g=>g.metrics.map(m=>values.has(m.id)?{id:m.id,title:m.title,value:values.get(m.id)!,ready:true}:{id:m.id,title:m.title,value:"—",ready:false,reason:"Нет данных: требуется журнал событий, проверка файлов или анализ содержимого"}));
  return {groups:DISK_GROUPS.map(g=>({id:g.id,title:g.title})),metrics,summary:{files:active.length,bytes:size(entries),folders:folders.length,ready:metrics.filter(m=>m.ready).length,total:metrics.length}};
 }
