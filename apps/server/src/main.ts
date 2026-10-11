@@ -525,11 +525,17 @@ const runLearning = () => {
 };
 const initialLearningTimer = setTimeout(runLearning, 3000);
 const learningTimer = setInterval(runLearning, 10 * 60_000);
+const diskIndexTimer=setInterval(()=>{
+  void documentIntelligence.scan().catch(e=>log.warn("Индекс документов:",e instanceof Error?e.message:"unknown"));
+},30*60_000);
+const diskIndexStart=setTimeout(()=>{
+  void documentIntelligence.scan().catch(e=>log.warn("Первичная индексация документов:",e instanceof Error?e.message:"unknown"));
+},60_000);
 let stopping = false;
 const shutdown = async (exitCode = 0) => {
   if (stopping) return;
   stopping = true;
-  clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close(); void mobile.pause();
+  clearTimeout(diskIndexStart);clearInterval(diskIndexTimer);clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close(); void mobile.pause();
   // Let pending state writes finish so a stop never loses data.
   await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), achievements.flush(), evalHistory.flush(), mobile.flush(), auditQueue,
     // Queued memory suggestions get a short grace period; a stuck model call must not block the stop.
