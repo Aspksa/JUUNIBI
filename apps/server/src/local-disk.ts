@@ -18,7 +18,7 @@ const validName = (v:unknown) => {
 export class LocalDisk {
   private entries:DiskEntry[]=[];
   private folders:string[]=[];
-  private folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+  private folderStyles:Record<string,{color:string;pinned:boolean;cover:string;createdAt?:string}>={};
   private folderActions:{at:string;action:string;folder:string;destination?:string;files?:number}[]=[];
   private logFolder(action:string,folder:string,destination?:string,files?:number){this.folderActions.push({at:new Date().toISOString(),action,folder,...(destination===undefined?{}:{destination}),...(files===undefined?{}:{files})});if(this.folderActions.length>300)this.folderActions.shift();}
   folderHistory(){return [...this.folderActions].reverse();}
@@ -59,7 +59,7 @@ export class LocalDisk {
     const parent=f.includes("/")?f.slice(0,f.lastIndexOf("/")):"";
     if(parent&&!this.folders.includes(parent))throw bad("Сначала создайте родительскую папку",404);
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
-    this.folders.push(f);this.logFolder("create",f);await this.save();return {name:f};
+    this.folders.push(f);this.folderStyles[f]={color:"#b89cff",pinned:false,cover:"",createdAt:new Date().toISOString()};this.logFolder("create",f);await this.save();return {name:f};
   }
   async renameFolder(oldName:unknown,newName:unknown){
     const from=validFolder(oldName),to=validFolder(newName);
@@ -90,7 +90,7 @@ export class LocalDisk {
     if(typeof pinned!=="boolean")throw bad("Неверное значение закрепления");
     if(typeof cover!=="string"||cover.length>100)throw bad("Неверная обложка");
     if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
-    this.folderStyles[folder]={color,pinned,cover};
+    this.folderStyles[folder]={color,pinned,cover,...(this.folderStyles[folder]?.createdAt?{createdAt:this.folderStyles[folder]!.createdAt}:{})};
     this.logFolder("style",folder);await this.save();return {name:folder,...this.folderStyles[folder]};
   }
   folderDecorations(){return {...this.folderStyles};}
@@ -114,6 +114,7 @@ export class LocalDisk {
       }
     }catch(e){for(const id of copied)await rm(this.file(id),{force:true});throw e;}
     this.folders.push(...folders.map(f=>target+f.slice(from.length)));
+    for(const folder of folders)this.folderStyles[target+folder.slice(from.length)]={...(this.folderStyles[folder]??{color:"#b89cff",pinned:false,cover:""}),createdAt:new Date().toISOString()};
     this.entries.push(...entries.map((e,i)=>({...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString()})));
     this.logFolder("copy",from,target,copied.length);await this.save();return {name:target,files:copied.length};
   }
