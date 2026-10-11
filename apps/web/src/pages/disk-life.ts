@@ -252,7 +252,7 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
   const root = el("aside", { cls: "dk-life", attrs: { "aria-label": "Жизнь документов" } });
   const search = el("input", { cls: "dk-life-search", type: "search", placeholder: "Найти показатель…", attrs: { "aria-label": "Поиск показателей" } }) as HTMLInputElement;
   const grid = el("div", { cls: "dk-life-groups" });
-  let insights = new Map<number,{value:string;detail?:string}>();
+  let insights = new Map<number,{value:string;detail:string|undefined}>();
   const insightNote = el("small", {cls:"dk-life-sub",textContent:"Анализ содержания запускается отдельно"});
   const headline = el("small", { cls: "dk-life-sub", textContent: "150 уникальных показателей · только реальные данные" });
   const asMetric = (id: number, files: DiskFile[], folders: string[], trash: DiskFile[]): string | null => {
