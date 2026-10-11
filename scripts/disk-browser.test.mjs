@@ -1,0 +1,50 @@
+import { chromium } from "playwright";
+import { spawn } from "node:child_process";
+import assert from "node:assert/strict";
+
+const port=5189;
+const server=spawn("npm",["run","preview","-w","@juunibi/web","--","--host","127.0.0.1","--port",String(port)],{stdio:"pipe",shell:process.platform==="win32"});
+let browser;
+try{
+  let ready=false;
+  for(let i=0;i<60;i++){
+    if(server.exitCode!==null)throw new Error("Preview server exited");
+    try{const r=await fetch("http://127.0.0.1:"+port);if(r.ok){ready=true;break;}}catch{}
+    await new Promise(r=>setTimeout(r,500));
+  }
+  assert.ok(ready,"Preview server did not start");
+  browser=await chromium.launch({headless:true});
+  const page=await browser.newPage();
+  const folders=["Проекты","Проекты/Документы","Архив"];
+  const entries=[
+    {id:"11111111-1111-4111-8111-111111111111",name:"recent.txt",folder:"Проекты",size:6,uploadedAt:new Date().toISOString(),sha256:"a".repeat(64)},
+    {id:"22222222-2222-4222-8222-222222222222",name:"old.txt",folder:"Архив",size:5,uploadedAt:"2020-01-01T00:00:00.000Z",sha256:"b".repeat(64)}
+  ];
+  await page.route("**/api/disk**",async route=>{
+    const url=new URL(route.request().url()),pathname=url.pathname;
+    let body={};
+    if(pathname==="/api/disk"){
+      const folder=url.searchParams.get("folder");
+      body={folders,files:folder===null?entries:entries.filter(e=>e.folder===folder),trash:[],usedBytes:11,maxFileBytes:52428800};
+    }else if(pathname==="/api/disk/folders/styles")body={"Проекты":{color:"#b89cff",pinned:false,cover:"",createdAt:"2026-10-10T09:00:00.000Z"},"Архив":{color:"#b89cff",pinned:false,cover:"",createdAt:"2026-10-01T09:00:00.000Z"}};
+    else if(pathname==="/api/disk/folders/move")body={name:"Архив/Проекты"};
+    else if(pathname==="/api/disk/chronicles")body={groups:[],metrics:[],summary:{total:0,ready:0,files:2,bytes:11,folders:3}};
+    await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(body)});
+  });
+  await page.goto("http://127.0.0.1:"+port+"/#/disk");
+  const tree=page.locator(".disk-tree");
+  await tree.locator("select").selectOption("created");
+  assert.equal(await tree.locator("select").inputValue(),"created");
+  await tree.getByRole("button",{name:/Недавние/}).click();
+  await page.getByText("recent.txt").first().waitFor();
+  assert.equal(await page.getByText("old.txt").count(),0);
+  await tree.getByRole("button",{name:/Проекты/}).first().click();
+  await tree.locator(".disk-folder-actions").first().locator("summary").click();
+  await tree.getByRole("button",{name:"Переместить папку"}).click();
+  const dialog=page.locator(".disk-destination-dialog");
+  await dialog.waitFor();
+  await dialog.getByRole("button",{name:/Архив/}).click();
+  await dialog.getByRole("button",{name:"Переместить сюда"}).click();
+  await dialog.waitFor({state:"hidden"});
+  console.log("Browser smoke passed: creation sort, recent files, destination picker");
+}finally{await browser?.close();server.kill();}
