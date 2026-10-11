@@ -33,8 +33,8 @@ try{
   });
   await page.goto("http://127.0.0.1:"+port+"/#/disk");
   const tree=page.locator(".disk-tree");
-  await tree.locator("select").selectOption("created");
-  assert.equal(await tree.locator("select").inputValue(),"created");
+  await tree.locator(":scope > select").selectOption("created");
+  assert.equal(await tree.locator(":scope > select").inputValue(),"created");
   await tree.getByRole("button",{name:/Недавние/}).click();
   await page.getByText("recent.txt").first().waitFor();
   assert.equal(await page.getByText("old.txt").count(),0);
