@@ -165,7 +165,7 @@ export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:s
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
-  diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[]}>("/api/disk/audit")),
+  diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[];revisionsChecked?:number;revisionIssues?:{fileId:string;revision:number;status:string}[]}>("/api/disk/audit")),
   diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),
   diskSnapshot: () => attemptAsync(()=>call<{exportedAt:string;files:DiskFile[];folders:string[]}>("/api/disk/snapshot")),
   diskMetadata: (id:string,tags:string[],color:string,note:string) => attemptAsync(()=>call<DiskFile>("/api/disk/metadata",post({id,tags,color,note}))),
