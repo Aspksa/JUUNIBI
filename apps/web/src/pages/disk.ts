@@ -35,7 +35,7 @@ export function diskPage():HTMLElement {
   const searchContents=el("input",{type:"checkbox",attrs:{"aria-label":"Искать внутри текстовых файлов"}});
   const upload=el("input",{type:"file",multiple:true,attrs:{"aria-label":"Выбрать файлы для загрузки"}});
   const newFolder=el("input",{type:"text",cls:"mem-input",maxLength:80,placeholder:"Новая папка",attrs:{"aria-label":"Название новой папки"}});
-  let current="",items:DiskFile[]=[],trash:DiskFile[]=[],allFolders:string[]=[];
+  let current="",items:DiskFile[]=[],trash:DiskFile[]=[],allFolders:string[]=[],treeFiles:DiskFile[]=[];
   let visibleLimit=100;
   let contentIds:Set<string>|null=null;
   let viewFilter:"all"|"favorites"|"trash"="all";
@@ -250,7 +250,7 @@ export function diskPage():HTMLElement {
   };
   const renderTree=()=>{
     const counts=new Map<string,number>();
-    for(const file of items){
+    for(const file of treeFiles){
       let p=file.folder;
       counts.set("",(counts.get("")??0)+1);
       while(p){counts.set(p,(counts.get(p)??0)+1);p=p.includes("/")?p.slice(0,p.lastIndexOf("/")):"";}
@@ -291,6 +291,8 @@ export function diskPage():HTMLElement {
     const r=await api.diskList(viewFilter==="all"&&!allSearch.checked?current:undefined);
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
     items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
+    const full=await api.diskList();
+    treeFiles=full.ok?full.value.files:items;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
