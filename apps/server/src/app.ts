@@ -632,6 +632,18 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "GET" && p === "/api/brain/tool-failure-patterns") return send(res, deps.brain ? 200 : 503, deps.brain?.toolFailurePatterns() ?? { error: "Мозг недоступен" });
         if (req.method === "GET" && p === "/api/brain/tool-outcomes") return send(res, deps.brain ? 200 : 503, deps.brain?.toolOutcomeHistory() ?? { error: "Мозг недоступен" });
         if (req.method === "GET" && p === "/api/brain/history") return send(res, deps.brain ? 200 : 503, deps.brain?.history() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/cognitive-batch") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const b = await readJson(req);
+          if (typeof b.planId !== "string" || !b.planId.trim())
+            return send(res, 400, { error: "Укажите идентификатор плана" });
+          const mem = deps.memory ?? deps.getAssistant?.()?.memory;
+          return send(res, 200, await deps.brain.runCognitiveCycleBatch(
+            b.planId, b.actions, b.maxSteps,
+            () => deps.modules(),
+            async query => mem ? (await mem.search(query, 8)).map(item => item.text) : [],
+          ));
+        }
         if (req.method === "POST" && p === "/api/brain/execute-sequence") {
           if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
           const b = await readJson(req);
