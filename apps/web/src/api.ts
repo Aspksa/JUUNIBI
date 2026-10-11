@@ -168,6 +168,7 @@ export const api = {
   diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[];revisionsChecked?:number;revisionIssues?:{fileId:string;revision:number;status:string}[]}>("/api/disk/audit")),
   diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),
   diskSnapshot: () => attemptAsync(()=>call<{exportedAt:string;files:DiskFile[];folders:string[]}>("/api/disk/snapshot")),
+  diskBackup: () => attemptAsync(()=>call<{filename:string;bytes:number;sha256:string;base64:string;objects:number}>("/api/disk/backup")),
   diskMetadata: (id:string,tags:string[],color:string,note:string) => attemptAsync(()=>call<DiskFile>("/api/disk/metadata",post({id,tags,color,note}))),
   diskList: (folder?:string) => attemptAsync(()=>call<DiskListing>("/api/disk"+(folder!==undefined?"?folder="+encodeURIComponent(folder):""))),
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
