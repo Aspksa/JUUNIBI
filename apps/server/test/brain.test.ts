@@ -55,6 +55,13 @@ describe("BrainCore", () => {
     expect(brain.history()).toHaveLength(1);
   });
 
+  it("rejects corrupted stored plan status and creation timestamps", async () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("audit", ["step"]);
+    const bad = { mode: "agent", plans: [{ ...plan, status: "unknown", createdAt: "broken" }], logs: [] };
+    const restored = new BrainCore(() => true, { load: async () => JSON.stringify(bad), save: async () => {} });
+    await expect(restored.load()).rejects.toThrow("Некорректные планы");
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };

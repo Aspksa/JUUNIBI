@@ -21,7 +21,7 @@ export async function streamChat(body: { message: string; history: { role: strin
     if (line.length > MAX_LINE) throw new Error("Ответ помощницы слишком большой");
     let event: unknown;
     try { event = JSON.parse(line); } catch { throw new Error("Некорректное событие ответа помощницы"); }
-    if (!event || typeof event !== "object" || typeof (event as { type?: unknown }).type !== "string") throw new Error("Некорректное событие ответа помощницы");
+    if (!event || typeof event !== "object" || !["delta", "thinking", "tool", "done", "error"].includes(String((event as { type?: unknown }).type))) throw new Error("Некорректное событие ответа помощницы");
     onEvent(event as StreamEvent);
   };
   for (;;) {
