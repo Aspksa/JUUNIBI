@@ -64,6 +64,31 @@ export class BrainCore {
   }
   private toolObservations: {tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number;at:string}[]=[];
   toolOutcomeHistory(){return this.toolObservations.map(x=>({...x}));}
+  /** Evidence-based tool reliability: insufficient samples never imply success. */
+  toolConfidence(tool: string) {
+    const samples = this.toolObservations.filter(x => x.tool === tool).slice(0, 20);
+    const success = samples.filter(x => x.status === "ok").length;
+    const failed = samples.filter(x => x.status === "error").length;
+    const denied = samples.filter(x => x.status === "denied").length;
+    const total = samples.length;
+    return {
+      tool, samples: total, success, failed, denied,
+      status: total < 3 ? "insufficient-evidence" as const
+        : failed >= 2 || failed / total >= 0.5 ? "needs-review" as const
+        : denied >= 2 ? "permission-blocked" as const
+        : "observed-stable" as const,
+      confidence: total < 3 ? "unknown" as const : total < 10 ? "low" as const : "moderate" as const,
+      note: "Оценка основана только на последних наблюдавшихся вызовах. Не является гарантией успешного выполнения."
+    };
+  }
+  /** Only tools with repeated observed failures enter the brain's warning feed. */
+  toolConfidenceWarnings(limit = 5) {
+    const names = [...new Set(this.toolObservations.map(x => x.tool))].sort();
+    return names.map(name => this.toolConfidence(name))
+      .filter(x => x.status === "needs-review" || x.status === "permission-blocked")
+      .slice(0, Math.max(0, Math.min(20, Number.isSafeInteger(limit) ? limit : 5)));
+  }
+
   toolFailurePatterns(){return analyzeToolFailures(this.toolObservations);}
   toolRecoveryReport(){return assessToolRecovery(this.toolObservations);}
   toolReliabilityGuidance(){return toolReliabilityGuidance(this.toolObservations);}
