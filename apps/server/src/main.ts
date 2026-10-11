@@ -311,7 +311,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
       planId: { type: "string" },
       actions: { type: "array", items: { type: "string", enum: ["list_modules", "search_memory"] } },
     }, required: ["planId", "actions"] },
-    run: async (args) => brain.resumeReadSequence(args.planId, args.actions,
+    run: async (args) => brain.resumeReadSequence(typeof args.planId === "string" ? args.planId : "", args.actions,
       () => moduleList(),
       async query => (await memory.search(query, 8)).map(item => item.text)),
   });
