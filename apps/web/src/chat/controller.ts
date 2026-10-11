@@ -113,13 +113,16 @@ export class ChatController {
           this.chats.patch(convId, reply.id, patch);
         } else if (e.type === "error") {
           finished = true;
-          this.chats.patch(convId, reply.id, { error: e.message, ...(ctl.signal.aborted ? { stopped: true } : {}) });
+          this.chats.patch(convId, reply.id, { error: /(?:503|временно недоступен|connection timeout)/i.test(e.message) ? "Cloud.ru временно недоступен. Ваше сообщение сохранено в истории чата. Повторите запрос после восстановления связи. " + e.message : e.message, ...(ctl.signal.aborted ? { stopped: true } : {}) });
         }
       });
       if (!finished) this.chats.patch(convId, reply.id, { error: "Соединение прервано." });
     } catch (e) {
       if (ctl.signal.aborted) this.chats.patch(convId, reply.id, { stopped: true });
-      else this.chats.patch(convId, reply.id, { error: (e as Error).message || "Не удалось получить ответ." });
+      else {
+        const message = (e as Error).message || "Не удалось получить ответ.";
+        this.chats.patch(convId, reply.id, { error: /(?:503|временно недоступен|connection timeout)/i.test(message) ? "Cloud.ru недоступен. Сообщение сохранено в истории. Можно повторить отправку. " + message : message });
+      }
     } finally {
       if (steps.some((st) => st.status === "running")) this.chats.patch(convId, reply.id, { steps: steps.map((st) => (st.status === "running" ? { ...st, status: "error" as const } : st)) });
       if (this.abort === ctl) this.abort = null;
