@@ -1,4 +1,5 @@
 import path from "node:path";
+import { computerSnapshot } from "./windows-bridge";
 import type { Tool } from "@juunibi/assistant";
 import type { AssistantSettings } from "./assistant-settings";
 import type { Brief, Note, Organizer } from "./organizer";
@@ -35,6 +36,8 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
   const openable = d.openable ?? new OpenableUrls();
   const web = d.web ?? { search: webSearch, read: readPage };
   return [
+    { name: "computer_status", risk: "read", description: "Прочитать безопасную диагностику компьютера: версия ОС, загрузка памяти, процессор и время работы. Команды, запуск программ и чтение файлов не выполняются.",
+      parameters: { type: "object", properties: {} }, run: () => computerSnapshot() },
     { name: "list_files", risk: "read", description: "Показать содержимое папки в разрешённой владельцем папке." + DATA,
       parameters: { type: "object", properties: { path: str("Путь внутри папки; пусто — корень") } }, run: (a) => listDir(root(), a.path ?? "") },
     { name: "read_file", risk: "read", description: "Прочитать текстовый файл из разрешённой папки (до 200 КБ)." + DATA,
