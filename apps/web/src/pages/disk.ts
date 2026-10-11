@@ -13,7 +13,8 @@ export function diskPage():HTMLElement {
   const search=el("input",{type:"search",cls:"mem-input",placeholder:"Поиск по названиям файлов",attrs:{"aria-label":"Поиск файлов"}});
   const upload=el("input",{type:"file",multiple:true,attrs:{"aria-label":"Выбрать файлы для загрузки"}});
   const newFolder=el("input",{type:"text",cls:"mem-input",maxLength:80,placeholder:"Новая папка",attrs:{"aria-label":"Название новой папки"}});
-  let current="",items:DiskFile[]=[];
+  let current="",items:DiskFile[]=[],trash:DiskFile[]=[],allFolders:string[]=[];
+  let viewFilter:"all"|"favorites"|"trash"="all";
   let gridMode=localStorage.getItem("juunibi.disk.grid")!=="false";
   const viewButton=button("Вид: плитка",()=>{gridMode=!gridMode;localStorage.setItem("juunibi.disk.grid",String(gridMode));renderFiles();});
   const sortSelect=el("select",{cls:"mem-select",attrs:{"aria-label":"Сортировать файлы"}},el("option",{value:"new",textContent:"Сначала новые"}),el("option",{value:"name",textContent:"По имени"}),el("option",{value:"size",textContent:"По размеру"}));
@@ -46,7 +47,7 @@ export function diskPage():HTMLElement {
   page.append(preview);
   const renderFiles=()=>{
     const q=search.value.trim().toLocaleLowerCase();
-    const shown=items.filter(f=>!q||f.name.toLocaleLowerCase().includes(q)).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
+    const shown=(viewFilter==="trash"?trash:items.filter(f=>viewFilter!=="favorites"||f.favorite)).filter(f=>!q||f.name.toLocaleLowerCase().includes(q)).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
     files.classList.toggle("disk-grid",gridMode);
     files.classList.toggle("disk-list",!gridMode);
     viewButton.textContent=gridMode?"Вид: плитка":"Вид: список";
@@ -65,7 +66,7 @@ export function diskPage():HTMLElement {
       });
       const del=button("Удалить",async()=>{
         actions.open=false;
-        if(!confirm("Удалить файл «"+f.name+"» без возможности восстановления?"))return;
+        if(!confirm("Переместить файл «"+f.name+"» в корзину?"))return;
         const r=await api.diskDelete(f.id);
         if(!r.ok)showToast(r.error.message);else void refresh();
       });
@@ -77,20 +78,41 @@ export function diskPage():HTMLElement {
         const r=await api.diskRename(f.id,name.trim());
         if(!r.ok)showToast(r.error.message);else void refresh();
       });
-      actions.append(summary,el("div",{cls:"disk-actions-menu"},show,rename,download,del));
-      const open=button("Открыть",()=>void openPreview(f));
+      const favorite=button(f.favorite?"★ Убрать из избранного":"☆ В избранное",async()=>{
+        actions.open=false;const r=await api.diskFavorite(f.id,!f.favorite);
+        if(!r.ok)showToast(r.error.message);else void refresh();
+      });
+      const move=button("Переместить в папку",async()=>{
+        actions.open=false;
+        const folder=prompt("Папка (доступные: "+["Главная",...allFolders].join(", ")+"). Пустое поле — главная.",f.folder);
+        if(folder===null)return;
+        const r=await api.diskMove(f.id,folder.trim());
+        if(!r.ok)showToast(r.error.message);else void refresh();
+      });
+      const restore=button("Восстановить",async()=>{actions.open=false;const r=await api.diskRestore(f.id);if(!r.ok)showToast(r.error.message);else void refresh();});
+      const purge=button("Удалить навсегда",async()=>{
+        actions.open=false;if(!confirm("Безвозвратно удалить «"+f.name+"»?"))return;
+        const r=await api.diskPurge(f.id);if(!r.ok)showToast(r.error.message);else void refresh();
+      });
+      actions.append(summary,el("div",{cls:"disk-actions-menu"},...(viewFilter==="trash"?[restore,purge]:[show,favorite,move,rename,download,del])));
+      const open=button(viewFilter==="trash"?"В корзине":"Открыть",()=>{if(viewFilter!=="trash")void openPreview(f);});
+      open.disabled=viewFilter==="trash";
       card.append(el("span",{cls:"disk-file-icon"},icon("folder",20)),el("div",{cls:"disk-file-info"},name,el("small",{cls:"muted",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleDateString("ru-RU")})),open,actions);
       return card;
     }):[el("p",{cls:"muted",textContent:q?"Ничего не найдено":"Здесь пока нет файлов."})]));
   };
   const refresh=async()=>{
-    const r=await api.diskList(current);
+    const r=await api.diskList(viewFilter==="all"?current:undefined);
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
-    items=r.value.files;
-    breadcrumb.textContent=current?"Диск / "+current:"Диск / Все файлы";
+    items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
+    breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Занято: "+human(r.value.usedBytes)+" · Файлов в папке: "+items.length+" · До "+human(r.value.maxFileBytes)+" на файл. Файлы хранятся на этом компьютере.";
-    folders.replaceChildren(...["",...r.value.folders].map(f=>{
-      const b=button(f||"Все файлы",()=>{current=f;void refresh();});
+    folders.replaceChildren(
+      button("Все файлы",()=>{viewFilter="all";current="";void refresh();}),
+      button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
+      button("Корзина ("+trash.length+")",()=>{viewFilter="trash";current="";void refresh();}),
+      ...r.value.folders.map(f=>{
+      const b=button(f,()=>{viewFilter="all";current=f;void refresh();});
       if(f===current)b.classList.add("selected");
       return b;
     }));
