@@ -167,4 +167,25 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("stores immutable file revisions, restores old bytes and reloads history",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-versions-"));
+   try{
+     const disk=new LocalDisk(dir);
+     const original=await disk.uploadBytes("manual.txt","",Buffer.from("first"));
+     const changed=await disk.replaceStream(original.id,(async function*(){yield Buffer.from("se");yield Buffer.from("cond");})(),original.sha256);
+     expect(changed.revision).toBe(2);
+     expect(disk.fileVersions(original.id).map(v=>v.revision)).toEqual([1,2]);
+     expect(Buffer.from((await disk.download(original.id)).base64,"base64").toString()).toBe("second");
+     await expect(disk.replaceStream(original.id,(async function*(){yield Buffer.from("wrong");})(),original.sha256)).rejects.toMatchObject({status:409});
+     const reloaded=new LocalDisk(dir);await reloaded.load();
+     expect(reloaded.fileVersions(original.id)).toHaveLength(2);
+     const restored=await reloaded.restoreFileVersion(original.id,1);
+     expect(restored.revision).toBe(3);
+     expect(Buffer.from((await reloaded.download(original.id)).base64,"base64").toString()).toBe("first");
+     expect(reloaded.fileVersions(original.id).map(v=>v.revision)).toEqual([1,2,3]);
+     const copy=await reloaded.copyFile(original.id,"");
+     expect(Buffer.from((await reloaded.download(copy.id)).base64,"base64").toString()).toBe("first");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
