@@ -60,7 +60,18 @@ try{
     name:"bulk-"+String(i).padStart(3,"0")+".txt",
     folder:"Архив",size:100,uploadedAt:new Date().toISOString(),sha256:"c".repeat(64)
   });
+  await page.reload();
+  await page.getByRole("button",{name:/Вид:/}).waitFor();
+  const refreshed=page.getByRole("button",{name:/Вид:/});
+  while((await refreshed.textContent())!=="Вид: Таблица")await refreshed.click();
   await page.getByLabel("Искать по всем папкам").check();
+  await page.waitForTimeout(250);
+  console.log("Virtual state:",await page.evaluate(()=>({
+    mode:document.querySelector(".disk-files")?.className,
+    shown:document.querySelectorAll(".disk-file").length,
+    allFolders:(document.querySelector('input[aria-label="Искать по всем папкам"]'))?.checked,
+    status:document.querySelector(".disk-status-line")?.textContent
+  })));
   await page.locator(".disk-virtual").waitFor();
   const rows=page.locator(".disk-file");
   assert.ok(await rows.count()<=48,"Virtual list must not render more than 48 rows");
