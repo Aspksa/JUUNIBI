@@ -70,9 +70,9 @@ export function diskPage():HTMLElement {
     const content=el("div",{cls:"disk-stats-groups"});
     const render=()=>{
       const text=q.value.toLocaleLowerCase().trim();
-      content.replaceChildren(...data.groups.map(g=>{
+      content.replaceChildren(...data.groups.flatMap(g=>{
         const metrics=data.metrics.filter(m=>m.id&&Number(m.id.slice(1))>data.groups.findIndex(x=>x.id===g.id)*9&&Number(m.id.slice(1))<=(data.groups.findIndex(x=>x.id===g.id)+1)*9).filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
-        if(!metrics.length)return null;
+        if(!metrics.length)return [];
         const section=el("details",{cls:"disk-stats-group",open:!!text});
         section.append(el("summary",{textContent:g.title+" · "+metrics.length}));
         section.append(el("div",{cls:"disk-stats-tiles"},...metrics.map(m=>{
@@ -80,8 +80,8 @@ export function diskPage():HTMLElement {
           tile.append(el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),el("strong",{textContent:m.value}),el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}));
           return tile;
         })));
-        return section;
-      }).filter((x):x is HTMLElement=>x!==null));
+        return [section];
+      }));
     };
     q.addEventListener("input",render);render();
     statistics.replaceChildren(toolbar,summary,q,content);
