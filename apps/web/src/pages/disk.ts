@@ -29,11 +29,13 @@ export function diskPage():HTMLElement {
   };
   const folders=el("div",{cls:"disk-folders"});
   const files=el("div",{cls:"disk-files"});
+  const tree=el("nav",{cls:"disk-tree",attrs:{"aria-label":"Дерево папок"}});
+  const treeExpanded=new Set<string>([""]);
   const search=el("input",{type:"search",cls:"mem-input",placeholder:"Поиск файлов",attrs:{"aria-label":"Поиск файлов"}});
   const searchContents=el("input",{type:"checkbox",attrs:{"aria-label":"Искать внутри текстовых файлов"}});
   const upload=el("input",{type:"file",multiple:true,attrs:{"aria-label":"Выбрать файлы для загрузки"}});
   const newFolder=el("input",{type:"text",cls:"mem-input",maxLength:80,placeholder:"Новая папка",attrs:{"aria-label":"Название новой папки"}});
-  let current="",items:DiskFile[]=[],trash:DiskFile[]=[],allFolders:string[]=[];
+  let current="",items:DiskFile[]=[],trash:DiskFile[]=[],allFolders:string[]=[],treeFiles:DiskFile[]=[];
   let visibleLimit=100;
   let contentIds:Set<string>|null=null;
   let viewFilter:"all"|"favorites"|"trash"="all";
@@ -246,10 +248,51 @@ export function diskPage():HTMLElement {
     firstPaint=false;
     if(gridMode&&viewFilter!=="trash")void thumbnails(visible);
   };
+  const renderTree=()=>{
+    const counts=new Map<string,number>();
+    for(const file of treeFiles){
+      let p=file.folder;
+      counts.set("",(counts.get("")??0)+1);
+      while(p){counts.set(p,(counts.get(p)??0)+1);p=p.includes("/")?p.slice(0,p.lastIndexOf("/")):"";}
+    }
+    const children=new Map<string,string[]>();
+    for(const full of allFolders){
+      const parent=full.includes("/")?full.slice(0,full.lastIndexOf("/")):"";
+      const list=children.get(parent)??[];list.push(full);children.set(parent,list);
+    }
+    for(const list of children.values())list.sort((a,b)=>a.localeCompare(b,"ru"));
+    const openFolder=(folder:string)=>{
+      current=folder;viewFilter="all";selected.clear();visibleLimit=100;
+      for(let p=folder;p.includes("/");p=p.slice(0,p.lastIndexOf("/")))treeExpanded.add(p.slice(0,p.lastIndexOf("/")));
+      void refresh();
+    };
+    const draw=(folder:string,depth:number):HTMLElement=>{
+      const label=folder?folder.split("/").pop()!:"Все файлы";
+      const descendants=children.get(folder)??[];
+      const expandable=descendants.length>0;
+      const expanded=treeExpanded.has(folder);
+      const node=el("div",{cls:"disk-tree-node"});
+      const line=el("div",{cls:"disk-tree-line"+(current===folder&&viewFilter==="all"?" is-current":"")});
+      const toggle=el("button",{type:"button",cls:"disk-tree-toggle",textContent:expandable?(expanded?"▾":"▸"):"·",attrs:{"aria-label":expanded?"Свернуть "+label:"Развернуть "+label,"aria-expanded":String(expanded)}});
+      toggle.disabled=!expandable;
+      toggle.addEventListener("click",()=>{if(treeExpanded.has(folder))treeExpanded.delete(folder);else treeExpanded.add(folder);renderTree();});
+      const select=el("button",{type:"button",cls:"disk-tree-select",attrs:{"aria-current":current===folder&&viewFilter==="all"?"page":"false"}},icon("folder",16),el("span",{textContent:label}),el("small",{textContent:String(counts.get(folder)??0)}));
+      select.addEventListener("click",()=>openFolder(folder));
+      line.append(toggle,select);line.style.paddingLeft=String(Math.min(depth,10)*13)+"px";node.append(line);
+      if(expanded && expandable){const subtree=el("div",{cls:"disk-tree-children"});for(const child of descendants)subtree.append(draw(child,depth+1));node.append(subtree);}
+      return node;
+    };
+    tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),
+      draw("",0),
+      button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
+      button("Корзина · "+trash.length,()=>{viewFilter="trash";current="";void refresh();}));
+  };
   const refresh=async()=>{
     const r=await api.diskList(viewFilter==="all"&&!allSearch.checked?current:undefined);
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
     items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
+    const full=await api.diskList();
+    treeFiles=full.ok?full.value.files:items;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
@@ -271,6 +314,7 @@ export function diskPage():HTMLElement {
       button.classList.toggle("selected",active);
       button.setAttribute("aria-pressed",String(active));
     }
+    renderTree();
     renderFiles();
   };
   let searchGeneration=0;
@@ -290,9 +334,11 @@ export function diskPage():HTMLElement {
   search.addEventListener("input",()=>void updateSearch());
   searchContents.addEventListener("change",()=>void updateSearch());
   const create=button("Создать папку",async()=>{
-    const r=await api.diskFolder(newFolder.value.trim());
+    const name=newFolder.value.trim();
+    const target=current?current+"/"+name:name;
+    const r=await api.diskFolder(target);
     if(!r.ok){showToast(r.error.message);return;}
-    newFolder.value="";current=r.value.name;void refresh();
+    newFolder.value="";current=r.value.name;treeExpanded.add(current.includes("/")?current.slice(0,current.lastIndexOf("/")):"");void refresh();
   });
   const uploadFiles=async(fileList:File[])=>{
     if(!fileList.length)return;
@@ -323,7 +369,8 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("active");});
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
-  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton),folders,el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files);
+  const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files));
+  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton),catalog);
   void refresh();
   return page;
 }
