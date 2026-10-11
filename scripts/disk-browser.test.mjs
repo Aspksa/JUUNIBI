@@ -42,7 +42,7 @@ try{
   await page.getByText("recent.txt").first().waitFor();
   assert.equal(await page.getByText("old.txt").count(),0);
   const beforeNavigation=catalogRequests;
-  await tree.getByRole("button",{name:/Проекты/}).first().click();
+  await tree.locator(".disk-tree-select").filter({hasText:"Проекты"}).first().click();
   await page.waitForTimeout(200);
   assert.equal(catalogRequests-beforeNavigation,1,"Folder navigation should fetch the catalog only once");
   await tree.locator(".disk-folder-actions").first().locator("summary").click();
