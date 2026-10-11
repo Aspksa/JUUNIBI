@@ -39,11 +39,10 @@ export async function analyzeDisk(disk: LocalDisk): Promise<DiskInsights> {
   const allSentences=samples.flatMap(s=>s.text.split(/[.!?]+/).filter(x=>x.trim().length>10));
   const unique=new Set(allWords);
   let revisions=0;
-  let revisedFiles=0;
   let mostRevised: {name:string;count:number}|null=null;
   for(const f of all) {
     const history=disk.fileVersions(f.id);
-    if(history.length>1){revisedFiles++;revisions+=history.length-1;}
+    if(history.length>1)revisions+=history.length-1;
     if(history.length>1 && (!mostRevised || history.length-1>mostRevised.count))mostRevised={name:f.name,count:history.length-1};
   }
   const count=(id:number,n:number,detail?:string):DiskInsight=>({id,value:num(n),detail});
