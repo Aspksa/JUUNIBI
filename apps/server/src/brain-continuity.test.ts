@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { BrainCore } from "./brain";
 
 describe("personal assistant continuity", () => {
+  it("prioritizes failures, then partial plans, then untouched plans without side effects", async () => {
+    const brain = new BrainCore(() => true);
+    const newPlan = brain.plan("Начать новый проект", ["Составить цели"]);
+    const partial = brain.plan("Продолжить работу", ["Первый этап", "Второй этап"]);
+    brain.updateStep(partial.id, partial.steps[0]!.id, "active");
+    brain.updateStep(partial.id, partial.steps[0]!.id, "done");
+    const broken = brain.plan("Исправить проблему", ["Диагностика"]);
+    brain.updateStep(broken.id, broken.steps[0]!.id, "active");
+    brain.updateStep(broken.id, broken.steps[0]!.id, "failed");
+    const original = brain.status().plans;
+    const feed = brain.attentionFeed(10);
+    expect(feed.map(x => x.id)).toEqual([broken.id, partial.id, newPlan.id]);
+    expect(feed[0]).toMatchObject({kind:"needs-review", priority:0, requiresExplicitExecution:true});
+    expect(feed[1]).toMatchObject({kind:"resume", progress:{completed:1,total:2}});
+    expect(brain.attentionFeed(1)).toHaveLength(1);
+    expect(brain.status().plans).toEqual(original);
+  });
+
   it("restores progress without resuming interrupted actions", async () => {
     let snapshot: string | null = null;
     const storage = { load: async () => snapshot, save: async (value: string) => { snapshot = value; } };
