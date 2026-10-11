@@ -63,3 +63,16 @@ paired LAN listener. Requests have a 4,000-character input cap, bounded output,
 and a two-minute subprocess timeout. The setting is **off by default**.
 This is a server API, not yet a chat UI toggle or replacement for the current brain.
 The first live tool-calling smoke test must be run locally with a real Cloud.ru key.
+
+## One-command dependency setup (Windows)
+
+Run from the repository root in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-deepagents.ps1
+```
+
+This installs the Python dependencies in `.venv-deepagents` and verifies imports.
+It does **not** modify your existing `.env`, enable the agent, or prove API
+compatibility. Python 3.11 is preferred when the `py` launcher is installed.
+If your system lacks Python 3.11, install it before using this script.
