@@ -1,5 +1,5 @@
 /** Post-generation evidence check. Only marks unsupported claims; it never grants tool access. */
-export interface ToolEvidence { name: string; status: "ok" | "error" | "denied"; at?: number }
+export interface ToolEvidence { name: string; status: "ok" | "error" | "denied"; at?: number; source?: "cache" }
 export function guardToolClaims(reply: string, evidence: ToolEvidence[], request = ""): string {
   const succeeded = new Set(evidence.filter(x => x.status === "ok").map(x => x.name));
   const claimed = [...reply.matchAll(/`(list_modules|computer_status|computer_processes|daily_brief)`\s*(?:✅|—\s*(?:выполнен|проверен)|успешно)/giu)].map(x => x[1]!);
@@ -20,10 +20,10 @@ export function guardToolClaims(reply: string, evidence: ToolEvidence[], request
   const rows = categories.map(({ label, tool }) => {
     const checks = evidence.filter(e => e.name === tool);
     const success = checks.find(e => e.status === "ok");
-    const status = success ? "Проверено" : checks.length ? "Ошибка/отказ" : "Не проверено";
-    const origin = success ? tool + (success.at ? " · " + new Date(success.at).toISOString() : "") : checks.length ? tool + ": " + checks[checks.length - 1]!.status : "нет вызова в текущем запросе";
+    const status = success?.source === "cache" ? "Повторный отчёт (сохранённые данные)" : success ? "Проверено" : checks.length ? "Ошибка/отказ" : "Не проверено";
+    const origin = success ? (success.source === "cache" ? "сохранённый результат " : "") + tool + (success.at ? " · " + new Date(success.at).toISOString() : "") : checks.length ? tool + ": " + checks[checks.length - 1]!.status : "нет вызова в текущем запросе";
     return "| " + label + " | " + status + " | " + origin + " |";
   });
-  const note = succeeded.has("list_modules") ? "Проверка зависимостей требует анализа фактического содержимого списка; один успешный вызов не доказывает правильность выводов модели." : "Без свежего list_modules текущий статус модулей и их зависимостей не подтверждён.";
+  const note = evidence.some(e => e.source === "cache") ? "Повторный отчёт построен по сохранённым результатам предыдущей попытки. Новые вызовы инструментов для повторно использованных данных не производились." : succeeded.has("list_modules") ? "Проверка зависимостей требует анализа фактического содержимого списка; один успешный вызов не доказывает правильность выводов модели." : "Без свежего list_modules текущий статус модулей и их зависимостей не подтверждён.";
   return base + "\n\n**Протокол текущей диагностики (журнал вызовов):**\n\n| Проверка | Статус | Источник |\n|---|---|---|\n" + rows.join("\n") + "\n\n" + note;
 }
