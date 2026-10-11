@@ -1168,8 +1168,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
 
   /* ---------------------------------------------------------------- assemble */
   const life = diskLifePanel();
-  const layout = el("div", { cls: "dk-layout" + (treeHidden ? " no-tree" : "") }, side, main, info);
-  page.append(hero, bar, layout, life.root, scrim, uploader.root, picker, restorePicker);
+  const layout = el("div", { cls: "dk-layout" + (treeHidden ? " no-tree" : "") }, side, main, life.root, info);
+  page.append(hero, bar, layout, scrim, uploader.root, picker, restorePicker);
   renderFiles();
   void loadCatalog();
   return page;

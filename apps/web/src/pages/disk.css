@@ -38,12 +38,14 @@ button.dk-hero-fig:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--l
 .disk-page .dk-drawer-btn,.disk-page .dk-side-close{display:none}
 .dk-more-btn{width:42px;height:42px;border:1px solid var(--line);border-radius:999px}
 
-/* ---------- three columns */
-.dk-layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:16px;align-items:start}
-.dk-layout.with-info{grid-template-columns:250px minmax(0,1fr) 320px}
-.dk-layout.no-tree{grid-template-columns:minmax(0,1fr)}
-.dk-layout.no-tree.with-info{grid-template-columns:minmax(0,1fr) 320px}
+/* ---------- three columns: folders as wide as their longest name (250–460 px), files, and on the right
+   «Жизнь документов», which gives its place to «Сведения» while a file is open */
+.dk-layout{display:grid;grid-template-columns:fit-content(460px) minmax(0,1fr) 440px;gap:16px;align-items:start}
+.dk-layout.no-tree{grid-template-columns:minmax(0,1fr) 440px}
 .dk-layout.no-tree>.dk-side{display:none}
+.dk-layout>.dkl,.dk-layout>.dk-info{grid-column:-2/-1;grid-row:1}
+.dk-layout.with-info>.dkl{display:none}
+.dk-side{min-width:250px}
 
 /* ---------- folders */
 .dk-side{position:sticky;top:12px;display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);max-height:calc(100vh - 32px);overflow:auto;scrollbar-width:thin}
@@ -66,7 +68,8 @@ button.dk-hero-fig:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--l
 .dk-node-label,.dk-section{display:flex;align-items:center;gap:9px;min-width:0;width:100%;padding:7px 6px;border:0;background:none;color:var(--fg);font:inherit;font-size:var(--fs-md);text-align:left;border-radius:var(--r-sm);cursor:pointer}
 .dk-node.current .dk-node-label{font-weight:600}
 .dk-node-ic{display:grid;place-items:center;flex:none;color:var(--fc,color-mix(in srgb,var(--brand) 80%,var(--fg)))}
-.dk-node-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* a name longer than the widest folder column wraps instead of being cut */
+.dk-node-name{flex:1;min-width:0;overflow:hidden;overflow-wrap:anywhere;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .dk-node-n{flex:none;color:var(--muted);font-size:var(--fs-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
 .dk-pin{display:grid;color:var(--brand)}
 .dk-cover{flex:none;width:20px;height:20px;border-radius:var(--r-sm);object-fit:cover;border:1px solid var(--line)}
@@ -344,9 +347,11 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 @keyframes dk-flash{0%,60%{box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 55%,transparent)}100%{box-shadow:0 0 0 3px transparent}}
 
 /* ---------- narrower screens: «Сведения» and the folders become drawers */
-@media (max-width:1560px){
-  .dk-layout.with-info{grid-template-columns:260px minmax(0,1fr)}
-  .dk-layout.no-tree.with-info{grid-template-columns:minmax(0,1fr)}
+@media (max-width:1680px){
+  .dk-layout{grid-template-columns:fit-content(360px) minmax(0,1fr)}
+  .dk-layout.no-tree{grid-template-columns:minmax(0,1fr)}
+  .dk-layout>.dkl{grid-column:1/-1;grid-row:auto}
+  .dk-layout.with-info>.dkl{display:flex}
   .dk-info{position:fixed;top:0;right:0;bottom:0;z-index:96;width:min(380px,92vw);max-height:none;border-radius:var(--r-lg) 0 0 18px;box-shadow:-20px 0 50px -20px rgba(0,0,0,.5)}
 }
 @media (max-width:900px){
@@ -499,13 +504,29 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 /* ten tiles a group: rows of five, two or one, never a lonely last row */
 @container (max-width:1100px){.dkl-hl,.dkl-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @container (max-width:980px){.dkl-grid,.dkl-skeleton{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* the narrow right column: a compact head, highlights without charts, two tiles a row */
 @container (max-width:520px){
-  .dkl-grid,.dkl-skeleton{grid-template-columns:minmax(0,1fr)}
-  .dkl-hl{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .dkl-tab{padding:8px 8px 10px;gap:8px}
-  .dkl-tab .dkl-ic{display:none}
-  .dkl-tab-text b{white-space:normal;font-size:var(--fs-xs)}
+  .dkl{gap:10px}
+  .dkl-head{padding:14px 58px 14px 14px;gap:10px}
+  .dkl-mark{width:40px;height:40px}
+  .dkl-refresh{position:absolute;top:14px;right:14px}
+  .dkl-search{flex:1 1 100%;min-width:0}
+  .dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .dkl-hl-card{padding:10px;gap:1px}
+  .dkl-hl-card .dkl-ic{width:30px;height:30px;border-radius:10px;margin-bottom:4px}
+  .dkl-hl-card .dkl-ic svg{width:17px;height:17px}
+  .dkl-hl-card b{font-size:var(--fs-base)}
+  .dkl-hl-chart{display:none}
+  .dkl-tile{padding:12px}
+  .dkl-tile .dkl-ic{width:34px;height:34px}
+  .dkl-value{font-size:var(--fs-base)}
+  /* fifteen groups as a 5×3 board of coloured glyphs; the open group's name is right below */
+  .dkl-tabs{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+  .dkl-tab{justify-content:center;padding:7px 4px 11px}
+  .dkl-tab .dkl-ic{display:grid}
+  .dkl-tab-text{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 }
+@container (max-width:380px){.dkl-grid,.dkl-skeleton{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:640px){
   .dkl-head{padding:14px 58px 14px 14px}
   .dkl-refresh{position:absolute;top:14px;right:14px}
