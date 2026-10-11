@@ -616,12 +616,13 @@ export class LocalDisk {
   private async purgeUnlocked(id:string){
     const entry=this.entries.find(x=>x.id===id&&x.deletedAt);
     if(!entry)throw bad("В корзине нет этого файла",404);
-    // Remove the object before deleting its index, so a failed filesystem operation remains retryable.
-    await rm(this.file(id));
-    for(const revision of this.versions[id]??[])await rm(this.objectPath(revision.objectId),{force:true});
+    const objects=[entry.objectId??entry.id,...(this.versions[id]??[]).map(v=>v.objectId)];
     delete this.versions[id];
     this.entries=this.entries.filter(x=>x.id!==id);
-    await this.save();return {ok:true};
+    // Persist removal before deleting bytes: failed saves must never resurrect missing objects.
+    await this.save();
+    for(const object of objects)await rm(this.objectPath(object),{force:true});
+    return {ok:true};
   }
   /** Validate every target first, then persist one batch mutation. */
   private async bulkUnlocked(ids:unknown, action:unknown, folder?:unknown){
@@ -680,9 +681,10 @@ export class LocalDisk {
     const staleFolders=this.deletedFolders.some(d=>olderThanMs===undefined||now-new Date(d.at).getTime()>=olderThanMs);
     if(!doomed.length&&!staleFolders)return {purged:0,bytes:0};
     let bytes=0;
+    const objects:string[]=[];
     for(const e of doomed){
-      await rm(this.file(e.id),{force:true});
-      for(const revision of this.versions[e.id]??[]){await rm(this.objectPath(revision.objectId),{force:true});bytes+=revision.size;}
+      objects.push(e.objectId??e.id);
+      for(const revision of this.versions[e.id]??[]){objects.push(revision.objectId);bytes+=revision.size;}
       delete this.versions[e.id];bytes+=e.size;
     }
     const gone=new Set(doomed.map(e=>e.id));
@@ -690,10 +692,12 @@ export class LocalDisk {
     // a trashed folder whose files are gone for good can no longer be restored
     this.deletedFolders=this.deletedFolders.filter(d=>(olderThanMs!==undefined&&now-new Date(d.at).getTime()<olderThanMs)||this.entries.some(e=>e.deletedAt&&(e.folder===d.root||e.folder.startsWith(d.root+"/"))));
     await this.save();
+    // Unreferenced bytes can be cleaned later if unlink fails; the catalog stays valid.
+    for(const object of objects)await rm(this.objectPath(object),{force:true});
     return {purged:doomed.length,bytes};
   }
   /** Auto-clean on the owner's schedule; cheap when nothing is due. */
-  purgeExpired(now=Date.now()){return this.trashDays?this.emptyTrash(this.trashDays*86400000,now):Promise.resolve({purged:0,bytes:0});}
+  purgeExpired(now=Date.now()){return this.mutate(() => this.trashDays?this.emptyTrashUnlocked(this.trashDays*86400000,now):Promise.resolve({purged:0,bytes:0}));}
   /** Plain text of a text file or a simple PDF, so JUUNIBI can answer questions about it. */
   async readText(id:string,max=100*1024){
     const {entry,path:file}=this.rawFile(id);
