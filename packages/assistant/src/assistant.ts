@@ -240,7 +240,7 @@ export class Assistant {
       !(guidance && name.startsWith("brain_") && (name === "brain_v4_unified_review" || !guidance.needsPlanning));
     // Execute owner-requested diagnostics in code, rather than trusting the model to choose tool calls.
     // runTool enforces disabled tools, arguments, and risk; the allowlist is read-only.
-    const diagnostics = !opts.ephemeral && needsModuleDiagnosticExecution(text, hist);
+    const diagnostics = !opts.ephemeral && needsModuleDiagnosticExecution(text, hist.map(m => ({ role: m.role, content: m.content ?? "" })));
     if (diagnostics) {
       const freshResults: string[] = [];
       for (const name of DIAGNOSTIC_TOOLS) {
