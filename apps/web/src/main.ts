@@ -32,6 +32,7 @@ import "./style.css";
 import "./nav/nav.css";
 import "./pages/tasks-work.css";
 import "./design.css";
+import "./pages/fox-network.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
 const chats = new Chats();
