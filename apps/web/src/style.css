@@ -1934,3 +1934,10 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-table .disk-file-info small{white-space:nowrap}
 .disk-table .disk-thumbnail{width:28px;height:28px;border-radius:6px}
 @media(max-width:680px){.disk-large{grid-template-columns:1fr}.disk-table .disk-file{display:flex;flex-wrap:wrap}.disk-table .disk-file-info{flex-direction:column;align-items:flex-start;gap:3px}.disk-table .disk-file-info small{white-space:normal}}
+
+
+.disk-extra-filters{position:relative}
+.disk-extra-filters>summary{cursor:pointer;list-style:none;border:1px solid var(--border,rgba(128,128,128,.25));border-radius:10px;padding:9px 11px;font-size:12px}
+.disk-extra-filters>summary::-webkit-details-marker{display:none}
+.disk-extra-filter-controls{position:absolute;z-index:16;right:0;top:calc(100% + 4px);display:grid;gap:8px;min-width:min(255px,85vw);padding:12px;border:1px solid var(--border,rgba(128,128,128,.25));border-radius:12px;background:var(--bg,#20202b);box-shadow:0 12px 35px rgba(0,0,0,.18)}
+.disk-extra-filter-controls .mem-input{width:100%;box-sizing:border-box;min-width:0}
