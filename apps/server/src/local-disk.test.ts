@@ -71,4 +71,22 @@ describe("Local Disk",()=>{
    await expect(disk.upload("x.txt","","!!!")).rejects.toMatchObject({status:413});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
+ it("supports nested folders, raw byte uploads and verified local text search",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-nested-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Проекты");
+     await disk.createFolder("Проекты/JUUNIBI");
+     await expect(disk.createFolder("Нет/Вложение")).rejects.toMatchObject({status:404});
+     const uploaded=await disk.uploadBytes("readme.md","Проекты/JUUNIBI",Buffer.from("Мозг JUUNIBI использует память"));
+     const binary=await disk.uploadStream("image.png","Проекты/JUUNIBI",(async function*(){yield Buffer.from([1,2]);yield Buffer.from([3,4]);})());
+     expect(disk.list("Проекты/JUUNIBI").files).toHaveLength(2);
+     expect(await disk.searchContent("память")).toEqual([uploaded.id]);
+     expect(await disk.searchContent("несуществующий")).toEqual([]);
+     expect(Buffer.from((await disk.download(binary.id)).base64,"base64")).toEqual(Buffer.from([1,2,3,4]));
+     const fresh=new LocalDisk(dir);await fresh.load();
+     expect(fresh.list("Проекты/JUUNIBI").files).toHaveLength(2);
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
