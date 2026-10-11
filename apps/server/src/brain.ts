@@ -49,6 +49,36 @@ export class BrainCore {
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   recallExperience(query: string) { return recallConfirmedExperience(this.decisions.snapshot(), query); }
   reviewSixCognitiveSkills(input: CognitiveInput) { return reviewSixSkills(input); }
+  /** Ground six cognitive checks in saved plan steps and observed tool outcomes.
+   * This is an inspection, not a claim of causal proof or permission to act.
+   */
+  reviewLivePlan(planId: string) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    const recent = this.toolObservations.slice(0, 20);
+    const failing = [...new Set(recent.filter(x => x.status === "error").map(x => x.tool))];
+    const denials = [...new Set(recent.filter(x => x.status === "denied").map(x => x.tool))];
+    const evidence = [
+      ...failing.map(tool => "tool-error:" + tool),
+      ...denials.map(tool => "permission-denied:" + tool),
+      ...plan.steps.filter(step => step.status === "failed").map(step => "failed-step:" + step.id)
+    ];
+    const hypotheses = [
+      ...failing.map(tool => ({ cause: "Проверить сбои инструмента " + tool, evidence: ["tool-error:" + tool] })),
+      ...denials.map(tool => ({ cause: "Проверить права инструмента " + tool, evidence: ["permission-denied:" + tool] }))
+    ];
+    const blocked = plan.steps.some(step => step.status === "failed");
+    const review = reviewSixSkills({
+      goal: plan.goal.slice(0, 500), observations: evidence.slice(0, 30),
+      hypotheses: hypotheses.slice(0, 15),
+      options: [], claims: [],
+      pastStrategies: [],
+      plan: plan.steps.map(step => ({step: step.title, done: step.status === "done", blocked: step.status === "failed"})),
+      questions: blocked ? ["Как устранить сбой перед продолжением?"] : ["Какие дополнительные факты необходимы для следующего шага?"]
+    });
+    return { planId, source: "saved-plan-and-tool-outcomes" as const, observationsCount: evidence.length,
+      ...review, requiresExplicitExecution: true as const };
+  }
   evaluateExperienceRecall(samples: {query:string;expectedId:string}[]) { return evaluateExperienceRecall(this.decisions.snapshot(), samples); }
   taskPatterns() { return analyzeTaskPatterns(this.decisions.snapshot()); }
   reviewRepairs(input: LearningCase) { return reviewLearningCase(input, this.decisions.snapshot()); }
