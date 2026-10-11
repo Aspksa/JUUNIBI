@@ -70,7 +70,14 @@ export function diskPage():HTMLElement {
         if(!r.ok)showToast(r.error.message);else void refresh();
       });
       const show=button("Просмотр",()=>{actions.open=false;void openPreview(f);});
-      actions.append(summary,el("div",{cls:"disk-actions-menu"},show,download,del));
+      const rename=button("Переименовать",async()=>{
+        actions.open=false;
+        const name=prompt("Новое название файла",f.name);
+        if(name===null||name.trim()===f.name)return;
+        const r=await api.diskRename(f.id,name.trim());
+        if(!r.ok)showToast(r.error.message);else void refresh();
+      });
+      actions.append(summary,el("div",{cls:"disk-actions-menu"},show,rename,download,del));
       const open=button("Открыть",()=>void openPreview(f));
       card.append(el("span",{cls:"disk-file-icon"},icon("folder",20)),el("div",{cls:"disk-file-info"},name,el("small",{cls:"muted",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleDateString("ru-RU")})),open,actions);
       return card;
