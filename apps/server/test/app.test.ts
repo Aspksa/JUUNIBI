@@ -206,3 +206,23 @@ describe("Brain experience-guided planning HTTP", () => {
     } finally {srv.close();}
   });
 });
+
+describe("Brain strategy comparison API", () => {
+  it("compares confirmed experience without running modules", async () => {
+    const brain = new BrainCore(() => true);
+    let calls = 0;
+    const srv = createApp({brain,modules:()=>{calls++;return [];},configured:{model:"m"}});
+    const url = `http://127.0.0.1:${await start(srv)}`;
+    try {
+      const p = brain.plan("backup files",["inspect"]);
+      const d = brain.recordDecision({goal:"backup files",chosen:"inspect files",reason:"safer",predictedSuccess:true,taskType:"backup"});
+      brain.confirmDecision(d.id,"success");
+      const response = await post(url,"/api/brain/compare-experience-strategies",
+        {planId:p.id,options:["inspect files","delete files"],taskType:"backup"});
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({requiresExplicitExecution:true,strategies:[{option:"inspect files",score:1},{option:"delete files",score:0}]});
+      expect(calls).toBe(0);
+      expect((await post(url,"/api/brain/compare-experience-strategies",{planId:p.id,options:["same","same"]})).status).toBe(400);
+    } finally {srv.close();}
+  });
+});
