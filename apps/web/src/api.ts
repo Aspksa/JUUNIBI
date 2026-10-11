@@ -154,8 +154,10 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string}
+export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:string;title:string;value:string;ready:boolean;reason?:string}[];summary:{files:number;bytes:number;folders:number;ready:number;total:number}}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
+  diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
   diskList: (folder?:string) => attemptAsync(()=>call<DiskListing>("/api/disk"+(folder!==undefined?"?folder="+encodeURIComponent(folder):""))),
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
