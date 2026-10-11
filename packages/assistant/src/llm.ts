@@ -104,7 +104,7 @@ export class CloudRuProvider implements LlmProvider {
 
   async chat(messages: Message[], opts: ChatOptions = {}): Promise<LlmResponse> {
     const primary = this.cfg.model;
-    const fallback = this.cfg.fallbackModel && this.cfg.fallbackModel !== primary ? this.cfg.fallbackModel : "";
+    const fallback = ""; // JUUNIBI policy: never switch away from the selected Cloud.ru model.
     const state = { streamed: false };
     try {
       return await this.attempt(primary, messages, opts, opts.retries ?? this.cfg.retries, state);
@@ -142,7 +142,17 @@ export class CloudRuProvider implements LlmProvider {
     const timeoutMs = opts.timeoutMs ?? this.cfg.timeoutMs;
     for (let attempt = 0; attempt <= retries; attempt++) {
       if (opts.signal?.aborted) throw new LlmError("Запрос отменён");
-      if (attempt) await sleep(500 * 2 ** (attempt - 1));
+      if (attempt) {
+        // Bounded exponential backoff with jitter; cancellation interrupts the delay.
+        const delay = Math.min(5000, 600 * 2 ** (attempt - 1)) + Math.floor(Math.random() * 200);
+        await new Promise<void>((resolve, reject) => {
+          if (opts.signal?.aborted) { reject(new LlmError("Запрос отменён")); return; }
+          const timer = setTimeout(done, delay);
+          const abort = () => { clearTimeout(timer); opts.signal?.removeEventListener("abort", abort); reject(new LlmError("Запрос отменён")); };
+          function done() { opts.signal?.removeEventListener("abort", abort); resolve(); }
+          opts.signal?.addEventListener("abort", abort, { once: true });
+        });
+      }
       const ctl = new AbortController();
       let timer = setTimeout(() => ctl.abort(), timeoutMs);
       const onAbort = () => ctl.abort();
@@ -158,7 +168,8 @@ export class CloudRuProvider implements LlmProvider {
           // Keep Cloud.ru's own explanation: it tells an outage apart from, say, a model that is not deployed.
           const detail = describeBody(await res.text().catch(() => ""), this.cfg.apiKey).replace(/^: /, "");
           lastErr = new LlmError(`Cloud.ru вернул ${res.status}`, res.status, detail || undefined);
-          continue; // retryable
+          if (state.streamed || opts.signal?.aborted) throw lastErr;
+          continue; // retryable only before any streamed answer
         }
         if (!res.ok) {
           // never echo the request (it carries the key); surface only the server's message
