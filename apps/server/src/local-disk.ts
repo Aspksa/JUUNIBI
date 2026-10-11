@@ -389,6 +389,28 @@ export class LocalDisk {
   }
   /** Export an explicit snapshot of metadata; bytes are not included. */
   snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
+  /** Portable, SHA-verified backup, capped to protect server memory. */
+  async exportBackup(){
+    const maxBytes=80*1024*1024;
+    const objects:Record<string,string>={};
+    let total=0;
+    const refs=new Map<string,{size:number;sha256:string}>();
+    for(const e of this.entries)refs.set(e.objectId??e.id,{size:e.size,sha256:e.sha256});
+    for(const history of Object.values(this.versions))for(const v of history)refs.set(v.objectId,{size:v.size,sha256:v.sha256});
+    for(const [id,expected] of refs){
+      total+=expected.size;
+      if(total>maxBytes)throw bad("Резервная копия превышает лимит 80 МБ. Используйте внешнее резервирование.",413);
+      const bytes=await readFile(this.objectPath(id));
+      if(bytes.length!==expected.size||createHash("sha256").update(bytes).digest("hex")!==expected.sha256)
+        throw bad("Резервная копия прервана: повреждён объект "+id,409);
+      objects[id]=bytes.toString("base64");
+    }
+    const payload={format:"juunibi-disk-backup-v1",exportedAt:new Date().toISOString(),entries:this.entries,folders:this.folders,
+      folderStyles:this.folderStyles,deletedFolders:this.deletedFolders,versions:this.versions,objects};
+    const bytes=Buffer.from(JSON.stringify(payload));
+    return {filename:"JUUNIBI-disk-backup-"+new Date().toISOString().slice(0,10)+".json",
+      bytes:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex"),base64:bytes.toString("base64"),objects:refs.size};
+  }
   /** Copy a file under a new identity without changing its original. */
   /** Sync two local folders without ever overwriting a conflicting filename. */
   async syncFolders(from:unknown,to:unknown,apply:unknown=false){
