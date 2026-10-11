@@ -300,4 +300,33 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});await rm(target,{recursive:true,force:true});}
  });
 
+ it("rejects corrupted index entries and malformed revision metadata without losing good files",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-index-"));
+   try{
+     const disk=new LocalDisk(dir);
+     const good=await disk.uploadBytes("ok.txt","",Buffer.from("content"));
+     const index=path.join(dir,"index.json");
+     const raw=JSON.parse(await readFile(index,"utf8")) as Record<string,any>;
+     raw.entries.push({id:"11111111-1111-1111-1111-111111111111",name:"bad.txt",folder:"",size:-1,sha256:"oops",uploadedAt:"nope"});
+     raw.versions={[good.id]:[{revision:1,objectId:"../../escape",size:-3,sha256:"bad",at:"not-a-date"}]};
+     raw.folderStyles={"../bad":{color:"red",pinned:true,cover:"x"}};
+     await writeFile(index,JSON.stringify(raw));
+     const loaded=new LocalDisk(dir);await loaded.load();
+     expect(loaded.list().files).toHaveLength(1);
+     expect(loaded.fileVersions(good.id)).toHaveLength(1);
+     expect(Buffer.from((await loaded.download(good.id)).base64,"base64").toString()).toBe("content");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+ it("bounds preview text and rejects invalid preview limits",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-preview-"));
+   try{
+     const disk=new LocalDisk(dir);
+     const entry=await disk.uploadBytes("large.txt","",Buffer.from("A".repeat(512*1024)));
+     await expect(disk.readText(entry.id,0)).rejects.toMatchObject({status:400});
+     const view=await disk.readText(entry.id,128);
+     expect(view.text).toHaveLength(128);
+     expect(view.truncated).toBe(true);
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
