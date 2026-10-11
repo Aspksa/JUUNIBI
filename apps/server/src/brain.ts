@@ -526,6 +526,7 @@ export class BrainCore {
     if (plan.status === "completed" || plan.status === "failed") throw Object.assign(new Error("План уже завершён"), { status: 409 });
     if (status === "active" && plan.steps.some(s => s.status === "active" && s !== step)) throw Object.assign(new Error("Уже есть активный шаг"), { status: 409 });
     if (status === "active" && plan.steps.slice(0, plan.steps.indexOf(step)).some(s => s.status !== "done")) throw Object.assign(new Error("Нельзя пропускать шаги"), { status: 409 });
+    if (status === "failed" && step.status !== "active") throw Object.assign(new Error("Ошибка допустима только для выполняемого шага"), { status: 409 });
     if (status === "done" && step.status !== "active") throw Object.assign(new Error("Сначала активируйте шаг"), { status: 409 });
     if (status === "active" && step.status !== "pending") throw Object.assign(new Error("Шаг нельзя активировать"), { status: 409 });
     step.status = status;
