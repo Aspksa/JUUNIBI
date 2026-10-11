@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Brief } from "../src/api";
 import {
-  arrange, badges, cleanPrefs, hotkeyLabel, itemForDigit, move, placeBefore, recentChats, searchPalette, todayLine, toggleHidden, visibleItems,
+  arrange, badges, cleanPrefs, dropAfter, hotkeyLabel, itemForDigit, move, placeBefore, recentChats, searchPalette, todayLine, toggleHidden, visibleItems,
   type PaletteEntry,
 } from "../src/nav/model";
 
@@ -9,6 +9,11 @@ const ids = (p: ReturnType<typeof cleanPrefs>) => visibleItems(p).map((n) => n.i
 const brief = (o: Partial<Brief> = {}): Brief => ({ now: "", due: [], today: [], openTodos: { count: 0, first: [] }, plansRunning: 0, memoryPending: 0, modulesFailed: [], updateAvailable: false, attention: 0, ...o });
 
 describe("menu prefs", () => {
+  it("computes drag position relative to the row, not its child", () => {
+    expect(dropAfter(135, 100, 60)).toBe(true);
+    expect(dropAfter(120, 100, 60)).toBe(false);
+    expect(dropAfter(130, 100, 60)).toBe(false);
+  });
   it("default: three groups, chat and tasks first, settings last", () => {
     const p = cleanPrefs(null);
     expect(arrange(p).map((g) => g.items.map((n) => n.id))).toEqual([["chat", "tasks", "disk"], ["brain", "modules"], ["fox-network", "mobile", "update", "settings"]]);
