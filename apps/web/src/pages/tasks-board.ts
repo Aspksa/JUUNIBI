@@ -37,7 +37,7 @@ export interface BoardDeps {
 /** Remembered in the browser: filters, rows, compact cards, the folded «Готово», the open tab on a phone. */
 const PREF = "juunibi.tasks.board";
 const B = { important: false, week: false, lanes: "none" as LaneMode, compact: false, doneFolded: false, tab: "todo" as BoardCol };
-try { Object.assign(B, JSON.parse(localStorage.getItem(PREF) ?? "{}")); } catch { /* private mode or a bad value */ }
+try { const saved: unknown = JSON.parse(localStorage.getItem(PREF) ?? "{}"); if (saved && typeof saved === "object" && !Array.isArray(saved)) { const prefs = saved as Record<string, unknown>; for (const key of ["important", "week", "compact", "doneFolded"] as const) if (typeof prefs[key] === "boolean") B[key] = prefs[key]; if (typeof prefs.lanes === "string" && ["none", "project", "area"].includes(prefs.lanes)) B.lanes = prefs.lanes as LaneMode; if (typeof prefs.tab === "string" && BOARD_COLS.includes(prefs.tab as BoardCol)) B.tab = prefs.tab as BoardCol; } } catch { /* private mode or a bad value */ }
 if (!BOARD_COLS.includes(B.tab)) B.tab = "todo";
 const savePref = () => { try { localStorage.setItem(PREF, JSON.stringify(B)); } catch { /* private mode */ } };
 /** A column shows this many cards until «ещё» is pressed. */

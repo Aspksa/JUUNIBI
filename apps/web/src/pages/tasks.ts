@@ -178,10 +178,16 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   };
   /** «Готово» on a fired reminder: gone from the list at once and for good, whatever the server answers. */
   const dismiss = (id: string) => {
-    const ids = dismissedIds(); ids.add(id);
-    store.set(DISMISSED, [...ids].slice(-100).join(","));
-    if (data) { data = { ...data, reminders: data.reminders.filter((x) => x.id !== id) }; render(); }
-    void act(() => api.dismissReminder(id));
+    // Never hide an unacknowledged reminder: a failed request must leave it visible.
+    void (async () => {
+      const result = await api.dismissReminder(id);
+      if (!result.ok) { showToast(result.error.message, { ms: 8000 }); await load(); return; }
+      const ids = dismissedIds();
+      ids.add(id);
+      store.set(DISMISSED, [...ids].slice(-100).join(","));
+      if (data) { data = { ...data, reminders: data.reminders.filter((x) => x.id !== id) }; render(); }
+      void refreshBrief();
+    })();
   };
   /** Hides the entry at once and deletes it only when "Отменить" was not pressed in time. */
   const removeLater = (id: string, label: string, run: () => ReturnType<typeof api.removeNote>) => {

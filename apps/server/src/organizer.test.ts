@@ -41,7 +41,7 @@ describe("заметки и дела", () => {
       expect(again.listReminders()).toHaveLength(1);
       await writeFile(path.join(dir, "bad.json"), JSON.stringify({ notes: [{ id: 1 }, { id: "a", kind: "todo", text: "ok", done: false, createdAt: "x" }], reminders: [{ id: "r", text: "x", at: "не дата", status: "scheduled" }] }));
       const broken = new Organizer(path.join(dir, "bad.json")); await broken.load();
-      expect(broken.listNotes()).toHaveLength(1);
+      expect(broken.listNotes()).toHaveLength(0);
       expect(broken.listReminders()).toHaveLength(0);
     } finally { await done(); }
   });
@@ -174,5 +174,42 @@ describe("правка и повторы", () => {
     const { o, done } = await setup(local(9, 5));
     try { await expect(o.addReminder("x", new Date(local(9, 9)).toISOString(), "hourly")).rejects.toMatchObject({ status: 400 }); }
     finally { await done(); }
+  });
+});
+
+describe("регрессии надёжности дел", () => {
+  it("отмена повтора не удаляет следующую задачу после изменения её приоритета", async () => {
+    const { o, done } = await setup();
+    try {
+      const task = await o.addTask("Отчёт", { dueAt: "2026-10-09T18:00:00+03:00", repeat: "daily" });
+      await o.setDone(task.id, true);
+      const next = o.listNotes().find((n) => n.id !== task.id)!;
+      await o.updateTask(next.id, { priority: "high" });
+      await o.setDone(task.id, false);
+      expect(o.listNotes().find((n) => n.id === next.id)?.priority).toBe("high");
+    } finally { await done(); }
+  });
+  it("отмена неизменённого повтора убирает автоматически созданную копию", async () => {
+    const { o, done } = await setup();
+    try {
+      const task = await o.addTask("Зарядка", { dueAt: "2026-10-09T18:00:00+03:00", repeat: "daily" });
+      await o.setDone(task.id, true);
+      expect(o.listNotes()).toHaveLength(2);
+      await o.setDone(task.id, false);
+      expect(o.listNotes()).toHaveLength(1);
+    } finally { await done(); }
+  });
+  it("повреждённая дата создания не попадает в календарь дел", async () => {
+    const { dir, done } = await setup();
+    try {
+      const file = path.join(dir, "invalid-dates.json");
+      await writeFile(file, JSON.stringify({ notes: [
+        { id: "broken", kind: "todo", text: "Неверная дата", done: false, createdAt: "not-a-date" },
+        { id: "ok", kind: "note", text: "Запись", done: false, createdAt: "2026-10-09T10:00:00Z" }
+      ] }));
+      const loaded = new Organizer(file);
+      await loaded.load();
+      expect(loaded.listNotes().map((n) => n.id)).toEqual(["ok"]);
+    } finally { await done(); }
   });
 });

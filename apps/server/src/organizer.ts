@@ -10,6 +10,8 @@ export interface Note {
   repeat?: Repeat; repeatDay?: number;
   /** The copy created when this one was ticked off (removed again if the tick is undone). */
   nextId?: string;
+  /** Exact original next occurrence; undo must never delete a copy edited by the owner or automation. */
+  nextSnapshot?: string;
   /** How many times the automation moved this overdue to-do to the next day. */
   rolled?: number;
   /** The due time a "срок скоро" reminder was already sent for. */
@@ -261,6 +263,7 @@ const text = (v: unknown, label: string) => {
 /** Optional fields from the file are kept only when they make sense, so one bad value cannot break the page. */
 function cleanNote(n: Note): Note {
   const c: Note = { ...n };
+  if (c.nextSnapshot !== undefined && (typeof c.nextSnapshot !== "string" || c.nextSnapshot.length > 4096)) delete c.nextSnapshot;
   if (c.priority !== undefined && !["low", "normal", "high"].includes(c.priority)) delete c.priority;
   if (c.dueAt !== undefined && (typeof c.dueAt !== "string" || !Number.isFinite(Date.parse(c.dueAt)))) delete c.dueAt;
   if (c.completedAt !== undefined && (typeof c.completedAt !== "string" || !Number.isFinite(Date.parse(c.completedAt)))) delete c.completedAt;
@@ -354,7 +357,7 @@ export class Organizer {
       if (Array.isArray(raw.moveRequests)) this.moveRequests = raw.moveRequests.filter((v):v is string=>typeof v==="string" && /^[a-zA-Z0-9_-]{8,100}$/.test(v)).slice(-200);
       if (raw.autoCount && typeof raw.autoCount === "object") for (const [k, v] of Object.entries(raw.autoCount)) if (Number.isInteger(v) && (v as number) >= 0) this.autoCount[k as AutoLogEntry["kind"]] = v as number;
       if (Array.isArray(raw.missions)) this.missions = raw.missions.filter((m): m is Mission => !!m && typeof m.id === "string" && typeof m.title === "string" && typeof m.description === "string" && typeof m.createdAt === "string" && ["active","paused","complete"].includes(m.status)).slice(-100);
-      if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= (n.auto ? MAX_AUTO_TEXT : MAX_TEXT) && typeof n.done === "boolean" && typeof n.createdAt === "string").slice(-MAX_NOTES).map(cleanNote);
+      if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= (n.auto ? MAX_AUTO_TEXT : MAX_TEXT) && typeof n.done === "boolean" && typeof n.createdAt === "string" && Number.isFinite(Date.parse(n.createdAt))).slice(-MAX_NOTES).map(cleanNote);
       // a subtask whose parent is gone becomes an ordinary to-do
       const ids = new Set(this.notes.map((n) => n.id));
       for (const n of this.notes) if (n.parentId && !ids.has(n.parentId)) delete n.parentId;
@@ -691,13 +694,16 @@ export class Organizer {
           ...(n.area ? { area: n.area } : {}), ...(n.meeting ? { meeting: true as const } : {}) };
         this.notes.push(copy);
         n.nextId = copy.id;
+        n.nextSnapshot = JSON.stringify(copy);
       }
     } else {
       delete n.completedAt;
       // undoing the tick takes back the next copy, unless it was already worked on
       const next = n.nextId ? this.notes.find((x) => x.id === n.nextId) : undefined;
-      if (next && !next.done && next.text === n.text) this.notes = this.notes.filter((x) => x !== next);
+      // An edited occurrence belongs to the owner. Even a change of priority or due date must survive undo.
+      if (next && n.nextSnapshot && JSON.stringify(next) === n.nextSnapshot) this.notes = this.notes.filter((x) => x !== next);
       delete n.nextId;
+      delete n.nextSnapshot;
     }
     await this.save();
     return { ...n };
@@ -823,9 +829,9 @@ export class Organizer {
     if (released) this.addLog("quiet", `Тихие часы: придержала напоминаний до утра: ${released}`);
     changed = this.automate(now, fired) || changed;
     if (fired.length || changed) { this.pruneDone(); await this.save(); }
-    if (a.brief && !this.briefing && this.briefDue(now)) await this.runBrief(now).catch(() => {});
-    if (a.evening && !this.briefing && this.autoState.eveningDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) await this.runEvening(now).catch(() => {});
-    if (a.weekly && !this.briefing && new Date(now).getDay() === 0 && this.autoState.weekDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) await this.runWeek(now).catch(() => {});
+    if (a.brief && !this.briefing && this.briefDue(now)) await this.runBrief(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Brief", e));
+    if (a.evening && !this.briefing && this.autoState.eveningDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) await this.runEvening(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Evening", e));
+    if (a.weekly && !this.briefing && new Date(now).getDay() === 0 && this.autoState.weekDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) await this.runWeek(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Week", e));
     return fired;
   }
 
