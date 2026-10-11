@@ -8,7 +8,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { AutoLogEntry, Mission, Note, Reminder, TaskEvent } from "./organizer";
-import { ALL_TAILS_AWARD, EFFECTS, GROUPS, MEDALS, METRICS, REACTIONS, TAILS, TAIL_AWARD_TIER, TAIL_LEVELS, TAIL_PATTERNS, TIERS, TITLES, type MetricDef } from "./achievements-catalog";
+import { ALL_TAILS_AWARD, EFFECTS, GROUPS, MEDALS, METRICS, REACTIONS, TAILS, TAIL_AWARD_TIER, TAIL_LEVELS, TAIL_PATTERNS, TIERS, TITLES, SEASONS, SEASON_LEVELS, type MetricDef, type SeasonDef } from "./achievements-catalog";
 
 const DAY = 86_400_000;
 const p2 = (n: number) => String(n).padStart(2, "0");
@@ -30,6 +30,7 @@ export function plural(n: number, forms: [string, string, string]): string {
 const dn = (n: number) => `${n} ${plural(n, ["день", "дня", "дней"])}`;
 const tn = (n: number) => `${n} ${plural(n, ["раз", "раза", "раз"])}`;
 const dl = (n: number) => `${n} ${plural(n, ["дело", "дела", "дел"])}`;
+const acts = (n: number) => `${n} ${plural(n, ["действие", "действия", "действий"])}`;
 const hoursText = (min: number) => min < 60 ? `${min} мин` : `${(Math.round(min / 6) / 10).toLocaleString("ru-RU")} ч`;
 const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 const WEEKDAY_ON = ["по понедельникам", "по вторникам", "по средам", "по четвергам", "по пятницам", "по субботам", "по воскресеньям"];
@@ -158,7 +159,7 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
   },
   magnet(c, d) {
     const r = c.todos.map((n) => ({ n, k: (c.ev.get(n.id) ?? []).filter((e) => e.kind !== "add").length })).filter((x) => x.k > 1);
-    if (!r.length) return empty(d, "история действий ведётся с этого обновления");
+    if (!r.length) return empty(d, "вернитесь к одному делу несколько раз: измените, перенесите или отметьте его");
     const best = top(r, (x) => x.k);
     return { value: tn(best[0]!.k), detail: q(best[0]!.n.text), kind: "spark", series: best.map((x) => x.k), labels: best.map((x) => cut(x.n.text, 30)), ready: true, score: best[0]!.k };
   },
@@ -280,7 +281,7 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
     const parts = Object.entries(c.autoCount).map(([k, v]) => ({ k, m: (W[k as AutoLogEntry["kind"]] ?? 1) * (v ?? 0) })).filter((x) => x.m > 0).sort((a, b) => b.m - a.m);
     const total = parts.reduce((s, p) => s + p.m, 0);
     const label: Record<string, string> = { roll: "перенос", remind: "сроки", brief: "сводки", evening: "итоги", week: "обзоры", quiet: "тишина", arrange: "раскладка", move: "переносы", rule: "правила" };
-    return { value: total ? hoursText(total) : "0 мин", detail: total ? `Автоматика сделала за вас ${parts.reduce((s, p) => s + (c.autoCount[p.k as AutoLogEntry["kind"]] ?? 0), 0)} действий` : "Автоматика ещё не успела поработать — счёт идёт с этого обновления", kind: "split", series: parts.map((p) => p.m), labels: parts.map((p) => label[p.k] ?? p.k), ready: true, score: total, record: total };
+    return { value: total ? hoursText(total) : "0 мин", detail: total ? `Автоматика сделала за вас ${acts(parts.reduce((s, p) => s + (c.autoCount[p.k as AutoLogEntry["kind"]] ?? 0), 0))}` : "Автоматика ещё не успела поработать — счёт идёт с этого обновления", kind: "split", series: parts.map((p) => p.m), labels: parts.map((p) => label[p.k] ?? p.k), ready: true, score: total, record: total };
   },
   backpack(c) {
     const est = c.open.reduce((s, n) => s + (n.estimateMinutes ?? 30), 0);
@@ -417,7 +418,7 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
   },
   planet(c, d) {
     const act = [...c.projects.values()].filter((p) => (p.goal ? p.goal.status === "active" : p.items.some((n) => !n.done)));
-    if (!act.length) return empty(d, "нет активных целей и #проектов");
+    if (!act.length) return empty(d, "поставьте цель или добавьте #проект к делу");
     const parts = top(act, (p) => p.items.filter((n) => !n.done).length, 6);
     return { value: `${act.length} ${plural(act.length, ["проект", "проекта", "проектов"])}`, detail: `В них открытых дел: ${act.reduce((s, p) => s + p.items.filter((n) => !n.done).length, 0)}`, kind: "split", series: parts.map((p) => p.items.filter((n) => !n.done).length || 1), labels: parts.map((p) => p.name), ready: true, score: act.length };
   },
@@ -428,7 +429,7 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
     return { value: String(r.length), detail: last ? `${last.name}: первый шаг ${ruDate(last.at)}` : "Ни один проект ещё не сделал первого шага", ready: true, score: r.length, kind: "dots", series: [r.length] };
   },
   galaxy(c, d) {
-    if (!c.open.length) return empty(d, "нет открытых дел");
+    if (!c.open.length) return empty(d, "добавьте пару дел и привяжите их к цели");
     const goals = new Set(c.open.filter((n) => n.project && c.missionTitles.has(n.project)).map((n) => n.project));
     const tied = c.open.filter((n) => n.project || n.parentId).length;
     return { value: `${goals.size} ${plural(goals.size, ["цель", "цели", "целей"])}`, detail: `${Math.round((100 * tied) / c.open.length)}% открытых дел связаны с целью или проектом`, ring: tied / c.open.length, ready: true, score: goals.size };
@@ -450,14 +451,14 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
   },
   dark(c, d) {
     const act = [...c.projects.values()].filter((p) => (p.goal ? p.goal.status === "active" : p.items.some((n) => !n.done)));
-    if (!act.length) return empty(d, "нет активных целей и #проектов");
+    if (!act.length) return empty(d, "поставьте цель или добавьте #проект к делу");
     const idle = act.map((p) => ({ name: p.name, k: days(c.now - Math.max(p.goal ? ms(p.goal.createdAt) : 0, ...p.items.flatMap((n) => c.activity(n)))) })).filter((x) => x.k >= 14);
     return { value: String(idle.length), detail: idle.length ? "Давно без внимания: " + idle.slice(0, 2).map((x) => `${x.name} (${dn(x.k)})`).join(", ") : "Все проекты на светлой стороне", kind: "list", list: idle.slice(0, 4).map((x) => "· " + cut(x.name, 30) + " — " + dn(x.k)), ready: true, score: 0, earned: act.length >= 1 && !idle.length };
   },
   ears(c, d) {
     const heard = c.done.filter((n) => n.remindedFor && n.dueAt && ms(n.completedAt) <= ms(n.dueAt)).length;
     const asked = c.autoCount.remind ?? 0;
-    if (!asked && !heard) return empty(d, "напоминания о сроке появятся, когда срок будет близко");
+    if (!asked && !heard) return empty(d, "добавьте дело со сроком, и я напомню о нём заранее");
     return { value: String(heard), detail: `Напоминаний о сроке: ${asked}; после них сделано вовремя — ${heard}`, ring: asked ? Math.min(1, heard / asked) : undefined, ready: true, score: heard };
   },
   tracks(c, d) {
@@ -468,13 +469,14 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
   },
   twelve(c) {
     const t = tailsOf(c);
-    // a direction counts once it has three done to-dos, so one stray word does not light a tail
-    const lit = t.filter((x) => x.done >= 3).length;
-    return { value: `${lit} из 12`, detail: lit ? "Направления: " + t.filter((x) => x.done >= 3).slice(0, 4).map((x) => x.title.toLowerCase()).join(", ") + (lit > 4 ? "…" : "") : "Ни одно направление ещё не набрало трёх дел", ring: lit / 12, ready: true, score: lit };
+    // the same count as the kitsune: a tail is awake from its first done to-do
+    const awake = t.filter((x) => x.level > 0);
+    const lit = awake.length;
+    return { value: `${lit} из 12`, detail: lit ? "Проснулись: " + awake.slice(0, 4).map((x) => x.title.toLowerCase()).join(", ") + (lit > 4 ? "…" : "") : "Ни один хвост ещё не проснулся", ring: lit / 12, ready: true, score: lit };
   },
   dropped(c, d) {
     const gone = c.history.filter((e) => e.kind === "remove" && e.todo && !e.from);
-    if (!c.history.length) return empty(d, "история ведётся с этого обновления");
+    if (!c.history.length) return empty(d, "продолжайте вести дела: история пишется с этого обновления");
     return { value: String(gone.length), detail: gone.length ? "Последний сброшенный: " + q(gone[gone.length - 1]!.text) : "Ненужных дел пока не убирали", ready: true, score: gone.length, kind: "dots", series: [gone.length] };
   },
   bloom(c, d) {
@@ -491,7 +493,7 @@ const COMPUTE: Record<string, (c: Ctx, def: MetricDef) => Partial<MetricResult>>
     return { value: String(lights.length), detail: lights[0] ? `${q(lights[0].m.title)} стоит ${dn(lights[0].idle)} — следующий шаг: ${q(lights[0].next!.text)}` : "Застрявших целей нет, всем светло", kind: "list", list: lights.slice(0, 3).map((x) => "🏮 " + cut(x.m.title, 20) + " → " + cut(x.next!.text, 24)), ready: true, score: stalled };
   },
   twist(c, d) {
-    if (!c.history.length) return empty(d, "история ведётся с этого обновления");
+    if (!c.history.length) return empty(d, "продолжайте вести дела: история пишется с этого обновления");
     const k = c.done.filter((n) => (c.ev.get(n.id) ?? []).some((e) => e.kind === "edit" && ms(e.at) < ms(n.completedAt))).length;
     return { value: String(k), detail: k ? "Дел, изменённых по ходу и всё равно сделанных" : "Пока всё делается ровно как задумано", ready: true, score: k, kind: "dots", series: [k] };
   },
@@ -704,6 +706,42 @@ export function dayStory(input: Input, day: string, book: { title: string; at: s
   return { day, date: date[0]!.toUpperCase() + date.slice(1), story: parts.join(" "), lines: lines.slice(0, 120).map((l) => ({ ...l, time: hm(ms(l.at)) })), counts: { done, added, notes, moved, removed, awards }, prev, next: to > input.now ? null : next };
 }
 
+/** The season instance a moment belongs to, e.g. «2026-autumn»; December counts for the next year's winter. */
+export function seasonKey(t: number, season: SeasonDef["season"]): string | null {
+  const d = new Date(t), m = d.getMonth(), y = d.getFullYear(), day = d.getDate();
+  if (season === "newyear") return m === 11 && day >= 25 ? `${y + 1}-newyear` : m === 0 && day <= 8 ? `${y}-newyear` : null;
+  const s = m === 11 || m <= 1 ? "winter" : m <= 4 ? "spring" : m <= 7 ? "summer" : "autumn";
+  if (s !== season) return null;
+  return `${s === "winter" && m === 11 ? y + 1 : y}-${s}`;
+}
+/** Seasons (by key) in which enough to-dos were finished for the award. */
+export function seasonsEarned(c: Ctx, def: SeasonDef): string[] {
+  const k = new Map<string, number>();
+  for (const n of c.done) { const key = seasonKey(ms(n.completedAt), def.season); if (key) k.set(key, (k.get(key) ?? 0) + 1); }
+  return [...k].filter(([, v]) => v >= def.need).map(([key]) => key).sort();
+}
+/** The last seven days in figures, for «Карточка недели». */
+export function weekSummary(c: Ctx, book: { title: string; at: string }[]) {
+  const from = startOf(c.now) - 6 * DAY;
+  const days7 = c.lastDays(7);
+  const perDay = days7.map((t) => c.doneByDay.get(dayKey(t))?.length ?? 0);
+  const best = Math.max(0, ...perDay);
+  const bestAt = days7[perDay.indexOf(best)]!;
+  const tails = tailsOf(c);
+  const dirs = new Map<string, number>();
+  for (const n of c.done) if (ms(n.completedAt) >= from) for (const d of directionsOf(n, c.missionTitles)) dirs.set(d, (dirs.get(d) ?? 0) + 1);
+  const topDir = [...dirs].sort((a, b) => b[1] - a[1])[0];
+  return {
+    from: dayKey(from), to: dayKey(c.now),
+    done: perDay.reduce((a, b) => a + b, 0), perDay, labels: days7.map((t) => WEEKDAYS[wd(t)]!),
+    added: c.todos.filter((n) => ms(n.createdAt) >= from).length,
+    bestDay: best ? { label: ruDate(bestAt), count: best } : null,
+    awards: book.filter((b) => Date.parse(b.at) >= from).map((b) => b.title).slice(-6),
+    awake: tails.filter((t) => t.level > 0).length,
+    topTail: topDir ? { title: TAILS.find((t) => t.id === topDir[0])?.title ?? "", emoji: TAILS.find((t) => t.id === topDir[0])?.emoji ?? "", count: topDir[1] } : null,
+  };
+}
+
 // ------------------------------------------------------------------ what was won, kept on disk
 
 export interface AwardState { level: number; firstAt: string; lastAt: string; history: { level: number; at: string }[]; periods?: string[] }
@@ -713,16 +751,21 @@ interface StoreData {
   awards: Record<string, AwardState>; records: Record<string, RecordEntry[]>; notices: Notice[]; phrasesUsed: string[];
   title: string | null; titles: Record<string, string>; pending: { award: string; level: number; at: string; text?: string }[];
   first?: { text: string; at: string }; tails: Record<string, number>; events: string[];
+  /** Today's small task from JUUNIBI: one figure to move, its score and readiness when the day began. */
+  quest?: { day: string; metric: string; startScore: number; startReady: boolean; done: boolean }; sparks: number;
 }
-const blank = (): StoreData => ({ awards: {}, records: {}, notices: [], phrasesUsed: [], title: null, titles: {}, pending: [], tails: {}, events: [] });
+const blank = (): StoreData => ({ awards: {}, records: {}, notices: [], phrasesUsed: [], title: null, titles: {}, pending: [], tails: {}, events: [], sparks: 0 });
 const MAX_NOTICES = 120, MAX_RECORDS = 20, MAX_PENDING = 30;
 
 /** The award catalogue as the page shows it: the 60 figures' awards, a tail award per direction and the twelve together. */
-export function awardCatalog() {
+export function awardCatalog() { return CATALOG; }
+const CATALOG = buildCatalog();
+function buildCatalog() {
   return [
     ...METRICS.map((d) => ({ id: d.id, emoji: d.emoji, title: d.award, tier: d.tier, group: d.group, metric: d.title, goal: d.goal, levels: d.levels.length, hidden: !!d.hidden, riddle: d.riddle ?? null, repeat: d.repeat ?? null, n: d.n })),
     ...TAILS.map((t, i) => ({ id: "tail-" + t.id, emoji: t.emoji, title: "Хвост: " + t.title, tier: TAIL_AWARD_TIER, group: "tails", metric: "Двенадцать хвостов", goal: `${TAIL_LEVELS[1]} дел направления «${t.title}», дальше — новые узоры`, levels: 4, hidden: false, riddle: null, repeat: null, n: 61 + i })),
     { id: ALL_TAILS_AWARD.id, emoji: ALL_TAILS_AWARD.emoji, title: ALL_TAILS_AWARD.title, tier: ALL_TAILS_AWARD.tier, group: "tails", metric: "Двенадцать хвостов", goal: ALL_TAILS_AWARD.goal, levels: 1, hidden: true, riddle: ALL_TAILS_AWARD.riddle ?? null, repeat: null, n: 73 },
+    ...SEASONS.map((x, i) => ({ id: x.id, emoji: x.emoji, title: x.title, tier: x.tier, group: "season", metric: "Сезоны", goal: x.goal + ", каждый год заново", levels: SEASON_LEVELS.length, hidden: false, riddle: null, repeat: null, n: 74 + i })),
   ];
 }
 /** Week and month keys for `repeat` awards. */
@@ -752,6 +795,8 @@ export class Achievements {
       if (Array.isArray(raw.pending)) d.pending = raw.pending.filter((p) => p && typeof p.award === "string" && Number.isInteger(p.level) && typeof p.at === "string").map((p) => ({ award: p.award, level: p.level, at: p.at, ...(typeof p.text === "string" ? { text: p.text } : {}) })).slice(-MAX_PENDING);
       if (raw.first && typeof raw.first.text === "string" && typeof raw.first.at === "string") d.first = { text: raw.first.text, at: raw.first.at };
       if (raw.tails && typeof raw.tails === "object") for (const [k, v] of Object.entries(raw.tails)) if (Number.isInteger(v)) d.tails[k] = v as number;
+      if (raw.quest && typeof raw.quest.day === "string" && typeof raw.quest.metric === "string") d.quest = { day: raw.quest.day, metric: raw.quest.metric, startScore: Number(raw.quest.startScore) || 0, startReady: !!raw.quest.startReady, done: !!raw.quest.done };
+      if (Number.isInteger(raw.sparks) && raw.sparks! >= 0) d.sparks = raw.sparks!;
       if (Array.isArray(raw.events)) d.events = raw.events.filter((x): x is string => typeof x === "string").slice(-300);
       this.data = d;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
@@ -877,6 +922,15 @@ export class Achievements {
       const lvl = Math.min(4, Math.max(0, t.level - 1));
       if (lvl > 0) this.grant("tail-" + t.id, lvl, TAIL_AWARD_TIER, "Хвост: " + t.title, { value: t.pattern, detail: `${dl(t.done)} в направлении «${t.title}».` }, quiet);
     }
+    // seasons: the medal grows with every year the season was earned in
+    for (const def of SEASONS) {
+      const periods = seasonsEarned(ctx, def);
+      if (!periods.length) continue;
+      const level = SEASON_LEVELS.filter((x) => periods.length >= x).length;
+      if (this.grant(def.id, level, def.tier, def.title, { value: def.title, detail: def.goal + "." }, quiet)) this.data.awards[def.id]!.periods = periods.slice(-60);
+      else if (this.data.awards[def.id]) this.data.awards[def.id]!.periods = periods.slice(-60);
+    }
+    this.questStep(metrics, now, quiet);
     if (tails.every((t) => t.level >= 3)) this.grant(ALL_TAILS_AWARD.id, 1, ALL_TAILS_AWARD.tier, ALL_TAILS_AWARD.title, { value: "12 из 12", detail: "Все двенадцать хвостов сияют." }, quiet);
     // titles
     const lv = (id: string) => this.data.awards[id]?.level ?? 0;
@@ -897,6 +951,37 @@ export class Achievements {
     }
     if (JSON.stringify(this.data) !== before) await this.save();
     return this.view(metrics, tails, ctx, recordsToday);
+  }
+
+  /** Picks today's task (the same all day) and gives a spark when it is done. */
+  private questStep(metrics: MetricResult[], now: number, quiet: boolean) {
+    const today = dayKey(now);
+    const q0 = this.data.quest;
+    if (!q0 || q0.day !== today) {
+      // figures waiting for something simple come first; otherwise one whose award is not maxed yet
+      const waiting = metrics.filter((m) => !m.ready && !/история пишется|не удалось/.test(m.detail));
+      const growing = metrics.filter((m) => m.ready && (this.data.awards[m.id]?.level ?? 0) < (METRICS.find((d) => d.id === m.id)?.levels.length ?? 0) && !METRICS.find((d) => d.id === m.id)?.repeat);
+      const pool = waiting.length ? waiting : growing;
+      if (!pool.length) { delete this.data.quest; return; }
+      const seed = [...today].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 11);
+      const m = pool[seed % pool.length]!;
+      this.data.quest = { day: today, metric: m.id, startScore: m.score, startReady: m.ready, done: false };
+      return;
+    }
+    if (q0.done) return;
+    const m = metrics.find((x) => x.id === q0.metric);
+    if (!m || !m.ready || (q0.startReady && m.score <= q0.startScore)) return;
+    q0.done = true;
+    this.data.sparks += 1;
+    if (!quiet) this.notice({ text: `Задание дня выполнено: «${m.title}» сдвинулся. Держите искру ✨ — всего искр: ${this.data.sparks}.`, emoji: "✨", kind: "event" });
+  }
+  private questView(metrics: MetricResult[]) {
+    const q0 = this.data.quest;
+    const m = q0 && metrics.find((x) => x.id === q0.metric);
+    if (!q0 || !m) return null;
+    const why = m.detail.replace(/^Копим данные: /, "");
+    const text = q0.startReady ? `Сдвиньте показатель «${m.title}»: ${m.hint.toLowerCase()}.` : why[0]!.toUpperCase() + why.slice(1) + ` — и показатель «${m.title}» оживёт.`;
+    return { metric: m.id, emoji: m.emoji, title: m.title, text, done: q0.done };
   }
 
   private view(metrics: MetricResult[], tails: ReturnType<typeof tailsOf>, ctx: Ctx, recordsToday: string[]) {
@@ -936,6 +1021,8 @@ export class Achievements {
       awards, tails, titles, title: this.data.title, records,
       notices: [...this.data.notices].reverse().slice(0, 40),
       surprise, discoveries: discoveries(ctx), pending,
+      quest: this.questView(metrics), sparks: this.data.sparks,
+      week: weekSummary(ctx, Object.entries(this.data.awards).filter(([, st]) => st.level > 0).map(([id, st]) => ({ title: cat.find((a) => a.id === id)?.title ?? id, at: st.lastAt })).sort((a, b) => a.at.localeCompare(b.at))),
       stats: { won: won.length, total: awards.length, rare: won.filter((a) => a.tier >= 4).length, medals: won.reduce((s, a) => s + a.level, 0), ready: metrics.filter((m) => m.ready).length },
     };
   }

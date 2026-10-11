@@ -6,7 +6,7 @@
 import { el, icon, type IconName } from "../dom";
 import { showToast } from "../toast";
 import { achData, awardBadge, playPending } from "./achievements";
-import { freshNotices } from "./achievements-model";
+import { freshNotices, needText } from "./achievements-model";
 import { tailsEmblem } from "./tails";
 
 const SEEN = "juunibi.ach.noticeSeen";
@@ -36,11 +36,11 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
       const m = d.metrics.find((x) => x.id === id);
       if (!m) return null;
       const a = d.awards.find((x) => x.id === id);
-      const b = el("button", { type: "button", cls: "ach-mini" + (m.ready ? "" : " waiting"), title: m.hint + (m.ready ? "" : ". " + m.detail.replace(/^Копим данные: /, "Нужно: ")) },
+      const b = el("button", { type: "button", cls: "ach-mini" + (m.ready ? "" : " waiting"), title: m.hint + (m.ready ? "" : ". " + needText(m.detail)) },
         el("span", { cls: "ach-mini-top" }, el("span", { cls: "ach-mini-ic", attrs: { "aria-hidden": "true" }, textContent: m.emoji }), el("small", { textContent: m.title })),
         el("b", { textContent: m.ready ? m.value : "копим данные" }),
         el("span", { cls: "ach-mini-bar", attrs: { "aria-hidden": "true" } }, el("i")));
-      b.style.setProperty("--p", `${Math.round((a?.level ? 1 : a?.progress ?? 0) * 100)}%`);
+      b.style.setProperty("--p", String(Math.round((a?.level ? 1 : a?.progress ?? 0) * 100)));
       b.addEventListener("click", () => o.open("metrics"));
       return b;
     };
@@ -58,6 +58,9 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
       el("div", { cls: "ach-panel-stats" }, stat(`${d.stats.won}/${d.stats.total}`, "наград"), stat(String(d.stats.rare), "редких"), stat(`${awake}/12`, "хвостов")),
       el("div", { cls: "ach-panel-surprise" }, el("span", { cls: "ach-panel-surprise-ic", attrs: { "aria-hidden": "true" }, textContent: surpriseEmoji }),
         el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))),
+      d.quest ? el("button", { type: "button", cls: "ach-panel-quest" + (d.quest.done ? " done" : ""), onclick: () => o.open("metrics") },
+        el("span", { cls: "ach-panel-quest-ic", attrs: { "aria-hidden": "true" }, textContent: d.quest.done ? "✅" : "✨" }),
+        el("span", {}, el("b", { textContent: d.quest.done ? "Задание дня выполнено" : "Задание дня" }), el("small", { textContent: d.quest.done ? `Искр: ${d.sparks}` : d.quest.text }))) : null,
       notices.length ? el("ul", { cls: "ach-panel-notices", attrs: { "aria-label": "JUUNIBI замечает" } }, ...notices.map((n) => el("li", {}, el("span", { cls: "ach-panel-notice-ic", attrs: { "aria-hidden": "true" }, textContent: n.emoji }), el("span", { textContent: n.text })))) : null,
       el("div", { cls: "ach-minis" }, ...HIGHLIGHTS.map(tile).filter((x): x is HTMLButtonElement => !!x)),
       won.length ? el("div", { cls: "ach-panel-badges", attrs: { "aria-label": "Новые награды" } }, ...won.map((a) => { const b = awardBadge(a, d, true); b.removeAttribute("aria-hidden"); b.setAttribute("role", "img"); b.setAttribute("aria-label", a.title); return b; })) : null,

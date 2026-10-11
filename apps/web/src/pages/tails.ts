@@ -7,6 +7,7 @@
  */
 import type { AchTail } from "../api";
 import kitsuneUrl from "../assets/kitsune.webp";
+export { kitsuneUrl };
 
 const SVG = "http://www.w3.org/2000/svg";
 const node = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] => {
@@ -25,6 +26,7 @@ const W = 1145, H = 934;
 const TAIL_SPOTS: [number, number][] = [[110, 600], [130, 420], [210, 300], [300, 190], [390, 120], [470, 60],
   [700, 90], [830, 190], [960, 320], [1030, 430], [1060, 560], [1000, 660]];
 
+let uid = 0;
 export function tailsEmblem(tails: AchTail[], o: { size?: "sm" | "lg"; onPick?: (t: AchTail) => void; selected?: string | undefined } = {}): HTMLElement {
   const awake = tails.filter((t) => t.level).length;
   const box = document.createElement("div");
@@ -38,19 +40,31 @@ export function tailsEmblem(tails: AchTail[], o: { size?: "sm" | "lg"; onPick?: 
   img.decoding = "async";
   img.draggable = false;
   box.append(img, Object.assign(document.createElement("span"), { className: "kitsune-glow" }));
-  if (!o.onPick) return box;
 
-  // each tail of the picture is a button: a ring lights up on it on hover and when it is chosen
-  const svg = node("svg", { viewBox: `0 0 ${W} ${H}`, class: "kitsune-spots", role: "group", "aria-label": "Двенадцать хвостов" });
+  // every awake tail glows on the picture, brighter with its pattern; while she sleeps no tail is marked.
+  // Where tails can be picked, each tail is also a button with a ring on hover and when chosen.
+  const id = `ks${++uid}`;
+  const svg = node("svg", { viewBox: `0 0 ${W} ${H}`, class: "kitsune-spots", ...(o.onPick ? { role: "group", "aria-label": "Двенадцать хвостов" } : { "aria-hidden": "true" }) });
+  const defs = node("defs");
+  for (const [gid, c0, c1] of [["lit", "#fff2c4", "#ffb84a"], ["dim", "#0d0612", "#0d0612"]] as const) {
+    const g = node("radialGradient", { id: `${id}-${gid}`, cx: "50%", cy: "50%", r: "50%" });
+    g.append(node("stop", { offset: 0, "stop-color": c0, "stop-opacity": gid === "lit" ? 0.85 : 0.62 }), node("stop", { offset: 0.55, "stop-color": c1, "stop-opacity": gid === "lit" ? 0.3 : 0.4 }), node("stop", { offset: 1, "stop-color": c1, "stop-opacity": 0 }));
+    defs.append(g);
+  }
+  svg.append(defs);
   tails.slice(0, 12).forEach((t, i) => {
     const [x, y] = TAIL_SPOTS[i]!;
-    const g = node("g", { class: `kitsune-spot lv${t.level}` + (o.selected === t.id ? " sel" : ""), tabindex: 0, role: "button",
-      "aria-label": `${t.title}: ${t.pattern}` + (o.selected === t.id ? ", выбран" : "") });
-    const title = node("title");
-    title.textContent = `${t.emoji} ${t.title}: ${t.pattern}, сделано ${t.done}` + (t.next ? ` (до следующего узора ${t.next - t.done})` : "");
-    g.append(title, node("circle", { cx: x, cy: y, r: 74, class: "kitsune-hit" }), node("circle", { cx: x, cy: y, r: 58, class: "kitsune-ring" }));
-    g.addEventListener("click", () => o.onPick!(t));
-    g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); o.onPick!(t); } });
+    const g = node("g", { class: `kitsune-spot lv${t.level}` + (o.selected === t.id ? " sel" : "") });
+    g.style.setProperty("--i", String(i));
+    if (awake) g.append(node("circle", { cx: x, cy: y, r: t.level ? 70 + t.level * 8 : 92, class: t.level ? "kitsune-lit" : "kitsune-dim", fill: `url(#${id}-${t.level ? "lit" : "dim"})`, ...(t.level ? { style: `--lv:${t.level}` } : {}) }));
+    if (o.onPick) {
+      for (const [k, v] of Object.entries({ tabindex: 0, role: "button", "aria-label": `${t.title}: ${t.pattern}` + (o.selected === t.id ? ", выбран" : "") })) g.setAttribute(k, String(v));
+      const title = node("title");
+      title.textContent = `${t.emoji} ${t.title}: ${t.pattern}, сделано ${t.done}` + (t.next ? ` (до следующего узора ${t.next - t.done})` : "");
+      g.append(title, node("circle", { cx: x, cy: y, r: 74, class: "kitsune-hit" }), node("circle", { cx: x, cy: y, r: 58, class: "kitsune-ring" }));
+      g.addEventListener("click", () => o.onPick!(t));
+      g.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); o.onPick!(t); } });
+    }
     svg.append(g);
   });
   box.append(svg);
