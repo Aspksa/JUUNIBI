@@ -15,11 +15,20 @@ export async function streamChat(body: { message: string; history: { role: strin
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
-  const flushLine = (line: string) => { if (!line.trim()) return; try { onEvent(JSON.parse(line) as StreamEvent); } catch { /* ignore a malformed line */ } };
+  const MAX_LINE = 2 * 1024 * 1024;
+  const flushLine = (line: string) => {
+    if (!line.trim()) return;
+    if (line.length > MAX_LINE) throw new Error("Ответ помощницы слишком большой");
+    let event: unknown;
+    try { event = JSON.parse(line); } catch { throw new Error("Некорректное событие ответа помощницы"); }
+    if (!event || typeof event !== "object" || typeof (event as { type?: unknown }).type !== "string") throw new Error("Некорректное событие ответа помощницы");
+    onEvent(event as StreamEvent);
+  };
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
+    if (buf.length > MAX_LINE && !buf.includes("\n")) throw new Error("Превышен лимит буфера ответа");
     let nl: number;
     while ((nl = buf.indexOf("\n")) >= 0) { flushLine(buf.slice(0, nl)); buf = buf.slice(nl + 1); }
   }
