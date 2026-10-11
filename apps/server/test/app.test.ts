@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { Assistant, Memory, type LlmProvider } from "@juunibi/assistant";
 import { Logger } from "@juunibi/core";
 import { createApp, hostAllowed, originAllowed } from "../src/app";
+import { BrainCore } from "../src/brain";
 
 const llm: LlmProvider = { chat: async (_m, o) => { o?.onText?.("при"); o?.onText?.("вет"); return { content: "привет", toolCalls: [] }; } };
 let server: http.Server, base: string, port: number;
@@ -99,6 +100,31 @@ describe("api", () => {
       const del = await fetch(`${url}/api/memory/${list[0].id}`, { method: "DELETE" });
       expect(await del.json()).toEqual({ ok: true });
       expect((await post(url, "/api/chat", { message: "hi" })).status).toBe(503);
+    } finally { srv.close(); }
+  });
+});
+
+describe("Brain cognitive HTTP integration", () => {
+  it("uses real module adapter, verifies steps, blocks unsafe actions and resumes", async () => {
+    const brain = new BrainCore(() => true);
+    const srv = createApp({brain, modules: () => [{name:"real-module"}], configured: {model:"m"}});
+    const endpoint = `http://127.0.0.1:${await start(srv)}`;
+    try {
+      const plan = brain.plan("review modules", ["modules", "modules again", "third"]);
+      expect((await post(endpoint, "/api/brain/cognitive-batch", {planId: plan.id, actions:["list_modules","shell"], maxSteps:2})).status).toBe(400);
+      expect(brain.status().plans[0]?.steps[0]?.status).toBe("pending");
+      const first = await post(endpoint, "/api/brain/cognitive-batch", {planId:plan.id,actions:["list_modules","list_modules"],maxSteps:2});
+      expect(first.status).toBe(200);
+      const body = await first.json();
+      expect(body.checkpoints).toHaveLength(2);
+      expect(body.checkpoints[0].result).toEqual([{name:"real-module"}]);
+      expect(body.cognitiveState.verification.completedSteps).toHaveLength(2);
+      expect(body.remaining).toBe(1);
+      const resume = await (await post(endpoint, "/api/brain/cognitive-batch", {planId:plan.id, actions:["list_modules"], maxSteps:1})).json();
+      expect(resume.skippedVerifiedSteps).toBe(2);
+      expect(resume.remaining).toBe(0);
+      expect(resume.cognitiveState.phase).toBe("completed");
+      expect((await post(endpoint, "/api/brain/cognitive-batch", {planId:plan.id, actions:["list_modules"], maxSteps:1})).status).toBe(409);
     } finally { srv.close(); }
   });
 });
