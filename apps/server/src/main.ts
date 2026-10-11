@@ -1,3 +1,4 @@
+import { LocalDisk } from "./local-disk";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
@@ -188,6 +189,8 @@ const evals = new EvalService(evalHistory, {
   model: () => chatModel(), persona: () => currentPersona,
 });
 const openable = new OpenableUrls();
+const disk = new LocalDisk(path.join(dataDir,"disk"));
+await disk.load();
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
@@ -390,7 +393,7 @@ const appDeps: AppDeps = {
   projectStats,
   scenes,
   modules: () => modules.list(),
-  settings, organizer, achievements, brief: briefData,
+  settings, organizer, disk, achievements, brief: briefData,
   splitSteps: () => { const l = sceneLlm; return l ? (t: string, signal?: AbortSignal) => splitIntoSteps(l, t, signal) : undefined; }, evals, noteUserText: (t: string) => openable.noteText(t),
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),
