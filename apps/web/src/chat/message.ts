@@ -3,7 +3,7 @@ import { characterAvatar } from "./art";
 import { renderMarkdownInto } from "../markdown";
 import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
-import { formatBytes, stepLabel } from "./helpers";
+import { actionSummary, formatBytes, stepLabel } from "./helpers";
 import { speechSupported } from "./voice";
 import { promiseCard, toTasksButton } from "./to-tasks";
 
@@ -61,15 +61,23 @@ function fillUser(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
   if (promise) root.append(promise);
 }
 
-function stepsBlock(steps: Step[]): HTMLElement {
-  const running = steps.some((s) => s.status === "running");
-  const d = el("details", { cls: "steps" + (running ? " running" : ""), open: running },
-    el("summary", {}, running ? el("i", { cls: "spin" }) : icon("check", 14), el("span", { textContent: running ? stepLabel(steps.find((s) => s.status === "running")!.name) + "…" : `Шагов выполнено: ${steps.length}` })));
-  for (const s of steps) {
-    d.append(el("div", { cls: `step ${s.status}` },
-      s.status === "running" ? el("i", { cls: "spin" }) : el("span", { cls: "step-icon", textContent: STEP_ICON[s.status], attrs: { "aria-label": STEP_TITLE[s.status] } }),
-      el("span", { cls: "grow", textContent: stepLabel(s.name) }), el("span", { cls: "muted", textContent: s.ms !== undefined ? (s.ms < 1000 ? `${s.ms} мс` : `${(s.ms / 1000).toFixed(1)} с`) : "" })));
+function stepsBlock(steps: Step[], expanded = false): HTMLElement {
+  const running = steps.some((step) => step.status === "running");
+  const failed = steps.some((step) => step.status === "error" || step.status === "denied");
+  const d = el("details", { cls: "steps action-timeline" + (running ? " running" : failed ? " has-errors" : " complete"), open: running || expanded },
+    el("summary", { attrs: { "aria-label": "Действия помощницы: " + actionSummary(steps) } },
+      running ? el("i", { cls: "spin", attrs: { "aria-hidden": "true" } }) : icon(failed ? "alert" : "check", 14),
+      el("span", { textContent: actionSummary(steps) }),
+      el("span", { cls: "action-counter", textContent: String(steps.length) })));
+  const list = el("div", { cls: "action-timeline-list", attrs: { role: "list", "aria-label": "Шаги помощницы" } });
+  for (const step of steps) {
+    list.append(el("div", { cls: `step action-event ${step.status}`, attrs: { role: "listitem" } },
+      step.status === "running" ? el("i", { cls: "spin", attrs: { "aria-label": STEP_TITLE[step.status] } })
+        : el("span", { cls: "step-icon", textContent: STEP_ICON[step.status], attrs: { "aria-label": STEP_TITLE[step.status] } }),
+      el("span", { cls: "grow", textContent: stepLabel(step.name) }),
+      el("span", { cls: "action-duration", textContent: step.ms !== undefined ? (step.ms < 1000 ? `${step.ms} мс` : `${(step.ms / 1000).toFixed(1)} с`) : STEP_TITLE[step.status] })));
   }
+  d.append(list);
   return d;
 }
 
@@ -92,7 +100,9 @@ function fillAssistant(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
   const p = partsFor(root);
   patch(p, "scene", m.scene ? m.scene.action + "|" + (m.scene.phrase ?? "") : "", p.scene, () => m.scene
     ? [el("div", { cls: "scene" }, el("em", { textContent: m.scene.action }), ...(m.scene.phrase ? [el("p", { textContent: "«" + m.scene.phrase + "»" })] : []))] : []);
-  patch(p, "steps", JSON.stringify(m.steps ?? []), p.steps, () => (m.steps?.length ? [stepsBlock(m.steps)] : []));
+  const existingSteps = p.steps.querySelector("details.steps");
+  const wasExpanded = existingSteps instanceof HTMLDetailsElement && existingSteps.open && !existingSteps.classList.contains("running");
+  patch(p, "steps", JSON.stringify(m.steps ?? []), p.steps, () => (m.steps?.length ? [stepsBlock(m.steps, wasExpanded)] : []));
 
   p.prose.classList.toggle("streaming", c.streaming);
   renderMarkdownInto(p.prose, m.content, !c.streaming);

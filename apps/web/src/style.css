@@ -1729,3 +1729,19 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .ach-panel.folded>:not(.ach-panel-head){display:none}
 @media (max-width:600px){.org-row .tasks-rowmenu>summary{margin:0 -4px}.tasks-step-add{margin-left:12px}.tasks-bulk{padding:8px}}
 @media (prefers-reduced-motion:reduce){.org-row.leaving{transition:none}.tasks-menu-list,.tasks-bulk{animation:none}}
+
+/* AI action timeline: scoped to chat, preserving the existing application design. */
+.action-timeline{max-width:min(100%,520px);margin:6px 0 10px}
+.action-timeline summary{max-width:100%;min-height:34px;gap:9px;transition:background-color .16s ease,border-color .16s ease}
+.action-timeline summary span:not(.action-counter){min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.action-timeline .action-counter{font-variant-numeric:tabular-nums;border-radius:999px;background:var(--hover-2);padding:1px 7px;font-size:var(--fs-xs)}
+.action-timeline.complete summary{color:var(--fg)}
+.action-timeline.has-errors summary{border-color:var(--danger);color:var(--fg)}
+.action-timeline-list{position:relative;margin:7px 0 0 9px;padding:2px 0 4px 11px;border-left:1px solid var(--line)}
+.action-timeline .action-event{position:relative;min-height:32px;padding:6px 8px;gap:9px;color:var(--fg);border-radius:var(--r-sm)}
+.action-timeline .action-event::before{content:"";position:absolute;left:-15px;top:15px;width:7px;height:7px;border-radius:50%;background:var(--muted);border:1px solid var(--bg)}
+.action-timeline .action-event.ok::before{background:var(--ok)}
+.action-timeline .action-event.error::before,.action-timeline .action-event.denied::before{background:var(--danger)}
+.action-timeline .action-event.running::before{background:var(--brand)}
+.action-timeline .action-duration{font-size:var(--fs-xs);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.action-timeline summary{transition:none}}

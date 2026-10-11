@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, MAX_FILES, MAX_FILE_BYTES, chatToMarkdown, checkFile, clampRect, fenceFor, formatBytes, isTextFile, looksBinary, parseCommand, resizeRect, safeFileName, speechText, stepLabel, suggestCommands, withFiles } from "../src/chat/helpers";
+import { actionSummary, COMMANDS, MAX_FILES, MAX_FILE_BYTES, chatToMarkdown, checkFile, clampRect, fenceFor, formatBytes, isTextFile, looksBinary, parseCommand, resizeRect, safeFileName, speechText, stepLabel, suggestCommands, withFiles } from "../src/chat/helpers";
 import type { Conversation } from "../src/chat/chats";
 
 describe("slash commands", () => {
@@ -145,5 +145,16 @@ describe("быстрые команды и /сводка", () => {
     expect(suggestCmds("/ит", quick).map((c) => c.names[0])).toEqual(["итоги"]);
     expect(suggestCmds("/", quick).length).toBeGreaterThan(10);
     expect(quick[1]!.hint).not.toContain("\n");
+  });
+});
+
+describe("AI action timeline", () => {
+  it("describes an active tool rather than claiming it is finished", () => {
+    expect(actionSummary([{ name: "thinking", status: "running" }])).toContain("…");
+  });
+  it("reports successful and failed steps accurately", () => {
+    expect(actionSummary([{ name: "thinking", status: "ok" }, { name: "search_memory", status: "ok" }])).toBe("Действия ИИ · готово: 2");
+    expect(actionSummary([{ name: "search_memory", status: "error" }])).toBe("Действия ИИ · ошибок: 1");
+    expect(actionSummary([{ name: "write", status: "denied" }])).toBe("Действия ИИ · отклонено: 1");
   });
 });
