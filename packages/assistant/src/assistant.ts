@@ -264,7 +264,7 @@ export class Assistant {
         const t0 = Date.now();
         const result = await this.runTool(call.name, call.arguments, signal, opts.ephemeral);
         const elapsedMs = Date.now() - t0;
-        toolEvidence.push({ name: call.name, status: result.status });
+        toolEvidence.push({ name: call.name, status: result.status, at: Date.now() });
         try { this.o.onToolOutcome?.({tool: call.name, status: result.status, risk: this.tools.get(call.name)?.risk ?? "read", elapsedMs}); }
         catch (error) { this.log.warn("tool observer failed", error); }
         opts.onEvent?.({ type: "tool", phase: "end", id: call.id, name: call.name, status: result.status, ms: elapsedMs });
@@ -272,7 +272,7 @@ export class Assistant {
       }
     }
     reply ??= "Не удалось завершить задачу за отведённое число шагов.";
-    reply = guardToolClaims(reply, toolEvidence);
+    reply = guardToolClaims(reply, toolEvidence, text);
     if (!opts.ephemeral) {
       const sec = (ms: number) => (ms / 1000).toFixed(1);
       this.log.info(`ответ за ${sec(Date.now() - t0)} с: первый текст через ${firstTextAt ? sec(firstTextAt - t0) + " с" : "—"}, ` +
