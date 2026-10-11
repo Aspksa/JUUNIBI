@@ -9,8 +9,8 @@ describe("Disk Chronicles",()=>{
   const all:{id:string;title:string}[]=[];
   for(const group of DISK_GROUPS)for(const metric of group.metrics)all.push(metric);
   expect(all).toHaveLength(100);
-  expect(new Set(all.map(x=>x.id)).size).toBe(90);
-  expect(new Set(all.map(x=>x.title)).size).toBe(90);
+  expect(new Set(all.map(x=>x.id)).size).toBe(100);
+  expect(new Set(all.map(x=>x.title)).size).toBe(100);
  });
  it("counts live files separately from trash, and never invents unavailable audits",()=>{
   const e=[entry("a","photo.jpg",2048,{favorite:true,folder:"Фото"}),entry("b","file.pdf",4096),entry("c","old.txt",400,{deletedAt:"2026-10-10T00:00:00Z"})];
