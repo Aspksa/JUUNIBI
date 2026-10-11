@@ -125,10 +125,12 @@ describe("Local Disk",()=>{
      const disk=new LocalDisk(dir);
      await disk.createFolder("Главная");await disk.createFolder("Главная/Внутри");
      const a=await disk.uploadBytes("hello.txt","Главная/Внутри",Buffer.from("hello"));
-     await disk.setFolderStyle("Главная","#abcdef",true,"Обложка");
+     const cover=await disk.uploadBytes("cover.png","Главная",Buffer.from([137,80,78,71]));
+     await disk.setFolderStyle("Главная","#abcdef",true,cover.id);
+     await expect(disk.setFolderStyle("Главная","#abcdef",true,"Обложка")).rejects.toMatchObject({status:400});
      expect(disk.folderDecorations()["Главная"]?.pinned).toBe(true);
      const cp=await disk.copyFolder("Главная","");
-     expect(cp.files).toBe(1);
+     expect(cp.files).toBe(2);
      expect(disk.list("Главная - копия/Внутри").files).toHaveLength(1);
      await disk.moveFolder("Главная - копия","Главная/Внутри");
      expect(disk.list("Главная/Внутри/Главная - копия/Внутри").files).toHaveLength(1);
