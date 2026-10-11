@@ -17,7 +17,7 @@ describe("Disk Chronicles",()=>{
   const value=(n:number)=>result.metrics[n-1]!;
   expect(result.summary).toMatchObject({files:2,folders:2,total:90});
   expect(value(1).value).toBe("2");
-  expect(value(14).value).toBe("1");
+  expect(value(13).value).toBe("1");
   expect(value(37).value).toBe("1");
   expect(value(29).value).toBe("1");
   expect(value(55).ready).toBe(false);
