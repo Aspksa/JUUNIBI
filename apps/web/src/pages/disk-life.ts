@@ -321,7 +321,44 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
     } finally {analyze.disabled=false;}
   });
   const discoveries=el("div",{cls:"dk-life-findings"});
-  root.append(el("header", { cls: "dk-life-header" },el("span",{cls:"dk-life-mark",textContent:"🦊"}),el("div",{},el("strong",{textContent:"Жизнь документов"}),headline)),search,analyze,insightNote,discoveries,grid);
+
+  const graphPanel=el("div",{cls:"dk-life-findings"});
+  const graphButton=el("button",{cls:"btn",type:"button",textContent:"🔗 Граф знаний и лисья газета"});
+  graphButton.addEventListener("click",async()=>{
+    graphButton.disabled=true;
+    try{
+      const result=await api.diskIntelligence();
+      if(!result.ok){insightNote.textContent=result.error.message;return;}
+      const data=result.value;
+      insightNote.textContent="Индекс: "+data.indexed+" · из кеша: "+data.reused+" · ошибки: "+data.failed;
+      const byId=new Map(data.records.map(r=>[r.id,r]));
+      const cards=data.links.slice(0,10).map(l=>{
+        const a=byId.get(l.from),b=byId.get(l.to);
+        const item=el("button",{cls:"dk-life-story",type:"button",textContent:(a?.name??l.from)+" ↔ "+(b?.name??l.to)+" · "+l.score+"%"});
+        item.addEventListener("click",()=>{if(a)window.location.hash="#disk";});
+        return item;
+      });
+      graphPanel.replaceChildren(el("strong",{textContent:"🔗 "+data.clusters.length+" тематических групп"}),
+        ...cards,...data.findings.slice(0,8).map(f=>el("p",{textContent:f.text})));
+    }finally{graphButton.disabled=false;}
+  });
+  const cloudButton=el("button",{cls:"btn",type:"button",textContent:"☁️ ИИ-анализ с разрешением"});
+  cloudButton.addEventListener("click",async()=>{
+    const files=getFiles().filter(f=>/\.(txt|md|pdf|docx)$/i.test(f.name)).slice(0,3);
+    if(!files.length){insightNote.textContent="Нет подходящих документов";return;}
+    const question=window.prompt("Вопрос к первым трём документам","Найди возможные противоречия и укажи источники");
+    if(!question)return;
+    if(!window.confirm("Отправить выдержки выбранных документов в Cloud.ru? Это внешняя передача данных."))return;
+    cloudButton.disabled=true;
+    try{
+      const answer=await api.diskCloudAnalysis(files.map(f=>f.id),question,true);
+      if(!answer.ok){insightNote.textContent=answer.error.message;return;}
+      graphPanel.replaceChildren(el("strong",{textContent:"🧠 Анализ DeepSeek-V4-Flash"}),
+        el("p",{textContent:answer.value.answer}),
+        el("small",{textContent:"Источники: "+answer.value.sources.map(x=>x.name).join(", ")}));
+    }finally{cloudButton.disabled=false;}
+  });
+  root.append(el("header", { cls: "dk-life-header" },el("span",{cls:"dk-life-mark",textContent:"🦊"}),el("div",{},el("strong",{textContent:"Жизнь документов"}),headline)),search,analyze,graphButton,cloudButton,insightNote,discoveries,graphPanel,grid);
   refresh();
   return {root,refresh};
 }
