@@ -219,6 +219,31 @@ describe("BrainCore", () => {
     expect(status.requiresOwnerReview).toBe(true);
     expect(brain.brainEvaluation().evidence.missingVerifiedSteps).toBe(1);
   });
+  it("previews verified recovery without invoking tools or mutating failed plans", async () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("audit", ["first", "second"]);
+    await brain.executeReadStep(p.id, p.steps[0]!.id, "list_modules", () => [], async () => []);
+    await expect(brain.executeReadStep(p.id, p.steps[1]!.id, "search_memory",
+      () => [], async () => {throw Error("offline");})).rejects.toThrow("offline");
+    const initial = brain.history().length;
+    const preview = brain.recoveryPreview(p.id);
+    expect(preview).toMatchObject({phase:"failed",verifiedCompleted:1,
+      proposedAction:{stepId:p.steps[1]!.id,attemptsRemaining:2},
+      requiresExplicitApproval:true});
+    expect(brain.history()).toHaveLength(initial);
+    expect(brain.status().plans[0]?.steps.map(step=>step.status)).toEqual(["done","failed"]);
+    expect(() => brain.recoveryPreview("missing")).toThrow("План не найден");
+  });
+  it("never proposes an automatic retry of inconsistent failed plans", () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("audit", ["first","second"]);
+    brain.updateStep(p.id,p.steps[0]!.id,"active");
+    brain.updateStep(p.id,p.steps[0]!.id,"failed");
+    const preview = brain.recoveryPreview(p.id);
+    expect(preview.proposedAction?.stepId).toBe(p.steps[0]!.id);
+    expect(preview.requiresExplicitApproval).toBe(true);
+    expect(preview.readyForContinuation).toBe(false);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
