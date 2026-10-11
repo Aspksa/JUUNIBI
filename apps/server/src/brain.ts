@@ -79,7 +79,7 @@ export class BrainCore {
     const goalWords = tokenize(plan.goal);
     const confirmed = this.decisions.snapshot().filter(r => r.observed !== undefined &&
       (taskType === undefined || r.taskType === taskType) &&
-      [...goalWords].some(word => tokenize(r.goal).has(word)));
+      r.goal.trim().toLowerCase() === plan.goal.trim().toLowerCase() || [...goalWords].some(word => tokenize(r.goal).has(word)));
     const ranked = (options as string[]).map((option,index) => {
       const words = tokenize(option);
       const evidence = confirmed.filter(item => {
