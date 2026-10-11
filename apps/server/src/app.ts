@@ -198,9 +198,9 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
               const decoder=new TextDecoder("utf-8",{fatal:true});let buffer="";
               for await(const chunk of req){
                 buffer+=decoder.decode(chunk,{stream:true});
-                if(buffer.length>17*1024*1024&&!buffer.includes("\\n"))throw Object.assign(new Error("Слишком длинная запись архива"),{status:413});
+                if(buffer.length>17*1024*1024&&!buffer.includes("\n"))throw Object.assign(new Error("Слишком длинная запись архива"),{status:413});
                 let index:number;
-                while((index=buffer.indexOf("\\n"))>=0){
+                while((index=buffer.indexOf("\n"))>=0){
                   const line=buffer.slice(0,index);buffer=buffer.slice(index+1);
                   if(line)yield line;
                   if(buffer.length>17*1024*1024)throw Object.assign(new Error("Слишком длинная запись архива"),{status:413});
