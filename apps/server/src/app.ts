@@ -101,7 +101,7 @@ const MAX_CHAT_BODY = 700 * 1024; // chat requests may carry attached text files
 const MAX_CHAT_MESSAGE = 100_000;
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
-  ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".ico": "image/x-icon",
+  ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".webp": "image/webp", ".ico": "image/x-icon",
 };
 
 /** Only loopback Host values are accepted: blocks DNS-rebinding against a local server. */
