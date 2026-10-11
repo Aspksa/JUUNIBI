@@ -32,6 +32,7 @@ import type { EvalService } from "./evals";
 import { buildQualityReport } from "./quality";
 import { repeatedRequests } from "./suggestions";
 import { qrSvg, type MobileAccess } from "./mobile-access";
+import type { Vault } from "./vault";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
   list(): unknown;
@@ -59,6 +60,8 @@ export interface AppDeps {
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
   disk?: LocalDisk;
+  /** «Пароли»: the encrypted vault, answered only on the computer itself (never over the home Wi-Fi). */
+  vault?: Vault;
   /** «Дела и достижения»: figures, awards, records, the time machine. */
   achievements?: Achievements;
   /** «Жизнь проекта»: figures about the project's history for the «Обновление» page. */
@@ -231,6 +234,29 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
       if (p.startsWith("/api/")) {
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
         const a = deps.getAssistant?.() ?? deps.assistant;
+        if (p === "/api/vault" || p.startsWith("/api/vault/")) {
+          if (lan) return send(res, 403, { error: "Пароли открываются только на компьютере" });
+          const v = deps.vault;
+          if (!v) return send(res, 503, { error: "Хранилище паролей недоступно" });
+          if (req.method === "GET" && p === "/api/vault") return send(res, 200, await v.status());
+          if (req.method === "POST" && p === "/api/vault/setup") { const b = await readJson(req); return send(res, 201, await v.setup(b.password)); }
+          if (req.method === "POST" && p === "/api/vault/unlock") { const b = await readJson(req); return send(res, 200, await v.unlock(b.password)); }
+          if (req.method === "POST" && p === "/api/vault/lock") { v.lock(); return send(res, 200, await v.status()); }
+          if (req.method === "POST" && p === "/api/vault/password") { const b = await readJson(req); return send(res, 200, await v.changePassword(b.old, b.next)); }
+          if (req.method === "POST" && p === "/api/vault/settings") { const b = await readJson(req); return send(res, 200, await v.setLockMinutes(b.lockMinutes)); }
+          if (req.method === "GET" && p === "/api/vault/export") {
+            const body = await v.exportFile();
+            res.writeHead(200, { "content-type": "application/json", "content-disposition": 'attachment; filename="JUUNIBI-passwords.juunibi-vault"', "cache-control": "no-store", "x-content-type-options": "nosniff" });
+            res.end(body); return;
+          }
+          if (req.method === "POST" && p === "/api/vault/import") { const b = await readJson(req, 4 * 1024 * 1024); return send(res, 200, await v.importFile(b.content, b.password)); }
+          if (req.method === "GET" && p === "/api/vault/items") return send(res, 200, v.list());
+          if (req.method === "POST" && p === "/api/vault/items") { const b = await readJson(req); return send(res, 201, await v.add(b)); }
+          const vm = /^\/api\/vault\/items\/([0-9a-f-]{36})$/.exec(p);
+          if (vm && req.method === "PUT") { const b = await readJson(req); return send(res, 200, await v.update(vm[1]!, b)); }
+          if (vm && req.method === "DELETE") { await v.remove(vm[1]!); return send(res, 200, { ok: true }); }
+          return send(res, 404, { error: "Не найдено" });
+        }
         if (p.startsWith("/api/disk")) {
           const disk=deps.disk;
           if(!disk)return send(res,503,{error:"Диск недоступен"});
@@ -674,7 +700,12 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         }
         if (deps.organizer && p.startsWith("/api/organizer")) {
           const o = deps.organizer;
-          if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders() });
+          if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders(), projects: o.listProjects(), templates: o.listTemplates(), daysOff: o.listDaysOff() });
+          if (req.method === "POST" && p === "/api/organizer/projects") { const b = await readJson(req); const { name, ...patch } = b; return send(res, 200, await o.setProject(name, patch)); }
+          if (req.method === "POST" && p === "/api/organizer/templates") { const b = await readJson(req); return send(res, 201, await o.addTemplate(b.text)); }
+          if (req.method === "POST" && p === "/api/organizer/days-off") { const b = await readJson(req); return send(res, 201, await o.addDayOff(b.from, b.to, b.kind)); }
+          const ot = /^\/api\/organizer\/(templates|days-off)\/([\w-]+)$/.exec(p);
+          if (ot && req.method === "DELETE") { if (ot[1] === "templates") await o.removeTemplate(ot[2]!); else await o.removeDayOff(ot[2]!); return send(res, 200, { ok: true }); }
           if (req.method === "GET" && p === "/api/organizer/missions") return send(res, 200, o.missionBoard());
           if (req.method === "POST" && p === "/api/organizer/missions") { const b = await readJson(req); return send(res, 201, await o.addMission(b.title, b.description)); }
           if (p.startsWith("/api/organizer/missions/")) {

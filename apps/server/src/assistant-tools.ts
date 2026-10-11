@@ -131,5 +131,6 @@ function listTasks(o: Organizer, period: string) {
     id: n.id, kind: n.kind, text: n.text, done: n.done,
     ...(n.dueAt ? { dueAt: n.dueAt, due: new Date(n.dueAt).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) } : {}),
     ...(n.priority === "high" ? { important: true } : {}), ...(n.repeat ? { repeat: n.repeat } : {}), ...(n.parentId ? { parentId: n.parentId } : {}),
+    ...(n.project ? { project: n.project } : {}), ...(n.area ? { area: n.area } : {}), ...(n.status ? { status: n.status } : {}), ...(n.waitingFor ? { waitingFor: n.waitingFor } : {}), ...(n.meeting ? { meeting: true } : {}),
   }));
 }

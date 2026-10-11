@@ -1,8 +1,57 @@
 /** Pure model behind the "Дела" page (tested in test/tasks-model.test.ts). */
-import type { DayLoad, Note, Reminder, Repeat } from "../api";
+import type { Area, DayLoad, DayOff, Note, ProjectMeta, Reminder, Repeat, TaskStatus } from "../api";
 import { prodDay } from "@juunibi/core";
 
 export type TaskFilter = "all" | "todo" | "note" | "reminder";
+/** The «Всё / Работа / Личное» switch over the list. */
+export type AreaFilter = "all" | Area;
+
+/** A to-do's sphere: its own, else its project's, else «work» for a project named работа/work (as the server counts). */
+export function areaOf(n: Pick<Note, "area" | "project">, projects: ProjectMeta[] = []): Area {
+  if (n.area) return n.area;
+  if (!n.project) return "personal";
+  const p = projects.find((x) => x.name.toLowerCase() === n.project!.toLowerCase());
+  if (p?.area) return p.area;
+  return /^(работа|work|рабочее)$/i.test(n.project) ? "work" : "personal";
+}
+/** Inside the working hours of a working day: the list shows work first; outside them, personal first. */
+export function preferredArea(now: Date, o: { workFrom: string; workTo: string; workday: boolean }): Area {
+  const m = now.getHours() * 60 + now.getMinutes();
+  const at = (hm: string) => { const [h, mm] = hm.split(":").map(Number); return h! * 60 + mm!; };
+  return o.workday && m >= at(o.workFrom) && m < at(o.workTo) ? "work" : "personal";
+}
+export const STATUS_LABEL: Record<TaskStatus | "todo" | "done", string> = { todo: "Надо сделать", doing: "В работе", waiting: "Жду ответа", done: "Готово" };
+/** The board: open to-dos by status and the ones finished in the last week (newest first, at most 20). */
+export function boardColumns(notes: Note[], now = new Date()): Record<"todo" | TaskStatus | "done", Note[]> {
+  const todos = notes.filter((n) => n.kind === "todo" && !n.auto);
+  const due = (n: Note) => (n.dueAt ? Date.parse(n.dueAt) : Infinity);
+  const order = (a: Note, b: Note) => Number(b.priority === "high") - Number(a.priority === "high") || due(a) - due(b) || a.createdAt.localeCompare(b.createdAt);
+  const open = todos.filter((n) => !n.done);
+  const weekAgo = now.getTime() - 7 * 86_400_000;
+  return {
+    todo: open.filter((n) => !n.status).sort(order),
+    doing: open.filter((n) => n.status === "doing").sort(order),
+    waiting: open.filter((n) => n.status === "waiting").sort(order),
+    done: todos.filter((n) => n.done && Date.parse(n.completedAt ?? n.createdAt) >= weekAgo).sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")).slice(0, 20),
+  };
+}
+/** This week's work to-dos (Monday to Sunday): minutes planned and minutes done (30 for a to-do without an estimate). */
+export function workWeek(notes: Note[], projects: ProjectMeta[], now = new Date()): { planned: number; done: number; count: number } {
+  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const from = mon.getTime(), to = from + 7 * 86_400_000;
+  const work = notes.filter((n) => n.kind === "todo" && n.dueAt && Date.parse(n.dueAt) >= from && Date.parse(n.dueAt) < to && areaOf(n, projects) === "work");
+  const mins = (xs: Note[]) => xs.reduce((s, n) => s + (n.estimateMinutes ?? 30), 0);
+  return { planned: mins(work), done: mins(work.filter((n) => n.done)), count: work.length };
+}
+/** The vacation or sick leave on a day, if any. */
+export const awayOn = (daysOff: DayOff[] | undefined, key: string): DayOff | undefined => daysOff?.find((d) => d.from <= key && key <= d.to);
+/** «с 10:00 до 11:00» of a meeting, or just its start. */
+export function meetingSpan(n: Note): string {
+  if (!n.dueAt) return "";
+  const t = (ms: number) => new Date(ms).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const start = Date.parse(n.dueAt);
+  return n.estimateMinutes ? `${t(start)}–${t(start + n.estimateMinutes * 60_000)}` : t(start);
+}
 export const REPEAT_LABEL: Record<Repeat, string> = { daily: "каждый день", weekdays: "по будням", weekly: "каждую неделю", monthly: "каждый месяц", every3days: "каждые 3 дня", yearly: "каждый год" };
 export const REPEAT_OPTIONS: [Repeat | "none", string][] = [["none", "Один раз"], ["daily", "Каждый день"], ["weekdays", "По будням"], ["weekly", "Каждую неделю"], ["monthly", "Каждый месяц"], ["every3days", "Каждые 3 дня"], ["yearly", "Каждый год"]];
 
@@ -50,7 +99,13 @@ export interface TaskView {
  * What the page shows, in order: reminders that went off, then one timeline of to-dos and reminders
  * (overdue, today, tomorrow, later), to-dos without a date, notes and the finished ones. Days are local days.
  */
-export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter: TaskFilter = "all", query = "", now = new Date()): TaskView {
+export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter: TaskFilter = "all", query = "", now = new Date(),
+  o: { area?: AreaFilter; prefer?: Area; projects?: ProjectMeta[] } = {}): TaskView {
+  if (o.area && o.area !== "all") {
+    // «Работа» shows the work to-dos only; «Личное» the rest, with reminders and notes
+    const want = o.area;
+    org = { notes: org.notes.filter((n) => n.kind === "todo" ? areaOf(n, o.projects) === want : want === "personal"), reminders: want === "work" ? [] : org.reminders };
+  }
   const q = query.trim().toLowerCase();
   const hit = (t: string) => !q || t.toLowerCase().includes(q);
   const show = (f: TaskFilter) => filter === "all" || filter === f;
@@ -63,17 +118,19 @@ export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter
   if (nest) for (const n of org.notes) if (n.kind === "todo" && n.parentId && ids.has(n.parentId)) (children[n.parentId] ??= []).push(n);
   for (const list of Object.values(children)) list.sort((a, b) => Number(a.done) - Number(b.done) || Date.parse(a.createdAt) - Date.parse(b.createdAt));
   const isChild = (n: Note) => nest && !!n.parentId && ids.has(n.parentId);
+  /** 0 for the sphere that goes first now, 1 for the other one (all 0 when nothing is preferred). */
+  const pref = (n: Note) => (o.prefer && areaOf(n, o.projects) !== o.prefer ? 1 : 0);
 
   const open = show("todo") ? org.notes.filter((n) => n.kind === "todo" && !n.done && !isChild(n) && hit(n.text)) : [];
   const planned = show("reminder") ? org.reminders.filter((r) => r.status === "scheduled" && hit(r.text)) : [];
   const timed: TimedItem[] = [
     ...open.filter((n) => n.dueAt).map((n) => ({ type: "todo" as const, note: n, at: Date.parse(n.dueAt!) })),
     ...planned.map((r) => ({ type: "reminder" as const, reminder: r, at: Date.parse(r.at) })),
-  ].sort((a, b) => a.at - b.at);
+  ].sort((a, b) => a.at - b.at || (a.type === "todo" && b.type === "todo" ? pref(a.note) - pref(b.note) : 0));
   const view: TaskView = {
     due: show("reminder") ? org.reminders.filter((r) => r.status === "due" && hit(r.text)).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) : [],
     overdue: [], today: [], tomorrow: [], later: [],
-    someday: open.filter((n) => !n.dueAt).sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || Date.parse(a.createdAt) - Date.parse(b.createdAt)),
+    someday: open.filter((n) => !n.dueAt).sort((a, b) => Number(b.priority === "high") - Number(a.priority === "high") || pref(a) - pref(b) || Date.parse(a.createdAt) - Date.parse(b.createdAt)),
     notes: show("note") ? org.notes.filter((n) => n.kind === "note" && !n.auto && hit(n.text)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)) : [],
     children,
     finished: {
@@ -233,8 +290,9 @@ export function planWeek(notes: Note[], workdays: string[], dayMinutes = 480): {
 }
 
 /** Free minutes of a day: the working hours, an hour less on a short day, half of them on a day off (as the server counts). */
-export function dayCapacity(day: string, dayHours: number): number {
+export function dayCapacity(day: string, dayHours: number, daysOff?: DayOff[]): number {
   if (!dayHours) return 0;
+  if (awayOn(daysOff, day)) return Math.ceil(dayHours / 2) * 60;
   const pd = prodDay(day);
   const d = new Date(day + "T12:00");
   const work = pd ? pd.kind === "work" || pd.kind === "short" : d.getDay() !== 0 && d.getDay() !== 6;
@@ -244,8 +302,8 @@ export function dayCapacity(day: string, dayHours: number): number {
  * How full a day is, from the list already on the page (no request): the same numbers as the server's
  * `/api/organizer/load`, with the to-dos to move off an overloaded day (not the important ones, the cheap moves first).
  */
-export function dayLoadOf(notes: Note[], day: string, dayHours: number): DayLoad {
-  const capacity = dayCapacity(day, dayHours);
+export function dayLoadOf(notes: Note[], day: string, dayHours: number, daysOff?: DayOff[]): DayLoad {
+  const capacity = dayCapacity(day, dayHours, daysOff);
   const items = notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localDay(n.dueAt) === day);
   const mins = (n: Note) => n.estimateMinutes ?? 30;
   const planned = items.reduce((s, n) => s + mins(n), 0);
@@ -266,14 +324,14 @@ export function dayLoadOf(notes: Note[], day: string, dayHours: number): DayLoad
 
 export interface MonthItem { id: string; text: string; at: string; kind: "todo" | "reminder"; done: boolean }
 /** The calendar's month: to-dos by due date and reminders by time, and the overloaded days. Built on the page, no request. */
-export function monthItems(org: { notes: Note[]; reminders: Reminder[] }, month: string, dayHours: number): { items: MonthItem[]; heavyDays: string[] } {
+export function monthItems(org: { notes: Note[]; reminders: Reminder[]; daysOff?: DayOff[] }, month: string, dayHours: number): { items: MonthItem[]; heavyDays: string[] } {
   const inMonth = (iso: string) => localDay(iso).slice(0, 7) === month;
   const items: MonthItem[] = [
     ...org.notes.filter((n) => n.kind === "todo" && n.dueAt && inMonth(n.dueAt)).map((n) => ({ id: n.id, text: n.text, at: n.dueAt!, kind: "todo" as const, done: n.done })),
     ...org.reminders.filter((r) => inMonth(r.at)).map((r) => ({ id: r.id, text: r.text, at: r.at, kind: "reminder" as const, done: r.status === "done" })),
   ].sort((a, b) => a.at.localeCompare(b.at));
   const days = [...new Set(items.filter((x) => x.kind === "todo" && !x.done).map((x) => localDay(x.at)))];
-  return { items, heavyDays: dayHours ? days.filter((d) => dayLoadOf(org.notes, d, dayHours).over) : [] };
+  return { items, heavyDays: dayHours ? days.filter((d) => dayLoadOf(org.notes, d, dayHours, org.daysOff).over) : [] };
 }
 
 /** The text cut into pieces, with the places where `query` occurs marked (case does not matter). */
@@ -306,4 +364,22 @@ export function projectCounts(notes: Note[], goalTitle: (id: string) => string |
   const m = new Map<string, number>();
   for (const n of notes) if (n.kind === "todo" && !n.done && n.project) m.set(n.project, (m.get(n.project) ?? 0) + 1);
   return [...m].map(([id, n]) => { const g = goalTitle(id); return { id, label: g ? "◎ " + g : "#" + id, n }; }).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
+}
+export interface ProjectInfo { id: string; label: string; open: number; done: number; total: number; goal: boolean; color?: string; dueAt?: string; area: Area }
+/**
+ * The «Проекты» card: every project that still has something open (or a deadline set), with its progress, colour,
+ * deadline and sphere. Goals keep their own card, so they are marked.
+ */
+export function projectList(notes: Note[], projects: ProjectMeta[], goalTitle: (id: string) => string | undefined): ProjectInfo[] {
+  const by = new Map<string, Note[]>();
+  for (const n of notes) if (n.kind === "todo" && n.project) { const l = by.get(n.project); if (l) l.push(n); else by.set(n.project, [n]); }
+  const out: ProjectInfo[] = [];
+  for (const [id, list] of by) {
+    const open = list.filter((n) => !n.done).length;
+    const meta = projects.find((p) => p.name.toLowerCase() === id.toLowerCase());
+    if (!open && !meta?.dueAt) continue;
+    const g = goalTitle(id);
+    out.push({ id, label: g ?? id, open, done: list.length - open, total: list.length, goal: !!g, ...(meta?.color ? { color: meta.color } : {}), ...(meta?.dueAt ? { dueAt: meta.dueAt } : {}), area: meta?.area ?? areaOf({ project: id }, projects) });
+  }
+  return out.sort((a, b) => Number(a.goal) - Number(b.goal) || b.open - a.open || a.label.localeCompare(b.label, "ru"));
 }

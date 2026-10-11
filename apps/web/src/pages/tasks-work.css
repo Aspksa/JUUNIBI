@@ -1,0 +1,151 @@
+/* «Дела»: the list's head (tabs, «Всё / Работа / Личное», list or board, search), «Проекты», the board,
+   statuses and meetings, templates, vacation days. Uses the tokens of design.css. */
+
+/* ---------- project colours ---------- */
+.c-gold{--pc:var(--brand)}.c-blue{--pc:#3b82f6}.c-green{--pc:var(--ok)}.c-violet{--pc:var(--violet)}
+.c-red{--pc:var(--danger)}.c-teal{--pc:#14b8a6}.c-orange{--pc:var(--warn)}.c-gray{--pc:var(--muted)}
+.tasks-pdot{display:inline-block;flex:none;width:10px;height:10px;border-radius:50%;background:var(--pc,color-mix(in srgb,var(--fg) 22%,transparent))}
+.tasks-pgoal{flex:none;width:12px;text-align:center;color:var(--brand);font-size:var(--fs-sm);line-height:1}
+.tasks-ptag{display:inline-flex;align-items:center;gap:5px}
+.tasks-ptag .tasks-pdot{width:8px;height:8px}
+
+/* ---------- 1. the list's head: one line, stays on top while scrolling ---------- */
+.tasks-listhead{position:sticky;top:0;z-index:20;margin:0 0 14px;padding:8px 0 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+.tasks-listhead[hidden]{display:none}
+.tasks-listhead-row{display:flex;align-items:center;gap:8px;min-width:0}
+.tasks-tabs{display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.tasks-tabs::-webkit-scrollbar{display:none}
+.tasks-tabs[hidden]{display:none}
+.tasks-tab{display:inline-flex;align-items:center;gap:6px;flex:none;padding:6px 10px;border:0;border-radius:var(--r-sm);background:none;color:var(--muted);font:inherit;font-size:var(--fs-md);cursor:pointer;transition:background-color var(--dur-fast),color var(--dur-fast)}
+.tasks-tab small{min-width:20px;padding:0 6px;border-radius:999px;background:var(--hover-2);font-size:var(--fs-xs);text-align:center}
+.tasks-tab:hover{color:var(--fg);background:var(--hover)}
+.tasks-tab.on{color:var(--fg);font-weight:600;background:var(--tint-brand)}
+.tasks-tab.on small{background:color-mix(in srgb,var(--brand) 25%,transparent);color:var(--fg)}
+.tasks-tab:focus-visible,.tasks-seg button:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.tasks-seg{display:inline-flex;flex:none;padding:2px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.tasks-seg button{display:inline-grid;place-items:center;min-height:30px;min-width:32px;padding:0 10px;border:0;border-radius:calc(var(--r-md) - 3px);background:none;color:var(--muted);font:inherit;font-size:var(--fs-sm);cursor:pointer;transition:background-color var(--dur-fast),color var(--dur-fast)}
+.tasks-seg button:hover{color:var(--fg)}
+.tasks-seg button.on{background:var(--brand);color:var(--brand-fg);font-weight:600}
+/* 2. search: an icon until it is needed */
+.tasks-searchbox{display:flex;align-items:center;flex:none;position:relative}
+.tasks-searchbox .tasks-search{width:0;min-height:36px;padding:0;border-width:0;opacity:0;transition:width var(--dur),opacity var(--dur-fast),padding var(--dur)}
+.tasks-searchbox.open .tasks-search{width:220px;padding:6px 12px;border-width:1px;opacity:1}
+.tasks-searchbox.open .tasks-search-btn{display:none}
+.tasks-headinfo{display:flex;flex-direction:column;gap:8px;margin-top:8px;font-size:var(--fs-sm);color:var(--muted)}
+.tasks-headinfo[hidden]{display:none}
+.tasks-projstrip{display:none;margin-top:8px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.tasks-projstrip::-webkit-scrollbar{display:none}
+.tasks-projstrip .chip{flex:none}
+
+/* the chosen project */
+.tasks-projbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--line);color:var(--fg)}
+.tasks-projbar strong{font-size:var(--fs-md)}
+.tasks-projbar .late,.tasks-plist .late{color:var(--danger)}
+.tasks-projbar .icon-btn.on{background:var(--hover);color:var(--fg)}
+.tasks-projedit{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px;border-radius:var(--r-md);border:1px dashed var(--line);color:var(--fg)}
+.tasks-projedit label{display:inline-flex;align-items:center;gap:6px}
+.tasks-projedit .mem-select{min-height:34px;padding:4px 10px}
+.tasks-swatches{display:flex;gap:6px}
+.tasks-swatch{width:22px;height:22px;border-radius:50%;border:2px solid transparent;background:var(--pc);cursor:pointer;box-shadow:inset 0 0 0 2px var(--surface)}
+.tasks-swatch.on{border-color:var(--fg)}
+.tasks-swatch:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+
+/* ---------- 3. «Проекты» in the left column ---------- */
+.tasks-projects-card[hidden]{display:none}
+.tasks-projects-card.folded .tasks-plist{display:none}
+.tasks-plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.tasks-prow{position:relative;display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px 10px;border:0;border-radius:var(--r-sm);background:none;color:var(--fg);font:inherit;text-align:left;cursor:pointer;transition:background-color var(--dur-fast)}
+.tasks-prow:hover{background:var(--hover)}
+.tasks-prow.on{background:var(--tint-brand)}
+.tasks-prow:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.tasks-pname{display:flex;flex-direction:column;min-width:0}
+.tasks-pname>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-md)}
+.tasks-pname small{font-size:var(--fs-xs)}
+.tasks-pname small:empty{display:none}
+.tasks-pcount{flex:none;min-width:22px;padding:0 6px;border-radius:999px;background:var(--hover-2);font-size:var(--fs-xs);text-align:center;color:var(--muted)}
+.tasks-pbar{position:absolute;left:30px;right:10px;bottom:3px;height:2px;border-radius:2px;background:var(--hover-2);overflow:hidden}
+.tasks-pbar i{display:block;height:100%;width:calc(var(--p,0) * 1%);background:var(--brand);border-radius:inherit;transition:width var(--dur)}
+.tasks-pbar.wide{position:static;width:90px;height:4px}
+
+/* ---------- 7. the board ---------- */
+.tasks-board{display:grid;grid-template-columns:repeat(4,minmax(200px,1fr));gap:12px;align-items:start;overflow-x:auto;padding-bottom:4px}
+.tasks-col{display:flex;flex-direction:column;gap:8px;min-height:120px;padding:10px;border-radius:var(--r-lg);background:var(--surface);border:1px solid var(--line);transition:border-color var(--dur-fast),background-color var(--dur-fast)}
+.tasks-col.drop{border-color:var(--brand);background:var(--tint-brand)}
+.tasks-col h2{display:flex;align-items:center;justify-content:space-between;margin:0 2px 2px;font-size:var(--fs-sm);font-weight:600}
+.tasks-col h2 .n{padding:0 7px;border-radius:999px;background:var(--hover-2);font-size:var(--fs-xs);color:var(--muted);font-weight:500}
+.tasks-col.doing h2 span:first-child::before,.tasks-col.waiting h2 span:first-child::before,.tasks-col.done h2 span:first-child::before,.tasks-col.todo h2 span:first-child::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px;background:var(--muted)}
+.tasks-col.doing h2 span:first-child::before{background:var(--brand)}
+.tasks-col.waiting h2 span:first-child::before{background:var(--violet)}
+.tasks-col.done h2 span:first-child::before{background:var(--ok)}
+.tasks-col-empty{margin:6px 4px;line-height:1.4}
+.tasks-card{display:flex;flex-direction:column;gap:6px;padding:10px 10px 8px;border-radius:var(--r-md);background:var(--bg);border:1px solid var(--line);cursor:grab;transition:border-color var(--dur-fast),box-shadow var(--dur-fast)}
+.tasks-card:hover{border-color:color-mix(in srgb,var(--fg) 25%,var(--line))}
+.tasks-card:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+.tasks-card.important{box-shadow:inset 3px 0 0 var(--brand)}
+.tasks-card.done .tasks-card-text{color:var(--muted);text-decoration:line-through}
+.tasks-card-top{display:flex;align-items:flex-start;gap:8px}
+.tasks-card-top .tasks-pdot{margin-top:6px}
+.tasks-card-text{font-size:var(--fs-md);line-height:1.35;overflow-wrap:anywhere}
+.tasks-card-top .icon-btn{margin:-4px -4px 0 0;opacity:.6}
+.tasks-card:hover .tasks-card-top .icon-btn,.tasks-card:focus-within .tasks-card-top .icon-btn{opacity:1}
+.tasks-card .tasks-meta{font-size:var(--fs-xs)}
+.tasks-card-status{align-self:flex-start;min-height:28px;padding:2px 30px 2px 8px;font-size:var(--fs-xs);border-radius:var(--r-sm)}
+@container tasks (max-width:900px){.tasks-board{grid-template-columns:repeat(4,minmax(220px,78%));scroll-snap-type:x mandatory}.tasks-col{scroll-snap-align:start}}
+
+/* statuses and meetings on rows */
+.tasks-status{padding:0 8px;border-radius:999px;font-size:var(--fs-xs);line-height:1.6}
+.tasks-status.doing{background:var(--tint-brand);color:color-mix(in srgb,var(--brand) 70%,var(--fg))}
+.tasks-status.waiting{background:var(--tint-violet);color:color-mix(in srgb,var(--violet) 75%,var(--fg))}
+.tasks-meet{font-weight:600;color:var(--fg)}
+.tasks-meet.late{color:var(--danger)}
+.tasks-editor-wait{margin-top:2px}
+.tasks-editor-wait[hidden]{display:none}
+.tasks-editor-check{display:flex!important;flex-direction:row!important;align-items:center;gap:10px;grid-column:1/-1}
+.tasks-editor-check span{font-size:var(--fs-sm);color:var(--muted)}
+
+/* ---------- 13. templates by the quick entry ---------- */
+.tasks-tpl{position:relative;flex:none}
+.tasks-tpl>summary{list-style:none;display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--line);border-radius:var(--r-md);cursor:pointer;color:var(--muted)}
+.tasks-tpl>summary::-webkit-details-marker{display:none}
+.tasks-tpl[open]>summary,.tasks-tpl>summary:hover{color:var(--fg);background:var(--hover)}
+.tasks-tpl-list{min-width:320px;max-width:min(420px,90vw);gap:2px}
+.tasks-tpl-list>small{padding:4px 10px 6px}
+.tasks-tpl-row{display:flex;align-items:center;gap:2px}
+.tasks-tpl-row>button.grow{white-space:normal}
+.tasks-tpl-list>.btn{margin-top:6px;justify-content:center;white-space:normal}
+
+/* ---------- 12. after work ---------- */
+.tasks-work-eve{margin:0 0 12px}
+
+/* ---------- 14. vacation and sick days ---------- */
+.tasks-away{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border-radius:var(--r-md);font-size:var(--fs-sm);background:var(--tint-ok)}
+.tasks-away.sick{background:var(--tint-violet)}
+.tasks-away svg{flex:none;color:var(--muted)}
+.tasks-away-start{margin:0 0 10px}
+.tasks-away-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 10px;padding:10px;border:1px dashed var(--line);border-radius:var(--r-md)}
+.tasks-away-form label{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm)}
+.tasks-away-form .mem-select{min-height:36px;padding:4px 10px}
+.tasks-away-form .row{flex-basis:100%}
+.tasks-calendar-day.away{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.tasks-calendar-day.away.sick{background:color-mix(in srgb,var(--violet) 16%,transparent)}
+.tasks-calendar-legend .vacation::before{background:color-mix(in srgb,var(--ok) 45%,transparent)}
+.tasks-calendar-legend .sick::before{background:color-mix(in srgb,var(--violet) 45%,transparent)}
+
+/* ---------- narrow screens: the projects come up into the head ---------- */
+@container tasks (max-width:900px){
+  .tasks-projstrip:not([hidden]){display:flex}
+  .tasks-projects-card{display:none}
+}
+@media (max-width:600px){
+  .tasks-listhead-row{flex-wrap:wrap}
+  .tasks-tabs{order:3;flex-basis:100%}
+  .tasks-listhead-row>.grow{display:none}
+  .tasks-searchbox{margin-left:auto}
+  .tasks-searchbox.open{flex:1}
+  .tasks-searchbox.open .tasks-search{width:100%}
+  .tasks-tpl-list{right:-50px}
+}
+@media (prefers-reduced-motion:reduce){.tasks-searchbox .tasks-search,.tasks-pbar i{transition:none}}
+/* «Пароли» sits at the end of the tabs: it opens its own page */
+.tasks-tab-vault{text-decoration:none;margin-left:6px;border-left:1px solid var(--line);border-radius:0 var(--r-sm) var(--r-sm) 0;padding-left:14px}
+.tasks-tab-vault svg{color:var(--muted)}

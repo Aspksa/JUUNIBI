@@ -2,7 +2,7 @@
  * "Дела" — the start page: quick entry in one line, one timeline of to-dos and reminders by day,
  * notes; beside it (below on a phone) a calendar with the production calendar, the day plan and goals.
  */
-import { api, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type Note, type Reminder, type Repeat } from "../api";
+import { api, type Area, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type DayOff, type Note, type Organizer, type Reminder, type Repeat, type TaskStatus } from "../api";
 import { el, icon, iconButton } from "../dom";
 import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
@@ -14,12 +14,12 @@ import { openSheet, type Sheet } from "./sheet";
 import { isWorkday, nextHoliday, nextLongRest, nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import kitsuneUrl from "../assets/kitsune.webp";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
-import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, memoryDates, monthItems, moveTargets, planWeek, projectCounts, recognizedSpans, toLocalInput, weekProgress, type TaskFilter, type TimedItem } from "./tasks-model";
+import { REPEAT_LABEL, REPEAT_OPTIONS, STATUS_LABEL, areaOf, awayOn, boardColumns, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, meetingSpan, memoryDates, monthItems, moveTargets, planWeek, preferredArea, projectList, recognizedSpans, toLocalInput, weekProgress, workWeek, type AreaFilter, type ProjectInfo, type TaskFilter, type TimedItem } from "./tasks-model";
 
 type Mission = { id: string; title: string; description: string; status: "active" | "paused" | "complete"; total: number; done: number; percent: number; blocked: number; idleDays?: number; next: { id: string; text: string; reason: string } | null; stages: { id: string; text: string; done: boolean }[] };
 const KINDS: [QuickKind, string][] = [["auto", "Авто"], ["todo", "Дело"], ["reminder", "Напоминание"], ["note", "Заметка"]];
 /** Kept across re-renders and visits: filter, project, search, the kind of the new entry, the calendar month and day. */
-const UI = { filter: "all" as TaskFilter, project: "", query: "", kind: "auto" as QuickKind, month: "", day: "" };
+const UI = { filter: "all" as TaskFilter, project: "", query: "", kind: "auto" as QuickKind, month: "", day: "", area: "all" as AreaFilter, view: "list" as "list" | "board" };
 /** «Позже» shows this many rows until «ещё» is pressed. */
 const LATER_LIMIT = 10;
 /** Deletions waiting for their "Отменить" window to pass; hidden from the list meanwhile. */
@@ -30,6 +30,8 @@ const store = {
   get(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } },
   set(key: string, v: string) { try { localStorage.setItem(key, v); } catch { /* private mode: forget it */ } },
 };
+const AREA = "juunibi.tasks.area", VIEW = "juunibi.tasks.view", WORK_EVE = "juunibi.tasks.workEve";
+{ const a = store.get(AREA); if (a === "work" || a === "personal") UI.area = a; if (store.get(VIEW) === "board") UI.view = "board"; }
 const SKIP_DATES = "juunibi.tasks.skipDates", EVENING_SEEN = "juunibi.tasks.eveningSeen", FOLDED = "juunibi.tasks.folded", AUTO_TAB = "juunibi.tasks.autoTab", STUCK_SKIP = "juunibi.tasks.stuckSkip", FOCUS = "juunibi.tasks.focus";
 /** Side cards folded down to their title. */
 const folded = new Set((store.get(FOLDED) ?? "").split(",").filter(Boolean));
@@ -57,7 +59,9 @@ export function whenLabel(iso: string, dateOnly: boolean, now = new Date()): str
 export function describeQuick(p: QuickParsed, now = new Date()): string {
   const kind = p.kind === "reminder" ? "Напоминание" : p.kind === "note" ? "Заметка" : "Дело";
   return [kind, p.at ? (p.kind === "todo" ? "срок " : "") + whenLabel(p.at, !!p.dateOnly && p.kind === "todo", now) : p.kind === "reminder" ? "время не указано" : null,
-    p.repeat ? "↻ " + REPEAT_LABEL[p.repeat] : null, p.kind === "todo" && p.priority ? "⚑ важно" : null, p.kind === "todo" && p.project ? "#" + p.project : null].filter(Boolean).join(" · ");
+    p.repeat ? "↻ " + REPEAT_LABEL[p.repeat] : null, p.kind === "todo" && p.priority ? "⚑ важно" : null, p.kind === "todo" && p.project ? "#" + p.project : null,
+    p.kind === "todo" && p.meeting ? "встреча " + (p.minutes! >= 60 ? (p.minutes! / 60).toLocaleString("ru-RU") + " ч" : p.minutes + " мин") : p.kind === "todo" && p.minutes ? p.minutes + " мин" : null,
+    p.kind === "todo" && p.area ? (p.area === "work" ? "работа" : "личное") : null].filter(Boolean).join(" · ");
 }
 
 const DAY_KIND: Record<DayKind, string> = { work: "Рабочий день", short: "Сокращённый день", weekend: "Выходной", holiday: "Праздник", off: "Перенесённый выходной" };
@@ -75,18 +79,24 @@ export function withWhen(p: QuickParsed, iso: string | null, rep: string): Quick
   return out;
 }
 
-/** Saves a parsed quick entry: a reminder, a note, or a to-do with its due date, importance and project. */
-export async function saveQuick(p: QuickParsed): Promise<{ ok: true; value: { id: string } } | { ok: false; error: { message: string } }> {
+/**
+ * Saves a parsed quick entry: a reminder, a note, or a to-do with its due date, importance, project, sphere and length.
+ * `area` is the sphere picked over the list («Работа» / «Личное»), used when the text does not say.
+ */
+export async function saveQuick(p: QuickParsed, area?: Area): Promise<{ ok: true; value: { id: string } } | { ok: false; error: { message: string } }> {
   if (p.kind === "reminder") return api.addReminder(p.text, p.at!, p.repeat);
   if (p.kind === "note") return api.addNote("note", p.text);
   const r = await api.addNote("todo", p.text);
-  if (!r.ok || (!p.at && !p.priority && !p.project && !p.repeat)) return r;
-  return api.updateTask(r.value.id, { ...(p.at ? { dueAt: p.dateOnly ? endOfDay(p.at) : p.at } : {}), ...(p.priority ? { priority: p.priority } : {}), ...(p.project ? { project: p.project } : {}), ...(p.repeat ? { repeat: p.repeat } : {}) });
+  const sphere = p.area ?? (area && !p.project ? area : undefined);
+  if (!r.ok || (!p.at && !p.priority && !p.project && !p.repeat && !sphere && !p.minutes)) return r;
+  return api.updateTask(r.value.id, { ...(p.at ? { dueAt: p.dateOnly ? endOfDay(p.at) : p.at } : {}), ...(p.priority ? { priority: p.priority } : {}), ...(p.project ? { project: p.project } : {}), ...(p.repeat ? { repeat: p.repeat } : {}),
+    ...(sphere ? { area: sphere } : {}), ...(p.minutes ? { estimateMinutes: p.minutes } : {}), ...(p.meeting ? { meeting: true } : {}) });
 }
 /** The toast after `saveQuick`. */
 export function savedText(p: QuickParsed): string {
   if (p.kind === "reminder") return "Напоминание: " + whenLabel(p.at!, false) + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : "");
   if (p.kind === "note") return "Заметка добавлена";
+  if (p.meeting && p.at) return "Встреча: " + whenLabel(p.at, false) + (p.minutes ? `, ${p.minutes} мин` : "") + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : "");
   return (p.at ? "Дело добавлено: срок " + whenLabel(p.at, !!p.dateOnly) : "Дело добавлено") + (p.repeat ? ", " + REPEAT_LABEL[p.repeat] : "");
 }
 /** Opens the page already filtered by `q` (a search result from Ctrl+K). */
@@ -95,13 +105,12 @@ export function searchTasksFor(q: string) { UI.query = q; UI.filter = "all"; }
 export interface TasksDeps { go(r: Route): void; openChat(): void }
 
 export function tasksPage(deps: TasksDeps): HTMLElement {
-  let data: { notes: Note[]; reminders: Reminder[] } | null = null;
+  let data: Organizer | null = null;
   let missions: Mission[] = [];
   let loadError = "";
   /** The entry being edited, so a reload (after another change) keeps the editor open. */
   let editing: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
-  const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
   const attHost = el("div", { cls: "tasks-attn" });
   const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
@@ -274,7 +283,31 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const syncKind = () => { kinds.value = UI.kind; kinds.classList.toggle("on", UI.kind !== "auto"); };
   text.addEventListener("input", () => { shiftAt = null; syncQuick(); });
   syncKind(); syncQuick();
-  const form = el("form", { cls: "tasks-add" }, el("div", { cls: "tasks-add-row" }, field, kinds, add), preview, hint, whenRow);
+  // ---------- templates: saved lines added again with one click ----------
+  const TEMPLATE_EXAMPLES = ["отчёт по пятницам в 17:00 #работа", "созвон по понедельникам с 10 до 10:30 #работа", "планёрка по будням в 9:30 на 15 минут #работа"];
+  const tplMenu = el("details", { cls: "tasks-menu tasks-tpl" });
+  const useTemplate = (t: string) => {
+    tplMenu.open = false;
+    const p = parseQuick(t, new Date(), "auto");
+    void act(() => saveQuick(p, UI.area === "all" ? undefined : UI.area), savedText(p));
+  };
+  function renderTemplates() {
+    const list = data?.templates ?? [];
+    const typed = text.value.trim();
+    tplMenu.replaceChildren(el("summary", { cls: "icon-btn", title: "Шаблоны", attrs: { "aria-label": "Шаблоны дел" } }, icon("copy", 18)),
+      el("div", { cls: "tasks-menu-list tasks-tpl-list", attrs: { role: "menu" } },
+        el("small", { cls: "muted", textContent: list.length ? "Добавить по шаблону" : "Шаблонов пока нет. Например:" }),
+        ...(list.length ? list : TEMPLATE_EXAMPLES.map((x) => ({ id: "", text: x }))).map((t) => el("div", { cls: "tasks-tpl-row" },
+          el("button", { type: "button", cls: "grow", attrs: { role: "menuitem" }, title: t.id ? "Добавить: " + t.text : "Подставить в поле", onclick: () => { if (t.id) useTemplate(t.text); else { tplMenu.open = false; prefill(t.text); } } }, icon(t.id ? "plus" : "edit", 15), el("span", { textContent: t.text })),
+          t.id ? iconButton("trash", "Удалить шаблон", () => void act(() => api.removeTemplate(t.id), "Шаблон удалён"), "icon-btn sm") : null)),
+        btn(typed ? "Сохранить «" + typed.slice(0, 30) + (typed.length > 30 ? "…" : "") + "» как шаблон" : "Напишите дело в поле, чтобы сохранить его шаблоном", () => {
+          tplMenu.open = false;
+          void act(() => api.addTemplate(typed), "Шаблон сохранён: " + typed);
+        }, { small: true, icon: "plus", disabled: !typed })));
+  }
+  tplMenu.addEventListener("toggle", () => { if (tplMenu.open) renderTemplates(); });
+  renderTemplates();
+  const form = el("form", { cls: "tasks-add" }, el("div", { cls: "tasks-add-row" }, field, kinds, tplMenu, add), preview, hint, whenRow);
   /** Puts `v` into the quick-entry field, ready to finish and press Enter. */
   const prefill = (v: string) => { text.value = v; shiftAt = null; manualWhen = false; syncQuick(); text.focus(); text.setSelectionRange(v.length, v.length); form.scrollIntoView({ behavior: "smooth", block: "nearest" }); };
   form.addEventListener("submit", async (e) => {
@@ -287,7 +320,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       p = withWhen(p, iso, repeat.value);
     }
     add.disabled = true;
-    const ok = await act(() => saveQuick(p), savedText(p));
+    const ok = await act(() => saveQuick(p, UI.area === "all" ? undefined : UI.area), savedText(p));
     add.disabled = false;
     if (ok) { text.value = ""; manualWhen = false; shiftAt = null; syncQuick(); text.focus(); }
   });
@@ -324,30 +357,52 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const parent = el("select", { cls: "mem-select", disabled: hasKids, attrs: { "aria-label": "Входит в дело" } }, el("option", { value: "", textContent: hasKids ? "Есть свои подзадачи" : "Самостоятельное дело" }), ...parents.map((x) => el("option", { value: x.id, textContent: "Шаг дела: " + x.text.slice(0, 60) })));
     parent.value = n.parentId ?? "";
     const rep = repeatSelect(n.repeat, "Повтор");
+    const area = el("select", { cls: "mem-select", attrs: { "aria-label": "Сфера" } }, el("option", { value: "", textContent: "По проекту (" + (areaOf(n.project ? { project: n.project } : {}, projectsMeta()) === "work" ? "работа" : "личное") + ")" }), el("option", { value: "work", textContent: "Работа" }), el("option", { value: "personal", textContent: "Личное" }));
+    area.value = n.area ?? "";
+    const status = el("select", { cls: "mem-select", attrs: { "aria-label": "Статус" } }, ...(["todo", "doing", "waiting"] as const).map((v) => el("option", { value: v, textContent: STATUS_LABEL[v] })));
+    status.value = editWaiting ? "waiting" : n.status ?? "todo";
+    const who = el("input", { type: "text", maxLength: 80, value: n.waitingFor ?? "", cls: "mem-input", placeholder: "От кого, например Иван", attrs: { "aria-label": "От кого жду ответа" } });
+    const ask = el("input", { type: "datetime-local", cls: "mem-select", value: n.followUpAt ? toLocalInput(n.followUpAt) : "", attrs: { "aria-label": "Когда спросить снова" } });
+    const meeting = el("input", { type: "checkbox", checked: !!n.meeting, attrs: { "aria-label": "Это встреча" } });
+    const waitRow = el("div", { cls: "tasks-editor-grid tasks-editor-wait" },
+      el("label", {}, el("span", { textContent: "Жду ответа от" }), who), el("label", {}, el("span", { textContent: "Спросить снова" }), ask));
+    const syncWait = () => { waitRow.hidden = status.value !== "waiting"; };
+    status.addEventListener("change", syncWait); syncWait();
+    const focusWait = editWaiting;
+    editWaiting = false;
     const save = btn("Сохранить", async () => {
       const t = input.value.trim();
       if (!t) { input.focus(); return; }
+      if (meeting.checked && (!due.value || !estimate.value)) { showToast("У встречи нужны начало (срок) и длительность в минутах."); (due.value ? estimate : due).focus(); return; }
       save.disabled = true;
       const minutes = estimate.value ? Math.min(1440, Math.max(1, Math.round(Number(estimate.value)))) : null;
+      const waiting = status.value === "waiting";
       const ok = await act(async () => {
         if (t !== n.text) { const r = await api.editNote(n.id, t); if (!r.ok) return r; }
         return api.updateTask(n.id, { dueAt: due.value ? fromLocal(due.value) : null, priority: priority.value as NonNullable<Note["priority"]>, estimateMinutes: Number.isFinite(minutes) ? minutes : null,
-          ...(rep.value !== (n.repeat ?? "none") ? { repeat: rep.value as Repeat | "none" } : {}), ...(mission ? {} : { project: project.value.trim() || null }), ...(hasKids ? {} : { parentId: parent.value || null }) });
+          ...(rep.value !== (n.repeat ?? "none") ? { repeat: rep.value as Repeat | "none" } : {}), ...(mission ? {} : { project: project.value.trim() || null }), ...(hasKids ? {} : { parentId: parent.value || null }),
+          area: (area.value || null) as Area | null, status: status.value as TaskStatus | "todo", meeting: meeting.checked,
+          ...(waiting ? { waitingFor: who.value.trim() || null, followUpAt: ask.value ? fromLocal(ask.value) : null } : {}) });
       }, "Сохранено");
       if (ok) editing = null;
       render();
     }, { small: true, primary: true });
     const cancel = btn("Отмена", () => { editing = null; render(); }, { small: true });
-    for (const f of [input, due, project, estimate]) f.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save.click(); } else if (e.key === "Escape") { e.preventDefault(); cancel.click(); } });
-    queueMicrotask(() => { input.focus(); input.select(); });
+    for (const f of [input, due, project, estimate, who, ask]) f.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save.click(); } else if (e.key === "Escape") { e.preventDefault(); cancel.click(); } });
+    queueMicrotask(() => { if (focusWait) who.focus(); else { input.focus(); input.select(); } });
     return el("li", { cls: "org-row editing" }, el("div", { cls: "tasks-editor" }, input,
       el("div", { cls: "tasks-editor-grid" },
-        el("label", {}, el("span", { textContent: "Срок" }), due), el("label", {}, el("span", { textContent: "Важность" }), priority),
+        el("label", {}, el("span", { textContent: "Срок или начало" }), due), el("label", {}, el("span", { textContent: "Важность" }), priority),
         el("label", {}, el("span", { textContent: "Проект" }), project), el("label", {}, el("span", { textContent: "Минут" }), estimate),
+        el("label", {}, el("span", { textContent: "Сфера" }), area), el("label", {}, el("span", { textContent: "Статус" }), status),
         el("label", {}, el("span", { textContent: "Повтор" }), rep),
-        el("label", {}, el("span", { textContent: "Входит в" }), parent)),
+        el("label", {}, el("span", { textContent: "Входит в" }), parent),
+        el("label", { cls: "tasks-editor-check" }, meeting, el("span", { textContent: "Встреча: блок в плане дня с начала на «Минут»" }))),
+      waitRow,
       el("div", { cls: "row" }, save, cancel)));
   };
+  /** «Жду ответа…» from a row's menu opens the editor on the «от кого» field. */
+  let editWaiting = false;
   const simpleEditor = (initial: string, extra: HTMLElement[], save: (t: string) => Promise<boolean>) => {
     const input = el("input", { type: "text", maxLength: 500, value: initial, cls: "mem-input", attrs: { "aria-label": "Текст" } });
     const ok = btn("Сохранить", async () => { const v = input.value.trim(); if (!v) { input.focus(); return; } ok.disabled = true; if (await save(v)) editing = null; render(); }, { small: true, primary: true });
@@ -398,19 +453,27 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const row = el("li", { cls: "org-row" + (n.done ? " done" : "") + (overdue ? " overdue" : "") + (n.priority === "high" && !n.done ? " important" : "") + (selected.has(n.id) ? " picked" : ""),
       attrs: { "data-id": n.id, "data-kind": "todo", tabindex: "-1" } }, box,
       body(n.text, meta(
-        n.dueAt ? el("span", { cls: overdue ? "late" : "", textContent: (overdue ? "просрочено · " : "") + whenLabel(n.dueAt, isDateOnly(n.dueAt)) }) : null,
+        n.meeting && n.dueAt && !n.done ? el("span", { cls: "tasks-meet" + (overdue ? " late" : ""), textContent: "встреча " + whenLabel(n.dueAt, true) + " " + meetingSpan(n) })
+          : n.dueAt ? el("span", { cls: overdue ? "late" : "", textContent: (overdue ? "просрочено · " : "") + whenLabel(n.dueAt, isDateOnly(n.dueAt)) }) : null,
+        n.status && !n.done ? el("span", { cls: "tasks-status " + n.status, textContent: n.status === "waiting" ? "жду ответа" + (n.waitingFor ? " · " + n.waitingFor : "") : "в работе" }) : null,
+        n.status === "waiting" && n.followUpAt && !n.done ? "спросить " + whenLabel(n.followUpAt, false) : null,
         n.rolled && !n.done ? el("span", { cls: "tasks-rolled", title: `Не сделано вовремя, перенесено автоматически (${n.rolled} раз)`, textContent: "перенесено" + (n.rolled > 1 ? " ×" + n.rolled : "") }) : null,
         n.repeat ? "↻ " + REPEAT_LABEL[n.repeat] : null,
         n.repeat && !n.done && automation?.streaks !== false && (n.streak ?? 0) >= 2 ? el("span", { cls: "tasks-streak", title: `Сделано вовремя ${n.streak} раз подряд`, textContent: "🔥 " + n.streak }) : null,
         kids.length ? `шаги ${doneKids}/${kids.length}` : null,
-        n.estimateMinutes ? n.estimateMinutes + " мин" : null,
-        mission ? "◎ " + mission : n.project ? "#" + n.project : null,
+        n.estimateMinutes && !n.meeting ? n.estimateMinutes + " мин" : null,
+        mission ? "◎ " + mission : n.project ? el("span", { cls: "tasks-ptag" }, dot(projectsMeta().find((p) => p.name.toLowerCase() === n.project!.toLowerCase())?.color), "#" + n.project) : null,
+        UI.area === "all" && n.area === "work" && !n.project ? "работа" : null,
         n.done && n.completedAt ? "сделано " + whenLabel(n.completedAt, false) : null)),
       n.done ? null : star,
       n.done ? null : pop("calendar", "Перенести: " + n.text, [...moveTargets().map(({ key, label }) => [label, "calendar", () => moveTo(n, key)] as [string, Parameters<typeof icon>[0], () => void]),
         n.dueAt ? ["Без срока", "x", () => moveTo(n, null)] : null], "move"),
       n.done ? null : pop("more", "Ещё: " + n.text, [
         ["Фокус 25 минут", "play", () => startFocus(n)],
+        n.status !== "doing" ? ["В работу", "pulse", () => void act(() => api.updateTask(n.id, { status: "doing" }), "В работе: " + n.text)] : null,
+        n.status !== "waiting" ? ["Жду ответа…", "clock", () => { editing = n.id; editWaiting = true; render(); }] : null,
+        n.status ? ["Надо сделать", "undo", () => void act(() => api.updateTask(n.id, { status: "todo" }), "Статус снят")] : null,
+        areaOf(n, projectsMeta()) === "work" ? ["Это личное", "home", () => void act(() => api.updateTask(n.id, { area: "personal" }), "Перенесено в «Личное»")] : ["Это по работе", "folder", () => void act(() => api.updateTask(n.id, { area: "work" }), "Перенесено в «Работа»")],
         top ? ["Добавить шаг", "plus", () => { addingStep = n.id; render(); }] : null,
         top ? ["Разбить на шаги", "spark", () => void startSplit(n.id, n.text, render)] : null]),
       n.done ? null : markAct(iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"), "edit"),
@@ -531,7 +594,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     if (o.drop) dropTarget(sec, o.drop);
     return sec;
   };
-  const visibleOrg = () => ({ notes: data!.notes.filter((n) => !pendingDelete.has(n.id)), reminders: data!.reminders.filter((r) => !pendingDelete.has(r.id)) });
+  const visibleOrg = (): Organizer => ({ ...data!, notes: data!.notes.filter((n) => !pendingDelete.has(n.id)), reminders: data!.reminders.filter((r) => !pendingDelete.has(r.id)) });
   /** The whole page: the hero and the cards over the list (counted over everything), then the list. */
   function render() {
     if (!data) { listHost.replaceChildren(loadError ? emptyState("alert", "Не удалось загрузить", loadError, btn("Повторить", () => void load(), { small: true })) : el("p", { cls: "muted", textContent: "Загрузка…" })); return; }
@@ -539,27 +602,37 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     renderList();
   }
   let doneOpen = false;
+  const projectsMeta = () => data?.projects ?? [];
+  /** The sphere that goes first now: work in the working hours of a working day, personal outside them. */
+  const preferNow = (): Area | undefined => {
+    if (!automation?.workFirst) return undefined;
+    const now = new Date();
+    return preferredArea(now, { workFrom: automation.workFrom, workTo: automation.workTo, workday: isWorkday(now) && !awayOn(data?.daysOff, localDay(now)) });
+  };
   /** Only the list: filters, search and the rows. Typing in the search redraws just this. */
   function renderList() {
     if (!data) return;
     const all = visibleOrg();
     skipStuck = stuckSkip();
-    // project chips: #работа, ◎ a goal; a project with nothing open left drops out of the filter
-    const projects = projectCounts(all.notes, missionTitle);
-    if (UI.project && !projects.some((p) => p.id === UI.project)) UI.project = "";
+    // projects: #работа, ◎ a goal; a project with nothing open left drops out of the filter
+    const plist = projectList(all.notes, projectsMeta(), missionTitle);
+    if (UI.project && !plist.some((p) => p.id === UI.project)) UI.project = "";
     let org = all;
     if (UI.project) {
       const inP = new Set(all.notes.filter((n) => n.project === UI.project).map((n) => n.id));
-      org = { notes: all.notes.filter((n) => inP.has(n.id) || (n.parentId && inP.has(n.parentId))), reminders: [] };
+      org = { ...all, notes: all.notes.filter((n) => inP.has(n.id) || (n.parentId && inP.has(n.parentId))), reminders: [] };
     }
-    const t = buildTasks(org, UI.filter, UI.query);
-    const c = t.counts;
-    const opts: [TaskFilter, string, number][] = [["all", "Все", c.all], ["todo", "Дела", c.todo], ["reminder", "Напоминания", c.reminder], ["note", "Заметки", c.note]];
-    chipsHost.replaceChildren(...opts.map(([f, label, n]) => chip(label, n, UI.filter === f, () => { UI.filter = f; renderList(); })));
-    projHost.replaceChildren(...(projects.length ? projects.slice(0, 12).map((p) => chip(p.label, p.n, UI.project === p.id, () => { UI.project = UI.project === p.id ? "" : p.id; renderList(); })) : []));
-    projHost.hidden = !projects.length;
+    const prefer = preferNow();
+    const t = buildTasks(org, UI.filter, UI.query, new Date(), { area: UI.area, ...(prefer ? { prefer } : {}), projects: projectsMeta() });
+    renderTabs(t.counts);
+    renderProjects(plist);
+    renderHeadInfo(all.notes, plist, prefer);
     // with nothing at all, filters full of zeros and a search over nothing only get in the way
-    toolbar.hidden = !buildTasks(all).counts.all && !UI.query && UI.filter === "all";
+    listHead.hidden = !buildTasks(all).counts.all && !UI.query && UI.filter === "all" && UI.area === "all";
+    const open = new Set(all.notes.filter((n) => n.kind === "todo" && !n.done).map((n) => n.id));
+    for (const id of selected) if (!open.has(id)) selected.delete(id);
+    renderBulk();
+    if (UI.view === "board") { listHost.replaceChildren(board(org)); return; }
     const kids = t.children;
     const finished = [...t.finished.todos.map((n) => todoRow(n)), ...t.finished.reminders.map(reminderRow)];
     const groups = [
@@ -575,12 +648,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     done?.addEventListener("toggle", () => { doneOpen = done.open; });
     // keep the keyboard on the same row across the redraw
     const focusedId = listHost.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>(".org-row[data-id]")?.dataset.id : undefined;
-    const open = new Set(all.notes.filter((n) => n.kind === "todo" && !n.done).map((n) => n.id));
-    for (const id of selected) if (!open.has(id)) selected.delete(id);
-    renderBulk();
     if (!groups.length && !done) {
-      listHost.replaceChildren(UI.query || UI.filter !== "all" || UI.project
-        ? emptyState("search", "Ничего не найдено", "Измените запрос или фильтр.")
+      listHost.replaceChildren(UI.query || UI.filter !== "all" || UI.project || UI.area !== "all"
+        ? emptyState("search", "Ничего не найдено", UI.area !== "all" && !UI.query ? `В разделе «${UI.area === "work" ? "Работа" : "Личное"}» пока пусто. Переключите на «Всё» или добавьте дело.` : "Измените запрос или фильтр.")
         : emptyState("check", "Дел пока нет", "Нажмите на пример, он подставится в поле выше. В чате тоже можно: «напоминай по будням в 10 про стендап».",
             el("div", { cls: "tasks-examples" }, ...EXAMPLES.map((x) => el("button", { type: "button", cls: "chip", textContent: x, onclick: () => prefill(x) })))));
       return;
@@ -589,6 +659,168 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     // the groups rise in once, when the page opens; redraws after a tick or a search letter do not replay it
     if (!listHost.classList.contains("settled")) setTimeout(() => listHost.classList.add("settled"), 400);
     if (focusedId) listHost.querySelector<HTMLElement>(`.org-row[data-id="${CSS.escape(focusedId)}"]`)?.focus({ preventScroll: true });
+  }
+
+  // ---------- the list's head: tabs, «Всё / Работа / Личное», list or board, search ----------
+  const TABS: [TaskFilter, string][] = [["all", "Все"], ["todo", "Дела"], ["reminder", "Напоминания"], ["note", "Заметки"]];
+  function renderTabs(c: Record<TaskFilter, number>) {
+    tabsHost.hidden = UI.view === "board";
+    tabsHost.replaceChildren(...TABS.map(([f, label]) => {
+      const b = el("button", { type: "button", cls: "tasks-tab" + (UI.filter === f ? " on" : ""), attrs: { role: "tab", "aria-selected": String(UI.filter === f) } },
+        el("span", { textContent: label }), el("small", { textContent: String(c[f]) }));
+      b.addEventListener("click", () => { UI.filter = f; renderList(); });
+      return b;
+    }), el("a", { cls: "tasks-tab tasks-tab-vault", href: "#/vault", title: "Логины, пароли и почта под мастер-паролем" }, icon("lock", 14), el("span", { textContent: "Пароли" })));
+    for (const b of areaHost.querySelectorAll<HTMLButtonElement>("button")) { const on = b.dataset.v === UI.area; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
+    for (const b of viewHost.querySelectorAll<HTMLButtonElement>("button")) { const on = b.dataset.v === UI.view; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); }
+  }
+  const segmented = (label: string, items: [string, string, Parameters<typeof icon>[0] | null][], pick: (v: string) => void) => {
+    const host = el("div", { cls: "tasks-seg", attrs: { role: "group", "aria-label": label } }, ...items.map(([v, text, ic]) => {
+      const b = el("button", { type: "button", title: text, attrs: { "data-v": v, "aria-label": text } }, ...(ic ? [icon(ic, 16)] : []), ...(ic ? [] : [el("span", { textContent: text })]));
+      b.addEventListener("click", () => pick(v));
+      return b;
+    }));
+    return host;
+  };
+  const tabsHost = el("div", { cls: "tasks-tabs", attrs: { role: "tablist", "aria-label": "Что показать" } });
+  const areaHost = segmented("Сфера", [["all", "Всё", null], ["work", "Работа", null], ["personal", "Личное", null]], (v) => { UI.area = v as AreaFilter; store.set(AREA, v); renderList(); });
+  const viewHost = segmented("Вид", [["list", "Списком", "list"], ["board", "Доской по статусам", "board"]], (v) => { UI.view = v as "list" | "board"; store.set(VIEW, v); renderList(); });
+  const search = el("input", { type: "search", placeholder: "Поиск по делам и заметкам", value: UI.query, cls: "mem-search tasks-search", attrs: { "aria-label": "Поиск по делам и заметкам" } });
+  const searchBtn = iconButton("search", "Поиск (/)", () => openSearch(), "icon-btn tasks-search-btn");
+  const searchBox = el("div", { cls: "tasks-searchbox" }, searchBtn, search);
+  /** The search folds into its icon when it is empty and not in use. */
+  const syncSearch = () => searchBox.classList.toggle("open", !!UI.query || document.activeElement === search);
+  const openSearch = () => { searchBox.classList.add("open"); search.focus(); };
+  search.addEventListener("focus", syncSearch);
+  search.addEventListener("blur", () => setTimeout(syncSearch, 0));
+  search.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); search.value = ""; UI.query = ""; renderList(); search.blur(); } });
+  /** Under the head: the chosen project, or what the working hours change, or the work week in hours. */
+  const headInfo = el("div", { cls: "tasks-headinfo" });
+  /** On a narrow screen the «Проекты» card is at the bottom: its chips come up here instead. */
+  const projStrip = el("div", { cls: "chips tasks-projstrip", attrs: { role: "group", "aria-label": "Проекты" } });
+  const listHead = el("div", { cls: "tasks-listhead" },
+    el("div", { cls: "tasks-listhead-row" }, tabsHost, el("span", { cls: "grow" }), areaHost, viewHost, searchBox),
+    projStrip, headInfo);
+  syncSearch();
+
+  // ---------- «Проекты» (left column) ----------
+  const projCard = el("section", { cls: "pg-card tasks-side-card tasks-projects-card", attrs: { "aria-label": "Проекты" } });
+  const PROJECT_COLOR: Record<string, string> = { gold: "Золотой", blue: "Синий", green: "Зелёный", violet: "Фиолетовый", red: "Красный", teal: "Бирюзовый", orange: "Оранжевый", gray: "Серый" };
+  const dot = (color?: string) => el("i", { cls: "tasks-pdot" + (color ? " c-" + color : ""), attrs: { "aria-hidden": "true" } });
+  const dueText = (d: string) => new Date(d + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  const pickProject = (id: string) => { UI.project = UI.project === id ? "" : id; projEdit = false; renderList(); if (UI.project) listHead.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "nearest" }); };
+  function renderProjects(plist: ProjectInfo[]) {
+    projCard.hidden = !plist.length;
+    projStrip.replaceChildren(...plist.slice(0, 12).map((p) => chip((p.goal ? "◎ " : "#") + p.label, p.open, UI.project === p.id, () => pickProject(p.id))));
+    projStrip.hidden = !plist.length;
+    if (!plist.length) { projCard.replaceChildren(); return; }
+    projCard.replaceChildren(cardHead(projCard, "projects", "Проекты", el("small", { cls: "muted", textContent: String(plist.length) })),
+      el("ul", { cls: "tasks-plist" }, ...plist.map((p) => {
+        const late = p.dueAt && p.dueAt < localDay(new Date()) && p.open;
+        const bar = el("span", { cls: "tasks-pbar" }, el("i"));
+        bar.style.setProperty("--p", String(p.total ? Math.round((100 * p.done) / p.total) : 0));
+        const b = el("button", { type: "button", cls: "tasks-prow" + (UI.project === p.id ? " on" : ""), attrs: { "aria-pressed": String(UI.project === p.id) } },
+          p.goal ? el("span", { cls: "tasks-pgoal", attrs: { "aria-hidden": "true" }, textContent: "◎" }) : dot(p.color),
+          el("span", { cls: "grow tasks-pname" }, el("span", { textContent: p.label }),
+            el("small", { cls: "muted" + (late ? " late" : ""), textContent: [p.area === "work" ? "работа" : null, p.dueAt ? "до " + dueText(p.dueAt) : null].filter(Boolean).join(" · ") })),
+          el("span", { cls: "tasks-pcount", title: `Открыто ${p.open}, сделано ${p.done} из ${p.total}`, textContent: String(p.open) }), bar);
+        b.addEventListener("click", () => pickProject(p.id));
+        return el("li", {}, b);
+      })));
+  }
+  /** The project's settings under its bar: colour, deadline and sphere, saved at once. */
+  let projEdit = false;
+  function renderHeadInfo(notes: Note[], plist: ProjectInfo[], prefer?: Area) {
+    const p = UI.project ? plist.find((x) => x.id === UI.project) : undefined;
+    if (p) {
+      const pct = p.total ? Math.round((100 * p.done) / p.total) : 0;
+      const bar = el("span", { cls: "tasks-pbar wide" }, el("i"));
+      bar.style.setProperty("--p", String(pct));
+      const meta = projectsMeta().find((m) => m.name.toLowerCase() === p.id.toLowerCase());
+      const editor = projEdit && !p.goal ? el("div", { cls: "tasks-projedit" },
+        el("div", { cls: "tasks-swatches", attrs: { role: "radiogroup", "aria-label": "Цвет проекта" } }, ...Object.entries(PROJECT_COLOR).map(([c, name]) => {
+          const on = meta?.color === c;
+          const s = el("button", { type: "button", cls: "tasks-swatch c-" + c + (on ? " on" : ""), title: name, attrs: { role: "radio", "aria-checked": String(on), "aria-label": name } });
+          s.addEventListener("click", () => void act(() => api.setProject(p.id, { color: on ? null : c })));
+          return s;
+        })),
+        (() => { const d = el("input", { type: "date", cls: "mem-select", value: meta?.dueAt ?? "", attrs: { "aria-label": "Срок проекта" } }); d.addEventListener("change", () => void act(() => api.setProject(p.id, { dueAt: d.value || null }), d.value ? "Срок проекта: " + dueText(d.value) : "Срок проекта снят")); return el("label", {}, el("span", { textContent: "Срок" }), d); })(),
+        (() => { const a = el("select", { cls: "mem-select", attrs: { "aria-label": "Сфера проекта" } }, el("option", { value: "", textContent: "Сфера: сама" }), el("option", { value: "work", textContent: "Работа" }), el("option", { value: "personal", textContent: "Личное" })); a.value = meta?.area ?? ""; a.addEventListener("change", () => void act(() => api.setProject(p.id, { area: (a.value || null) as Area | null }), "Сохранено")); return a; })())
+        : null;
+      headInfo.replaceChildren(el("div", { cls: "tasks-projbar" },
+        p.goal ? el("span", { cls: "tasks-pgoal", attrs: { "aria-hidden": "true" }, textContent: "◎" }) : dot(p.color),
+        el("strong", { textContent: (p.goal ? "" : "#") + p.label }),
+        el("span", { cls: "muted small", textContent: `сделано ${p.done} из ${p.total}` }), bar,
+        p.dueAt ? el("span", { cls: "small" + (p.dueAt < localDay(new Date()) && p.open ? " late" : ""), textContent: "до " + dueText(p.dueAt) }) : null,
+        el("span", { cls: "grow" }),
+        p.goal ? null : iconButton("settings", "Цвет, срок и сфера проекта", () => { projEdit = !projEdit; renderList(); }, "icon-btn sm" + (projEdit ? " on" : "")),
+        iconButton("x", "Показать все дела", () => pickProject(p.id), "icon-btn sm")), ...(editor ? [editor] : []));
+      headInfo.hidden = false;
+      return;
+    }
+    const line: (string | HTMLElement)[] = [];
+    if (UI.area === "work") {
+      const w = workWeek(notes, projectsMeta());
+      if (w.count) line.push(el("span", { title: "Дела работы со сроком на этой неделе; без оценки — 30 минут", textContent: `Неделя: запланировано ${fmtMin(w.planned)}, сделано ${fmtMin(w.done)}` + (automation ? ` · норма ${automation.weekHours} ч` : "") }));
+    } else if (UI.area === "all" && prefer && notes.some((n) => n.kind === "todo" && !n.done && areaOf(n, projectsMeta()) === "work")) {
+      line.push(el("span", { textContent: prefer === "work" ? `Рабочее время до ${automation!.workTo}: сначала рабочие дела` : "Вне рабочего времени: сначала личные дела" }));
+    }
+    headInfo.replaceChildren(...line);
+    headInfo.hidden = !line.length;
+  }
+  const fmtMin = (m: number) => (Math.round(m / 6) / 10).toLocaleString("ru-RU") + " ч";
+
+  // ---------- the board: «Надо сделать → В работе → Жду ответа → Готово» ----------
+  const COLS = ["todo", "doing", "waiting", "done"] as const;
+  /** Moves a card to a column: a status, or ticked off / back in work. */
+  const toColumn = (n: Note, col: typeof COLS[number]) => {
+    if (col === "done") { if (!n.done) setDone(n.id, true); return; }
+    void act(async () => {
+      if (n.done) { const r = await api.setTodoDone(n.id, false); if (!r.ok) return r; }
+      return (n.status ?? "todo") === col ? { ok: true } : api.updateTask(n.id, { status: col });
+    }, STATUS_LABEL[col] + ": " + n.text);
+  };
+  function board(org: { notes: Note[] }): HTMLElement {
+    const q = UI.query.trim().toLowerCase();
+    const notes = org.notes.filter((n) => n.kind === "todo" && !n.auto && !n.parentId && (UI.area === "all" || areaOf(n, projectsMeta()) === UI.area) && (!q || n.text.toLowerCase().includes(q)));
+    const cols = boardColumns(notes);
+    const kidsOf = (id: string) => data?.notes.filter((k) => k.parentId === id) ?? [];
+    const card = (n: Note) => {
+      const kids = kidsOf(n.id);
+      const overdue = !n.done && n.dueAt && Date.parse(n.dueAt) < Date.now();
+      const sel = el("select", { cls: "mem-select tasks-card-status", attrs: { "aria-label": "Статус: " + n.text } }, ...COLS.map((c) => el("option", { value: c, textContent: STATUS_LABEL[c] })));
+      sel.value = n.done ? "done" : n.status ?? "todo";
+      sel.addEventListener("change", () => toColumn(n, sel.value as typeof COLS[number]));
+      const c = el("article", { cls: "tasks-card" + (n.priority === "high" && !n.done ? " important" : "") + (n.done ? " done" : ""), attrs: { "data-id": n.id, tabindex: "0" } },
+        el("div", { cls: "tasks-card-top" }, n.project ? dot(projectsMeta().find((p) => p.name.toLowerCase() === n.project!.toLowerCase())?.color) : null,
+          el("span", { cls: "grow tasks-card-text" }, ...markParts(n.text, UI.query).map(([x, hit]) => hit ? el("mark", { textContent: x }) : x)),
+          n.done ? null : iconButton("edit", "Изменить: " + n.text, () => { UI.view = "list"; store.set(VIEW, "list"); editing = n.id; renderList(); }, "icon-btn sm")),
+        meta(n.meeting && n.dueAt ? "встреча " + whenLabel(n.dueAt, true) + " " + meetingSpan(n) : n.dueAt ? el("span", { cls: overdue ? "late" : "", textContent: whenLabel(n.dueAt, isDateOnly(n.dueAt)) }) : null,
+          n.status === "waiting" && n.waitingFor ? "жду: " + n.waitingFor : null,
+          n.followUpAt && !n.done ? "спросить " + whenLabel(n.followUpAt, false) : null,
+          kids.length ? `шаги ${kids.filter((k) => k.done).length}/${kids.length}` : null,
+          n.estimateMinutes && !n.meeting ? n.estimateMinutes + " мин" : null,
+          missionTitle(n.project) ? "◎ " + missionTitle(n.project) : n.project ? "#" + n.project : null),
+        sel);
+      c.draggable = true;
+      c.addEventListener("dragstart", (e) => { if (!e.dataTransfer) return; e.dataTransfer.setData(DRAG_TYPE, n.id); e.dataTransfer.effectAllowed = "move"; root.classList.add("tasks-dragging"); });
+      c.addEventListener("dragend", () => root.classList.remove("tasks-dragging"));
+      return c;
+    };
+    return el("div", { cls: "tasks-board", attrs: { role: "list", "aria-label": "Доска дел по статусам" } }, ...COLS.map((col) => {
+      const list = cols[col];
+      const zone = el("section", { cls: "tasks-col " + col, attrs: { role: "listitem", "aria-label": STATUS_LABEL[col] } },
+        el("h2", {}, el("span", { textContent: STATUS_LABEL[col] }), el("span", { cls: "n", textContent: String(list.length) })),
+        ...(list.length ? list.map(card) : [el("p", { cls: "muted small tasks-col-empty", textContent: col === "waiting" ? "Дела, где вы ждёте ответа от кого-то" : col === "doing" ? "Перетащите сюда то, чем заняты" : col === "done" ? "Сделанное за неделю" : "Пусто" })]));
+      zone.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes(DRAG_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; zone.classList.add("drop"); } });
+      zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget as Node | null)) zone.classList.remove("drop"); });
+      zone.addEventListener("drop", (e) => {
+        e.preventDefault(); zone.classList.remove("drop"); root.classList.remove("tasks-dragging");
+        const n = data?.notes.find((x) => x.id === e.dataTransfer?.getData(DRAG_TYPE));
+        if (n) toColumn(n, col);
+      });
+      return zone;
+    }));
   }
   /** Shown only while a to-do is dragged: drop it on «Сегодня», «Завтра» or «Без срока», even when that group is empty. */
   const dropBar = el("div", { cls: "tasks-dropbar", attrs: { "aria-hidden": "true" } },
@@ -623,6 +855,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const eveAt = automation?.evening ? Math.min(18, Number(automation.eveningTime.slice(0, 2))) : 18;
     const wp = weekPlanCard();
     if (wp) parts.push(wp);
+    const we = workEveningStrip(today);
+    if (we) parts.push(we);
     if (evening) parts.push(eveningCard(sum));
     else if (new Date().getHours() >= eveAt && sum.open.length && store.get(EVENING_SEEN) !== today) {
       parts.push(el("div", { cls: "attn-row info tasks-evening-ask" }, icon("moon", 18),
@@ -639,6 +873,20 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     }
     eveHost.replaceChildren(...parts);
   }
+  /** After the working hours of a working day: the work to-dos still open for today, moved on with one button. */
+  function workEveningStrip(today: string): HTMLElement | null {
+    if (!data || !automation?.eveningMove || store.get(WORK_EVE) === today) return null;
+    const now = new Date();
+    const [h, m] = automation.workTo.split(":").map(Number);
+    if (now.getHours() * 60 + now.getMinutes() < h! * 60 + m! || !isWorkday(now) || awayOn(data.daysOff, today)) return null;
+    const left = visibleOrg().notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localDay(n.dueAt) <= today && areaOf(n, projectsMeta()) === "work");
+    if (!left.length) return null;
+    const close = () => { store.set(WORK_EVE, today); renderTop(); };
+    return el("div", { cls: "attn-row info tasks-work-eve" }, icon("folder", 18),
+      el("span", { cls: "grow", textContent: `Рабочий день окончен. Не закрыто рабочих дел: ${left.length}` + (left.length <= 3 ? ` (${left.map((n) => n.text).join(", ")})` : "") + "." }),
+      btn("На следующий рабочий день", () => { store.set(WORK_EVE, today); void act(() => api.moveTasks(left.map((n) => n.id), "workday"), `Перенесено рабочих дел: ${left.length}`); }, { small: true, primary: true, icon: "arrowDown" }),
+      iconButton("x", "Не сегодня", close, "icon-btn sm"));
+  }
   /** «Завтра праздник» with its to-dos, so they can be moved to a working day before it comes. */
   function tomorrowNotice(): HTMLElement | null {
     if (!automation?.holidayWarn || !data) return null;
@@ -654,7 +902,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   /** Today's load: minutes of to-dos against the free hours, and a way out when it is too much. */
   function loadBar(): HTMLElement | null {
     if (!data || !automation?.dayHours) return null;
-    const l = dayLoadOf(visibleOrg().notes, localDay(new Date()), automation.dayHours);
+    const l = dayLoadOf(visibleOrg().notes, localDay(new Date()), automation.dayHours, data.daysOff);
     if (!l.count) return null;
     const pct = Math.min(100, Math.round((100 * l.planned) / Math.max(1, l.capacity)));
     const h = (m: number) => (Math.round(m / 6) / 10).toLocaleString("ru-RU") + " ч";
@@ -757,7 +1005,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   function openWeekPlan() {
     const days: string[] = [];
     const d = new Date(); d.setHours(12, 0, 0, 0);
-    for (let i = 0; i < 14 && days.length < 5; i++) { d.setDate(d.getDate() + 1); if (isWorkday(d)) days.push(localDay(d)); }
+    for (let i = 0; i < 30 && days.length < 5; i++) { d.setDate(d.getDate() + 1); if (isWorkday(d) && !awayOn(data?.daysOff, localDay(d))) days.push(localDay(d)); }
     const plan = planWeek(data?.notes ?? [], days, Math.round((automation?.dayHours || 8) * 60));
     if (!plan.length) { showToast("Свободных окон на неделе не нашлось."); return; }
     weekPlan = plan.map((x) => ({ ...x, on: true }));
@@ -1042,17 +1290,19 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       const late = !outside && key < todayKey && open > 0;
       const stars = outside ? [] : yearly.get(key.slice(5)) ?? [];
       const special = pd && pd.kind !== "work" ? pd.kind : null;
+      const off = outside ? undefined : awayOn(data!.daysOff, key);
       if (!outside) {
+        if (off) seen.add(off.kind);
         if (special) seen.add(special);
         if (list.length) seen.add("dot");
         if (late) seen.add("late");
         if (stars.length) seen.add("star");
         if (heavy.has(key)) seen.add("heavy");
       }
-      const label = `${d}${special ? ", " + DAY_KIND[special].toLowerCase() + (pd!.note ? " (" + pd!.note + ")" : "") : ""}` + (list.length ? `: записей ${list.length}` : "") + (late ? ", не сделано" : "") + (heavy.has(key) ? ", день перегружен" : "") + (stars.length ? ", " + stars.join(", ") : "");
+      const label = `${d}${off ? ", " + (off.kind === "sick" ? "больничный" : "отпуск") : ""}${special ? ", " + DAY_KIND[special].toLowerCase() + (pd!.note ? " (" + pd!.note + ")" : "") : ""}` + (list.length ? `: записей ${list.length}` : "") + (late ? ", не сделано" : "") + (heavy.has(key) ? ", день перегружен" : "") + (stars.length ? ", " + stars.join(", ") : "");
       const heat = Math.min(4, list.length);
       const sel = key === UI.day && !outside;
-      const c = el("button", { type: "button", cls: "tasks-calendar-day" + (outside ? " outside" : "") + (special ? " " + special : "") + (heat ? " h" + heat : "") + (heavy.has(key) && !outside ? " heavy" : "") + (key === todayKey ? " today" : "") + (sel ? " selected" : ""),
+      const c = el("button", { type: "button", cls: "tasks-calendar-day" + (outside ? " outside" : "") + (special ? " " + special : "") + (heat ? " h" + heat : "") + (heavy.has(key) && !outside ? " heavy" : "") + (off ? " away " + off.kind : "") + (key === todayKey ? " today" : "") + (sel ? " selected" : ""),
         attrs: { "data-day": key, "aria-pressed": String(sel), "aria-label": label, tabindex: sel ? "0" : "-1" } },
         el("span", { cls: "tasks-calendar-num", textContent: String(d) }),
         list.length ? el("span", { cls: "tasks-calendar-dots", attrs: { "aria-hidden": "true" } }, ...list.slice(0, 3).map((x) => el("i", { cls: (x.done ? "done" : "") + (x.kind === "reminder" ? " rem" : "") }))) : null,
@@ -1060,7 +1310,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         late ? el("i", { cls: "tasks-calendar-late", attrs: { "aria-hidden": "true" } }) : null,
         stars.length ? el("span", { cls: "tasks-calendar-star", attrs: { "aria-hidden": "true" }, textContent: "★" }) : null);
       const lines = [...stars.map((x) => "★ " + x), ...list.slice(0, 5).map((x) => (x.done ? "✓ " : x.kind === "reminder" ? "◷ " : "• ") + (isDateOnly(x.at) ? "" : hm(x.at) + " ") + x.text), ...(list.length > 5 ? [`и ещё ${list.length - 5}`] : [])];
-      if (!outside && (lines.length || special)) calTips.set(key, { title: new Date(key + "T12:00").toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" }) + (special ? " · " + (pd!.note ?? DAY_KIND[special]) : ""), lines });
+      if (!outside && (lines.length || special || off)) calTips.set(key, { title: new Date(key + "T12:00").toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" }) + (off ? " · " + (off.kind === "sick" ? "больничный" : "отпуск") : "") + (special ? " · " + (pd!.note ?? DAY_KIND[special]) : ""), lines });
       return c;
     };
     const lead = (first.getDay() + 6) % 7, len = new Date(y!, mo!, 0).getDate();
@@ -1073,7 +1323,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     // keyboard focus lands on the grid even when the selected day is in another month
     if (!cells.some((c) => c.tabIndex === 0)) cells.find((c) => !c.classList.contains("outside"))!.tabIndex = 0;
     grid.replaceChildren(...cells);
-    const LEGEND: [string, string][] = [["holiday", "Праздник"], ["off", "Перенос"], ["short", "Сокращённый"], ["dot", "Есть дела"], ["late", "Не сделано"], ["star", "Дата из памяти"], ["heavy", "Перегруз"]];
+    const LEGEND: [string, string][] = [["vacation", "Отпуск"], ["sick", "Больничный"], ["holiday", "Праздник"], ["off", "Перенос"], ["short", "Сокращённый"], ["dot", "Есть дела"], ["late", "Не сделано"], ["star", "Дата из памяти"], ["heavy", "Перегруз"]];
     const legend = LEGEND.filter(([k]) => seen.has(k));
     const wh = automation?.weekHours ?? 40;
     const ms = prodStats(UI.month), ys = prodStats(UI.month.slice(0, 4));
@@ -1118,7 +1368,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const open = data?.notes.filter((n) => n.kind === "todo" && !n.done && (!n.dueAt || localDay(n.dueAt) !== UI.day)) ?? [];
     const pick = el("select", { cls: "mem-select", attrs: { "aria-label": "Перенести дело на этот день" } }, el("option", { value: "", textContent: "＋ Перенести сюда дело…" }), ...open.map((n) => el("option", { value: n.id, textContent: n.text.slice(0, 80) })));
     pick.addEventListener("change", () => { const n = open.find((x) => x.id === pick.value); if (n) moveToDay(n, UI.day); });
-    const parts: (Node | null)[] = [head(), sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null];
+    const parts: (Node | null)[] = [head(), sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null, awayBox()];
     // today's to-dos are already the «Сегодня» group of the list: here only how many
     if (isToday) parts.push(el("p", { cls: "muted small", textContent: dayItems.length ? `На сегодня записей: ${dayItems.length}, они в списке в группе «Сегодня».` : "На сегодня ничего не запланировано." }));
     else parts.push(dayItems.length
@@ -1139,6 +1389,37 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
           v.blocks.length > 5 ? el("li", { cls: "muted small", textContent: `и ещё ${v.blocks.length - 5}, до ${hm(v.blocks[v.blocks.length - 1]!.start)}` }) : null));
     }
     dayHost.replaceChildren(...parts.filter((x): x is Node => !!x));
+  }
+  /** The selected day's vacation or sick leave, or a small form to mark one from this day. */
+  let awayForm = false;
+  function awayBox(): HTMLElement {
+    const fmt = (k: string) => new Date(k + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+    const off = awayOn(data?.daysOff, UI.day);
+    if (off) return el("div", { cls: "tasks-away " + off.kind }, icon(off.kind === "sick" ? "pulse" : "sun", 16),
+      el("span", { cls: "grow", textContent: `${off.kind === "sick" ? "Больничный" : "Отпуск"} ${off.from === off.to ? fmt(off.from) : fmt(off.from) + " – " + fmt(off.to)}`.replace(/\.$/, "") + `. Рабочие дела в эти дни не планируются.` }),
+      iconButton("trash", "Убрать отметку", () => void act(() => api.removeDayOff(off.id), "Отметка убрана"), "icon-btn sm"));
+    if (!awayForm) return el("div", { cls: "tasks-away-start" }, btn("Отпуск или больничный…", () => { awayForm = true; void renderDay(); }, { small: true, icon: "sun", title: "Отметить дни, когда рабочие дела не планируются" }));
+    const kind = el("select", { cls: "mem-select", attrs: { "aria-label": "Что отметить" } }, el("option", { value: "vacation", textContent: "Отпуск" }), el("option", { value: "sick", textContent: "Больничный" }));
+    const from = el("input", { type: "date", cls: "mem-select", value: UI.day, attrs: { "aria-label": "С какого дня" } });
+    const to = el("input", { type: "date", cls: "mem-select", value: addDaysKey(UI.day, 6), attrs: { "aria-label": "По какой день" } });
+    const close = () => { awayForm = false; void renderDay(); };
+    const save = btn("Отметить", async () => {
+      if (!from.value || !to.value || to.value < from.value) { showToast("Проверьте даты: конец не раньше начала."); return; }
+      save.disabled = true;
+      const r = await api.addDayOff(from.value, to.value, kind.value as DayOff["kind"]);
+      if (!r.ok) { showToast(r.error.message, { ms: 8000 }); save.disabled = false; return; }
+      awayForm = false;
+      await load();
+      const ids = r.value.clash;
+      // the first working day after the absence, for the work to-dos that fell inside it
+      const back = new Date(to.value + "T12:00");
+      do back.setDate(back.getDate() + 1); while (!isWorkday(back) || awayOn(data?.daysOff, localDay(back)));
+      const backKey = localDay(back) as `${number}-${number}-${number}`;
+      if (ids.length) showToast(`Отмечено. Рабочих дел в эти дни: ${ids.length}`, { ms: 12000, action: { label: "Перенести на " + fmt(backKey), run: () => void act(() => api.moveTasks(ids, backKey), `Перенесено на ${fmt(backKey)}: ${ids.length}`) } });
+      else showToast("Отмечено: " + (kind.value === "sick" ? "больничный" : "отпуск"));
+    }, { small: true, primary: true });
+    return el("div", { cls: "tasks-away-form" }, kind, el("label", {}, el("span", { textContent: "с" }), from), el("label", {}, el("span", { textContent: "по" }), to),
+      el("div", { cls: "row" }, save, btn("Отмена", close, { small: true })));
   }
   /** «Разложить день»: the assistant's proposal for the selected day, with a tick for each to-do and one button to apply. */
   function arrangeBox(): HTMLElement {
@@ -1288,7 +1569,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       c.addEventListener("change", () => void setAuto(patch(c.checked)));
       return el("label", { cls: "tasks-auto-row" }, c, el("span", { cls: "grow" }, el("span", { textContent: label }), el("small", { cls: "muted", textContent: note })), extra ?? null);
     };
-    const timeField = (value: string, label: string, disabled: boolean, key: "briefTime" | "eveningTime" | "quietFrom" | "quietTo") => {
+    const timeField = (value: string, label: string, disabled: boolean, key: "briefTime" | "eveningTime" | "quietFrom" | "quietTo" | "workFrom" | "workTo") => {
       const t = el("input", { type: "time", value, cls: "mem-select tasks-time", disabled, attrs: { "aria-label": label } });
       t.addEventListener("click", (e) => e.stopPropagation());
       t.addEventListener("change", () => { if (t.value && t.value !== value) void setAuto({ [key]: t.value } as Partial<Automation>); });
@@ -1301,7 +1582,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       return s;
     };
     const selRow = (label: string, note: string, s: HTMLElement) => el("label", { cls: "tasks-auto-row" }, el("span", { cls: "grow" }, el("span", { textContent: label }), el("small", { cls: "muted", textContent: note })), s);
-    const on = { morning: [a.brief, a.rollOverdue, a.holidayWarn], day: [a.dueReminder !== "off", a.quiet, a.dayHours > 0, a.stuckAfter > 0, a.chatPromises], evening: [a.evening], week: [a.weekly, a.goalNudge > 0, a.streaks], rules: [a.rules.length > 0], log: [] as boolean[] };
+    const on = { morning: [a.brief, a.rollOverdue, a.holidayWarn], day: [a.workFirst, a.dueReminder !== "off", a.quiet, a.dayHours > 0, a.stuckAfter > 0, a.chatPromises], evening: [a.evening, a.eveningMove], week: [a.weekly, a.goalNudge > 0, a.streaks], rules: [a.rules.length > 0], log: [] as boolean[] };
     const tabs = el("div", { cls: "tasks-auto-tabs", attrs: { role: "tablist", "aria-label": "Сценарии автоматики" } }, ...AUTO_TABS.map(([k, label, ic]) => {
       const n = on[k].filter(Boolean).length;
       const b = el("button", { type: "button", cls: "tasks-auto-tab" + (n ? " on" : ""), attrs: { role: "tab", "aria-selected": String(autoTab === k) } }, icon(ic, 15), el("span", { textContent: label }),
@@ -1317,6 +1598,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       toggle("Праздники в «по будням»", "по производственному календарю: праздники пропускаются, рабочие субботы считаются", a.workdays, (v) => ({ workdays: v })),
       el("div", { cls: "row" }, btn("Сводка сейчас", () => void act(() => api.runBrief(), "Сводка готова"), { small: true, icon: "sun" }))];
     else if (autoTab === "day") body = [
+      toggle("Рабочее время", "в эти часы рабочего дня сначала рабочие дела, в остальное время — личные", a.workFirst, (v) => ({ workFirst: v }),
+        el("span", { cls: "tasks-time-range" }, timeField(a.workFrom, "Работа с", false, "workFrom"), el("span", { textContent: "–" }), timeField(a.workTo, "Работа до", false, "workTo"))),
       selRow("Напоминать о сроке дела", `для дел со временем; «утром» — в ${a.briefTime}`, select("Напоминать о сроке дела", a.dueReminder, [["off", "Не напоминать"], ["15", "За 15 минут"], ["60", "За час"], ["morning", "Утром в день срока"]], (v) => ({ dueReminder: v }))),
       toggle("Тихие часы", "ночью без звука; автоматические напоминания ждут утра, свои приходят вовремя", a.quiet, (v) => ({ quiet: v }),
         el("span", { cls: "tasks-time-range" }, timeField(a.quietFrom, "Тихие часы с", !a.quiet, "quietFrom"), el("span", { textContent: "–" }), timeField(a.quietTo, "Тихие часы до", !a.quiet, "quietTo"))),
@@ -1326,6 +1609,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       toggle("Обещания из чата", "«завтра надо позвонить» в чате — карточка «Добавить в дела?»", a.chatPromises, (v) => ({ chatPromises: v }))];
     else if (autoTab === "evening") body = [
       toggle("Итог дня", "что сделано, что осталось, что завтра; остаток — на завтра одной кнопкой", a.evening, (v) => ({ evening: v }), timeField(a.eveningTime, "Время итога дня", !a.evening, "eveningTime")),
+      toggle("После работы — перенос рабочих дел", `в ${a.workTo} в рабочий день: не закрытые рабочие дела на следующий рабочий день одной кнопкой`, a.eveningMove, (v) => ({ eveningMove: v })),
       el("div", { cls: "row" }, btn("Итог сейчас", () => void act(() => api.runEvening(), "Итог дня готов"), { small: true, icon: "moon" }))];
     else if (autoTab === "week") body = [
       toggle("Обзор недели", `в воскресенье в ${a.eveningTime}: сделано, застряло, цели, что впереди`, a.weekly, (v) => ({ weekly: v })),
@@ -1394,9 +1678,6 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   }
 
   // ---------- toolbar and keys ----------
-  const search = el("input", { type: "search", placeholder: "Поиск", value: UI.query, cls: "mem-search", attrs: { "aria-label": "Поиск по делам и заметкам" } });
-  const projHost = el("div", { cls: "chips tasks-projects", attrs: { role: "group", "aria-label": "Проекты и цели" } });
-  const toolbar = el("div", { cls: "mem-toolbar tasks-toolbar" }, search, chipsHost, projHost);
   // the list follows the typing after a short pause; the hero and the side do not move at all
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { UI.query = search.value; renderList(); }, 150); });
@@ -1433,7 +1714,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       next.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
     };
     if (e.code === "KeyN") { e.preventDefault(); text.focus(); return; }
-    if (e.key === "/") { e.preventDefault(); search.focus(); return; }
+    if (e.key === "/") { e.preventDefault(); openSearch(); return; }
     if (e.code === "KeyJ" || (cur && e.key === "ArrowDown")) { e.preventDefault(); go(1); return; }
     if (e.code === "KeyK" || (cur && e.key === "ArrowUp")) { e.preventDefault(); go(-1); return; }
     if (!cur) return;
@@ -1462,11 +1743,11 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     attHost,
     heroHost,
     el("div", { cls: "tasks-layout" },
-      el("aside", { cls: "tasks-ach", attrs: { "aria-label": "Дела и достижения" } }, ach.el),
+      el("aside", { cls: "tasks-ach", attrs: { "aria-label": "Проекты, дела и достижения" } }, projCard, ach.el),
       el("div", { cls: "tasks-main" },
         el("section", { cls: "pg-card tasks-quick" }, form),
         eveHost,
-        toolbar,
+        listHead,
         bulkHost,
         listHost),
       el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, forecastHost, goalsHost, datesHost)));

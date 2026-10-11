@@ -22,6 +22,7 @@ import { durableMemoryStore } from "./durable-memory-store";
 import { ModuleManager, type ModuleAction } from "./module-manager";
 import { ManifestStore, fetchManifest } from "./module-manifest";
 import { AssistantSettingsStore, DEFAULT_CHAT_MODEL, instructionsPrompt } from "./assistant-settings";
+import { Vault } from "./vault";
 import { Organizer, buildBrief } from "./organizer";
 import { Achievements } from "./achievements";
 import { OpenableUrls, webSearch } from "./web-access";
@@ -201,6 +202,7 @@ try {
   log.warn("Диск: повреждённое хранилище перемещено целиком в "+quarantine,(error as Error).message);
 }
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
+const vault = new Vault(path.join(dataDir, "vault.json"));
 await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
 /** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
@@ -402,7 +404,7 @@ const appDeps: AppDeps = {
   projectStats,
   scenes,
   modules: () => modules.list(),
-  settings, organizer, disk, achievements, brief: briefData,
+  settings, organizer, vault, disk, achievements, brief: briefData,
   splitSteps: () => { const l = sceneLlm; return l ? (t: string, signal?: AbortSignal) => splitIntoSteps(l, t, signal) : undefined; }, evals, noteUserText: (t: string) => openable.noteText(t),
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),

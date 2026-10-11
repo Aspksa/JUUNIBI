@@ -26,7 +26,7 @@
 .content-main,
 .content-main:has(.settings-page),.content-main:has(.tasks-page),.content-main:has(.page.upd),
 .content-main:has(.ach-page),.content-main:has(.disk-page),.content-main:has(.page){max-width:var(--page-wide)}
-.content-main:has(.mob-page){max-width:var(--page-narrow)}
+.content-main:has(.mob-page),.content-main:has(.vault-page){max-width:var(--page-narrow)}
 .page,.page.upd,.page.disk-page,.page.ach-page,.page.tasks-page,.settings-page{max-width:none}
 
 /* ---------- 2. one primary button: flat brand colour; disabled stays a pale brand, not grey ---------- */
