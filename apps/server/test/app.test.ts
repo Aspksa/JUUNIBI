@@ -186,3 +186,23 @@ describe("Brain confirmed experience API", () => {
     } finally {server.close();}
   });
 });
+
+describe("Brain experience-guided planning HTTP", () => {
+  it("returns confirmed advice without invoking the tools", async () => {
+    const brain = new BrainCore(() => true);
+    let calls = 0;
+    const srv = createApp({brain,modules:()=>{calls++;return [];},configured:{model:"m"}});
+    const url = `http://127.0.0.1:${await start(srv)}`;
+    try {
+      const p = brain.plan("check backup",["inspect"]);
+      const d = brain.recordDecision({goal:"check backup",chosen:"inspect metadata",reason:"safe",predictedSuccess:true,taskType:"backup"});
+      brain.confirmDecision(d.id,"success");
+      const res = await post(url,"/api/brain/preview-experience-plan",{planId:p.id,taskType:"backup"});
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({planId:p.id,requiresExplicitExecution:true,experience:{items:[{id:d.id}]}});
+      expect(calls).toBe(0);
+      expect((await post(url,"/api/brain/preview-experience-plan",{planId:""})).status).toBe(400);
+      expect((await post(url,"/api/brain/preview-experience-plan",{planId:"missing"})).status).toBe(404);
+    } finally {srv.close();}
+  });
+});
