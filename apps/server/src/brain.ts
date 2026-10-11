@@ -281,7 +281,16 @@ export class BrainCore {
         throw new Error("Повторные идентификаторы плана или шага");
       ids.add(plan.id);
     }
-    this.plans = (saved.plans as BrainPlan[]).map(p => { const interrupted = p.steps.some(s => s.status === "active"); return { ...p, status: interrupted ? "failed" as const : p.status === "running" ? "planned" as const : p.status, steps: p.steps.map(s => s.status === "active" ? { ...s, status: "failed" as const, lastError: "Выполнение прервано. Проверьте результат перед повтором." } : s) }; });
+    this.plans = (saved.plans as BrainPlan[]).map(p => {
+      const interrupted = p.steps.some(s => s.status === "active");
+      const steps = p.steps.map(s => s.status === "active" ? { ...s, status: "failed" as const, lastError: "Выполнение прервано. Проверьте результат перед повтором." } : { ...s });
+      // Derive the plan status from durable steps, never trust an inconsistent saved status.
+      const failed = steps.some(s => s.status === "failed");
+      const completed = steps.every(s => s.status === "done");
+      const started = steps.some(s => s.status === "done");
+      const status: BrainPlan["status"] = interrupted || failed ? "failed" : completed ? "completed" : started ? "running" : "planned";
+      return { ...p, status, steps };
+    });
     // Stored log data is external input: malformed entries must not leak into diagnostics.
     this.logs = saved.logs.filter((e): e is (typeof this.logs)[number] =>
       !!e && typeof e === "object" && typeof e.at === "string" &&
