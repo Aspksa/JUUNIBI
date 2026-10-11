@@ -921,7 +921,7 @@ export class Achievements {
     const pool = surprises(ctx, metrics, recordsToday);
     const seed = [...dayKey(now)].reduce((s, ch) => (s * 31 + ch.charCodeAt(0)) >>> 0, 7);
     // the same surprise all day, picked among the three most unusual
-    const surprise = pool.length ? pool[seed % Math.min(3, pool.length)]! : { emoji: "🦊", text: "Сюрприз дня появится, когда накопится немного истории дел." };
+    const surprise = pool.length ? pool[seed % Math.min(3, pool.length)]! : { emoji: "✨", text: "Сюрприз дня появится, когда накопится немного истории дел." };
     const titles = TITLES.map((t) => ({ id: t.id, title: t.title, emoji: t.emoji, how: t.how, at: this.data.titles[t.id] ?? null }));
     const records = Object.entries(this.data.records).map(([id, list]) => {
       const def = METRICS.find((d) => d.id === id);

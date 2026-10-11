@@ -5,7 +5,7 @@
  * The data comes from the server (achievements.ts there); `achData` keeps one copy for this page and the panel on «Дела».
  */
 import { api, type AchAward, type AchDay, type AchievementsData, type AchMetric, type AchTail } from "../api";
-import { el, icon, iconButton } from "../dom";
+import { el, icon, iconButton, settleAnimations } from "../dom";
 import { showToast } from "../toast";
 import { celebrate } from "./celebrate";
 import { effectFor, filterAwards, galleryAwards, medalPips, nextCelebration, quickDays, safeHex, wrapText, type AwardFilter } from "./achievements-model";
@@ -40,7 +40,7 @@ const store = {
   get(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } },
   set(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
 };
-const TAB_KEY = "juunibi.ach.tab", OPEN_KEY = "juunibi.ach.open";
+const TAB_KEY = "juunibi.ach.tab", GROUP_KEY = "juunibi.ach.group";
 const GROUP_COLOR: Record<string, string> = { secret: "#e0a43a", battle: "#ef5b5b", discover: "#8b6cff", treasure: "#22b5c4", legends: "#f2b705", detective: "#6b8afd", space: "#7c5cff", fox: "#f97316", trials: "#ec4899", museum: "#3fbf87", tails: "#fb7185" };
 const ruDate = (iso: string) => new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 const ruShort = (iso: string) => new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
@@ -75,7 +75,7 @@ function metricTile(m: AchMetric, a: AchAward | undefined, d: AchievementsData, 
   const mini = m.ready && m.kind !== "list" ? miniChart(m.kind, m.series, m.labels) : null;
   const ring = typeof m.ring === "number" && m.ready ? ringChart(m.ring) : null;
   const list = m.ready && m.kind === "list" && m.list?.length ? el("ul", { cls: "life-list" }, ...m.list.map((x) => el("li", { cls: x.startsWith("✓") ? "on" : x.startsWith("·") ? "off" : "", textContent: x }))) : null;
-  const t = el("article", { cls: "life-tile ach-tile" + (m.ready ? "" : " empty"), title: m.hint, attrs: { tabindex: "0" } },
+  const t = el("article", { cls: "life-tile ach-tile" + (m.ready ? "" : " waiting"), title: m.hint, attrs: { tabindex: "0" } },
     el("div", { cls: "life-tile-top" }, el("span", { cls: "life-emoji", attrs: { "aria-hidden": "true" }, textContent: m.emoji }),
       el("div", { cls: "life-tile-name grow" }, el("strong", {}, el("span", { cls: "ach-n", textContent: "#" + m.n }), " " + m.title), el("small", { textContent: m.hint })),
       a ? awardBadge(a, d, true) : null),
@@ -145,6 +145,9 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
   let tab: Tab = startTab ?? ((TABS.some(([t]) => t === store.get(TAB_KEY)) ? store.get(TAB_KEY) : "metrics") as Tab);
   const filter: AwardFilter = { tier: null, state: "all", group: null };
   let tail: string | null = null;
+  let metricGroup: string | null = store.get(GROUP_KEY) || null;
+  let metricShow: "all" | "ready" | "wait" = "all";
+  let rendered = false;
   let day = quickDays()[0]!.day;
   let dayData: AchDay | null = null, dayError = "";
   const head = el("header", { cls: "ach-hero" });
@@ -173,16 +176,26 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
     const d = data;
     if (!d) { head.replaceChildren(el("h1", { textContent: "Дела и достижения" }), el("p", { cls: "muted", textContent: error || "Загрузка…" })); return; }
     const title = d.titles.find((t) => t.id === d.title);
+    const awake = d.tails.filter((t) => t.level).length;
+    const share = d.stats.total ? d.stats.won / d.stats.total : 0;
+    const bar = el("div", { cls: "ach-hero-progress", attrs: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(d.stats.total), "aria-valuenow": String(d.stats.won), "aria-label": "Собрано наград" } }, el("i"));
+    bar.style.setProperty("--p", `${Math.round(share * 100)}%`);
+    const surpriseEmoji = d.surprise.emoji === "🦊" ? "✨" : d.surprise.emoji;
     head.replaceChildren(
       el("div", { cls: "ach-hero-text" },
+        el("span", { cls: "ach-eyebrow", textContent: "Коллекция JUUNIBI" }),
         el("h1", { textContent: "Дела и достижения" }),
         title ? el("span", { cls: "ach-title-chip", textContent: `${title.emoji} ${title.title}` }) : null,
-        el("p", { cls: "muted", textContent: "60 необычных показателей ваших дел, награды двенадцати уровней редкости и хвосты, которые растут вместе с вами." }),
+        el("p", { cls: "muted", textContent: "60 необычных показателей ваших дел, награды двенадцати уровней редкости и кицунэ, чьи хвосты просыпаются вместе с вашими делами." }),
+        el("div", { cls: "ach-hero-collected" }, el("span", {}, el("b", { textContent: String(d.stats.won) }), ` из ${d.stats.total} наград собрано`), el("small", { textContent: `${Math.round(share * 100)}%` })),
+        bar,
         el("div", { cls: "ach-stats" },
-          ...([[d.stats.won + " / " + d.stats.total, "наград"], [String(d.stats.rare), "редких"], [String(d.stats.medals), "ступеней медалей"], [d.stats.ready + " / 60", "показателей"], [String(d.tails.filter((t) => t.level).length) + " / 12", "хвостов"]] as const)
+          ...([[String(d.stats.rare), "редких наград"], [String(d.stats.medals), "ступеней медалей"], [d.stats.ready + "/60", "показателей считается"], [awake + "/12", "хвостов проснулось"]] as const)
             .map(([v, l]) => el("div", { cls: "ach-stat" }, el("b", { textContent: v }), el("span", { textContent: l })))),
-        el("p", { cls: "ach-surprise" }, el("span", { attrs: { "aria-hidden": "true" }, textContent: d.surprise.emoji }), el("span", {}, el("b", { textContent: "Сюрприз дня. " }), d.surprise.text))),
-      el("div", { cls: "ach-hero-tails" }, tailsEmblem(d.tails, { size: "lg", onPick: (t) => { tail = t.id; setTab("tails"); } })));
+        el("div", { cls: "ach-surprise" }, el("span", { cls: "ach-surprise-ic", attrs: { "aria-hidden": "true" }, textContent: surpriseEmoji }), el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text })))),
+      el("div", { cls: "ach-hero-tails" }, tailsEmblem(d.tails, { size: "lg", onPick: (t) => { tail = t.id; setTab("tails"); } }),
+        el("p", { cls: "ach-hero-cap" }, el("b", { textContent: awake ? `Проснулось хвостов: ${awake} из 12` : "Кицунэ спит" }),
+          el("small", { textContent: awake === 12 ? "Все двенадцать горят, и её сила достаёт до города." : "Нажмите на хвост, чтобы узнать его направление." }))));
   }
   function setTab(t: Tab) { tab = t; store.set(TAB_KEY, t); renderTabs(); renderBody(); }
   function renderTabs() {
@@ -198,18 +211,45 @@ export function achievementsPage(deps: AchievementsDeps, startTab?: Tab): HTMLEl
     if (!d) { body.replaceChildren(error ? emptyState("alert", "Не удалось загрузить", error, btn("Повторить", () => void achData.load(true), { small: true })) : el("div", { cls: "life-skeleton" }, ...Array.from({ length: 6 }, () => el("i")))); return; }
     const award = (id: string) => d.awards.find((a) => a.id === id);
     if (tab === "metrics") {
-      const open = new Set((store.get(OPEN_KEY) ?? "secret,battle").split(","));
-      body.replaceChildren(...d.groups.map((g) => {
-        const items = d.metrics.filter((m) => m.group === g.id);
-        const won = items.filter((m) => (award(m.id)?.level ?? 0) > 0).length;
-        const det = el("details", { cls: "life-group ach-group", open: open.has(g.id) },
-          el("summary", {}, el("span", { cls: "life-group-ic", attrs: { "aria-hidden": "true" }, textContent: g.emoji }), el("span", { cls: "grow", textContent: g.title }),
-            el("span", { cls: "ach-range", textContent: `№${items[0]?.n}–${items[items.length - 1]?.n}` }), el("span", { cls: "life-count", textContent: `${won}/${items.length}` }), icon("chevron", 16)),
-          el("div", { cls: "life-grid ach-grid" }, ...items.map((m, i) => metricTile(m, award(m.id), d, i))));
-        det.style.setProperty("--g", GROUP_COLOR[g.id] ?? "#e0a43a");
-        det.addEventListener("toggle", () => { const s = new Set((store.get(OPEN_KEY) ?? "secret,battle").split(",")); if (det.open) s.add(g.id); else s.delete(g.id); store.set(OPEN_KEY, [...s].join(",")); });
-        return det;
-      }));
+      const ready = d.metrics.filter((m) => m.ready).length;
+      if (metricGroup && !d.groups.some((g) => g.id === metricGroup)) metricGroup = null;
+      const pickGroup = (g: string | null) => { metricGroup = g; store.set(GROUP_KEY, g ?? ""); renderBody(); };
+      const pickShow = (v: typeof metricShow) => { metricShow = v; renderBody(); };
+      const groups = d.groups.filter((g) => !metricGroup || g.id === metricGroup);
+      const nav = el("div", { cls: "ach-filters ach-metric-filters" },
+        el("div", { cls: "chips" }, ...([["all", "Все", d.metrics.length], ["ready", "Считаются", ready], ["wait", "Копят данные", d.metrics.length - ready]] as const)
+          .map(([v, l, n]) => chip(l, n, metricShow === v, () => pickShow(v)))),
+        el("div", { cls: "ach-group-nav", attrs: { role: "group", "aria-label": "Группы показателей" } },
+          ...[{ id: "", emoji: "🗂️", title: "Все группы" }, ...d.groups].map((g) => {
+            const b = el("button", { type: "button", cls: "ach-group-pill", attrs: { "aria-pressed": String((metricGroup ?? "") === g.id) }, title: g.title }, el("span", { attrs: { "aria-hidden": "true" }, textContent: g.emoji }), el("span", { textContent: g.title }));
+            b.style.setProperty("--g", GROUP_COLOR[g.id] ?? "#e0a43a");
+            b.addEventListener("click", () => pickGroup(g.id || null));
+            return b;
+          })));
+      // on a phone the ten groups are a list to pick from rather than a wall of pills
+      const groupSel = el("select", { cls: "mem-select ach-group-select", attrs: { "aria-label": "Группа показателей" } },
+        el("option", { value: "", textContent: "🗂️ Все группы" }), ...d.groups.map((g) => el("option", { value: g.id, textContent: `${g.emoji} ${g.title}` })));
+      groupSel.value = metricGroup ?? "";
+      groupSel.addEventListener("change", () => pickGroup(groupSel.value || null));
+      nav.append(groupSel);
+      const sections = groups.map((g) => {
+        const all = d.metrics.filter((m) => m.group === g.id);
+        const items = all.filter((m) => metricShow === "all" || (metricShow === "ready" ? m.ready : !m.ready));
+        if (!items.length) return null;
+        const won = all.filter((m) => (award(m.id)?.level ?? 0) > 0).length;
+        const counted = all.filter((m) => m.ready).length;
+        const prog = el("span", { cls: "ach-group-prog", attrs: { "aria-hidden": "true" } }, el("i"));
+        prog.style.setProperty("--p", `${Math.round((counted / Math.max(1, all.length)) * 100)}%`);
+        const sec = el("section", { cls: "ach-group", attrs: { "aria-label": g.title } },
+          el("header", { cls: "ach-group-head" }, el("span", { cls: "life-group-ic", attrs: { "aria-hidden": "true" }, textContent: g.emoji }),
+            el("div", { cls: "grow" }, el("h2", { textContent: g.title }), el("small", { textContent: `№${all[0]?.n}–${all[all.length - 1]?.n} · считается ${counted} из ${all.length} · наград ${won}` })), prog),
+          el("div", { cls: "ach-grid" }, ...items.map((m, i) => metricTile(m, award(m.id), d, i))));
+        sec.style.setProperty("--g", GROUP_COLOR[g.id] ?? "#e0a43a");
+        return sec;
+      }).filter((x): x is HTMLElement => !!x);
+      body.replaceChildren(nav, ...(sections.length ? sections : [emptyState("search", "Здесь пока пусто", "Измените фильтр.")]));
+      if (rendered) settleAnimations(body);
+      rendered = true;
       return;
     }
     if (tab === "book") {
