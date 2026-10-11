@@ -83,12 +83,28 @@ export class LocalDisk {
     const before=this.state();
     try {
       const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[];trashDays?:number};
-      if(raw.versions&&typeof raw.versions==="object")this.versions=raw.versions;
-      if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
-      if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
+      if(raw.versions&&typeof raw.versions==="object"&&!Array.isArray(raw.versions)){
+        const revisions:Record<string,DiskRevision[]>={};
+        for(const [id,history] of Object.entries(raw.versions)){
+          if(!/^[0-9a-f-]{36}$/.test(id)||!Array.isArray(history))continue;
+          const valid=history.filter((v):v is DiskRevision=>!!v&&Number.isSafeInteger(v.revision)&&v.revision>=1&&typeof v.objectId==="string"&&/^[0-9a-f-]{36}$/.test(v.objectId)&&Number.isSafeInteger(v.size)&&v.size>=0&&v.size<=LIMIT&&typeof v.sha256==="string"&&/^[a-f0-9]{64}$/.test(v.sha256)&&typeof v.at==="string"&&Number.isFinite(Date.parse(v.at)));
+          if(valid.length)revisions[id]=valid.slice(-20);
+        }
+        this.versions=revisions;
+      }
+      if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&x.size>=0&&x.size<=LIMIT&&typeof x.sha256==="string"&&/^[a-f0-9]{64}$/.test(x.sha256)&&Number.isFinite(Date.parse(x.uploadedAt))&&(x.objectId===undefined||(typeof x.objectId==="string"&&/^[0-9a-f-]{36}$/.test(x.objectId))));
+      if(raw.folderStyles&&typeof raw.folderStyles==="object"&&!Array.isArray(raw.folderStyles)){
+        this.folderStyles={};
+        for(const [name,style] of Object.entries(raw.folderStyles))try{
+          if(validFolder(name)!==name||!style||typeof style!=="object")continue;
+          const v=style as Record<string,unknown>;
+          if(typeof v.color==="string"&&typeof v.pinned==="boolean"&&typeof v.cover==="string")
+            this.folderStyles[name]={color:v.color.slice(0,40),pinned:v.pinned,cover:v.cover.slice(0,160),...(typeof v.createdAt==="string"&&Number.isFinite(Date.parse(v.createdAt))?{createdAt:v.createdAt}:{})};
+        }catch{/* ignore invalid saved style */}
+      }
       if(Array.isArray(raw.fileActions))this.fileActions=raw.fileActions.slice(-300);
       if(Array.isArray(raw.folderActions))this.folderActions=raw.folderActions.slice(-300);
-      if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
+      if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders.filter(d=>{try{return !!d&&typeof d.root==="string"&&validFolder(d.root)===d.root&&Array.isArray(d.paths)&&d.paths.every((p:unknown)=>typeof p==="string"&&validFolder(p)===p)&&typeof d.at==="string"&&Number.isFinite(Date.parse(d.at))&&!!d.styles&&typeof d.styles==="object";}catch{return false;}});
       if(Number.isInteger(raw.trashDays)&&raw.trashDays!>=0&&raw.trashDays!<=365)this.trashDays=raw.trashDays!;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
     }catch(e){Object.assign(this,before);if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
@@ -392,7 +408,7 @@ export class LocalDisk {
       if(!size)throw bad("Пустой файл",413);
     }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
     await handle.close();
-    await rename(temp,this.file(id));
+    try{await rename(temp,this.file(id));}catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
     const entry:DiskEntry={id,name:filename,folder:f,size,uploadedAt:new Date().toISOString(),sha256:hash.digest("hex")};
     this.entries.push(entry);
     try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==id);await rm(this.file(id),{force:true});throw e;}
@@ -572,7 +588,7 @@ export class LocalDisk {
       if(!size)throw bad("Пустая редакция недопустима",413);
     }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
     await handle.close();
-    await rename(temp,this.objectPath(nextObject));
+    try{await rename(temp,this.objectPath(nextObject));}catch(e){await rm(temp,{force:true}).catch(()=>{});throw e;}
     const old={...entry};
     const oldHistory=[...(this.versions[id]??[])];
     this.versions[id]=[...oldHistory,{revision:old.revision??1,objectId:old.objectId??old.id,size:old.size,sha256:old.sha256,at:old.uploadedAt}];
@@ -629,7 +645,7 @@ export class LocalDisk {
     this.entries=this.entries.filter(x=>x.id!==id);
     // Persist removal before deleting bytes: failed saves must never resurrect missing objects.
     await this.save();
-    for(const object of objects)await rm(this.objectPath(object),{force:true}).catch(()=>{});
+    for(const object of objects)await rm(this.objectPath(object),{force:true}).catch(e=>{console.error("Диск: не удалось очистить файловый объект",object,e);});
     return {ok:true};
   }
   /** Validate every target first, then persist one batch mutation. */
@@ -708,9 +724,14 @@ export class LocalDisk {
   purgeExpired(now=Date.now()){return this.mutate(() => this.trashDays?this.emptyTrashUnlocked(this.trashDays*86400000,now):Promise.resolve({purged:0,bytes:0}));}
   /** Plain text of a text file or a simple PDF, so JUUNIBI can answer questions about it. */
   async readText(id:string,max=100*1024){
+    if(!Number.isSafeInteger(max)||max<1||max>1024*1024)throw bad("Ограничение текста: от 1 байта до 1 МБ");
     const {entry,path:file}=this.rawFile(id);
     const ext=entry.name.toLowerCase().split(".").pop()??"";
-    const data=await readFile(file);
+    // Text files can be decoded from a bounded prefix; PDF/DOCX require the complete container.
+    const plain=/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext);
+    const data=plain&&entry.size>Math.max(max*4,256*1024)
+      ?await (async()=>{const h=await open(file,"r");try{const out=Buffer.alloc(Math.min(entry.size,Math.max(max*4,256*1024)));const {bytesRead}=await h.read(out,0,out.length,0);return out.subarray(0,bytesRead);}finally{await h.close();}})()
+      :await readFile(file);
     let text:string;
     if(ext==="pdf")text=pdfText(data);
     else if(ext==="docx")text=docxText(data);
@@ -718,7 +739,7 @@ export class LocalDisk {
     else throw bad("JUUNIBI читает только текстовые файлы, PDF и DOCX",415);
     text=text.replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
     if(!text)throw bad(ext==="pdf"?"В этом PDF нет текстового слоя (скан или картинки)":"Файл пустой",422);
-    return {name:entry.name,text:text.slice(0,max),truncated:text.length>max};
+    return {name:entry.name,text:text.slice(0,max),truncated:text.length>max||data.length<entry.size};
   }
 }
 
