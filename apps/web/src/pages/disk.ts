@@ -149,6 +149,28 @@ export function diskPage():HTMLElement {
     statistics.classList.add("disk-dialog-enter");
     statistics.addEventListener("animationend",()=>statistics.classList.remove("disk-dialog-enter"),{once:true});
   };
+  const toolsDialog=el("dialog",{cls:"disk-preview disk-audit-panel"});
+  const openDiskTools=async()=>{
+    const [audit,duplicates]=await Promise.all([api.diskAudit(),api.diskDuplicates()]);
+    if(!audit.ok||!duplicates.ok){showToast("Диагностика Диска недоступна");return;}
+    const failures=audit.value.results.filter(x=>x.status!=="ok");
+    const output=el("div",{cls:"disk-tool-report"},
+      el("strong",{textContent:"Файлов проверено: "+audit.value.total+" · Исправных: "+audit.value.ok}),
+      el("p",{textContent:failures.length?"Проблемы: "+failures.map(x=>x.name+" ("+x.status+")").join("; "):"Повреждённых и отсутствующих файлов не обнаружено"}),
+      el("strong",{textContent:"Группы одинаковых файлов: "+duplicates.value.groups.length}),
+      ...duplicates.value.groups.map(g=>el("p",{textContent:g.map(x=>x.name).join(" / ")}))
+    );
+    toolsDialog.replaceChildren(el("div",{cls:"disk-preview-head"},el("strong",{textContent:"Проверка и дубликаты"}),button("Закрыть",()=>toolsDialog.close())),output);
+    toolsDialog.showModal();
+  };
+  const toolsButton=button("Проверка файлов",()=>void openDiskTools());
+  const exportButton=button("Экспорт каталога",async()=>{
+    const r=await api.diskSnapshot();if(!r.ok){showToast(r.error.message);return;}
+    const url=URL.createObjectURL(new Blob([JSON.stringify(r.value,null,2)],{type:"application/json"}));
+    const a=document.createElement("a");a.href=url;a.download="JUUNIBI-disk-catalog.json";a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+  });
+  page.append(toolsDialog);
   const statsButton=button("Хроники Диска",()=>void openStatistics());
   statsButton.prepend(diskIcon("constellation"));statsButton.classList.add("disk-chronicles-button");
   page.append(statistics);
@@ -186,6 +208,7 @@ export function diskPage():HTMLElement {
     const visible=shown.slice(0,visibleLimit);
     files.replaceChildren(...(visible.length?visible.map((f,index)=>{
       const name=el("strong",{textContent:f.name});
+      if(f.tags?.length)name.title="Метки: "+f.tags.join(", ");
       const card=el("div",{cls:"disk-file"+(firstPaint&&index<16?" disk-reveal":"")});
       card.draggable=viewFilter!=="trash";
       card.addEventListener("dragstart",e=>{e.dataTransfer?.setData("application/x-juunibi-file",f.id);});
@@ -197,6 +220,7 @@ export function diskPage():HTMLElement {
       const ext=f.name.split(".").pop()?.toLowerCase()??"";
       const fileGlyph=/^(png|jpg|jpeg|gif|webp|svg)$/.test(ext)?"image":/^(pdf|doc|docx|txt|md|rtf)$/.test(ext)?"file-text":/^(ts|tsx|js|jsx|mjs|py|json|html|css)$/.test(ext)?"file-code":/^(zip|7z|rar|tar|gz)$/.test(ext)?"archive":"file";
       const thumbnail=el("span",{cls:"disk-file-icon"},icon(fileGlyph,22));
+      if(f.color)thumbnail.style.color=f.color;
       if(/\.(png|jpe?g|webp|gif)$/i.test(f.name) && viewFilter!=="trash"){
         const img=el("img",{cls:"disk-thumbnail",alt:"",attrs:{"data-disk-id":f.id}});
         const url=thumbnailUrls.get(f.id);if(url){img.src=url;img.classList.add("disk-thumbnail-loaded");}
@@ -246,7 +270,22 @@ export function diskPage():HTMLElement {
       const open=button(viewFilter==="trash"?"В корзине":"Открыть",()=>{if(viewFilter!=="trash")void openPreview(f);});
       open.disabled=viewFilter==="trash";
       const info=button("Сведения",()=>{details.replaceChildren(el("strong",{textContent:f.name}),el("p",{textContent:"Размер: "+human(f.size)}),el("p",{textContent:"Папка: "+(f.folder||"Главная")}),el("p",{textContent:"Загружен: "+new Date(f.uploadedAt).toLocaleString("ru-RU")}),el("small",{textContent:"SHA-256: "+f.sha256}));});
-      actions.querySelector(".disk-actions-menu")?.append(info);
+      const editMeta=button("Метки и цвет",()=>{
+        const dialog=el("dialog",{cls:"disk-preview"});
+        const tags=el("input",{type:"text",cls:"mem-input",value:(f.tags??[]).join(", "),placeholder:"Метки через запятую"});
+        const color=el("input",{type:"color",value:f.color??"#c6a76a"});
+        const note=el("textarea",{cls:"mem-input",value:f.note??"",placeholder:"Описание файла"});
+        const message=el("p",{cls:"muted small"});
+        const save=button("Сохранить",async()=>{
+          const r=await api.diskMetadata(f.id,tags.value.split(",").map(x=>x.trim()).filter(Boolean),color.value,note.value);
+          if(!r.ok){message.textContent=r.error.message;return;}
+          dialog.close();dialog.remove();void refresh();
+        });
+        dialog.append(el("h3",{textContent:"Метки и оформление · "+f.name}),tags,color,note,message,
+          el("div",{cls:"disk-preview-head"},save,button("Отмена",()=>dialog.close())));
+        dialog.addEventListener("close",()=>dialog.remove(),{once:true});page.append(dialog);dialog.showModal();
+      });
+      actions.querySelector(".disk-actions-menu")?.append(editMeta,info);
       card.append(choose,thumbnail,el("div",{cls:"disk-file-info"},name,el("small",{cls:"muted",textContent:human(f.size)+" · "+new Date(f.uploadedAt).toLocaleDateString("ru-RU")})),open,actions);
       return card;
     }):[el("p",{cls:"muted",textContent:q?"Ничего не найдено":"Здесь пока нет файлов."})]));
@@ -410,7 +449,7 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
   const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files,details));
-  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton),catalog);
+  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton),catalog);
   void refresh();
   return page;
 }

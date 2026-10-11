@@ -4,7 +4,7 @@ import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
-export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string };
+export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string };
 const LIMIT = 50 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
@@ -145,6 +145,45 @@ export class LocalDisk {
     if(createHash("sha256").update(data).digest("hex")!==entry.sha256)throw bad("Файл повреждён: контрольная сумма не совпадает",409);
     return {entry:{...entry},base64:data.toString("base64")};
   }
+  /** Local integrity audit: file size and SHA-256 are checked without cloud transfer. */
+  async audit(){
+    const results:{id:string;name:string;status:"ok"|"missing"|"corrupt"}[]=[];
+    for(const e of this.entries){
+      try{
+        const bytes=await readFile(this.file(e.id));
+        const valid=bytes.length===e.size&&createHash("sha256").update(bytes).digest("hex")===e.sha256;
+        results.push({id:e.id,name:e.name,status:valid?"ok":"corrupt"});
+      }catch{results.push({id:e.id,name:e.name,status:"missing"});}
+    }
+    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results};
+  }
+  duplicates(){
+    const groups=new Map<string,DiskEntry[]>();
+    for(const e of this.entries.filter(x=>!x.deletedAt)){
+      const key=e.sha256+":"+e.size,group=groups.get(key)??[];
+      group.push({...e});groups.set(key,group);
+    }
+    return [...groups.values()].filter(group=>group.length>1);
+  }
+  async setMetadata(id:string,input:{tags?:unknown;color?:unknown;note?:unknown}){
+    const e=this.entries.find(x=>x.id===id&&!x.deletedAt);
+    if(!e)throw bad("Файл не найден",404);
+    if(input.tags!==undefined){
+      if(!Array.isArray(input.tags)||input.tags.length>12||input.tags.some(t=>typeof t!=="string"||t.length>32||!t.trim()))throw bad("Не более 12 тегов по 32 символа");
+      e.tags=[...new Set((input.tags as string[]).map(t=>t.trim()))];
+    }
+    if(input.color!==undefined){
+      if(typeof input.color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(input.color))throw bad("Недопустимый цвет");
+      e.color=input.color;
+    }
+    if(input.note!==undefined){
+      if(typeof input.note!=="string"||input.note.length>2000)throw bad("Описание слишком длинное");
+      e.note=input.note;
+    }
+    await this.save();return {...e};
+  }
+  /** Export an explicit snapshot of metadata; bytes are not included. */
+  snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
