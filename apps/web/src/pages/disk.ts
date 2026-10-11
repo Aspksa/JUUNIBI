@@ -14,9 +14,18 @@ export function diskPage():HTMLElement {
   const upload=el("input",{type:"file",multiple:true,attrs:{"aria-label":"Выбрать файлы для загрузки"}});
   const newFolder=el("input",{type:"text",cls:"mem-input",maxLength:80,placeholder:"Новая папка",attrs:{"aria-label":"Название новой папки"}});
   let current="",items:DiskFile[]=[];
+  let gridMode=localStorage.getItem("juunibi.disk.grid")!=="false";
+  const viewButton=button("Вид: плитка",()=>{gridMode=!gridMode;localStorage.setItem("juunibi.disk.grid",String(gridMode));renderFiles();});
+  const sortSelect=el("select",{cls:"mem-select",attrs:{"aria-label":"Сортировать файлы"}},el("option",{value:"new",textContent:"Сначала новые"}),el("option",{value:"name",textContent:"По имени"}),el("option",{value:"size",textContent:"По размеру"}));
+  sortSelect.addEventListener("change",()=>renderFiles());
+  const breadcrumb=el("span",{cls:"muted small"});
+  const drop=el("div",{cls:"disk-drop"},icon("folder",24),el("strong",{textContent:"Перетащи файлы сюда"}),el("span",{cls:"muted small",textContent:"До 10 МБ на файл"}));
   const renderFiles=()=>{
     const q=search.value.trim().toLocaleLowerCase();
-    const shown=items.filter(f=>!q||f.name.toLocaleLowerCase().includes(q));
+    const shown=items.filter(f=>!q||f.name.toLocaleLowerCase().includes(q)).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
+    files.classList.toggle("disk-grid",gridMode);
+    files.classList.toggle("disk-list",!gridMode);
+    viewButton.textContent=gridMode?"Вид: плитка":"Вид: список";
     files.replaceChildren(...(shown.length?shown.map(f=>{
       const name=el("strong",{textContent:f.name});
       const card=el("div",{cls:"disk-file"});
@@ -42,6 +51,7 @@ export function diskPage():HTMLElement {
     const r=await api.diskList(current);
     if(!r.ok){status.textContent="Диск недоступен: "+r.error.message;return;}
     items=r.value.files;
+    breadcrumb.textContent=current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Занято: "+human(r.value.usedBytes)+" · Файлов в папке: "+items.length+" · До "+human(r.value.maxFileBytes)+" на файл. Файлы хранятся на этом компьютере.";
     folders.replaceChildren(...["",...r.value.folders].map(f=>{
       const b=button(f||"Все файлы",()=>{current=f;void refresh();});
@@ -56,8 +66,8 @@ export function diskPage():HTMLElement {
     if(!r.ok){showToast(r.error.message);return;}
     newFolder.value="";current=r.value.name;void refresh();
   });
-  upload.addEventListener("change",async()=>{
-    for(const file of [...(upload.files??[])]){
+  const uploadFiles=async(fileList:File[])=>{
+    for(const file of fileList){
       if(file.size>10*1024*1024){showToast(file.name+": размер больше 10 МБ");continue;}
       const encoded=await new Promise<string>((resolve,reject)=>{
         const reader=new FileReader();
@@ -69,9 +79,13 @@ export function diskPage():HTMLElement {
       if(!r.ok)showToast(r.error.message);
     }
     upload.value="";void refresh();
-  });
+  };
+  upload.addEventListener("change",()=>void uploadFiles([...(upload.files??[])]));
+  drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("active");});
+  drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
+  drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
   page.append(el("h1",{textContent:"Диск"}),el("p",{cls:"muted",textContent:"Документы и файлы в одном месте. Создавай папки, находи нужное, скачивай и удаляй."}),
-    status,el("div",{cls:"disk-toolbar"},newFolder,create,upload),folders,search,files);
+    status,el("div",{cls:"disk-toolbar"},newFolder,create,upload),folders,el("div",{cls:"disk-controls"},breadcrumb,search,sortSelect,viewButton),drop,files);
   void refresh();
   return page;
 }
