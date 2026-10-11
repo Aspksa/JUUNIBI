@@ -20,6 +20,13 @@ export function diskPage():HTMLElement {
       el("h2",{},heroTitle),el("p",{textContent:"Файлы и воспоминания — спокойно, удобно, под контролем."})),
     tiles);
 
+  /** Only animate changes in an existing number: never introduce fake interim values. */
+  const updateStat=(node:HTMLElement,value:string)=>{
+    if(node.textContent===value)return;
+    node.textContent=value;
+    if(window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
+    node.animate([{opacity:.35,transform:"translateY(5px)"},{opacity:1,transform:"translateY(0)"}],{duration:240,easing:"cubic-bezier(.2,.7,.2,1)"});
+  };
   const folders=el("div",{cls:"disk-folders"});
   const files=el("div",{cls:"disk-files"});
   const search=el("input",{type:"search",cls:"mem-input",placeholder:"Поиск по названиям файлов",attrs:{"aria-label":"Поиск файлов"}});
@@ -75,7 +82,7 @@ export function diskPage():HTMLElement {
         if(thumbnailUrls.size>=MAX_THUMBNAILS){const first=thumbnailUrls.keys().next().value;if(first){URL.revokeObjectURL(thumbnailUrls.get(first)!);thumbnailUrls.delete(first);}}
         thumbnailUrls.set(f.id,url);
         const img=files.querySelector<HTMLImageElement>('img[data-disk-id="'+f.id+'"]');
-        if(img)img.src=url;
+        if(img){img.src=url;img.classList.add("disk-thumbnail-loaded");}
       }finally{pendingThumbnails.delete(f.id);}
     }
   };
@@ -233,9 +240,10 @@ export function diskPage():HTMLElement {
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
-    fileCount.textContent=String(items.length);
-    storage.textContent=human(r.value.usedBytes);
-    trashCount.textContent=String(trash.length);
+    updateStat(fileCount,String(items.length));
+    updateStat(storage,human(r.value.usedBytes));
+    updateStat(trashCount,String(trash.length));
+    // Keep the selected tab visually distinct and accessible to screen readers.
     folders.replaceChildren(
       button("Все файлы",()=>{viewFilter="all";current="";void refresh();}),
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
@@ -245,6 +253,11 @@ export function diskPage():HTMLElement {
       if(f===current)b.classList.add("selected");
       return b;
     }));
+    for(const button of folders.querySelectorAll("button")){
+      const active=button.textContent===(viewFilter==="trash"?"Корзина ("+trash.length+")":viewFilter==="favorites"?"★ Избранное":current||"Все файлы");
+      button.classList.toggle("selected",active);
+      button.setAttribute("aria-pressed",String(active));
+    }
     renderFiles();
   };
   search.addEventListener("input",renderFiles);
