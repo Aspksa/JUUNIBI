@@ -83,11 +83,12 @@ kernel.register({
     const pageHost = el("main", { cls: "content-main", attrs: { id: "main", tabindex: "-1" } });
     const navScrim = el("div", { cls: "nav-scrim" });
     navScrim.addEventListener("click", () => app.set({ navOpen: false }));
-    const burger = el("button", { type: "button", cls: "icon-btn burger", title: "Меню", attrs: { "aria-label": "Меню" } }, icon("menu", 20));
+    const burger = el("button", { type: "button", cls: "icon-btn burger", title: "Меню", attrs: { "aria-label": "Меню", "aria-expanded": "false", "aria-controls": "juunibi-main-nav" } }, icon("menu", 20));
     burger.addEventListener("click", () => app.set((s) => ({ navOpen: !s.navOpen })));
     const topTitle = el("strong", { cls: "topbar-title" });
     const topbar = el("header", { cls: "topbar" }, burger, topTitle);
     const menu: Menu = new Menu({ chats, ctl, go: (r) => go(r), openChat: (id) => openChat(id), quickAdd: () => quickAdd(), palette: () => palette() });
+    menu.nav.id = "juunibi-main-nav";
     const shell = el("div", { cls: "app" }, menu.nav, navScrim, el("div", { cls: "content" }, topbar, pageHost), menu.bottom);
     root.replaceChildren(shell);
 
@@ -142,6 +143,7 @@ kernel.register({
     // ----- left menu
     const renderNav = (s: AppState) => {
       menu.render(s);
+      burger.setAttribute("aria-expanded", String(s.navOpen));
       navScrim.classList.toggle("show", s.navOpen);
       // on the phone the top bar is the page's only title: the page's own heading if it has one, else the menu label
       const head = pageHost.querySelector(".pg-head h1")?.textContent;
