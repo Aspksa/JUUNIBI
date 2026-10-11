@@ -59,7 +59,7 @@ describe("Cloud.ru diagnostics and fallback", () => {
     const emitted: string[] = [];
     const stalled = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"начало"}}]}\\n\\n'));
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"начало"}}]}\n\n'));
       },
     });
     const fetcher = vi.fn(async () => new Response(stalled, { headers: { "content-type": "text/event-stream" } }));
