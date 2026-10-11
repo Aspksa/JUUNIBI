@@ -29,7 +29,7 @@ const TRUST: Record<EvidenceOrigin, number> = {
   tool: 0.85,
   inference: 0.35,
 };
-const clean = (text: string) => text.normalize("NFKC").trim().toLocaleLowerCase("ru").replace(/\\s+/g, " ");
+const clean = (text: string) => text.normalize("NFKC").trim().toLocaleLowerCase("ru").replace(/\s+/g, " ");
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
 
 /** An auditable, order-independent assessment; no fabricated sources or automatic memory writes. */
