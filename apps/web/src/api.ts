@@ -160,6 +160,7 @@ export const api = {
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
   diskGet: (id:string) => attemptAsync(()=>call<{entry:DiskFile;base64:string}>("/api/disk/files/"+encodeURIComponent(id))),
+  diskRename: (id:string,name:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({name})})),
   diskDelete: (id:string) => attemptAsync(()=>call<{ok:boolean}>("/api/disk/files/"+encodeURIComponent(id),{method:"DELETE"})),
   mobile: () => attemptAsync(() => call<MobileStatus>("/api/mobile")),
   mobileEnable: (enabled: boolean) => attemptAsync(() => call<MobileStatus>("/api/mobile", post({ enabled }))),
