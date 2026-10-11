@@ -184,9 +184,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             const limit=50*1024*1024;
             const declared=Number(req.headers["content-length"]??0);
             if(declared>limit)return send(res,413,{error:"Файл превышает 50 МБ"});
-            const chunks:Buffer[]=[];let total=0;
-            for await(const chunk of req){total+=chunk.length;if(total>limit){req.destroy();return;}chunks.push(chunk);}
-            return send(res,201,await disk.uploadBytes(name,folder,Buffer.concat(chunks,total)));
+            return send(res,201,await disk.uploadStream(name,folder,req));
           }
           if(req.method==="POST"&&p==="/api/disk/files"){const body=await readJson(req,14*1024*1024);return send(res,201,await disk.upload(body.name,body.folder,body.base64));}
           if(req.method==="GET"&&p==="/api/disk/search"){return send(res,200,{ids:await disk.searchContent(url.searchParams.get("q")??"")});}
