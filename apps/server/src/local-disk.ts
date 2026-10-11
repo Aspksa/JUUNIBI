@@ -53,6 +53,20 @@ export class LocalDisk {
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
     this.folders.push(f);await this.save();return {name:f};
   }
+  async renameFolder(oldName:unknown,newName:unknown){
+    const from=validFolder(oldName),to=validFolder(newName);
+    if(!from||!to||!this.folders.includes(from))throw bad("Папка не найдена",404);
+    if(from===to)return {name:from};
+    if(to.startsWith(from+"/"))throw bad("Нельзя перенести папку внутрь себя");
+    const parent=to.includes("/")?to.slice(0,to.lastIndexOf("/")):"";
+    if(parent&&!this.folders.includes(parent))throw bad("Родительская папка не найдена",404);
+    const affected=this.folders.filter(f=>f===from||f.startsWith(from+"/"));
+    const renamed=(f:string)=>to+f.slice(from.length);
+    if(this.folders.some(f=>!affected.includes(f)&&affected.some(a=>renamed(a)===f)))throw bad("Папка с таким именем уже существует",409);
+    this.folders=this.folders.map(f=>affected.includes(f)?renamed(f):f);
+    for(const entry of this.entries)if(entry.folder===from||entry.folder.startsWith(from+"/"))entry.folder=renamed(entry.folder);
+    await this.save();return {name:to};
+  }
   async upload(name:unknown,folder:unknown,data:unknown){
     const filename=validName(name), f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
