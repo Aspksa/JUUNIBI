@@ -1699,3 +1699,35 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 @keyframes disk-orbit-breathe{50%{box-shadow:0 0 0 19px #d9b57a0c,0 0 55px #dbb78b55;transform:rotate(8deg)}}
 @media(max-width:600px){.disk-chronicles-hero{padding:17px;gap:18px;min-height:115px}.disk-chronicles-orbit{width:62px;height:62px;font-size:29px}.disk-chronicles-hero small{letter-spacing:.12em}}
 @media(prefers-reduced-motion:reduce){.disk-chronicles-orbit{animation:none}.disk-chronicles .disk-stats-tile{transition:none}.disk-chronicles .disk-stats-tile:hover{transform:none}}
+
+/* Disk 3.3 · Aurora archive: stable geometry, transform-only interaction and legible states. */
+.disk-page{--disk-ink:#f9f4ec;--disk-gold:#e8c793;--disk-midnight:#131b2e}
+.disk-hero{position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1.05fr);gap:28px;align-items:center;min-height:225px;padding:clamp(22px,4vw,40px);overflow:hidden;border-radius:26px;color:var(--disk-ink);background:linear-gradient(120deg,#131a2c 0%,#20223b 55%,#302944 100%);border:1px solid #a7a1cc35}
+.disk-hero:before{content:"";position:absolute;z-index:-1;inset:-55% 35% 10% -30%;border-radius:50%;background:radial-gradient(circle,#ac8dde38,transparent 68%);pointer-events:none}
+.disk-hero-intro{display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.disk-hero-intro small{color:#dac8aa;font-size:10px;letter-spacing:.2em;font-weight:700}
+.disk-hero-intro h2{font-size:clamp(25px,3.2vw,42px);line-height:1.08;letter-spacing:-.035em;max-width:14ch;margin:0}
+.disk-hero-intro p{font-size:13px;max-width:35ch;color:#c8c6d7;margin:0;line-height:1.6}
+.disk-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;min-width:0}
+.disk-summary-cell{min-width:0;min-height:132px;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-end;gap:9px;padding:16px 13px;border-radius:19px;background:#ffffff0d;border:1px solid #ffffff20;transition:transform .22s ease,opacity .22s ease;contain:layout style}
+.disk-summary-cell:hover{transform:translateY(-3px)}
+.disk-summary-cell>.disk-glyph{width:28px;height:28px;color:var(--disk-gold);flex:none;margin-bottom:auto}
+.disk-summary-number{font-size:clamp(18px,2vw,26px);font-weight:750;line-height:1.1;letter-spacing:-.02em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.disk-summary-label{font-size:11px;color:#d1cddd}
+.disk-glyph{width:20px;height:20px;flex:none;display:inline-block;vertical-align:middle}
+.disk-chronicles-button{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.disk-chronicles-button .disk-glyph{color:var(--accent,#ab95eb)}
+.disk-status-line{min-height:18px}
+.disk-stats-tile .disk-metric-status{font-size:11px;line-height:1.4;color:#b9d5c9}
+.disk-stats-tile.is-pending .disk-metric-status{color:#b4adc1}
+.disk-chronicles-heading>.disk-glyph{color:#e8c793;width:26px;height:26px}
+.disk-chronicles .disk-stats-tile{transition:transform .22s ease,opacity .22s ease}
+.disk-chronicles .disk-stats-tile:hover{transform:translateY(-3px)}
+.disk-drop{transition:transform .18s ease,opacity .18s ease}
+.disk-drop.active{transform:scale(1.005)}
+.disk-file{transition:transform .16s ease,opacity .16s ease}
+.disk-file:focus-within{outline:2px solid var(--accent,#8c7cf9);outline-offset:2px}
+.disk-file .disk-file-icon>.disk-glyph{width:24px;height:24px}
+@media(max-width:830px){.disk-hero{grid-template-columns:1fr;gap:22px}.disk-hero-intro h2{max-width:none}.disk-summary-cell{min-height:112px}}
+@media(max-width:430px){.disk-hero{padding:18px;border-radius:20px}.disk-summary{gap:6px}.disk-summary-cell{padding:10px;min-height:105px;border-radius:12px}.disk-summary-number{font-size:17px}.disk-summary-label{font-size:10px}}
+@media(prefers-reduced-motion:reduce){.disk-summary-cell,.disk-file,.disk-drop,.disk-chronicles .disk-stats-tile{transition:none!important}.disk-summary-cell:hover,.disk-chronicles .disk-stats-tile:hover{transform:none}}
