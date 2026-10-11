@@ -49,3 +49,17 @@ Test without exposing credentials:
 - To integrate into JUUNIBI's UI later, build an authenticated server-side API
   with timeouts, rate limits, allowlisted tools, approval gates and audit logs,
   then add CI integration tests with a mocked Cloud.ru API.
+
+## JUUNIBI local API (experimental)
+
+After installing Python dependencies, enable `JUUNIBI_DEEPAGENTS_ENABLED=1`
+in the server-side `.env` and restart JUUNIBI. The Node server provides:
+
+- `GET /api/deepagents/status` — enabled flag and an explicit unverified install status.
+- `POST /api/deepagents/run` with JSON `{"prompt":"Plan a safe test"}` — runs the Python adapter.
+
+The endpoints are restricted to the local desktop listener and blocked on the
+paired LAN listener. Requests have a 4,000-character input cap, bounded output,
+and a two-minute subprocess timeout. The setting is **off by default**.
+This is a server API, not yet a chat UI toggle or replacement for the current brain.
+The first live tool-calling smoke test must be run locally with a real Cloud.ru key.
