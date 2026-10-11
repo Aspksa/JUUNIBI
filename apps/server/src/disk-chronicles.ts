@@ -506,9 +506,9 @@ export function diskChronicles(entries:DiskEntry[],folders:string[],now=Date.now
  const months=new Map<string,number>();
  for(const e of active){const m=e.uploadedAt.slice(0,7);months.set(m,(months.get(m)??0)+1);}
  set(68,[...months.entries()].sort((a,b)=>b[1]-a[1])[0]?.join(" · ")??"Нет файлов");
- set(70,fmt(trash.length));
- const mimeKinds=new Set(active.map(e=>category(extension(e))));
- set(81,fmt(mimeKinds.size));
+
+
+
  const metrics:DiskMetric[]=DISK_GROUPS.flatMap(g=>g.metrics.map(m=>values.has(m.id)?{id:m.id,title:m.title,value:values.get(m.id)!,ready:true}:{id:m.id,title:m.title,value:"—",ready:false,reason:"Нет данных: требуется журнал событий, проверка файлов или анализ содержимого"}));
  return {groups:DISK_GROUPS.map(g=>({id:g.id,title:g.title})),metrics,summary:{files:active.length,bytes:size(entries),folders:folders.length,ready:metrics.filter(m=>m.ready).length,total:metrics.length}};
 }
