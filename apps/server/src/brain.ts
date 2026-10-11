@@ -274,6 +274,13 @@ export class BrainCore {
     if (!Array.isArray(saved.plans) || !Array.isArray(saved.logs) || saved.plans.length > 30 || saved.logs.length > 200) throw new Error("Неверный формат мозга");
     this.mode = saved.mode === "agent" || saved.mode === "analysis" || saved.mode === "creative" ? saved.mode : "chat";
     if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && ["planned", "running", "completed", "failed"].includes(p.status) && typeof p.createdAt === "string" && Number.isFinite(Date.parse(p.createdAt)) && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && s.id.length <= 100 && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2)) && (s.lastError === undefined || (typeof s.lastError === "string" && s.lastError.length <= 300))))) throw new Error("Некорректные планы");
+    // Duplicate persisted identifiers could route a confirmation to the wrong step.
+    const ids = new Set<string>();
+    for (const plan of saved.plans as BrainPlan[]) {
+      if (ids.has(plan.id) || new Set(plan.steps.map(step => step.id)).size !== plan.steps.length)
+        throw new Error("Повторные идентификаторы плана или шага");
+      ids.add(plan.id);
+    }
     this.plans = (saved.plans as BrainPlan[]).map(p => { const interrupted = p.steps.some(s => s.status === "active"); return { ...p, status: interrupted ? "failed" as const : p.status === "running" ? "planned" as const : p.status, steps: p.steps.map(s => s.status === "active" ? { ...s, status: "failed" as const, lastError: "Выполнение прервано. Проверьте результат перед повтором." } : s) }; });
     // Stored log data is external input: malformed entries must not leak into diagnostics.
     this.logs = saved.logs.filter((e): e is (typeof this.logs)[number] =>

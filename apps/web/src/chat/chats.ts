@@ -12,6 +12,7 @@ export interface ChatsState { items: Conversation[]; activeId: string | null }
 
 export const DEFAULT_TITLE = "Новый чат";
 const KEY = "juunibi:chats:v1";
+const BACKUP_KEY = "juunibi:chats:backup:v1";
 const MAX_CONVERSATIONS = 100;
 const MAX_MESSAGES = 300;
 /**
@@ -74,9 +75,12 @@ export class Chats {
 
   constructor() {
     const r = attempt(() => JSON.parse(localStorage.getItem(KEY) ?? "null") as { items?: unknown; activeId?: unknown } | null);
-    const clean = r.ok && r.value ? attempt(() => sanitize(r.value!.items)) : null;
+    const fallback = !r.ok || !r.value || !Array.isArray(r.value.items);
+    const restored = fallback ? attempt(() => JSON.parse(localStorage.getItem(BACKUP_KEY) ?? "null") as { items?: unknown; activeId?: unknown } | null) : r;
+    const source = restored.ok && restored.value && Array.isArray(restored.value.items) ? restored : r;
+    const clean = source.ok && source.value ? attempt(() => sanitize(source.value!.items)) : null;
     const items = clean?.ok ? clean.value : [];
-    const activeId = r.ok && r.value && typeof r.value.activeId === "string" && items.some((c) => c.id === r.value!.activeId) ? (r.value.activeId as string) : (items[0]?.id ?? null);
+    const activeId = source.ok && source.value && typeof source.value.activeId === "string" && items.some((c) => c.id === source.value!.activeId) ? (source.value.activeId as string) : (items[0]?.id ?? null);
     this.store = new Store<ChatsState>({ items, activeId });
     this.store.subscribe(() => this.schedulePersist());
     addEventListener("pagehide", () => this.persistNow());
@@ -143,6 +147,12 @@ export class Chats {
     const { items } = this.store.get();
     const activeId = this.store.get().activeId;
     // Never silently overwrite the durable archive with a truncated conversation list.
+    // Preserve one previous complete checkpoint for recovery after a corrupt primary value.
+    const previous = attempt(() => localStorage.getItem(KEY));
+    if (previous.ok && previous.value) {
+      const valid = attempt(() => JSON.parse(previous.value!) as { items?: unknown });
+      if (valid.ok && Array.isArray(valid.value?.items)) attempt(() => localStorage.setItem(BACKUP_KEY, previous.value!));
+    }
     const r = attempt(() => localStorage.setItem(KEY, JSON.stringify({ items, activeId })));
     if (!r.ok) console.error("JUUNIBI: не удалось сохранить историю чатов — хранилище браузера заполнено", r.error);
   }

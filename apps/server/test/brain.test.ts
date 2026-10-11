@@ -62,6 +62,13 @@ describe("BrainCore", () => {
     const restored = new BrainCore(() => true, { load: async () => JSON.stringify(bad), save: async () => {} });
     await expect(restored.load()).rejects.toThrow("Некорректные планы");
   });
+  it("rejects duplicate restored step identifiers before execution", async () => {
+    const original = new BrainCore(() => true);
+    const plan = original.plan("inspect", ["one", "two"]);
+    const corrupt = { mode: "chat", plans: [{ ...plan, steps: [plan.steps[0], { ...plan.steps[1], id: plan.steps[0]!.id }] }], logs: [] };
+    const reloaded = new BrainCore(() => true, { load: async () => JSON.stringify(corrupt), save: async () => {} });
+    await expect(reloaded.load()).rejects.toThrow("Повторные идентификаторы");
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };

@@ -1,3 +1,4 @@
+import { recentContext } from "./context";
 import { Store } from "@juunibi/core";
 import { api } from "../api";
 import { app, refreshMemory } from "../state";
@@ -21,9 +22,9 @@ export class ChatController {
     const c = this.chats.get(convId);
     if (!c) return [];
     const upTo = msgId ? c.messages.findIndex((m) => m.id === msgId) : c.messages.length;
-    return c.messages.slice(0, upTo < 0 ? c.messages.length : upTo)
+    return recentContext(c.messages.slice(0, upTo < 0 ? c.messages.length : upTo)
       .filter((m): m is ChatMsg & { role: "user" | "assistant" } => m.role !== "note" && !!m.content.trim() && !m.error)
-      .map((m) => ({ role: m.role, content: m.role === "user" ? withFiles(m.content, m.files) : m.content }));
+      .map((m) => ({ role: m.role, content: m.role === "user" ? withFiles(m.content, m.files) : m.content })));
   }
 
   async send(convId: string, text: string, files: Attachment[] = []): Promise<void> {
