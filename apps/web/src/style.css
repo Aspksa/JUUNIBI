@@ -1914,3 +1914,6 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-destination-list{display:grid;gap:5px;max-height:340px;overflow-y:auto;padding:4px 0}
 .disk-destination-item{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}
 .disk-destination-item.selected{outline:2px solid var(--accent,#c3a5fc);background:rgba(161,139,204,.14)}
+
+/* Keep folder action popovers inside the Disk panel, away from the global navigation. */
+.disk-tree .disk-folder-popover{left:0;right:auto;max-width:min(260px,calc(100vw - 48px))}
