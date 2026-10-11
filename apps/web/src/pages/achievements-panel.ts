@@ -10,6 +10,8 @@ import { freshNotices, needText } from "./achievements-model";
 import { tailsEmblem } from "./tails";
 
 const SEEN = "juunibi.ach.noticeSeen";
+/** The panel folded down to its title, so the left column of «Дела» stays short (remembered in the browser). */
+const FOLDED = "juunibi.ach.panelFolded";
 const HIGHLIGHTS = ["keeper", "octopus", "planner", "twelve"];
 const store = {
   get(k: string): string | null { try { return localStorage.getItem(k); } catch { return null; } },
@@ -20,10 +22,16 @@ export interface AchPanel { el: HTMLElement; refresh(): void; title(): string | 
 export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () => void }): AchPanel {
   const host = el("section", { cls: "pg-card tasks-side-card ach-panel", attrs: { "aria-label": "Дела и достижения" } });
   let lastTitle: string | null = null;
+  let folded = store.get(FOLDED) === "1";
   const render = () => {
     const d = achData.get();
+    host.classList.toggle("folded", folded);
+    const fold = el("button", { type: "button", cls: "icon-btn sm ach-panel-fold", title: folded ? "Развернуть" : "Свернуть", attrs: { "aria-expanded": String(!folded), "aria-label": folded ? "Развернуть панель достижений" : "Свернуть панель достижений" } }, icon("chevron", 16));
+    fold.addEventListener("click", () => { folded = !folded; store.set(FOLDED, folded ? "1" : ""); render(); });
     const head = el("div", { cls: "ach-panel-head" },
-      el("button", { type: "button", cls: "ach-panel-open", onclick: () => o.open() }, el("span", { textContent: "Дела и достижения" }), icon("chevronRight", 16)));
+      el("button", { type: "button", cls: "ach-panel-open", onclick: () => o.open() }, el("span", { textContent: "Дела и достижения" }), icon("chevronRight", 16)),
+      d && folded ? el("small", { cls: "muted ach-panel-mini", textContent: `${d.stats.won}/${d.stats.total} наград` }) : null,
+      fold);
     if (!d) { host.replaceChildren(head, el("p", { cls: "muted small", textContent: achData.error() ? "Не удалось загрузить: " + achData.error() : "Считаю показатели…" })); return; }
     const title = d.titles.find((t) => t.id === d.title);
     const t = title ? `${title.emoji} ${title.title}` : null;
@@ -54,8 +62,7 @@ export function achievementsPanel(o: { open(tab?: string): void; onTitle?: () =>
         el("span", { cls: "ach-panel-scene-cap" },
           el("b", { textContent: awake ? `Проснулось хвостов: ${awake} из 12` : "Кицунэ спит" }),
           el("small", { textContent: awake === 12 ? "Её сила достаёт до города" : awake ? "Каждое направление дел будит свой хвост" : "Хвосты проснутся с первыми сделанными делами" }))),
-      t ? el("span", { cls: "ach-title-chip ach-panel-title", textContent: t }) : null,
-      el("div", { cls: "ach-panel-stats" }, stat(`${d.stats.won}/${d.stats.total}`, "наград"), stat(String(d.stats.rare), "редких"), stat(`${awake}/12`, "хвостов")),
+      el("div", { cls: "ach-panel-stats" }, stat(`${d.stats.won}/${d.stats.total}`, "наград"), stat(String(d.stats.rare), "редких"), stat(String(d.sparks), "искр")),
       el("div", { cls: "ach-panel-surprise" }, el("span", { cls: "ach-panel-surprise-ic", attrs: { "aria-hidden": "true" }, textContent: surpriseEmoji }),
         el("p", {}, el("b", { textContent: "Сюрприз дня" }), el("span", { textContent: d.surprise.text }))),
       d.quest ? el("button", { type: "button", cls: "ach-panel-quest" + (d.quest.done ? " done" : ""), onclick: () => o.open("metrics") },

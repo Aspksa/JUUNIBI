@@ -30,7 +30,6 @@ button.ach-title-chip:hover{background:color-mix(in srgb,var(--brand) 22%,transp
 .ach-panel-scene-cap{display:flex;flex-direction:column;gap:1px;padding:4px 10px 10px;text-align:center}
 .ach-panel-scene-cap b{font-size:.86rem}
 .ach-panel-scene-cap small{font-size:.72rem;color:rgba(246,236,242,.7);line-height:1.3}
-.ach-panel-title{align-self:flex-start}
 .ach-panel-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .ach-panel-stat{display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 4px;border-radius:12px;border:1px solid var(--line);background:var(--bg);min-width:0}
 .ach-panel-stat b{font-size:1rem;font-variant-numeric:tabular-nums;white-space:nowrap}

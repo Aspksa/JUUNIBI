@@ -2,7 +2,7 @@
  * "Дела" — the start page: quick entry in one line, one timeline of to-dos and reminders by day,
  * notes; beside it (below on a phone) a calendar with the production calendar, the day plan and goals.
  */
-import { api, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type DayLoad, type Note, type Reminder, type Repeat } from "../api";
+import { api, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type Note, type Reminder, type Repeat } from "../api";
 import { el, icon, iconButton } from "../dom";
 import { app, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
@@ -10,15 +10,18 @@ import { buildAttention } from "./home";
 import { achievementsPanel } from "./achievements-panel";
 import { forecastWeek, simulateWeek } from "./weekly-forecast";
 import { btn, chip, emptyState } from "./kit";
+import { openSheet, type Sheet } from "./sheet";
 import { isWorkday, nextHoliday, nextLongRest, nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import kitsuneUrl from "../assets/kitsune.webp";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
-import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, daySummary, heroFallback, isDateOnly, localDay, memoryDates, planWeek, recognizedSpans, toLocalInput, weekProgress, type TaskFilter, type TimedItem } from "./tasks-model";
+import { REPEAT_LABEL, REPEAT_OPTIONS, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, memoryDates, monthItems, moveTargets, planWeek, projectCounts, recognizedSpans, toLocalInput, weekProgress, type TaskFilter, type TimedItem } from "./tasks-model";
 
 type Mission = { id: string; title: string; description: string; status: "active" | "paused" | "complete"; total: number; done: number; percent: number; blocked: number; idleDays?: number; next: { id: string; text: string; reason: string } | null; stages: { id: string; text: string; done: boolean }[] };
 const KINDS: [QuickKind, string][] = [["auto", "Авто"], ["todo", "Дело"], ["reminder", "Напоминание"], ["note", "Заметка"]];
-/** Kept across re-renders and visits: filter, search, the kind of the new entry, the calendar month and day. */
-const UI = { filter: "all" as TaskFilter, query: "", kind: "auto" as QuickKind, month: "", day: "" };
+/** Kept across re-renders and visits: filter, project, search, the kind of the new entry, the calendar month and day. */
+const UI = { filter: "all" as TaskFilter, project: "", query: "", kind: "auto" as QuickKind, month: "", day: "" };
+/** «Позже» shows this many rows until «ещё» is pressed. */
+const LATER_LIMIT = 10;
 /** Deletions waiting for their "Отменить" window to pass; hidden from the list meanwhile. */
 const pendingDelete = new Set<string>();
 const UNDO_MS = 6000;
@@ -27,9 +30,11 @@ const store = {
   get(key: string): string | null { try { return localStorage.getItem(key); } catch { return null; } },
   set(key: string, v: string) { try { localStorage.setItem(key, v); } catch { /* private mode: forget it */ } },
 };
-const SKIP_DATES = "juunibi.tasks.skipDates", EVENING_SEEN = "juunibi.tasks.eveningSeen", FOLDED = "juunibi.tasks.folded", AUTO_TAB = "juunibi.tasks.autoTab", STUCK_SKIP = "juunibi.tasks.stuckSkip";
-/** Side cards folded down to their title; «Автоматика» starts folded so the column stays short. */
-const folded = new Set((store.get(FOLDED) ?? "auto").split(",").filter(Boolean));
+const SKIP_DATES = "juunibi.tasks.skipDates", EVENING_SEEN = "juunibi.tasks.eveningSeen", FOLDED = "juunibi.tasks.folded", AUTO_TAB = "juunibi.tasks.autoTab", STUCK_SKIP = "juunibi.tasks.stuckSkip", FOCUS = "juunibi.tasks.focus";
+/** Side cards folded down to their title. */
+const folded = new Set((store.get(FOLDED) ?? "").split(",").filter(Boolean));
+const FOCUS_MS = 25 * 60_000;
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const fromLocal = (v: string): string | null => { const d = new Date(v); return v && !Number.isNaN(d.getTime()) ? d.toISOString() : null; };
 const hm = (iso: string | number) => new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -97,50 +102,48 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   let editing: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
   const chipsHost = el("div", { cls: "chips", attrs: { role: "group", "aria-label": "Что показать" } });
-  const summary = el("p", { cls: "muted tasks-summary" });
   const attHost = el("div", { cls: "tasks-attn" });
   const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
   const goalsHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Цели" } });
   const forecastHost = el("section", { cls: "pg-card tasks-side-card tasks-forecast", attrs: { "aria-label": "Прогноз нагрузки на неделю" } });
   let scenarioMinutes = 0;
-  const autoHost = el("section", { cls: "pg-card tasks-side-card tasks-auto", attrs: { "aria-label": "Автоматика" } });
+  /** «Автоматика» lives in its own window (it is settings, not a plan), opened from the hero. */
+  const autoHost = el("div", { cls: "tasks-auto tasks-auto-sheet" });
+  let autoSheet: Sheet | null = null;
+  /** Several to-dos picked with Shift+click or X, for one action on all of them. */
+  const selected = new Set<string>();
+  const bulkHost = el("div", { cls: "tasks-bulk-host" });
+  /** «Позже» opened in full; the to-do whose inline «Добавить шаг» field is open. */
+  let showAllLater = false;
+  let addingStep: string | null = null;
   const datesHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Даты из памяти" } });
   const eveHost = el("div", { cls: "tasks-evening-host" });
   const heroHost = el("section", { cls: "tasks-hero", attrs: { "aria-label": "Сводка дня" } });
   /** «Дела и достижения» in the left column; the chosen title stands under the greeting. */
   const ach = achievementsPanel({
     open: (tab) => { if (tab) { try { localStorage.setItem("juunibi.ach.tab", tab); } catch { /* private mode */ } } deps.go("achievements"); },
-    onTitle: () => { if (data) render(); },
+    onTitle: () => { if (data) renderTop(); },
   });
   let achTimer: ReturnType<typeof setTimeout> | undefined;
   let automation: Automation | null = null;
-  /** How full today is (the hero's bar), and the «Разложить день» proposal for the selected day. */
-  let todayLoad: DayLoad | null = null;
+  /** The «Разложить день» proposal for the selected day. */
   let arrange: { day: string; plan: ArrangePlan | null; error?: string; picked: Set<string> } | null = null;
   /** The evening review is open (by the header button or the prompt after 18:00). */
   let evening = false;
   /** «Разбить на шаги»: the steps the assistant suggested, by to-do or goal id; null while it thinks. */
   const splits = new Map<string, { steps: string[] | null; error?: string }>();
 
-  /** One request per month for the calendar and the day plan; a reload (after any change) asks again. */
-  const insights = new Map<string, ReturnType<typeof api.taskInsights>>();
-  const monthInsights = (month: string) => {
-    let p = insights.get(month);
-    if (!p) { p = api.taskInsights(month); insights.set(month, p); void p.then((r) => { if (!r.ok) insights.delete(month); }); }
-    return p;
-  };
+  /** The calendar, the day's load and the forecast are counted here from the list itself: a change costs two requests, not eight. */
   const load = async () => {
-    insights.clear();
-    const [r, m, a, l] = await Promise.all([api.organizer(), api.missions(), automation ? Promise.resolve(null) : api.automation(), api.dayLoad(localDay(new Date()))]);
+    const [r, m, a] = await Promise.all([api.organizer(), api.missions(), automation ? Promise.resolve(null) : api.automation()]);
     if (r.ok) { data = r.value; loadError = ""; } else loadError = r.error.message;
-    todayLoad = l.ok ? l.value : null;
-    if (autoLog) void loadLog();
+    if (autoSheet?.open && autoTab === "log") void loadLog();
     if (m.ok) missions = m.value;
     if (a?.ok) { automation = a.value; renderAuto(); }
     render();
     renderDates();
-    void renderSide();
+    renderSide();
     // a change may have earned something: count again a moment later (several quick ticks give one recount)
     clearTimeout(achTimer);
     achTimer = setTimeout(() => ach.refresh(), 700);
@@ -169,6 +172,34 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       if (root.isConnected) await load();
       void refreshBrief();
     }, UNDO_MS);
+  };
+  /** The same for several to-dos at once (the bulk bar): one toast, one «Отменить». */
+  const removeManyLater = (ids: string[]) => {
+    for (const id of ids) { pendingDelete.add(id); selected.delete(id); }
+    render();
+    let undone = false;
+    showToast(`Удалено дел: ${ids.length}`, { ms: UNDO_MS, action: { label: "Отменить", run: () => { undone = true; for (const id of ids) pendingDelete.delete(id); render(); } } });
+    setTimeout(async () => {
+      if (undone) return;
+      for (const id of ids) { const r = await api.removeNote(id); if (!r.ok) showToast(r.error.message, { ms: 8000 }); pendingDelete.delete(id); }
+      if (root.isConnected) await load();
+      void refreshBrief();
+    }, UNDO_MS);
+  };
+  /**
+   * Ticks a to-do off at once (the row slides away, the counters change), then tells the server;
+   * the reload after it puts back the truth if the server said no.
+   */
+  const setDone = (id: string, done: boolean, row?: HTMLElement | null) => {
+    const n = data?.notes.find((x) => x.id === id);
+    if (!n) return;
+    const go = () => {
+      n.done = done;
+      if (done) n.completedAt = new Date().toISOString(); else delete n.completedAt;
+      render();
+      void act(() => api.setTodoDone(id, done), done ? "Готово: " + n.text : "Дело снова в работе", done ? () => setDone(id, false) : undefined);
+    };
+    if (done && row && !reducedMotion()) { row.classList.add("leaving"); setTimeout(go, 220); } else go();
   };
   /** Gives a to-do the day `day`, keeping its own time of day; one without a time is due at the end of that day. */
   const moveToDay = (n: Note, day: string) => {
@@ -266,7 +297,20 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const kids = parts.filter((x): x is string | HTMLElement => !!x);
     return kids.length ? el("span", { cls: "tasks-meta" }, ...kids.map((k) => typeof k === "string" ? el("span", { textContent: k }) : k)) : null;
   };
-  const body = (title: string, m: HTMLElement | null) => el("span", { cls: "grow tasks-body" }, el("span", { cls: "tasks-text", textContent: title }), m);
+  /** The row's text; while searching, the words found are marked. */
+  const body = (title: string, m: HTMLElement | null) => el("span", { cls: "grow tasks-body" },
+    el("span", { cls: "tasks-text" }, ...markParts(title, UI.query).map(([x, hit]) => hit ? el("mark", { textContent: x }) : x)), m);
+  /** A small menu under an icon (the row's «Перенести» and «Ещё»); a click outside or Esc closes it. */
+  const pop = (ic: Parameters<typeof icon>[0], label: string, items: ([string, Parameters<typeof icon>[0], () => void] | null)[], act_?: string) => {
+    const d = el("details", { cls: "tasks-menu tasks-rowmenu" });
+    const sum = el("summary", { cls: "icon-btn sm", title: label, attrs: { "aria-label": label, ...(act_ ? { "data-act": act_ } : {}) } }, icon(ic, 16));
+    d.append(sum, el("div", { cls: "tasks-menu-list", attrs: { role: "menu" } }, ...items.filter((x): x is [string, Parameters<typeof icon>[0], () => void] => !!x).map(([t, i, run]) =>
+      el("button", { type: "button", attrs: { role: "menuitem" }, onclick: () => { d.open = false; run(); } }, icon(i, 15), el("span", { textContent: t })))));
+    return d;
+  };
+  /** Moves a to-do from the row's menu, the keyboard (T) or the bulk bar. */
+  const moveTo = (n: Note, key: string | null) => key ? moveToDay(n, key) : void act(() => api.updateTask(n.id, { dueAt: null }), "Срок снят, дело — в «Без срока»");
+  const markAct = <T extends HTMLElement>(b: T, a: string): T => { b.dataset.act = a; return b; };
   const todoEditor = (n: Note): HTMLElement => {
     const input = el("input", { type: "text", maxLength: 500, value: n.text, cls: "mem-input", attrs: { "aria-label": "Текст дела" } });
     const due = el("input", { type: "datetime-local", cls: "mem-select", value: n.dueAt ? toLocalInput(n.dueAt) : "", attrs: { "aria-label": "Срок" } });
@@ -345,14 +389,14 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const todoRow = (n: Note, kids: Note[] = []): HTMLElement => {
     if (editing === n.id) return todoEditor(n);
     const box = el("input", { type: "checkbox", checked: n.done, attrs: { "aria-label": (n.done ? "Вернуть в работу: " : "Выполнено: ") + n.text } });
-    box.addEventListener("change", () => void act(() => api.setTodoDone(n.id, box.checked), box.checked ? "Готово: " + n.text : "Дело снова в работе",
-      box.checked ? () => void act(() => api.setTodoDone(n.id, false)) : undefined));
     const overdue = !n.done && n.dueAt && Date.parse(n.dueAt) < Date.now();
     const mission = missionTitle(n.project);
     const doneKids = kids.filter((k) => k.done).length;
     const star = iconButton("star", n.priority === "high" ? "Снять важность" : "Отметить важным", () => void act(() => api.updateTask(n.id, { priority: n.priority === "high" ? "normal" : "high" })), "icon-btn sm tasks-star" + (n.priority === "high" ? " on" : ""));
     star.setAttribute("aria-pressed", String(n.priority === "high"));
-    const row = el("li", { cls: "org-row" + (n.done ? " done" : "") + (overdue ? " overdue" : "") + (n.priority === "high" && !n.done ? " important" : "") }, box,
+    const top = !n.parentId;
+    const row = el("li", { cls: "org-row" + (n.done ? " done" : "") + (overdue ? " overdue" : "") + (n.priority === "high" && !n.done ? " important" : "") + (selected.has(n.id) ? " picked" : ""),
+      attrs: { "data-id": n.id, "data-kind": "todo", tabindex: "-1" } }, box,
       body(n.text, meta(
         n.dueAt ? el("span", { cls: overdue ? "late" : "", textContent: (overdue ? "просрочено · " : "") + whenLabel(n.dueAt, isDateOnly(n.dueAt)) }) : null,
         n.rolled && !n.done ? el("span", { cls: "tasks-rolled", title: `Не сделано вовремя, перенесено автоматически (${n.rolled} раз)`, textContent: "перенесено" + (n.rolled > 1 ? " ×" + n.rolled : "") }) : null,
@@ -363,9 +407,15 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         mission ? "◎ " + mission : n.project ? "#" + n.project : null,
         n.done && n.completedAt ? "сделано " + whenLabel(n.completedAt, false) : null)),
       n.done ? null : star,
-      n.done || n.parentId ? null : iconButton("spark", "Разбить на шаги: " + n.text, () => void startSplit(n.id, n.text, render), "icon-btn sm"),
-      n.done ? null : iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"),
-      iconButton("trash", "Удалить: " + n.text, () => removeLater(n.id, kids.length ? `Дело удалено, его шаги (${kids.length}) стали отдельными делами` : "Дело удалено", () => api.removeNote(n.id)), "icon-btn sm"));
+      n.done ? null : pop("calendar", "Перенести: " + n.text, [...moveTargets().map(({ key, label }) => [label, "calendar", () => moveTo(n, key)] as [string, Parameters<typeof icon>[0], () => void]),
+        n.dueAt ? ["Без срока", "x", () => moveTo(n, null)] : null], "move"),
+      n.done ? null : pop("more", "Ещё: " + n.text, [
+        ["Фокус 25 минут", "play", () => startFocus(n)],
+        top ? ["Добавить шаг", "plus", () => { addingStep = n.id; render(); }] : null,
+        top ? ["Разбить на шаги", "spark", () => void startSplit(n.id, n.text, render)] : null]),
+      n.done ? null : markAct(iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"), "edit"),
+      markAct(iconButton("trash", "Удалить: " + n.text, () => removeLater(n.id, kids.length ? `Дело удалено, его шаги (${kids.length}) стали отдельными делами` : "Дело удалено", () => api.removeNote(n.id)), "icon-btn sm"), "trash"));
+    box.addEventListener("change", () => setDone(n.id, box.checked, row));
     const panel = stepsPanel(n.id, render, (steps) => act(async () => {
       for (const x of steps) {
         const r = await api.addNote("todo", x);
@@ -376,17 +426,38 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       return { ok: true };
     }, `Добавлено шагов: ${steps.length}`));
     if (!n.done) {
-      // drag a to-do onto a day of the calendar to move it there
+      // drag a to-do onto a day of the calendar or a group of the list to move it there
       row.draggable = true;
       row.addEventListener("dragstart", (e) => { if (!e.dataTransfer) return; e.dataTransfer.setData(DRAG_TYPE, n.id); e.dataTransfer.effectAllowed = "move"; root.classList.add("tasks-dragging"); });
       row.addEventListener("dragend", () => root.classList.remove("tasks-dragging"));
     }
-    const stuck = !n.done && automation?.stuckAfter && (n.rolled ?? 0) >= automation.stuckAfter && !stuckSkip().has(n.id + "@" + n.rolled) ? stuckStrip(n) : null;
+    const stuck = !n.done && automation?.stuckAfter && (n.rolled ?? 0) >= automation.stuckAfter && !skipStuck.has(n.id + "@" + n.rolled) ? stuckStrip(n) : null;
     if (stuck) row.classList.add("stuck");
-    if (!kids.length && !panel && !stuck) return row;
+    const stepForm = addingStep === n.id && !n.done ? stepAdder(n) : null;
+    if (!kids.length && !panel && !stuck && !stepForm) return row;
     return el("li", { cls: "tasks-parent" }, el("ul", { cls: "org-list" }, row), stuck, panel,
-      kids.length ? el("ul", { cls: "org-list tasks-children" }, ...kids.filter((k) => !pendingDelete.has(k.id)).map((k) => todoRow(k))) : null);
+      kids.length ? el("ul", { cls: "org-list tasks-children" }, ...kids.filter((k) => !pendingDelete.has(k.id)).map((k) => todoRow(k))) : null, stepForm);
   };
+  /** «Добавить шаг»: one line under the to-do; Enter adds a step and keeps the field for the next one, Esc closes it. */
+  const stepAdder = (n: Note): HTMLElement => {
+    const input = el("input", { type: "text", maxLength: 500, cls: "mem-input", placeholder: "Шаг дела «" + n.text.slice(0, 40) + "»", attrs: { "aria-label": "Новый шаг дела " + n.text } });
+    const close = () => { addingStep = null; render(); };
+    const addB = btn("Добавить", () => {}, { small: true, primary: true, icon: "plus" });
+    addB.type = "submit";
+    const f = el("form", { cls: "tasks-step-add" }, input, addB, iconButton("x", "Закрыть", close, "icon-btn sm"));
+    input.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } });
+    f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const t = input.value.trim();
+      if (!t) { input.focus(); return; }
+      input.disabled = true;
+      await act(async () => { const r = await api.addNote("todo", t); return r.ok ? api.updateTask(r.value.id, { parentId: n.id }) : r; }, "Шаг добавлен");
+    });
+    queueMicrotask(() => input.focus());
+    return f;
+  };
+  /** The «застряло» answers the owner has dismissed, read once per drawing of the list. */
+  let skipStuck = new Set<string>();
   const stuckSkip = () => new Set((store.get(STUCK_SKIP) ?? "").split(",").filter(Boolean));
   /** Under a to-do moved too many times: what to do with it. */
   const stuckStrip = (n: Note): HTMLElement => el("div", { cls: "tasks-stuck", attrs: { role: "group", "aria-label": "Застрявшее дело" } },
@@ -395,7 +466,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     btn("Новая дата", () => { editing = n.id; render(); }, { small: true, icon: "calendar" }),
     btn("Без срока", () => void act(() => api.updateTask(n.id, { dueAt: null }), "Срок снят, дело — в «Без срока»"), { small: true }),
     btn("Удалить", () => removeLater(n.id, "Дело удалено", () => api.removeNote(n.id)), { small: true }),
-    iconButton("x", "Оставить как есть", () => { const s = stuckSkip(); s.add(n.id + "@" + n.rolled); store.set(STUCK_SKIP, [...s].slice(-100).join(",")); render(); }, "icon-btn sm"));
+    iconButton("x", "Оставить как есть", () => { const s = stuckSkip(); s.add(n.id + "@" + n.rolled); store.set(STUCK_SKIP, [...s].slice(-100).join(",")); renderList(); }, "icon-btn sm"));
   const reminderRow = (r: Reminder): HTMLElement => {
     if (editing === r.id && r.status === "scheduled") {
       const time = el("input", { type: "datetime-local", cls: "mem-select", value: toLocalInput(r.at), attrs: { "aria-label": "Когда напомнить" } });
@@ -413,18 +484,18 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       if (snooze.value === "tomorrow") { void act(() => api.snoozeReminder(r.id, "tomorrow"), "Напомню завтра в " + (automation?.briefTime ?? "09:00")); return; }
       const m = Number(snooze.value); if (m) void act(() => api.snoozeReminder(r.id, m), "Напомню " + whenLabel(new Date(Date.now() + m * 60_000).toISOString(), false));
     });
-    return el("li", { cls: "org-row" + (r.status === "due" ? " due" : r.status === "done" ? " done" : "") },
+    return el("li", { cls: "org-row" + (r.status === "due" ? " due" : r.status === "done" ? " done" : ""), attrs: { "data-id": r.id, "data-kind": "reminder", tabindex: "-1" } },
       el("span", { cls: "org-ic", attrs: { "aria-hidden": "true" } }, icon("clock", 16)),
       body(r.text, meta(r.status === "due" ? "сработало " + whenLabel(r.firedAt ?? r.at, false) : whenLabel(r.at, false), r.repeat ? "↻ " + REPEAT_LABEL[r.repeat] : null)),
       r.status === "due" ? snooze : null,
-      r.status === "due" ? btn("Готово", () => void act(() => api.dismissReminder(r.id)), { small: true, primary: true }) : null,
-      r.status === "scheduled" ? iconButton("edit", "Изменить напоминание: " + r.text, () => { editing = r.id; render(); }, "icon-btn sm") : null,
-      iconButton("trash", r.repeat ? "Удалить повторяющееся напоминание" : "Удалить напоминание", () =>
-        removeLater(r.id, r.repeat ? "Повторяющееся напоминание удалено" : "Напоминание удалено", () => api.removeReminder(r.id)), "icon-btn sm"));
+      r.status === "due" ? markAct(btn("Готово", () => void act(() => api.dismissReminder(r.id)), { small: true, primary: true }), "done") : null,
+      r.status === "scheduled" ? markAct(iconButton("edit", "Изменить напоминание: " + r.text, () => { editing = r.id; render(); }, "icon-btn sm"), "edit") : null,
+      markAct(iconButton("trash", r.repeat ? "Удалить повторяющееся напоминание" : "Удалить напоминание", () =>
+        removeLater(r.id, r.repeat ? "Повторяющееся напоминание удалено" : "Напоминание удалено", () => api.removeReminder(r.id)), "icon-btn sm"), "trash"));
   };
   const noteRow = (n: Note): HTMLElement => {
     if (editing === n.id) return simpleEditor(n.text, [], (t) => act(() => api.editNote(n.id, t), "Сохранено"));
-    return el("li", { cls: "org-row" },
+    return el("li", { cls: "org-row", attrs: { "data-id": n.id, "data-kind": "note", tabindex: "-1" } },
       el("span", { cls: "org-ic", attrs: { "aria-hidden": "true" } }, icon("edit", 16)),
       body(n.text, meta(dayMonth(n.createdAt))),
       iconButton("check", "Сделать делом: " + n.text, () => void act(async () => {
@@ -432,48 +503,119 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         if (!r.ok) return r;
         return api.removeNote(n.id);
       }, "Заметка стала делом"), "icon-btn sm"),
-      iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"),
-      iconButton("trash", "Удалить: " + n.text, () => removeLater(n.id, "Заметка удалена", () => api.removeNote(n.id)), "icon-btn sm"));
+      markAct(iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"), "edit"),
+      markAct(iconButton("trash", "Удалить: " + n.text, () => removeLater(n.id, "Заметка удалена", () => api.removeNote(n.id)), "icon-btn sm"), "trash"));
   };
   const timedRow = (it: TimedItem, kids: Record<string, Note[]>) => it.type === "todo" ? todoRow(it.note, kids[it.note.id] ?? []) : reminderRow(it.reminder);
-  const group = (title: string, rows: HTMLElement[], cls = "", hint?: string) => rows.length
-    ? el("section", { cls: "tasks-group " + cls }, el("h2", {}, title, el("span", { cls: "n", textContent: String(rows.length) }), hint ? el("small", { cls: "muted", textContent: hint }) : null), el("ul", { cls: "org-list" }, ...rows)) : null;
-
+  type DropTo = "today" | "tomorrow" | "someday";
+  /** A to-do dropped on a group of the list (or on the bar that shows while dragging) gets that group's date. */
+  const dropTarget = (node: HTMLElement, to: DropTo) => {
+    node.dataset.drop = to;
+    node.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes(DRAG_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; node.classList.add("drop"); } });
+    node.addEventListener("dragleave", (e) => { if (!node.contains(e.relatedTarget as Node | null)) node.classList.remove("drop"); });
+    node.addEventListener("drop", (e) => {
+      e.preventDefault(); node.classList.remove("drop"); root.classList.remove("tasks-dragging");
+      const n = data?.notes.find((x) => x.id === e.dataTransfer?.getData(DRAG_TYPE));
+      if (!n) return;
+      const [today, tomorrow] = moveTargets();
+      moveTo(n, to === "someday" ? null : to === "today" ? today!.key : tomorrow!.key);
+    });
+    return node;
+  };
+  const group = (title: string, rows: HTMLElement[], cls = "", o: { drop?: DropTo; limit?: number } = {}) => {
+    if (!rows.length) return null;
+    const cut = o.limit && rows.length > o.limit + 2 ? o.limit : 0;
+    const head = el("h2", {}, title, el("span", { cls: "n", textContent: String(rows.length) }));
+    const sec = el("section", { cls: "tasks-group " + cls }, head, el("ul", { cls: "org-list" }, ...(cut ? rows.slice(0, cut) : rows)),
+      cut ? el("button", { type: "button", cls: "tasks-more", textContent: `Показать ещё ${rows.length - cut}`, onclick: () => { showAllLater = true; renderList(); } }) : null);
+    if (o.drop) dropTarget(sec, o.drop);
+    return sec;
+  };
+  const visibleOrg = () => ({ notes: data!.notes.filter((n) => !pendingDelete.has(n.id)), reminders: data!.reminders.filter((r) => !pendingDelete.has(r.id)) });
+  /** The whole page: the hero and the cards over the list (counted over everything), then the list. */
   function render() {
     if (!data) { listHost.replaceChildren(loadError ? emptyState("alert", "Не удалось загрузить", loadError, btn("Повторить", () => void load(), { small: true })) : el("p", { cls: "muted", textContent: "Загрузка…" })); return; }
-    const visible = { notes: data.notes.filter((n) => !pendingDelete.has(n.id)), reminders: data.reminders.filter((r) => !pendingDelete.has(r.id)) };
-    const t = buildTasks(visible, UI.filter, UI.query);
-    renderTop(t);
+    renderTop();
+    renderList();
+  }
+  let doneOpen = false;
+  /** Only the list: filters, search and the rows. Typing in the search redraws just this. */
+  function renderList() {
+    if (!data) return;
+    const all = visibleOrg();
+    skipStuck = stuckSkip();
+    // project chips: #работа, ◎ a goal; a project with nothing open left drops out of the filter
+    const projects = projectCounts(all.notes, missionTitle);
+    if (UI.project && !projects.some((p) => p.id === UI.project)) UI.project = "";
+    let org = all;
+    if (UI.project) {
+      const inP = new Set(all.notes.filter((n) => n.project === UI.project).map((n) => n.id));
+      org = { notes: all.notes.filter((n) => inP.has(n.id) || (n.parentId && inP.has(n.parentId))), reminders: [] };
+    }
+    const t = buildTasks(org, UI.filter, UI.query);
     const c = t.counts;
     const opts: [TaskFilter, string, number][] = [["all", "Все", c.all], ["todo", "Дела", c.todo], ["reminder", "Напоминания", c.reminder], ["note", "Заметки", c.note]];
-    chipsHost.replaceChildren(...opts.map(([f, label, n]) => chip(label, n, UI.filter === f, () => { UI.filter = f; render(); })));
+    chipsHost.replaceChildren(...opts.map(([f, label, n]) => chip(label, n, UI.filter === f, () => { UI.filter = f; renderList(); })));
+    projHost.replaceChildren(...(projects.length ? projects.slice(0, 12).map((p) => chip(p.label, p.n, UI.project === p.id, () => { UI.project = UI.project === p.id ? "" : p.id; renderList(); })) : []));
+    projHost.hidden = !projects.length;
     // with nothing at all, filters full of zeros and a search over nothing only get in the way
-    toolbar.hidden = !c.all && !UI.query && UI.filter === "all";
-    const today = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    const pdToday = prodDay(localDay(new Date()));
-    summary.textContent = [today[0]!.toUpperCase() + today.slice(1), pdToday?.kind === "holiday" ? pdToday.note : pdToday?.kind === "off" ? "выходной (перенос)" : pdToday?.kind === "short" ? "сокращённый день" : null, t.summary.today ? `на сегодня: ${t.summary.today}` : "на сегодня ничего", t.summary.overdue ? `просрочено: ${t.summary.overdue}` : null, t.summary.doneToday ? `сделано: ${t.summary.doneToday}` : null].filter(Boolean).join(" · ");
+    toolbar.hidden = !buildTasks(all).counts.all && !UI.query && UI.filter === "all";
     const kids = t.children;
     const finished = [...t.finished.todos.map((n) => todoRow(n)), ...t.finished.reminders.map(reminderRow)];
     const groups = [
       group("Сработали", t.due.map(reminderRow), "due"),
       group("Просрочено", t.overdue.map((x) => timedRow(x, kids)), "late"),
-      group("Сегодня", t.today.map((x) => timedRow(x, kids)), "today"),
-      group("Завтра", t.tomorrow.map((x) => timedRow(x, kids))),
-      group("Позже", t.later.map((x) => timedRow(x, kids))),
-      group("Без срока", t.someday.map((n) => todoRow(n, kids[n.id] ?? []))),
-      group("Заметки", t.notes.map(noteRow)),
+      group("Сегодня", t.today.map((x) => timedRow(x, kids)), "today", { drop: "today" }),
+      group("Завтра", t.tomorrow.map((x) => timedRow(x, kids)), "tomorrow", { drop: "tomorrow" }),
+      group("Позже", t.later.map((x) => timedRow(x, kids)), "later", showAllLater ? {} : { limit: LATER_LIMIT }),
+      group("Без срока", t.someday.map((n) => todoRow(n, kids[n.id] ?? [])), "someday", { drop: "someday" }),
+      group("Заметки", t.notes.map(noteRow), "notes"),
     ].filter((g): g is HTMLElement => !!g);
-    const done = finished.length ? el("details", { cls: "br-fold tasks-done" }, el("summary", { textContent: `Выполненные · ${finished.length}` }), el("ul", { cls: "org-list" }, ...finished)) : null;
+    const done = finished.length ? el("details", { cls: "br-fold tasks-done", open: doneOpen }, el("summary", { textContent: `Выполненные · ${finished.length}` }), el("ul", { cls: "org-list" }, ...finished)) : null;
+    done?.addEventListener("toggle", () => { doneOpen = done.open; });
+    // keep the keyboard on the same row across the redraw
+    const focusedId = listHost.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>(".org-row[data-id]")?.dataset.id : undefined;
+    const open = new Set(all.notes.filter((n) => n.kind === "todo" && !n.done).map((n) => n.id));
+    for (const id of selected) if (!open.has(id)) selected.delete(id);
+    renderBulk();
     if (!groups.length && !done) {
-      listHost.replaceChildren(UI.query || UI.filter !== "all"
+      listHost.replaceChildren(UI.query || UI.filter !== "all" || UI.project
         ? emptyState("search", "Ничего не найдено", "Измените запрос или фильтр.")
         : emptyState("check", "Дел пока нет", "Нажмите на пример, он подставится в поле выше. В чате тоже можно: «напоминай по будням в 10 про стендап».",
             el("div", { cls: "tasks-examples" }, ...EXAMPLES.map((x) => el("button", { type: "button", cls: "chip", textContent: x, onclick: () => prefill(x) })))));
       return;
     }
-    listHost.replaceChildren(...groups, ...(done ? [done] : []));
+    listHost.replaceChildren(dropBar, ...groups, ...(done ? [done] : []));
+    // the groups rise in once, when the page opens; redraws after a tick or a search letter do not replay it
+    if (!listHost.classList.contains("settled")) setTimeout(() => listHost.classList.add("settled"), 400);
+    if (focusedId) listHost.querySelector<HTMLElement>(`.org-row[data-id="${CSS.escape(focusedId)}"]`)?.focus({ preventScroll: true });
   }
-  function renderTop(t: ReturnType<typeof buildTasks>) {
+  /** Shown only while a to-do is dragged: drop it on «Сегодня», «Завтра» or «Без срока», even when that group is empty. */
+  const dropBar = el("div", { cls: "tasks-dropbar", attrs: { "aria-hidden": "true" } },
+    ...([["today", "На сегодня"], ["tomorrow", "На завтра"], ["someday", "Без срока"]] as const).map(([to, label]) => dropTarget(el("div", { cls: "tasks-drop", textContent: label }), to)));
+  /** «Выбрано: N» with one action for all the picked to-dos. */
+  function renderBulk() {
+    if (!selected.size) { bulkHost.replaceChildren(); return; }
+    const ids = [...selected];
+    const notes = () => ids.map((id) => data?.notes.find((n) => n.id === id)).filter((n): n is Note => !!n);
+    const clear = () => { selected.clear(); renderList(); };
+    bulkHost.replaceChildren(el("div", { cls: "tasks-bulk", attrs: { role: "toolbar", "aria-label": "Действия с выбранными делами" } },
+      el("b", { textContent: `Выбрано: ${ids.length}` }),
+      btn("Сделано", () => {
+        const list = notes();
+        for (const n of list) { n.done = true; n.completedAt = new Date().toISOString(); }
+        selected.clear(); render();
+        void act(async () => { for (const n of list) { const r = await api.setTodoDone(n.id, true); if (!r.ok) return r; } return { ok: true }; }, `Сделано: ${list.length}`);
+      }, { small: true, primary: true, icon: "check" }),
+      btn("Завтра", () => { selected.clear(); void act(() => api.moveTasks(ids, "tomorrow"), `Перенесено на завтра: ${ids.length}`); }, { small: true, title: "Перенести на завтра, время сохранится" }),
+      btn("Рабочий день", () => { selected.clear(); void act(() => api.moveTasks(ids, "workday"), `На рабочий день: ${ids.length}`); }, { small: true, title: "На ближайший рабочий день" }),
+      btn("Без срока", () => { selected.clear(); void act(async () => { for (const id of ids) { const r = await api.updateTask(id, { dueAt: null }); if (!r.ok) return r; } return { ok: true }; }, `Срок снят: ${ids.length}`); }, { small: true }),
+      btn("Удалить", () => removeManyLater(ids), { small: true, icon: "trash" }),
+      iconButton("x", "Снять выбор (Esc)", clear, "icon-btn sm")));
+  }
+  function renderTop() {
+    if (!data) return;
+    const t = buildTasks(visibleOrg());
     const parts: HTMLElement[] = [];
     renderHero(t);
     const today = localDay(new Date());
@@ -488,7 +630,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         btn("Подвести итог", () => { evening = true; render(); }, { small: true, primary: true }),
         iconButton("x", "Не сегодня", () => { store.set(EVENING_SEEN, today); render(); }, "icon-btn sm")));
     }
-    if (t.week && UI.filter === "all" && !UI.query) {
+    if (t.week) {
       const w = t.week;
       parts.push(el("section", { cls: "pg-card tasks-week", attrs: { "aria-label": "Обзор недели" } },
         el("div", { cls: "tasks-brief-head" }, icon("calendar", 18), el("strong", { cls: "grow", textContent: "Обзор недели" }), el("small", { cls: "muted", textContent: whenLabel(w.createdAt, false) }),
@@ -511,8 +653,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   }
   /** Today's load: minutes of to-dos against the free hours, and a way out when it is too much. */
   function loadBar(): HTMLElement | null {
-    const l = todayLoad;
-    if (!l || !automation?.dayHours || !l.count) return null;
+    if (!data || !automation?.dayHours) return null;
+    const l = dayLoadOf(visibleOrg().notes, localDay(new Date()), automation.dayHours);
+    if (!l.count) return null;
     const pct = Math.min(100, Math.round((100 * l.planned) / Math.max(1, l.capacity)));
     const h = (m: number) => (Math.round(m / 6) / 10).toLocaleString("ru-RU") + " ч";
     const bar = el("div", { cls: "tasks-load-bar", attrs: { role: "meter", "aria-valuemin": "0", "aria-valuemax": String(l.capacity), "aria-valuenow": String(l.planned), "aria-label": "Загрузка дня" } }, el("i"));
@@ -545,9 +688,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       return b;
     };
     const jump = (cls: string) => () => listHost.querySelector(`.tasks-group.${cls}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    const clean = UI.filter === "all" && !UI.query;
     // after the evening summary is written, it takes the brief's place
-    const b = clean ? t.evening ?? t.brief : undefined;
+    const b = t.evening ?? t.brief;
     const isEve = !!b && b === t.evening;
     const dayOff = !!pd && pd.kind !== "work" && pd.kind !== "short";
     const tKey = localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
@@ -557,41 +699,43 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const eveMode = isEve || (!b && fb.evening);
     const kind = pd ? el("span", { cls: "tasks-daykind " + pd.kind, textContent: pd.kind === "holiday" && pd.note ? pd.note : DAY_KIND[pd.kind] }) : null;
     // the brief's time, «again» and «hide» live in one small menu instead of a row of their own
-    const menu = el("details", { cls: "tasks-hero-menu" });
-    const item = (label: string, ic: Parameters<typeof icon>[0], run: () => void) => { const x = btn(label, () => { menu.open = false; run(); }, { small: true, icon: ic }); return x; };
-    menu.append(el("summary", { title: "Сводка: ещё", attrs: { "aria-label": "Сводка: ещё" } }, icon("more", 18)),
+    const menu = el("details", { cls: "tasks-hero-menu tasks-menu" });
+    const item = (label: string, ic: Parameters<typeof icon>[0], run: () => void) => btn(label, () => { menu.open = false; run(); }, { small: true, icon: ic });
+    const canNotify = typeof Notification !== "undefined" && Notification.permission === "default";
+    menu.append(el("summary", { title: "Ещё", attrs: { "aria-label": "Ещё: итог дня, сводка, уведомления" } }, icon("more", 18)),
       el("div", { cls: "tasks-hero-menu-list" },
+        item(evening ? "Закрыть «Итог дня»" : "Итог дня", "moon", () => { evening = !evening; renderTop(); if (evening) eveHost.scrollIntoView({ behavior: "smooth", block: "nearest" }); }),
         b ? el("small", { cls: "muted", textContent: (isEve ? "Итог составлен в " : "Сводка составлена в ") + hm(b.createdAt) }) : null,
         item(eveMode ? (b ? "Подвести итог заново" : "Подвести итог сейчас") : b ? "Составить сводку заново" : "Составить сводку сейчас", "refresh",
           () => void act(() => (eveMode ? api.runEvening() : api.runBrief()), eveMode ? "Итог дня готов" : "Сводка готова")),
-        b ? item(isEve ? "Скрыть итог дня" : "Скрыть сводку", "eyeOff", () => removeLater(b.id, isEve ? "Итог скрыт" : "Сводка скрыта", () => api.removeNote(b.id))) : null));
-    menu.addEventListener("toggle", () => {
-      if (!menu.open) return;
-      const close = (e: Event) => { if (!menu.contains(e.target as Node)) { menu.open = false; document.removeEventListener("pointerdown", close); } };
-      document.addEventListener("pointerdown", close);
-    });
+        b ? item(isEve ? "Скрыть итог дня" : "Скрыть сводку", "eyeOff", () => removeLater(b.id, isEve ? "Итог скрыт" : "Сводка скрыта", () => api.removeNote(b.id))) : null,
+        canNotify ? item("Включить уведомления", "bell", () => void Notification.requestPermission().then(() => renderTop())) : null));
+    const gear = iconButton("settings", "Автоматика: сводка, переносы, напоминания, правила", () => openAuto(), "icon-btn tasks-hero-gear");
     // Sunday: spread the to-dos without a date over the coming week
     const undated = data?.notes.some((n) => n.kind === "todo" && !n.done && !n.dueAt && !n.parentId) ?? false;
     const planBtn = now.getDay() === 0 && undated && !weekPlan ? btn("Спланировать неделю", () => openWeekPlan(), { small: true, icon: "calendar", title: "Разложить дела без срока по рабочим дням недели" }) : null;
+    // the to-do in focus was done or deleted elsewhere: the timer goes away quietly
+    const f = readFocus();
+    if (f && !data?.notes.some((n) => n.id === f.id && !n.done)) clearFocus();
     heroHost.classList.toggle("evening", eveMode);
     heroHost.classList.toggle("quiet", !total);
     heroHost.replaceChildren(
       el("div", { cls: "tasks-hero-main" },
         el("div", { cls: "tasks-hero-top" }, el("span", { cls: "tasks-hero-ic", attrs: { "aria-hidden": "true" } }, icon(h >= 17 || h < 5 ? "moon" : "sun", 22)),
           el("div", { cls: "grow" }, el("strong", { cls: "tasks-hero-hello", textContent: hello }), el("span", { cls: "tasks-hero-date" }, date[0]!.toUpperCase() + date.slice(1), kind, ach.title() ? el("button", { type: "button", cls: "ach-title-chip", textContent: ach.title()!, title: "Титул из «Дел и достижений»", onclick: () => deps.go("achievements") }) : null)),
-          menu),
+          gear, menu),
         b ? el("p", { cls: "tasks-hero-text" + (isEve ? " eve" : ""), textContent: briefBody(b.text, isEve) })
           : el("p", { cls: "tasks-hero-text muted", textContent: fb.text }),
         tomorrowNotice(),
         loadBar(),
+        focusBar.childElementCount ? focusBar : null,
         total
           ? el("div", { cls: "tasks-hero-stats" },
               stat(s.today, "на сегодня", "today", s.today ? jump("today") : undefined),
               stat(s.overdue, "просрочено", "late", s.overdue ? jump("late") : undefined),
               stat(s.doneToday, "сделано", "done"),
               el("span", { cls: "grow" }),
-              planBtn,
-              eveMode && (s.today + s.overdue) ? btn("Итог дня", () => { evening = true; render(); }, { small: true, icon: "moon" }) : null)
+              planBtn)
           : el("div", { cls: "tasks-hero-stats is-empty" },
               el("span", { cls: "tasks-hero-none", textContent: "Дел на сегодня нет" }),
               el("span", { cls: "grow" }),
@@ -645,6 +789,51 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       })),
       el("div", { cls: "row" }, apply));
   }
+  // ---------- «Фокус 25 минут» ----------
+  /** In the hero while a to-do is in focus: its text, the minutes left, «Готово» and «Стоп». Survives reloads and visits. */
+  const focusBar = el("div", { cls: "tasks-focus", attrs: { role: "group", "aria-label": "Фокус на деле" } });
+  let focusTimer: ReturnType<typeof setInterval> | undefined;
+  type Focus = { id: string; text: string; until: number };
+  const readFocus = (): Focus | null => { try { const v = JSON.parse(store.get(FOCUS) || "null") as Focus | null; return v && typeof v.until === "number" && typeof v.id === "string" ? v : null; } catch { return null; } };
+  const clearFocus = () => { store.set(FOCUS, ""); clearInterval(focusTimer); focusBar.replaceChildren(); };
+  const stopFocus = () => { clearFocus(); renderTop(); };
+  function startFocus(n: Note) {
+    store.set(FOCUS, JSON.stringify({ id: n.id, text: n.text, until: Date.now() + FOCUS_MS }));
+    paintFocus();
+    renderTop();
+    heroHost.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  function paintFocus() {
+    clearInterval(focusTimer);
+    const f = readFocus();
+    if (!f) { focusBar.replaceChildren(); return; }
+    const done = btn("Готово", () => { clearFocus(); setDone(f.id, true); }, { small: true, primary: true, icon: "check" });
+    const ended = () => {
+      focusBar.classList.add("ended");
+      focusBar.replaceChildren(icon("clock", 18), el("span", { cls: "grow" }, el("b", { textContent: "Время вышло. " }), `Готово: «${f.text}»?`), done,
+        btn("Ещё 10 минут", () => { store.set(FOCUS, JSON.stringify({ ...f, until: Date.now() + 600_000 })); paintFocus(); }, { small: true }),
+        iconButton("x", "Закрыть", stopFocus, "icon-btn sm"));
+    };
+    focusBar.classList.remove("ended");
+    if (f.until <= Date.now()) { ended(); return; }
+    const clock = el("b", { cls: "tasks-focus-clock", attrs: { "aria-live": "off" } });
+    focusBar.replaceChildren(icon("play", 18), el("span", { cls: "grow tasks-focus-text" }, el("small", { cls: "muted", textContent: "Фокус · " }), el("span", { textContent: f.text })), clock, done, btn("Стоп", stopFocus, { small: true }));
+    const tick = () => {
+      if (!root.isConnected) { clearInterval(focusTimer); return; }
+      const left = f.until - Date.now();
+      if (left <= 0) {
+        clearInterval(focusTimer);
+        ended();
+        showToast(`Фокус окончен: ${f.text}`, { ms: 10000 });
+        try { if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("JUUNIBI: фокус окончен", { body: f.text }); } catch { /* not over http */ }
+        return;
+      }
+      clock.textContent = `${Math.floor(left / 60_000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}`;
+    };
+    tick();
+    focusTimer = setInterval(tick, 1000);
+  }
+
   /** «Итог дня»: done today, and what is left for today with one button to move it to tomorrow. */
   function eveningCard(sum: { done: Note[]; open: Note[] }): HTMLElement {
     const close = () => { evening = false; store.set(EVENING_SEEN, localDay(new Date())); render(); };
@@ -693,19 +882,21 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
 
   // ---------- side panel: calendar, day plan, goals ----------
   let goalsSig = "";
-  async function renderSide() {
+  function renderSide() {
     if (!UI.month) UI.month = localDay(new Date()).slice(0, 7);
     if (!UI.day) UI.day = localDay(new Date());
-    await Promise.all([renderCalendar(), renderDay()]);
+    renderCalendar();
+    void renderDay();
     // goals keep what is typed in their fields: redraw them only when they changed
     const sig = JSON.stringify(missions);
     if (sig !== goalsSig) { goalsSig = sig; renderGoals(); }
     renderForecast();
   }
-  /** «Неделя вперёд»: the load of the next seven days and a «what if» for every working day. */
+  /** «Неделя вперёд»: the load of the next seven days from tomorrow (today is in the hero) and a «what if» for every working day. */
   function renderForecast() {
     const cap = Math.round((automation?.dayHours || 8) * 60);
-    const scenario = simulateWeek(forecastWeek(data?.notes ?? [], new Date(), cap), scenarioMinutes);
+    const now = new Date();
+    const scenario = simulateWeek(forecastWeek(data?.notes ?? [], new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1), cap), scenarioMinutes);
     const days = scenario.days;
     const planned = days.reduce((n, f) => n + f.planned, 0), capacity = days.reduce((n, f) => n + f.capacity, 0);
     const h = (m: number) => (Math.round(m / 6) / 10).toLocaleString("ru-RU") + " ч";
@@ -718,21 +909,23 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         return b;
       }));
     forecastHost.replaceChildren(
-      cardHead(forecastHost, "forecast", "Неделя вперёд", el("small", { cls: "muted tasks-forecast-total", title: "Оценка по срокам дел: без указанной длительности — 30 минут на дело. Свободных часов в рабочий день берётся из «Автоматики», выходные и праздники без рабочих часов. Сценарий «что если» ничего не меняет в делах.", textContent: `${h(planned)} из ${h(capacity)} ⓘ` })),
+      cardHead(forecastHost, "forecast", "Неделя вперёд", el("small", { cls: "muted tasks-forecast-total", title: "С завтрашнего дня, оценка по срокам дел: без указанной длительности — 30 минут на дело. Свободных часов в рабочий день берётся из «Автоматики», выходные и праздники без рабочих часов. Сценарий «что если» ничего не меняет в делах.", textContent: `${h(planned)} из ${h(capacity)} ⓘ` })),
       el("div", { cls: "tasks-forecast-list" }, ...days.map((f) => {
         const d = new Date(f.day + "T12:00");
         const off = !f.capacity;
         const label = d.toLocaleDateString("ru-RU", { weekday: "short" });
-        const row = el("div", { cls: "tasks-forecast-day" + (f.overload && !off ? " overload" : "") + (off ? " off" : ""), title: `${f.count} дел · ${h(f.planned)}` + (f.overload && !off ? `, перегруз на ${h(f.excess)}` : "") },
+        const track = el("i");
+        track.style.width = Math.min(100, f.capacity ? 100 * f.planned / f.capacity : f.planned ? 100 : 0) + "%";
+        return el("div", { cls: "tasks-forecast-day" + (f.overload && !off ? " overload" : "") + (off ? " off" : ""), title: `${f.count} дел · ${h(f.planned)}` + (f.overload && !off ? `, перегруз на ${h(f.excess)}` : "") },
           el("time", { attrs: { datetime: f.day }, textContent: label[0]!.toUpperCase() + label.slice(1) + " " + d.getDate() }),
-          el("span", { cls: "tasks-forecast-track" }, el("i")),
+          el("span", { cls: "tasks-forecast-track" }, track),
           el("small", { textContent: off && !f.planned ? "вых." : f.planned ? h(f.planned) : "—" }));
-        (row.querySelector(".tasks-forecast-track i") as HTMLElement).style.width = Math.min(100, f.capacity ? 100 * f.planned / f.capacity : f.planned ? 100 : 0) + "%";
-        return row;
       })),
       whatIf,
       ...(scenarioMinutes ? [el("p", { cls: "small muted", textContent: `Сценарий: ещё ${h(scenario.extra)} за неделю, перегруженных дней: ${scenario.overloadedDays}. Дела не меняются.` })] : []));
   }
+  /** What a card that was folded (and so skipped its requests) draws when it is opened. */
+  const onUnfold: Record<string, () => void> = { day: () => void renderDay() };
   /** A side card's title; clicking it folds the card to one line (remembered in the browser). */
   const cardHead = (host: HTMLElement, key: string, title: string, ...extra: (Node | null)[]) => {
     const isFolded = folded.has(key);
@@ -745,42 +938,102 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       host.classList.toggle("folded", now);
       toggle.setAttribute("aria-expanded", String(!now));
       toggle.title = now ? "Развернуть" : "Свернуть";
+      if (!now) onUnfold[key]?.();
     });
     return el("div", { cls: "tasks-side-head" }, el("h2", {}, toggle), ...extra);
   };
-  const shiftMonth = (n: number) => { const [y, m] = UI.month.split("-").map(Number); const d = new Date(y!, m! - 1 + n, 1); UI.month = localDay(d).slice(0, 7); void renderCalendar(); };
-  /** Selects a day; a day of another month turns the calendar to that month. Keeps the keyboard focus on the grid. */
+  const shiftMonth = (n: number) => { const [y, m] = UI.month.split("-").map(Number); const d = new Date(y!, m! - 1 + n, 1); UI.month = localDay(d).slice(0, 7); renderCalendar(); };
+  /**
+   * Selects a day; a day of another month turns the calendar to that month. Within the month only the highlight moves,
+   * the grid is not rebuilt. Keeps the keyboard focus on the grid.
+   */
   const pickDay = (key: string, focus = false) => {
     UI.day = key;
-    if (key.slice(0, 7) !== UI.month) UI.month = key.slice(0, 7);
-    void Promise.all([renderCalendar(), renderDay()]).then(() => { if (focus) calHost.querySelector<HTMLElement>(`[data-day="${key}"]`)?.focus(); });
+    if (key.slice(0, 7) !== UI.month || calMonth !== UI.month) { UI.month = key.slice(0, 7); renderCalendar(); }
+    else {
+      for (const c of calHost.querySelectorAll<HTMLElement>(".tasks-calendar-day.selected")) { c.classList.remove("selected"); c.setAttribute("aria-pressed", "false"); c.tabIndex = -1; }
+      const c = calHost.querySelector<HTMLElement>(`[data-day="${key}"]:not(.outside)`) ?? calHost.querySelector<HTMLElement>(`[data-day="${key}"]`);
+      if (c) { c.classList.add("selected"); c.setAttribute("aria-pressed", "true"); c.tabIndex = 0; }
+      if (calToday) calToday.hidden = key === localDay(new Date());
+    }
+    if (focus) calHost.querySelector<HTMLElement>(`[data-day="${key}"]:not(.outside)`)?.focus();
+    void renderDay();
   };
   const addDaysKey = (key: string, n: number) => { const d = new Date(key + "T12:00"); d.setDate(d.getDate() + n); return localDay(d); };
   const dayWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "день" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "дня" : "дней");
   const calTip = el("div", { cls: "tasks-cal-tip", attrs: { role: "tooltip" } });
   calTip.hidden = true;
   let calSwipe: number | null = null;
-  async function renderCalendar() {
-    const r = await monthInsights(UI.month);
+  /** The month on screen, the «Сегодня» button and each day's hover card (title and lines). */
+  let calMonth = "";
+  let calToday: HTMLElement | null = null;
+  const calTips = new Map<string, { title: string; lines: string[] }>();
+  const showTip = (c: HTMLElement) => {
+    const tip = calTips.get(c.dataset.day ?? "");
+    if (!tip) return;
+    calTip.replaceChildren(el("b", { textContent: tip.title }), ...tip.lines.map((x) => el("span", { textContent: x })));
+    calTip.hidden = false;
+    const box = calHost.getBoundingClientRect(), at = c.getBoundingClientRect();
+    calTip.style.top = at.bottom - box.top + 6 + "px";
+    calTip.style.left = Math.max(8, Math.min(box.width - calTip.offsetWidth - 8, at.left - box.left + at.width / 2 - calTip.offsetWidth / 2)) + "px";
+  };
+  const dayCell = (e: Event) => (e.target as HTMLElement | null)?.closest?.<HTMLElement>(".tasks-calendar-day") ?? null;
+  /** One set of listeners for the whole grid (the grid is rebuilt only when the month or the list changes). */
+  const grid = el("div", { cls: "tasks-calendar-grid", attrs: { role: "group", "aria-label": "Дни месяца: стрелки — день, PageUp и PageDown — месяц, двойной щелчок — новое дело на этот день" } });
+  grid.addEventListener("click", (e) => { const c = dayCell(e); if (c?.dataset.day) pickDay(c.dataset.day); });
+  // double click: a new entry for that day in the quick-entry field
+  grid.addEventListener("dblclick", (e) => { const k = dayCell(e)?.dataset.day; if (k) prefill(new Date(k + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + " "); });
+  grid.addEventListener("pointerover", (e) => { const c = dayCell(e); if (c && e.pointerType === "mouse" && !c.contains(e.relatedTarget as Node | null)) showTip(c); });
+  grid.addEventListener("pointerout", (e) => { const c = dayCell(e); if (c && !c.contains(e.relatedTarget as Node | null)) calTip.hidden = true; });
+  grid.addEventListener("focusin", (e) => { const c = dayCell(e); if (c?.matches(":focus-visible")) showTip(c); });
+  grid.addEventListener("focusout", () => { calTip.hidden = true; });
+  grid.addEventListener("dragover", (e) => { const c = dayCell(e); if (c && e.dataTransfer?.types.includes(DRAG_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; for (const x of grid.querySelectorAll(".drop")) if (x !== c) x.classList.remove("drop"); c.classList.add("drop"); } });
+  grid.addEventListener("dragleave", (e) => { const c = dayCell(e); if (c && !c.contains(e.relatedTarget as Node | null)) c.classList.remove("drop"); });
+  grid.addEventListener("drop", (e) => {
+    const c = dayCell(e);
+    if (!c?.dataset.day) return;
+    e.preventDefault(); c.classList.remove("drop"); root.classList.remove("tasks-dragging");
+    const n = data?.notes.find((x) => x.id === e.dataTransfer?.getData(DRAG_TYPE));
+    if (n) moveToDay(n, c.dataset.day);
+  });
+  grid.addEventListener("keydown", (e) => {
+    const step = ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 } as Record<string, number>)[e.key];
+    if (step) { e.preventDefault(); pickDay(addDaysKey(UI.day, step), true); return; }
+    if (e.key === "PageUp" || e.key === "PageDown") {
+      e.preventDefault();
+      const d = new Date(UI.day + "T12:00"), want = d.getDate();
+      d.setDate(1); d.setMonth(d.getMonth() + (e.key === "PageUp" ? -1 : 1));
+      d.setDate(Math.min(want, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+      pickDay(localDay(d), true);
+    }
+  });
+  // on a phone the month turns with a swipe
+  grid.addEventListener("pointerdown", (e) => { calSwipe = e.pointerType === "mouse" ? null : e.clientX; });
+  grid.addEventListener("pointerup", (e) => { if (calSwipe !== null && Math.abs(e.clientX - calSwipe) > 50) shiftMonth(e.clientX < calSwipe ? 1 : -1); calSwipe = null; });
+  /** The month: counted from the list on the page, no request. */
+  function renderCalendar() {
     const [y, mo] = UI.month.split("-").map(Number);
     const first = new Date(y!, mo! - 1, 1);
     const title = first.toLocaleDateString("ru-RU", { month: "long", year: "numeric" }).replace(/\s*г\.$/, "");
     const todayKey = localDay(new Date());
-    const atToday = UI.month === todayKey.slice(0, 7) && UI.day === todayKey;
+    calToday = btn("Сегодня", () => pickDay(todayKey), { small: true });
+    calToday.hidden = UI.month === todayKey.slice(0, 7) && UI.day === todayKey;
     const nav = el("div", { cls: "tasks-cal-nav" },
       iconButton("chevronLeft", "Предыдущий месяц (PageUp)", () => shiftMonth(-1), "icon-btn sm"),
-      atToday ? null : btn("Сегодня", () => pickDay(todayKey), { small: true }),
+      calToday,
       iconButton("chevronRight", "Следующий месяц (PageDown)", () => shiftMonth(1), "icon-btn sm"));
     const head = cardHead(calHost, "cal", title[0]!.toUpperCase() + title.slice(1), nav);
-    if (!r.ok) { calHost.replaceChildren(head, el("p", { cls: "muted small", textContent: "Календарь недоступен: " + r.error.message })); return; }
-    const items = r.value.items;
-    const heavy = new Set(r.value.heavyDays ?? []);
+    calMonth = UI.month;
+    if (!data) { calHost.replaceChildren(head, el("p", { cls: "muted small", textContent: "Загрузка…" })); return; }
+    const { items, heavyDays } = monthItems(visibleOrg(), UI.month, automation?.dayHours ?? 0);
+    const heavy = new Set(heavyDays);
     const byDay = new Map<string, typeof items>();
-    for (const it of items) { const k = localDay(it.at); byDay.set(k, [...(byDay.get(k) ?? []), it]); }
+    for (const it of items) { const k = localDay(it.at); const l = byDay.get(k); if (l) l.push(it); else byDay.set(k, [it]); }
     // birthdays and other yearly reminders: a star on their day
     const yearly = new Map<string, string[]>();
-    for (const rem of data?.reminders ?? []) if (rem.repeat === "yearly" && rem.status === "scheduled") { const md = localDay(rem.at).slice(5); yearly.set(md, [...(yearly.get(md) ?? []), rem.text]); }
+    for (const rem of data.reminders) if (rem.repeat === "yearly" && rem.status === "scheduled") { const md = localDay(rem.at).slice(5); yearly.set(md, [...(yearly.get(md) ?? []), rem.text]); }
     const seen = new Set<string>();
+    calTips.clear();
     const cell = (key: string, outside: boolean) => {
       const d = Number(key.slice(8));
       const list = outside ? [] : byDay.get(key) ?? [];
@@ -798,37 +1051,16 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       }
       const label = `${d}${special ? ", " + DAY_KIND[special].toLowerCase() + (pd!.note ? " (" + pd!.note + ")" : "") : ""}` + (list.length ? `: записей ${list.length}` : "") + (late ? ", не сделано" : "") + (heavy.has(key) ? ", день перегружен" : "") + (stars.length ? ", " + stars.join(", ") : "");
       const heat = Math.min(4, list.length);
-      const c = el("button", { type: "button", cls: "tasks-calendar-day" + (outside ? " outside" : "") + (special ? " " + special : "") + (heat ? " h" + heat : "") + (heavy.has(key) && !outside ? " heavy" : "") + (key === todayKey ? " today" : "") + (key === UI.day ? " selected" : ""),
-        attrs: { "data-day": key, "aria-pressed": String(key === UI.day), "aria-label": label, tabindex: key === UI.day ? "0" : "-1" } },
+      const sel = key === UI.day && !outside;
+      const c = el("button", { type: "button", cls: "tasks-calendar-day" + (outside ? " outside" : "") + (special ? " " + special : "") + (heat ? " h" + heat : "") + (heavy.has(key) && !outside ? " heavy" : "") + (key === todayKey ? " today" : "") + (sel ? " selected" : ""),
+        attrs: { "data-day": key, "aria-pressed": String(sel), "aria-label": label, tabindex: sel ? "0" : "-1" } },
         el("span", { cls: "tasks-calendar-num", textContent: String(d) }),
         list.length ? el("span", { cls: "tasks-calendar-dots", attrs: { "aria-hidden": "true" } }, ...list.slice(0, 3).map((x) => el("i", { cls: (x.done ? "done" : "") + (x.kind === "reminder" ? " rem" : "") }))) : null,
         list.length > 3 ? el("small", { cls: "tasks-calendar-more", attrs: { "aria-hidden": "true" }, textContent: "+" + (list.length - 3) }) : null,
         late ? el("i", { cls: "tasks-calendar-late", attrs: { "aria-hidden": "true" } }) : null,
         stars.length ? el("span", { cls: "tasks-calendar-star", attrs: { "aria-hidden": "true" }, textContent: "★" }) : null);
-      c.addEventListener("click", () => pickDay(key));
-      // double click: a new entry for that day in the quick-entry field
-      c.addEventListener("dblclick", () => prefill(new Date(key + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + " "));
-      const tipLines = [...stars.map((x) => "★ " + x), ...list.slice(0, 5).map((x) => (x.done ? "✓ " : x.kind === "reminder" ? "◷ " : "• ") + (isDateOnly(x.at) ? "" : hm(x.at) + " ") + x.text), ...(list.length > 5 ? [`и ещё ${list.length - 5}`] : [])];
-      if (tipLines.length || special) {
-        const show = () => {
-          calTip.replaceChildren(el("b", { textContent: new Date(key + "T12:00").toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" }) + (special ? " · " + (pd!.note ?? DAY_KIND[special]) : "") }), ...tipLines.map((x) => el("span", { textContent: x })));
-          calTip.hidden = false;
-          const box = calHost.getBoundingClientRect(), at = c.getBoundingClientRect();
-          calTip.style.top = at.bottom - box.top + 6 + "px";
-          calTip.style.left = Math.max(8, Math.min(box.width - calTip.offsetWidth - 8, at.left - box.left + at.width / 2 - calTip.offsetWidth / 2)) + "px";
-        };
-        c.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") show(); });
-        c.addEventListener("pointerleave", () => { calTip.hidden = true; });
-        c.addEventListener("focus", () => { if (c.matches(":focus-visible")) show(); });
-        c.addEventListener("blur", () => { calTip.hidden = true; });
-      }
-      c.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes(DRAG_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; c.classList.add("drop"); } });
-      c.addEventListener("dragleave", () => c.classList.remove("drop"));
-      c.addEventListener("drop", (e) => {
-        e.preventDefault(); c.classList.remove("drop");
-        const n = data?.notes.find((x) => x.id === e.dataTransfer?.getData(DRAG_TYPE));
-        if (n) moveToDay(n, key);
-      });
+      const lines = [...stars.map((x) => "★ " + x), ...list.slice(0, 5).map((x) => (x.done ? "✓ " : x.kind === "reminder" ? "◷ " : "• ") + (isDateOnly(x.at) ? "" : hm(x.at) + " ") + x.text), ...(list.length > 5 ? [`и ещё ${list.length - 5}`] : [])];
+      if (!outside && (lines.length || special)) calTips.set(key, { title: new Date(key + "T12:00").toLocaleDateString("ru-RU", { weekday: "short", day: "numeric", month: "long" }) + (special ? " · " + (pd!.note ?? DAY_KIND[special]) : ""), lines });
       return c;
     };
     const lead = (first.getDay() + 6) % 7, len = new Date(y!, mo!, 0).getDate();
@@ -838,21 +1070,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     for (let d = 1; d <= len; d++) cells.push(cell(`${UI.month}-${String(d).padStart(2, "0")}`, false));
     const lastKey = `${UI.month}-${String(len).padStart(2, "0")}`;
     for (let i = 1; (lead + len + i - 1) % 7 !== 0; i++) cells.push(cell(addDaysKey(lastKey, i), true));
-    const grid = el("div", { cls: "tasks-calendar-grid", attrs: { role: "group", "aria-label": "Дни месяца: стрелки — день, PageUp и PageDown — месяц, двойной щелчок — новое дело на этот день" } }, ...cells);
-    grid.addEventListener("keydown", (e) => {
-      const step = ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 } as Record<string, number>)[e.key];
-      if (step) { e.preventDefault(); pickDay(addDaysKey(UI.day, step), true); return; }
-      if (e.key === "PageUp" || e.key === "PageDown") {
-        e.preventDefault();
-        const d = new Date(UI.day + "T12:00"), want = d.getDate();
-        d.setDate(1); d.setMonth(d.getMonth() + (e.key === "PageUp" ? -1 : 1));
-        d.setDate(Math.min(want, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
-        pickDay(localDay(d), true);
-      }
-    });
-    // on a phone the month turns with a swipe
-    grid.addEventListener("pointerdown", (e) => { calSwipe = e.pointerType === "mouse" ? null : e.clientX; });
-    grid.addEventListener("pointerup", (e) => { if (calSwipe !== null && Math.abs(e.clientX - calSwipe) > 50) shiftMonth(e.clientX < calSwipe ? 1 : -1); calSwipe = null; });
+    // keyboard focus lands on the grid even when the selected day is in another month
+    if (!cells.some((c) => c.tabIndex === 0)) cells.find((c) => !c.classList.contains("outside"))!.tabIndex = 0;
+    grid.replaceChildren(...cells);
     const LEGEND: [string, string][] = [["holiday", "Праздник"], ["off", "Перенос"], ["short", "Сокращённый"], ["dot", "Есть дела"], ["late", "Не сделано"], ["star", "Дата из памяти"], ["heavy", "Перегруз"]];
     const legend = LEGEND.filter(([k]) => seen.has(k));
     const wh = automation?.weekHours ?? 40;
@@ -882,18 +1102,26 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       footer, calTip);
     calTip.hidden = true;
   }
+  /** The selected day: what is on it, what to do first, the hours. Folded, it asks the server nothing. */
+  let dayRun = 0;
   async function renderDay() {
-    const [plan, blocks, ins] = await Promise.all([UI.day === localDay(new Date()) ? api.taskPlan() : Promise.resolve(null), api.timeBlocks(UI.day), monthInsights(UI.day.slice(0, 7))]);
+    const run = ++dayRun;
     const dayName = new Date(UI.day + "T12:00").toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    const isToday = UI.day === localDay(new Date());
+    const rel = isToday ? "Сегодня" : UI.day === localDay(new Date(Date.now() + 86_400_000)) ? "Завтра" : null;
+    const head = () => cardHead(dayHost, "day", rel ?? dayName[0]!.toUpperCase() + dayName.slice(1), rel === "Завтра" ? el("small", { cls: "muted", textContent: dayName }) : null);
+    if (folded.has("day")) { dayHost.replaceChildren(head()); return; }
+    const [plan, blocks] = await Promise.all([isToday ? api.taskPlan() : Promise.resolve(null), api.timeBlocks(UI.day)]);
+    if (run !== dayRun) return; // another day was picked meanwhile
     const sel = prodDay(UI.day);
-    const dayItems = ins.ok ? ins.value.items.filter((x) => localDay(x.at) === UI.day).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)) : [];
+    const dayItems = data ? monthItems(visibleOrg(), UI.day.slice(0, 7), 0).items.filter((x) => localDay(x.at) === UI.day) : [];
     const open = data?.notes.filter((n) => n.kind === "todo" && !n.done && (!n.dueAt || localDay(n.dueAt) !== UI.day)) ?? [];
     const pick = el("select", { cls: "mem-select", attrs: { "aria-label": "Перенести дело на этот день" } }, el("option", { value: "", textContent: "＋ Перенести сюда дело…" }), ...open.map((n) => el("option", { value: n.id, textContent: n.text.slice(0, 80) })));
     pick.addEventListener("change", () => { const n = open.find((x) => x.id === pick.value); if (n) moveToDay(n, UI.day); });
-    const rel = UI.day === localDay(new Date()) ? "Сегодня" : UI.day === localDay(new Date(Date.now() + 86_400_000)) ? "Завтра" : null;
-    const parts: (Node | null)[] = [cardHead(dayHost, "day", rel ?? dayName[0]!.toUpperCase() + dayName.slice(1), rel === "Завтра" ? el("small", { cls: "muted", textContent: dayName }) : null),
-      sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null];
-    parts.push(dayItems.length
+    const parts: (Node | null)[] = [head(), sel ? el("p", { cls: "tasks-prod-day " + sel.kind, textContent: DAY_KIND[sel.kind] + (sel.note ? ". " + sel.note : "") }) : null];
+    // today's to-dos are already the «Сегодня» group of the list: here only how many
+    if (isToday) parts.push(el("p", { cls: "muted small", textContent: dayItems.length ? `На сегодня записей: ${dayItems.length}, они в списке в группе «Сегодня».` : "На сегодня ничего не запланировано." }));
+    else parts.push(dayItems.length
       ? el("ul", { cls: "tasks-plan-list" }, ...dayItems.map((x) => el("li", { cls: x.done ? "done" : "" }, el("span", { cls: "tasks-plan-time", textContent: isDateOnly(x.at) ? "весь день" : hm(x.at) }), el("span", { cls: "grow", textContent: (x.kind === "reminder" ? "◷ " : "") + x.text }))))
       : el("p", { cls: "muted small", textContent: "В этот день ничего не запланировано." }));
     if (open.length) parts.push(pick);
@@ -904,7 +1132,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     }
     if (blocks.ok && blocks.value.blocks.length) {
       const v = blocks.value;
-      parts.push(el("h3", { title: "Длительность берётся из поля «Минут» у дела, по умолчанию 30 минут, с 09:00 до 18:00." }, "По часам", el("small", { cls: "muted", textContent: ` в плане ${v.plannedMinutes} мин, свободно ${v.remainingMinutes}` })),
+      // today's minutes are in the hero's load bar; another day shows them here
+      const sumUp = isToday && automation?.dayHours ? null : el("small", { cls: "muted", textContent: ` в плане ${v.plannedMinutes} мин, свободно ${v.remainingMinutes}` });
+      parts.push(el("h3", { title: "Длительность берётся из поля «Минут» у дела, по умолчанию 30 минут, с 09:00 до 18:00." }, "По часам", sumUp),
         el("ol", { cls: "tasks-plan-list" }, ...v.blocks.slice(0, 5).map((b) => el("li", {}, el("span", { cls: "tasks-plan-time", textContent: hm(b.start) }), el("span", { cls: "grow", textContent: b.text }), el("span", { cls: "muted small", textContent: b.minutes + " мин" }))),
           v.blocks.length > 5 ? el("li", { cls: "muted small", textContent: `и ещё ${v.blocks.length - 5}, до ${hm(v.blocks[v.blocks.length - 1]!.start)}` }) : null));
     }
@@ -1022,20 +1252,26 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   let autoTab = (store.get(AUTO_TAB) ?? "morning") as AutoTab;
   if (!AUTO_TABS.some(([k]) => k === autoTab)) autoTab = "morning";
   let autoLog: AutoLogEntry[] | null = null;
-  const evidenceHost=el("div",{cls:"tasks-automation-evidence"});
-  const loadEvidence=async()=>{
-    const result=await api.automationEvidence();
-    if(!result.ok){evidenceHost.replaceChildren(el("p",{cls:"muted small",textContent:"Метрики временно недоступны"}));return;}
-    const v=result.value;
+  /** Above the log: three figures in plain words and the warnings, if any. */
+  const evidenceHost = el("div", { cls: "tasks-auto-evidence" });
+  const loadEvidence = async () => {
+    const r = await api.automationEvidence();
+    if (!r.ok) { evidenceHost.replaceChildren(); return; }
+    const v = r.value;
+    const fig = (n: number, label: string) => el("span", { cls: "tasks-auto-fig" }, el("b", { textContent: String(n) }), el("small", { cls: "muted", textContent: label }));
     evidenceHost.replaceChildren(
-      el("h3",{textContent:"Brain · проверяемые результаты"}),
-      el("p",{cls:"muted small",textContent:`Событий: ${v.totals.logged} · Действий отменено: ${v.totals.undone} · Автопереносов: ${v.totals.automaticMoves}`}),
-      el("p",{cls:"muted small",textContent:`Разрешения: автоперенос ${v.permissions.rollOverdue?"включён":"отключён"}, напоминания ${v.permissions.reminders?"включены":"отключены"}, правил ${v.permissions.rules}`}),
-      ...v.warnings.map(w=>el("p",{cls:"tasks-mission-next",textContent:w})),
-      el("p",{cls:"muted small",textContent:"Только наблюдение по журналу и истории задач. Не является обучением весов модели."}));
+      el("div", { cls: "tasks-auto-figs" }, fig(v.totals.logged, "действий"), fig(v.totals.automaticMoves, "переносов"), fig(v.totals.undone, "отменено вами")),
+      ...v.warnings.map((w) => el("p", { cls: "tasks-auto-warn small" }, icon("alert", 15), el("span", { textContent: w }))));
   };
 
   const loadLog = async () => { const r = await api.autoLog(); autoLog = r.ok ? r.value : []; if (autoTab === "log") { renderAuto(); void loadEvidence(); } };
+  /** Opens «Автоматика» in a window over the page. */
+  function openAuto() {
+    if (!automation) { showToast("Автоматика ещё загружается"); return; }
+    renderAuto();
+    autoSheet = openSheet({ title: "Автоматика", icon: "settings", sub: "Что JUUNIBI делает с делами сам", content: autoHost, onClose: () => { autoSheet = null; } });
+    if (autoTab === "log") void loadLog();
+  }
   const LOG_ICON: Record<AutoLogEntry["kind"], string> = { roll: "↷", remind: "⏰", brief: "☀", evening: "☾", week: "▦", quiet: "☁", arrange: "▤", move: "→", rule: "✦" };
   const WEEKDAY_NAMES = ["воскресенье", "понедельник", "вторник", "среду", "четверг", "пятницу", "субботу"];
   const ruleText = (r: AutoRule) => {
@@ -1090,7 +1326,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       toggle("Обещания из чата", "«завтра надо позвонить» в чате — карточка «Добавить в дела?»", a.chatPromises, (v) => ({ chatPromises: v }))];
     else if (autoTab === "evening") body = [
       toggle("Итог дня", "что сделано, что осталось, что завтра; остаток — на завтра одной кнопкой", a.evening, (v) => ({ evening: v }), timeField(a.eveningTime, "Время итога дня", !a.evening, "eveningTime")),
-      el("div", { cls: "row" }, btn("Итог сейчас", () => void act(() => api.runEvening(), "Итог дня готов"), { small: true, icon: "moon" }), btn("Открыть «Итог дня»", () => { evening = true; render(); heroHost.scrollIntoView({ behavior: "smooth" }); }, { small: true }))];
+      el("div", { cls: "row" }, btn("Итог сейчас", () => void act(() => api.runEvening(), "Итог дня готов"), { small: true, icon: "moon" }))];
     else if (autoTab === "week") body = [
       toggle("Обзор недели", `в воскресенье в ${a.eveningTime}: сделано, застряло, цели, что впереди`, a.weekly, (v) => ({ weekly: v })),
       selRow("Подталкивать к целям", "если цель не двигалась столько дней, сводка предложит следующий шаг", select("Подталкивать к целям", a.goalNudge, [[0, "Не подталкивать"], [3, "Через 3 дня"], [7, "Через неделю"], [14, "Через 2 недели"]], (v) => ({ goalNudge: v }))),
@@ -1107,7 +1343,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
             e.undo && !e.undone ? iconButton("undo", "Отменить: " + e.text, () => void act(() => api.undoAuto(e.id), "Отменено").then(() => loadLog()), "icon-btn sm") : null)))
         : el("p", { cls: "muted small", textContent: autoLog ? "Автоматика пока ничего не делала." : "Загрузка…" })];
     }
-    autoHost.replaceChildren(cardHead(autoHost, "auto", "Автоматика"), tabs, el("div", { cls: "tasks-auto-body", attrs: { role: "tabpanel" } }, ...body.filter((x): x is HTMLElement => !!x)));
+    autoHost.replaceChildren(tabs, el("div", { cls: "tasks-auto-body", attrs: { role: "tabpanel" } }, ...body.filter((x): x is HTMLElement => !!x)));
   }
   /** «Если — то»: the list of rules and a one-line form for a new one. */
   function rulesEditor(a: Automation): HTMLElement {
@@ -1159,22 +1395,70 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
 
   // ---------- toolbar and keys ----------
   const search = el("input", { type: "search", placeholder: "Поиск", value: UI.query, cls: "mem-search", attrs: { "aria-label": "Поиск по делам и заметкам" } });
-  const toolbar = el("div", { cls: "mem-toolbar" }, search, chipsHost);
-  search.addEventListener("input", () => { UI.query = search.value; render(); });
-  const perm = typeof Notification !== "undefined" && Notification.permission === "default"
-    ? btn("Уведомления", async () => { await Notification.requestPermission(); perm?.remove(); }, { small: true, icon: "alert", title: "Показывать напоминания уведомлениями системы, даже когда вкладка свёрнута" }) : null;
+  const projHost = el("div", { cls: "chips tasks-projects", attrs: { role: "group", "aria-label": "Проекты и цели" } });
+  const toolbar = el("div", { cls: "mem-toolbar tasks-toolbar" }, search, chipsHost, projHost);
+  // the list follows the typing after a short pause; the hero and the side do not move at all
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { UI.query = search.value; renderList(); }, 150); });
+  /** Shift+click (or Ctrl+click) on a to-do picks it for the bulk bar. */
+  const pickRow = (row: HTMLElement) => {
+    const id = row.dataset.id!;
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    row.classList.toggle("picked", selected.has(id));
+    renderBulk();
+  };
+  listHost.addEventListener("mousedown", (e) => { if (e.shiftKey && (e.target as HTMLElement).closest(".org-row[data-kind=todo]:not(.done)")) e.preventDefault(); });
+  listHost.addEventListener("click", (e) => {
+    if (!(e.shiftKey || e.ctrlKey || e.metaKey)) return;
+    const t = e.target as HTMLElement;
+    const row = t.closest<HTMLElement>(".org-row[data-kind=todo]:not(.done)");
+    if (!row || t.closest("button,input,select,summary,details,a,label")) return;
+    e.preventDefault();
+    pickRow(row);
+  });
+  /** Keys of the page, by the physical key so they work in the Russian layout too. */
   const onKey = (e: KeyboardEvent) => {
-    if (!root.isConnected) { removeEventListener("keydown", onKey); return; }
+    if (!root.isConnected) { removeEventListener("keydown", onKey); document.removeEventListener("pointerdown", closePops); return; }
     const tgt = e.target as HTMLElement | null;
-    if (e.ctrlKey || e.metaKey || e.altKey || app.get().chatOpen || (tgt && (tgt.closest("input,textarea,select,[contenteditable=true]")))) return;
-    if (e.key === "n" || e.key === "т") { e.preventDefault(); text.focus(); }
-    else if (e.key === "/") { e.preventDefault(); search.focus(); }
+    if (e.key === "Escape" && selected.size && !e.defaultPrevented && !document.querySelector(".mod-modal") && !tgt?.closest(".tasks-list input,.tasks-list select")) { e.preventDefault(); selected.clear(); renderList(); return; }
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || app.get().chatOpen || document.querySelector(".mod-modal") || (tgt && (tgt.closest("input,textarea,select,[contenteditable=true]")))) return;
+    const rows = () => [...listHost.querySelectorAll<HTMLElement>(".org-row[data-id]")];
+    const cur = tgt?.closest?.<HTMLElement>(".org-row[data-id]") && listHost.contains(tgt) ? tgt.closest<HTMLElement>(".org-row[data-id]") : null;
+    const go = (step: number) => {
+      const list = rows();
+      if (!list.length) return;
+      const i = cur ? list.indexOf(cur) : -1;
+      const next = list[i < 0 ? (step > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(list.length - 1, i + step))]!;
+      next.focus({ preventScroll: true });
+      next.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+    };
+    if (e.code === "KeyN") { e.preventDefault(); text.focus(); return; }
+    if (e.key === "/") { e.preventDefault(); search.focus(); return; }
+    if (e.code === "KeyJ" || (cur && e.key === "ArrowDown")) { e.preventDefault(); go(1); return; }
+    if (e.code === "KeyK" || (cur && e.key === "ArrowUp")) { e.preventDefault(); go(-1); return; }
+    if (!cur) return;
+    const press = (a: string) => cur.querySelector<HTMLElement>(`[data-act="${a}"]`)?.click();
+    if (e.key === " " || e.code === "Space") {
+      e.preventDefault();
+      const box = cur.querySelector<HTMLInputElement>("input[type=checkbox]");
+      if (box) { box.checked = !box.checked; box.dispatchEvent(new Event("change")); } else press("done");
+    } else if (e.code === "KeyE") { e.preventDefault(); press("edit"); }
+    else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); press("trash"); }
+    else if (e.code === "KeyT" && cur.dataset.kind === "todo") {
+      e.preventDefault();
+      const n = data?.notes.find((x) => x.id === cur.dataset.id);
+      if (n && !n.done) moveTo(n, moveTargets()[1]!.key);
+    } else if (e.code === "KeyX" && cur.dataset.kind === "todo" && !cur.classList.contains("done")) { e.preventDefault(); pickRow(cur); }
   };
   addEventListener("keydown", onKey);
-
+  /** One listener closes every open small menu of the page on a click outside it. */
+  const closePops = (e: Event) => {
+    if (!root.isConnected) { document.removeEventListener("pointerdown", closePops); return; }
+    for (const d of root.querySelectorAll<HTMLDetailsElement>("details.tasks-menu[open]")) if (!d.contains(e.target as Node)) d.open = false;
+  };
+  document.addEventListener("pointerdown", closePops);
   const root = el("div", { cls: "page tasks-page" },
-    el("header", { cls: "pg-head tasks-head" }, el("div", { cls: "pg-head-text" }, el("h1", { textContent: "Дела" })),
-      el("div", { cls: "row" }, btn("Итог дня", () => { evening = !evening; render(); }, { small: true, icon: "moon", title: "Что сделано сегодня и что перенести на завтра" }), perm)),
+    el("h1", { cls: "sr-only", textContent: "Дела" }),
     attHost,
     heroHost,
     el("div", { cls: "tasks-layout" },
@@ -1183,9 +1467,16 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         el("section", { cls: "pg-card tasks-quick" }, form),
         eveHost,
         toolbar,
+        bulkHost,
         listHost),
-      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, forecastHost, goalsHost, datesHost, autoHost)));
-  autoHost.hidden = true; datesHost.hidden = true;
+      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, forecastHost, goalsHost, datesHost)));
+  root.addEventListener("keydown", (e) => {
+    // Esc inside a small menu closes it and puts the focus back on its button
+    const d = (e.target as HTMLElement).closest?.<HTMLDetailsElement>("details.tasks-menu[open]");
+    if (e.key === "Escape" && d) { e.preventDefault(); d.open = false; d.querySelector("summary")?.focus(); }
+  });
+  datesHost.hidden = true;
+  paintFocus();
   render();
   renderAttention(app.get());
   void load();
