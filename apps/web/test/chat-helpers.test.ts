@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionSummary, COMMANDS, MAX_FILES, MAX_FILE_BYTES, chatToMarkdown, checkFile, clampRect, fenceFor, formatBytes, isTextFile, looksBinary, parseCommand, resizeRect, safeFileName, speechText, stepLabel, suggestCommands, withFiles } from "../src/chat/helpers";
+import { actionProgress, actionSummary, COMMANDS, MAX_FILES, MAX_FILE_BYTES, chatToMarkdown, checkFile, clampRect, fenceFor, formatBytes, isTextFile, looksBinary, parseCommand, resizeRect, safeFileName, speechText, stepLabel, suggestCommands, withFiles } from "../src/chat/helpers";
 import type { Conversation } from "../src/chat/chats";
 
 describe("slash commands", () => {
@@ -156,5 +156,19 @@ describe("AI action timeline", () => {
     expect(actionSummary([{ name: "thinking", status: "ok" }, { name: "search_memory", status: "ok" }])).toBe("Действия ИИ · готово: 2");
     expect(actionSummary([{ name: "search_memory", status: "error" }])).toBe("Действия ИИ · ошибок: 1");
     expect(actionSummary([{ name: "write", status: "denied" }])).toBe("Действия ИИ · отклонено: 1");
+  });
+});
+
+describe("AI action progress", () => {
+  it("counts only observed completed steps without claiming total execution progress", () => {
+    expect(actionProgress([{ status: "ok", ms: 500 }, { status: "running" }])).toEqual({
+      total: 2, done: 1, failed: 0, elapsed: 500, observedPercent: 50,
+    });
+  });
+  it("tracks errors and ignores invalid durations", () => {
+    expect(actionProgress([{ status: "error", ms: -20 }, { status: "denied", ms: 120 }])).toEqual({
+      total: 2, done: 2, failed: 2, elapsed: 120, observedPercent: 100,
+    });
+    expect(actionProgress([]).observedPercent).toBe(0);
   });
 });
