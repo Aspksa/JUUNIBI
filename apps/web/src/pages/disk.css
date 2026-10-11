@@ -330,7 +330,8 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 @media (max-width:1680px){
   .dk-layout{grid-template-columns:fit-content(360px) minmax(0,1fr)}
   .dk-layout.no-tree{grid-template-columns:minmax(0,1fr)}
-  .dk-layout>.dkl{grid-column:1/-1;grid-row:auto}
+  /* under the files the block rides over the sticky folder panel as the page scrolls, so it gets the page colour */
+  .dk-layout>.dkl{grid-column:1/-1;grid-row:auto;position:relative;z-index:1;background:var(--bg)}
   .dk-layout.with-info>.dkl{display:flex}
   .dk-info{position:fixed;top:0;right:0;bottom:0;z-index:96;width:min(380px,92vw);max-height:none;border-radius:var(--r-lg) 0 0 18px;box-shadow:-20px 0 50px -20px rgba(0,0,0,.5)}
 }
@@ -388,14 +389,8 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 
 /* ---------- «Жизнь документов»: the right column on wide screens, under the files otherwise; no inner scrollbars.
    Every tile, tab and highlight takes its group colour as --g; the charts come from life-charts.ts. */
-.dkl{display:flex;flex-direction:column;gap:20px;min-width:0;scroll-margin-top:16px;container-type:inline-size}
-.dkl-head{position:relative;overflow:hidden;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:18px 20px;border-radius:var(--r-xl);
-  border:1px solid var(--line-brand);background:radial-gradient(90% 160% at 0% 0%,color-mix(in srgb,var(--brand) 16%,transparent),transparent 60%),var(--surface)}
-.dkl-head::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 35%,color-mix(in srgb,#fff 6%,transparent) 50%,transparent 65%);background-size:250% 100%;animation:life-sheen 7s ease-in-out infinite}
-.dkl-mark{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:var(--r-lg);color:var(--brand);background:linear-gradient(135deg,color-mix(in srgb,var(--brand) 26%,transparent),color-mix(in srgb,var(--brand) 6%,transparent));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brand) 30%,transparent)}
-.dkl-title{flex:1 1 auto;min-width:0}
-.dkl-title h2{display:flex;align-items:center;gap:10px;margin:0;font-size:var(--fs-lg);letter-spacing:-.01em}
-.dkl-refresh{flex:none;width:38px;height:38px;border:1px solid var(--line);border-radius:999px}
+.dkl,.dkl-body{display:flex;flex-direction:column;gap:20px;min-width:0;scroll-margin-top:16px;container-type:inline-size}
+.dkl-refresh{flex:none;width:36px;height:36px;margin-left:auto;border:1px solid var(--line);border-radius:999px}
 .dkl-refresh.spin svg{animation:upd-turn .9s linear infinite}
 
 /* the two-tone glyphs */
@@ -421,25 +416,26 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dkl-hl-chart{align-self:stretch;margin-top:auto;padding-top:8px}
 .dkl-hl-chart .life-ring{position:absolute;top:14px;right:14px}
 
-/* group tabs: fifteen glyphs, each in a ring that fills with the share of figures that have data; the name below */
-.dkl-tabs{display:grid;grid-template-columns:repeat(15,minmax(0,1fr));gap:8px}
-.dkl-tab{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0;padding:10px 4px 9px;border:1px solid transparent;border-radius:var(--r-lg);background:transparent;color:inherit;font:inherit;text-align:center;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast)}
-.dkl-tab:hover{background:color-mix(in srgb,var(--g) 8%,transparent)}
+/* group tabs: fifteen equal cards in rows of five (glyph beside the name; above it in the narrow column), a bar along the bottom fills with the share of figures that have data */
+.dkl-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
+.dkl-tab{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast)}
+.dkl-tab:hover{border-color:color-mix(in srgb,var(--g) 45%,var(--line));background:color-mix(in srgb,var(--g) 6%,var(--surface))}
 .dkl-tab:hover .dkl-ic{transform:rotate(-8deg) scale(1.08)}
 .dkl-tab:focus-visible{outline:none;border-color:var(--g)}
-.dkl-tab[aria-selected=true]{border-color:color-mix(in srgb,var(--g) 55%,transparent);background:color-mix(in srgb,var(--g) 13%,var(--surface))}
-.dkl-tab-ring{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--g) calc(var(--p)*1%),color-mix(in srgb,var(--fg) 10%,transparent) 0)}
-.dkl-tab-ring .dkl-ic{width:40px;height:40px;border-radius:50%;
-  background:linear-gradient(140deg,color-mix(in srgb,var(--g) 24%,transparent),color-mix(in srgb,var(--g) 6%,transparent)),var(--surface);box-shadow:none}
-.dkl-tab-name{font-size:var(--fs-xs);font-weight:600;line-height:1.25;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.5em}
+.dkl-tab[aria-selected=true]{border-color:var(--g);background:color-mix(in srgb,var(--g) 12%,var(--surface));box-shadow:0 0 0 1px var(--g) inset}
+.dkl-tab .dkl-ic{width:38px;height:38px;border-radius:10px}
+.dkl-tab-name{font-size:var(--fs-xs);font-weight:600;line-height:1.25;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dkl-tab:hover .dkl-tab-name,.dkl-tab[aria-selected=true] .dkl-tab-name{color:var(--fg)}
+.dkl-tab-bar{position:absolute;left:12px;right:12px;bottom:6px;height:3px;border-radius:3px;background:color-mix(in srgb,var(--fg) 8%,transparent);overflow:hidden}
+.dkl-tab-bar::after{content:"";position:absolute;inset:0;width:calc(var(--p)*1%);border-radius:inherit;background:var(--g)}
 
-.dkl-group-head{display:flex;align-items:center;gap:12px;padding:2px}
+.dkl-group-head{display:flex;align-items:center;gap:12px;min-width:0}
+.dkl-group-text{min-width:0}
 .dkl-group-head h3{margin:0;font-size:var(--fs-base)}
 .dkl-group-head p{margin:2px 0 0;color:var(--muted);font-size:var(--fs-sm)}
 
 /* tiles */
-.dkl-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
+.dkl-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
 .dkl-tile{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:10px;min-width:0;padding:18px 16px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--surface);
   transition:transform var(--dur-fast),border-color var(--dur-fast),box-shadow var(--dur-fast);animation:life-rise .4s calc(var(--i)*35ms) ease backwards}
 .dkl-tile::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.55;transition:opacity var(--dur-fast);background:radial-gradient(110% 70% at 0% 0%,color-mix(in srgb,var(--g) 13%,transparent),transparent 60%)}
@@ -462,41 +458,38 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dkl-tile.is-empty::before{display:none}
 .dkl-tile.is-empty .dkl-ic{filter:grayscale(1);opacity:.55}
 .dkl-tile.is-empty .dkl-value{color:var(--muted)}
-.dkl-skeleton{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
+.dkl-skeleton{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
 .dkl-skeleton i{height:150px;border-radius:var(--r-lg);background:linear-gradient(90deg,var(--hover),color-mix(in srgb,var(--fg) 6%,transparent),var(--hover));background-size:200% 100%;animation:dk-shimmer 1.2s linear infinite}
 .dkl-empty{display:flex;align-items:center;gap:12px;padding:18px}
 .dkl-empty p{margin:0;color:var(--muted)}
 
 /* ten tiles a group: rows of five, two or one, never a lonely last row */
-@container (max-width:1100px){.dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr))}.dkl-tabs{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@container (max-width:1100px){.dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @container (max-width:980px){.dkl-grid,.dkl-skeleton{grid-template-columns:repeat(2,minmax(0,1fr))}}
-/* the narrow right column: a compact head, highlights without charts, two tiles a row */
+/* the narrow right column: one 10 px gap everywhere, highlights without charts, two tiles a row */
 @container (max-width:520px){
-  .dkl{gap:16px}
-  .dkl-head{padding:14px;gap:12px}
-  .dkl-mark{width:40px;height:40px}
-  .dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .dkl-body{gap:16px}
+  .dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .dkl-hl,.dkl-tabs,.dkl-grid,.dkl-skeleton{gap:10px}
   .dkl-hl-card{padding:12px;gap:2px}
   .dkl-hl-card .dkl-ic{width:30px;height:30px;border-radius:10px;margin-bottom:4px}
   .dkl-hl-card .dkl-ic svg{width:17px;height:17px}
   .dkl-hl-card b{font-size:var(--fs-base)}
   .dkl-hl-chart{display:none}
-  .dkl-grid{gap:12px}
   .dkl-tile{padding:14px;gap:8px}
   .dkl-tile .dkl-ic{width:34px;height:34px}
   .dkl-value{font-size:var(--fs-base)}
-  .dkl-tabs{gap:4px}
-  .dkl-tab{padding:8px 2px 7px;gap:6px}
-  .dkl-tab-ring{width:44px;height:44px}
-  .dkl-tab-ring .dkl-ic{width:37px;height:37px}
+  .dkl-tab{flex-direction:column;justify-content:flex-start;padding:10px 2px 13px;gap:6px;text-align:center}
+  .dkl-tab-name{letter-spacing:-.01em;min-height:2.5em}
+  .dkl-tab-bar{left:8px;right:8px}
+  .dkl-tab .dkl-ic{width:34px;height:34px}
 }
 @container (max-width:380px){.dkl-grid,.dkl-skeleton{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:640px){
-  .dkl-head{padding:14px}
   .dkl-hl-card{padding:12px}
   .dkl-hl-card b{font-size:var(--fs-lg)}
 }
 @media (prefers-reduced-motion:reduce){
-  .dkl-head::after,.dkl-hl-card,.dkl-tile,.dkl-skeleton i{animation:none}
+  .dkl-hl-card,.dkl-tile,.dkl-skeleton i{animation:none}
   .dkl-ic,.dkl-tile,.dkl-hl-card,.dkl-tab{transition:none}
 }

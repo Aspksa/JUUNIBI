@@ -62,11 +62,8 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
   let group = store.get();
   const body = el("div", { cls: "dkl-body" });
   const refreshBtn = iconButton("refresh", "Пересчитать показатели", () => void load(), "icon-btn dkl-refresh");
-  const head = el("header", { cls: "dkl-head" },
-    el("span", { cls: "dkl-mark" }, lifeGlyph("pulse", "core", 26)),
-    el("div", { cls: "dkl-title" }, el("h2", {}, "Жизнь документов", el("span", { cls: "life-pulse", attrs: { "aria-hidden": "true" } }))),
-    refreshBtn);
-  root.append(head, body);
+  // no title of its own: the block opens straight with the highlights; refresh sits by the open group's name
+  root.append(body);
 
   const color = (id: string) => data?.groups.find((g) => g.id === id)?.color ?? "var(--brand)";
   function flash(id: string) {
@@ -82,7 +79,7 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     refreshBtn.disabled = loading;
     if (!data) {
       body.replaceChildren(error
-        ? el("div", { cls: "life-empty dkl-empty" }, el("span", {}, icon("alert", 26)), el("p", { textContent: error }))
+        ? el("div", { cls: "life-empty dkl-empty" }, el("span", {}, icon("alert", 26)), el("p", { textContent: error }), refreshBtn)
         : el("div", { cls: "dkl-skeleton", attrs: { "aria-label": "Считаю показатели" } }, ...Array.from({ length: 10 }, () => el("i"))));
       return;
     }
@@ -110,10 +107,11 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     }));
     const tabs = el("div", { cls: "dkl-tabs", attrs: { role: "tablist", "aria-label": "Группы показателей" } }, ...d.groups.map((g) => {
       const ready = readyIn(d.metrics, g.id), total = d.metrics.filter((m) => m.group === g.id).length;
-      // the ring around the glyph fills with the share of figures that already have data
+      // the bar along the bottom fills with the share of figures that already have data
       const b = el("button", { type: "button", cls: "dkl-tab", attrs: { role: "tab", "aria-selected": String(g.id === group), title: `${g.title}: ${g.note} · с данными ${ready} из ${total}` } },
-        el("span", { cls: "dkl-tab-ring" }, el("span", { cls: "dkl-ic" }, lifeGlyph(g.icon, g.id, 20))),
-        el("span", { cls: "dkl-tab-name", textContent: g.title }));
+        el("span", { cls: "dkl-ic" }, lifeGlyph(g.icon, g.id, 20)),
+        el("span", { cls: "dkl-tab-name", textContent: g.title }),
+        el("i", { cls: "dkl-tab-bar", attrs: { "aria-hidden": "true" } }));
       b.style.setProperty("--g", g.color);
       b.style.setProperty("--p", String(total ? Math.round((100 * ready) / total) : 0));
       b.addEventListener("click", () => { group = g.id; store.set(group); render(); });
@@ -127,7 +125,7 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     });
     const g = d.groups.find((x) => x.id === group)!;
     const items = d.metrics.filter((m) => m.group === g.id);
-    const gh = el("div", { cls: "dkl-group-head" }, el("span", { cls: "dkl-ic lg" }, lifeGlyph(g.icon, g.id, 26)), el("div", {}, el("h3", { textContent: g.title }), el("p", { textContent: g.note })));
+    const gh = el("div", { cls: "dkl-group-head" }, el("span", { cls: "dkl-ic lg" }, lifeGlyph(g.icon, g.id, 26)), el("div", { cls: "dkl-group-text" }, el("h3", { textContent: g.title }), el("p", { textContent: g.note })), refreshBtn);
     gh.style.setProperty("--g", g.color);
     body.replaceChildren(hl, tabs, gh, el("div", { cls: "dkl-grid" }, ...items.map((m, i) => tile(m, g.color, i))));
   }
