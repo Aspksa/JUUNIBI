@@ -8,7 +8,7 @@ export type DiskEntry = { id:string; name:string; folder:string; size:number; up
 const LIMIT = 50 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
-  if (typeof name!=="string" || name.length>240 || name.split("/").some(part=>!part || part.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]+$/.test(part) || part==="." || part==="..") || name.includes("\\")) throw bad("Имя папки: до 80 букв или цифр, без пути");
+  if (typeof name!=="string" || name.length>240 || (name!=="" && name.split("/").some(part=>!part || part.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]+$/.test(part) || part==="." || part==="..")) || name.includes("\\")) throw bad("Имя папки: до 80 букв или цифр, без пути");
   return name.trim();
 };
 const validName = (v:unknown) => {
