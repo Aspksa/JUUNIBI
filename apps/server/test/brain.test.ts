@@ -35,6 +35,26 @@ describe("BrainCore", () => {
     expect(b.status().plans[0]?.status).toBe("failed");
   });
 
+  it("persists the failure checkpoint before rejecting a tool call", async () => {
+    let saved: string | null = null;
+    const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
+    const brain = new BrainCore(() => true, store);
+    const plan = brain.plan("check", ["look up"]);
+    await expect(brain.executeReadStep(plan.id, plan.steps[0]!.id, "search_memory", () => [], async () => { throw new Error("tool offline"); })).rejects.toThrow("tool offline");
+    const reloaded = new BrainCore(() => true, store);
+    await reloaded.load();
+    expect(reloaded.status().plans[0]?.steps[0]?.status).toBe("failed");
+  });
+  it("filters malformed persisted diagnostic records", async () => {
+    const state = JSON.stringify({ mode: "chat", plans: [], logs: [
+      {at:"invalid",planId:"x",stepId:"y",outcome:"bad"},
+      {at:"2026-10-12T09:00:00.000Z",planId:"p",stepId:"s",outcome:"verified"}
+    ] });
+    const brain = new BrainCore(() => true, { load: async () => state, save: async () => {} });
+    await brain.load();
+    expect(brain.history()).toHaveLength(1);
+  });
+
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };

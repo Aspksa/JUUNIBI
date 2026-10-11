@@ -275,7 +275,12 @@ export class BrainCore {
     this.mode = saved.mode === "agent" || saved.mode === "analysis" || saved.mode === "creative" ? saved.mode : "chat";
     if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2)) && (s.lastError === undefined || (typeof s.lastError === "string" && s.lastError.length <= 300))))) throw new Error("Некорректные планы");
     this.plans = (saved.plans as BrainPlan[]).map(p => { const interrupted = p.steps.some(s => s.status === "active"); return { ...p, status: interrupted ? "failed" as const : p.status === "running" ? "planned" as const : p.status, steps: p.steps.map(s => s.status === "active" ? { ...s, status: "failed" as const, lastError: "Выполнение прервано. Проверьте результат перед повтором." } : s) }; });
-    this.logs = saved.logs as typeof this.logs;
+    // Stored log data is external input: malformed entries must not leak into diagnostics.
+    this.logs = saved.logs.filter((e): e is (typeof this.logs)[number] =>
+      !!e && typeof e === "object" && typeof e.at === "string" &&
+      Number.isFinite(Date.parse(e.at)) && typeof e.planId === "string" &&
+      typeof e.stepId === "string" && typeof e.outcome === "string" &&
+      e.outcome.length <= 2500);
     this.decisions.load((state as { decisions?: unknown }).decisions);
     this.revisions.load((state as { revisions?: unknown }).revisions);
     this.recoveryTrials.load((state as {recoveryTrials?:unknown}).recoveryTrials);
@@ -332,6 +337,8 @@ export class BrainCore {
     } catch (error) {
       step.lastError = error instanceof Error ? error.message.slice(0, 300) : "Неизвестная ошибка";
       this.updateStep(planId, stepId, "failed");
+      // A failed tool must not be reported until its failure checkpoint is durable.
+      await this.flush();
       throw error;
     }
   }
