@@ -21,6 +21,10 @@ describe("chat stream robustness", () => {
     await streamChat({ message: "x", history: [] }, new AbortController().signal, (e) => { if (e.type === "delta") found.push(e.text); });
     expect(found).toEqual(["Привет"]);
   });
+  it("rejects unsupported stream event kinds", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(['{"type":"unexpected"}\\n'])));
+    await expect(streamChat({ message: "x", history: [] }, new AbortController().signal, () => {})).rejects.toThrow("Некорректное событие");
+  });
   it("rejects malformed NDJSON rather than silently losing events", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(["{broken}\n"])));
     await expect(streamChat({ message: "x", history: [] }, new AbortController().signal, () => {})).rejects.toThrow("Некорректное событие");
