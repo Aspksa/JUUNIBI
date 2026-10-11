@@ -301,7 +301,7 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
         try{localStorage.setItem(STORAGE_KEY,JSON.stringify([...changed]));}catch{/* private mode */}
       });
       return details;
-    }).filter((x):x is HTMLElement=>x!==null);
+    }).filter((x):x is HTMLDetailsElement=>x!==null);
     grid.replaceChildren(...blocks);
   };
   search.addEventListener("input",refresh);
