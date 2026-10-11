@@ -1,3 +1,4 @@
+import { recentContext } from "./context";
 import { Store } from "@juunibi/core";
 import { api } from "../api";
 import { app, refreshMemory } from "../state";
@@ -16,24 +17,12 @@ export class ChatController {
 
   get busy(): boolean { return this.store.get().busyId !== null; }
 
-  /** Stable bounded recall: newest finished turns are kept without overflowing model context. */
-  static recentContext(turns: { role: "user" | "assistant"; content: string }[], budget = 48_000) {
-    const kept: typeof turns = [];
-    let used = 0;
-    for (let i = turns.length - 1; i >= 0 && kept.length < 60; i--) {
-      const turn = turns[i]!;
-      if (used + turn.content.length > budget) break;
-      kept.unshift(turn); used += turn.content.length;
-    }
-    return kept;
-  }
-
   /** Conversation history the model should see: finished, non-empty turns only. */
   private historyBefore(convId: string, msgId?: string): { role: "user" | "assistant"; content: string }[] {
     const c = this.chats.get(convId);
     if (!c) return [];
     const upTo = msgId ? c.messages.findIndex((m) => m.id === msgId) : c.messages.length;
-    return ChatController.recentContext(c.messages.slice(0, upTo < 0 ? c.messages.length : upTo)
+    return recentContext(c.messages.slice(0, upTo < 0 ? c.messages.length : upTo)
       .filter((m): m is ChatMsg & { role: "user" | "assistant" } => m.role !== "note" && !!m.content.trim() && !m.error)
       .map((m) => ({ role: m.role, content: m.role === "user" ? withFiles(m.content, m.files) : m.content })));
   }
