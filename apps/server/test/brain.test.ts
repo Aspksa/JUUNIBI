@@ -274,6 +274,24 @@ describe("BrainCore", () => {
     expect(() => brain.previewExperiencePlan("missing")).toThrow("План не найден");
     expect(() => brain.previewExperiencePlan(p.id, "x".repeat(70))).toThrow();
   });
+  it("compares strategies using confirmed success and failure without acting", () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("архив резервной копии", ["проверить"]);
+    const ok = brain.recordDecision({goal:"архив резервной копии",chosen:"проверить файлы",reason:"доступно",predictedSuccess:true,taskType:"backup"});
+    const bad = brain.recordDecision({goal:"архив резервной копии",chosen:"удалить файлы",reason:"небезопасно",predictedSuccess:true,taskType:"backup"});
+    brain.confirmDecision(ok.id,"success");
+    brain.confirmDecision(bad.id,"failure");
+    brain.recordDecision({goal:"архив резервной копии",chosen:"удалить файлы",reason:"не подтверждено",predictedSuccess:true,taskType:"backup"});
+    const report = brain.compareExperienceStrategies(p.id,["проверить файлы","удалить файлы"],"backup");
+    expect(report.strategies.map(x=>x.option)).toEqual(["проверить файлы","удалить файлы"]);
+    expect(report.strategies.map(x=>x.score)).toEqual([1,-1]);
+    expect(report.strategies[0]?.insufficientEvidence).toBe(true);
+    expect(report.nextStepId).toBe(p.steps[0]!.id);
+    expect(report.requiresExplicitExecution).toBe(true);
+    expect(brain.status().plans[0]?.steps[0]?.status).toBe("pending");
+    expect(() => brain.compareExperienceStrategies(p.id,["dup","dup"])).toThrow();
+    expect(() => brain.compareExperienceStrategies("absent",["a","b"])).toThrow();
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
