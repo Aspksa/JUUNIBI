@@ -1,3 +1,4 @@
+import { diskPage } from "./pages/disk";
 import { Kernel, Logger } from "@juunibi/core";
 import { applyAccent } from "./accents";
 import { isHelpKey, openHotkeys } from "./hotkeys";
@@ -145,7 +146,7 @@ kernel.register({
     const sigFor = (s: AppState): string => {
       switch (s.route) {
         case "memory": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
-        case "modules": case "tasks": case "mobile": case "achievements": return ""; // the page loads and refreshes its own data
+        case "disk": case "modules": case "tasks": case "mobile": case "achievements": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
         case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.customAccent, s.uiRadius, s.uiScale, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
@@ -158,6 +159,7 @@ kernel.register({
       pageSig = sig;
       const page =
         BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
+        : s.route === "disk" ? diskPage()
         : s.route === "tasks" ? tasksPage({ go, openChat })
         : s.route === "achievements" ? achievementsPage({ back: () => go("tasks") })
         : s.route === "mobile" ? mobilePage()
