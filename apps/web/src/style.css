@@ -1941,3 +1941,13 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-extra-filters>summary::-webkit-details-marker{display:none}
 .disk-extra-filter-controls{position:absolute;z-index:16;right:0;top:calc(100% + 4px);display:grid;gap:8px;min-width:min(255px,85vw);padding:12px;border:1px solid var(--border,rgba(128,128,128,.25));border-radius:12px;background:var(--bg,#20202b);box-shadow:0 12px 35px rgba(0,0,0,.18)}
 .disk-extra-filter-controls .mem-input{width:100%;box-sizing:border-box;min-width:0}
+
+
+/* Disk 7.2: fixed-height windowed rows keep the DOM bounded in large lists. */
+.disk-files.disk-virtual{display:block;max-height:min(72vh,780px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;overflow-anchor:none}
+.disk-virtual-spacer{display:block;width:100%;pointer-events:none;visibility:hidden}
+.disk-virtual.disk-list>.disk-file{height:72px;min-height:0;box-sizing:border-box;margin:0;border-radius:7px;padding:8px 12px}
+.disk-virtual.disk-table>.disk-file{height:54px;min-height:0;box-sizing:border-box;margin:0;border-radius:5px;padding:4px 10px}
+.disk-virtual>.disk-file .disk-file-info{min-width:0;overflow:hidden}
+.disk-virtual>.disk-file .disk-file-info strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:680px){.disk-virtual.disk-list>.disk-file,.disk-virtual.disk-table>.disk-file{flex-wrap:nowrap;padding:4px 7px;gap:6px}.disk-virtual>.disk-file .disk-file-info small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}

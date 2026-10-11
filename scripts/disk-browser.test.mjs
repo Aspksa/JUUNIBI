@@ -55,5 +55,29 @@ try{
   await page.getByLabel("Минимальный размер в КБ").fill("1");
   assert.equal(await page.locator(".disk-file").count(),0);
   await page.getByLabel("Минимальный размер в КБ").fill("");
+  for(let i=0;i<250;i++)entries.push({
+    id:"33333333-3333-4333-8333-"+String(i).padStart(12,"0"),
+    name:"bulk-"+String(i).padStart(3,"0")+".txt",
+    folder:"Архив",size:100,uploadedAt:new Date().toISOString(),sha256:"c".repeat(64)
+  });
+  await page.reload();
+  await page.getByRole("button",{name:/Вид:/}).waitFor();
+  const refreshed=page.getByRole("button",{name:/Вид:/});
+  while((await refreshed.textContent())!=="Вид: Таблица")await refreshed.click();
+  await page.getByLabel("Искать по всем папкам").check();
+  await page.waitForTimeout(250);
+  console.log("Virtual state:",await page.evaluate(()=>({
+    mode:document.querySelector(".disk-files")?.className,
+    shown:document.querySelectorAll(".disk-file").length,
+    allFolders:(document.querySelector('input[aria-label="Искать по всем папкам"]'))?.checked,
+    status:document.querySelector(".disk-status-line")?.textContent
+  })));
+  await page.locator(".disk-virtual").waitFor();
+  const rows=page.locator(".disk-file");
+  assert.ok(await rows.count()<=48,"Virtual list must not render more than 48 rows");
+  const before=await rows.first().getAttribute("data-file-id");
+  await page.locator(".disk-files").evaluate(node=>{node.scrollTop=node.scrollHeight;node.dispatchEvent(new Event("scroll"));});
+  await page.waitForFunction(prev=>document.querySelector(".disk-file")?.getAttribute("data-file-id")!==prev,before);
+  assert.ok(await rows.count()<=48,"Virtual list must remain bounded after scrolling");
   console.log("Browser smoke passed: creation sort, recent files, destination picker");
 }finally{await browser?.close();if(process.platform==="win32")server.kill();else if(server.pid){try{process.kill(-server.pid,"SIGTERM");}catch{}}}

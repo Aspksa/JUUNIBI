@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {mkdtemp,rm} from "node:fs/promises";
+import {mkdtemp,rm,readFile,writeFile} from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import {LocalDisk} from "./local-disk";
@@ -236,6 +236,26 @@ describe("Local Disk",()=>{
      const target=disk.list("Target").files.filter(e=>e.name==="conflict.txt");
      expect(target).toHaveLength(1);
      expect(Buffer.from((await disk.download(target[0]!.id)).base64,"base64").toString()).toBe("two");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
+ it("opens an older index without revision metadata and upgrades safely on first change",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-legacy-index-"));
+   try{
+     const original=new LocalDisk(dir);
+     const e=await original.uploadBytes("legacy.txt","",Buffer.from("old"));
+     const index=path.join(dir,"index.json");
+     const legacy=JSON.parse(await readFile(index,"utf8")) as Record<string,unknown>;
+     delete legacy.versions;delete legacy.folderStyles;delete legacy.fileActions;
+     await writeFile(index,JSON.stringify(legacy));
+     const loaded=new LocalDisk(dir);await loaded.load();
+     expect(loaded.fileVersions(e.id).map(v=>v.revision)).toEqual([1]);
+     expect((await loaded.audit()).ok).toBe(1);
+     const next=await loaded.replaceStream(e.id,(async function*(){yield Buffer.from("new");})(),e.sha256);
+     expect(next.revision).toBe(2);
+     const again=new LocalDisk(dir);await again.load();
+     expect(again.fileVersions(e.id)).toHaveLength(2);
+     expect(Buffer.from((await again.download(e.id)).base64,"base64").toString()).toBe("new");
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
