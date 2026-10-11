@@ -382,6 +382,25 @@ export class BrainCore {
     this.persist();
     return this.executeReadStep(planId, stepId, action, readModules, searchMemory);
   }
+  /** Shared fail-closed validation across sequence, resume, and agent batch. */
+  private validatedPendingSuffix(planId: string) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    if (plan.status === "failed" || plan.status === "completed" ||
+      plan.steps.some(s => s.status === "active" || s.status === "failed"))
+      throw Object.assign(new Error("План требует проверки перед запуском"), { status: 409 });
+    const firstPending = plan.steps.findIndex(s => s.status === "pending");
+    if (firstPending < 0 || plan.steps.slice(0, firstPending).some(s => s.status !== "done") ||
+      plan.steps.slice(firstPending).some(s => s.status !== "pending"))
+      throw Object.assign(new Error("Нарушена последовательность шагов"), { status: 409 });
+    return { plan, firstPending };
+  }
+  private validateReadActions(actions: unknown, count: number) {
+    if (!Array.isArray(actions) || actions.length !== count ||
+      !actions.every(a => a === "list_modules" || a === "search_memory"))
+      throw Object.assign(new Error("Допускаются только безопасные действия чтения для выбранных шагов"), { status: 400 });
+    return actions as ("list_modules" | "search_memory")[];
+  }
   async executeSequence(planId: string, actions: unknown,
     readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
     const plan = this.plans.find(p => p.id === planId);
@@ -404,22 +423,12 @@ export class BrainCore {
    */
   async resumeReadSequence(planId: string, actions: unknown,
     readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
-    const plan = this.plans.find(p => p.id === planId);
-    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
-    if (plan.status === "failed" || plan.status === "completed" ||
-        plan.steps.some(s => s.status === "active" || s.status === "failed"))
-      throw Object.assign(new Error("Продолжение этого плана недоступно"), { status: 409 });
-    const firstPending = plan.steps.findIndex(s => s.status === "pending");
-    if (firstPending < 0 || plan.steps.slice(0, firstPending).some(s => s.status !== "done") ||
-        plan.steps.slice(firstPending).some(s => s.status !== "pending"))
-      throw Object.assign(new Error("Нарушена последовательность шагов"), { status: 409 });
-    if (!Array.isArray(actions) || actions.length !== plan.steps.length - firstPending ||
-        !actions.every(a => a === "list_modules" || a === "search_memory"))
-      throw Object.assign(new Error("Нужны только безопасные действия для оставшихся шагов"), { status: 400 });
+    const { plan, firstPending } = this.validatedPendingSuffix(planId);
+    const safeActions = this.validateReadActions(actions, plan.steps.length - firstPending);
     const results: unknown[] = [];
     for (let i = firstPending; i < plan.steps.length; i++) {
       const output = await this.executeReadStep(planId, plan.steps[i]!.id,
-        actions[i - firstPending], readModules, searchMemory);
+        safeActions[i - firstPending], readModules, searchMemory);
       results.push(output.result);
       await this.flush();
     }
@@ -430,25 +439,15 @@ export class BrainCore {
    */
   async executeAgentBatch(planId: string, actions: unknown, maxSteps: unknown,
     readModules: () => unknown, searchMemory: (query: string) => Promise<unknown>) {
-    const plan = this.plans.find(p => p.id === planId);
-    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
     if (!Number.isSafeInteger(maxSteps) || (maxSteps as number) < 1 || (maxSteps as number) > 5)
       throw Object.assign(new Error("Лимит выполнения: от 1 до 5 шагов"), { status: 400 });
-    if (plan.status === "failed" || plan.status === "completed" ||
-        plan.steps.some(s => s.status === "failed" || s.status === "active"))
-      throw Object.assign(new Error("План требует проверки перед запуском"), { status: 409 });
-    const firstPending = plan.steps.findIndex(s => s.status === "pending");
-    if (firstPending < 0 || plan.steps.slice(0, firstPending).some(s => s.status !== "done") ||
-        plan.steps.slice(firstPending).some(s => s.status !== "pending"))
-      throw Object.assign(new Error("Нарушена последовательность"), { status: 409 });
+    const { plan, firstPending } = this.validatedPendingSuffix(planId);
     const allowed = Math.min(maxSteps as number, plan.steps.length - firstPending);
-    if (!Array.isArray(actions) || actions.length !== allowed ||
-        !actions.every(a => a === "list_modules" || a === "search_memory"))
-      throw Object.assign(new Error("Разрешены только безопасные действия чтения для выбранного пакета"), { status: 400 });
+    const safeActions = this.validateReadActions(actions, allowed);
     const completed: { stepId: string; action: string }[] = [];
     for (let offset = 0; offset < allowed; offset++) {
       const step = plan.steps[firstPending + offset]!;
-      const action = actions[offset] as string;
+      const action = safeActions[offset]!;
       await this.executeReadStep(planId, step.id, action, readModules, searchMemory);
       await this.flush();
       completed.push({ stepId: step.id, action });
