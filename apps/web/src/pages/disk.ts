@@ -175,6 +175,28 @@ export function diskPage():HTMLElement {
     toolsDialog.showModal();
   };
   const toolsButton=button("Проверка файлов",()=>void openDiskTools());
+  const backupButton=button("Резервная копия файлов",()=>{
+    const link=document.createElement("a");
+    link.href="/api/disk/backup";link.download="JUUNIBI-backup.ndjson";
+    document.body.append(link);link.click();link.remove();
+    status.textContent="Загрузка полного архива с файлами и предыдущими версиями. Сохраните его на другом носителе.";
+  });
+  const restoreInput=el("input",{type:"file",accept:".ndjson,.jsonl",attrs:{"aria-label":"Выбрать резервный архив JUUNIBI"}});
+  restoreInput.hidden=true;
+  restoreInput.addEventListener("change",async()=>{
+    const file=restoreInput.files?.[0];if(!file)return;
+    restoreInput.value="";
+    if(!confirm("Восстановление разрешено только на пустом Диске. Данные архива будут проверены по SHA-256. Продолжить?"))return;
+    status.textContent="Проверка и восстановление файлов из архива…";
+    try{
+      const response=await fetch("/api/disk/backup/restore",{method:"POST",headers:{"Content-Type":"application/x-ndjson"},body:file});
+      const result=await response.json() as {files?:number;error?:string};
+      if(!response.ok)throw new Error(result.error??"Восстановление невозможно");
+      status.textContent="Восстановлено файлов: "+result.files;void refresh();
+    }catch(e){showToast(e instanceof Error?e.message:"Ошибка восстановления");}
+  });
+  const restoreBackupButton=button("Восстановить из копии",()=>restoreInput.click());
+  page.append(restoreInput);
   const exportButton=button("Экспорт каталога",async()=>{
     const r=await api.diskSnapshot();if(!r.ok){showToast(r.error.message);return;}
     const url=URL.createObjectURL(new Blob([JSON.stringify(r.value,null,2)],{type:"application/json"}));
@@ -664,7 +686,7 @@ export function diskPage():HTMLElement {
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
   const hideTree=button("Скрыть / показать дерево",()=>{treeHidden=!treeHidden;tree.hidden=treeHidden;});
   const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files,details));
-  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton,hideTree,clipboardButton,cutButton,pasteButton,undoButton,historyButton,extension,grouping),catalog);
+  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton,backupButton,restoreBackupButton,hideTree,clipboardButton,cutButton,pasteButton,undoButton,historyButton,extension,grouping),catalog);
   void refresh();
   return page;
 }
