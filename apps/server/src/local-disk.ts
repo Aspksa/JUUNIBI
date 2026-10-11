@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
+import { docxText } from "./docx-text";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
 export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string; objectId?:string; revision?:number };
@@ -705,8 +706,9 @@ export class LocalDisk {
     const data=await readFile(file);
     let text:string;
     if(ext==="pdf")text=pdfText(data);
+    else if(ext==="docx")text=docxText(data);
     else if(/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext))text=new TextDecoder().decode(data);
-    else throw bad("JUUNIBI читает только текстовые файлы и PDF",415);
+    else throw bad("JUUNIBI читает только текстовые файлы, PDF и DOCX",415);
     text=text.replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
     if(!text)throw bad(ext==="pdf"?"В этом PDF нет текстового слоя (скан или картинки)":"Файл пустой",422);
     return {name:entry.name,text:text.slice(0,max),truncated:text.length>max};
