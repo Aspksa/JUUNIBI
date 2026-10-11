@@ -3,7 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
-export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string };
+export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string };
 const LIMIT = 10 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
@@ -40,7 +40,7 @@ export class LocalDisk {
   }
   list(folder?:string){
     const f=folder===undefined?undefined:validFolder(folder);
-    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>f===undefined||e.folder===f).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),usedBytes:this.entries.reduce((n,e)=>n+e.size,0),maxFileBytes:LIMIT};
+    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0),maxFileBytes:LIMIT};
   }
   async createFolder(name:unknown){
     const f=validFolder(name);
@@ -65,26 +65,55 @@ export class LocalDisk {
   }
   async download(id:string){
     const entry=this.entries.find(x=>x.id===id);
-    if(!entry)throw bad("Файл не найден",404);
+    if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
     const data=await readFile(this.file(entry.id));
     if(createHash("sha256").update(data).digest("hex")!==entry.sha256)throw bad("Файл повреждён: контрольная сумма не совпадает",409);
     return {entry:{...entry},base64:data.toString("base64")};
   }
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
-    if(!entry)throw bad("Файл не найден",404);
+    if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
     const next=validName(name);
     if(next===entry.name)return {...entry};
     entry.name=next;
     await this.save();
     return {...entry};
   }
+  async toggleFavorite(id:string,favorite:unknown){
+    const entry=this.entries.find(x=>x.id===id&&!x.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(typeof favorite!=="boolean")throw bad("Ожидается favorite: true или false");
+    entry.favorite=favorite;
+    await this.save();return {...entry};
+  }
+  async moveFile(id:string,folder:unknown){
+    const entry=this.entries.find(x=>x.id===id&&!x.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    const next=validFolder(folder);
+    if(next&&!this.folders.includes(next))throw bad("Папка не найдена",404);
+    entry.folder=next;await this.save();return {...entry};
+  }
+  async restore(id:string){
+    const entry=this.entries.find(x=>x.id===id&&x.deletedAt);
+    if(!entry)throw bad("В корзине нет этого файла",404);
+    if(entry.folder&&!this.folders.includes(entry.folder))entry.folder="";
+    delete entry.deletedAt;
+    await this.save();return {...entry};
+  }
+  async purge(id:string){
+    const entry=this.entries.find(x=>x.id===id&&x.deletedAt);
+    if(!entry)throw bad("В корзине нет этого файла",404);
+    // Remove the object before deleting its index, so a failed filesystem operation remains retryable.
+    await rm(this.file(id));
+    this.entries=this.entries.filter(x=>x.id!==id);
+    await this.save();return {ok:true};
+  }
   async remove(id:string){
     const e=this.entries.find(x=>x.id===id);
     if(!e)throw bad("Файл не найден",404);
-    this.entries=this.entries.filter(x=>x.id!==id);
+    if(e.deletedAt)throw bad("Файл уже в корзине",409);
+    e.deletedAt=new Date().toISOString();
     await this.save();
-    await rm(this.file(e.id),{force:true});
     return {ok:true};
   }
 }
