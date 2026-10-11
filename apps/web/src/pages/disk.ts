@@ -8,6 +8,7 @@ import { api, diskRawUrl, type DiskFile, type DiskUploaded } from "../api";
 import { el, iconButton } from "../dom";
 import { showToast } from "../toast";
 import { openChronicles } from "./disk-chronicles";
+import { diskLifePanel } from "./disk-life";
 import { askConfirm, askText, pickFolder } from "./disk-dialogs";
 import { dIcon, fileBadge, KIND_COLOR, type DiskIconName } from "./disk-icons";
 import {
@@ -1100,6 +1101,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     renderTree();
     renderTrashBar();
     renderFiles();
+    life.refresh();
     if (infoId && !byId(infoId)) closeInfo();
   }
   let loadGen = 0;
@@ -1166,7 +1168,9 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   });
 
   /* ---------------------------------------------------------------- assemble */
-  const layout = el("div", { cls: "dk-layout" + (treeHidden ? " no-tree" : "") }, side, main, info);
+  const life = diskLifePanel(() => all, () => folders, () => trash);
+  const right = el("div", { cls: "dk-right" }, life.root, info);
+  const layout = el("div", { cls: "dk-layout with-life" + (treeHidden ? " no-tree" : "") }, side, main, right);
   page.append(hero, bar, layout, scrim, uploader.root, picker, restorePicker);
   renderFiles();
   void loadCatalog();
