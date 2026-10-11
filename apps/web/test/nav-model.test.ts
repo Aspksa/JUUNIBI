@@ -11,14 +11,14 @@ const brief = (o: Partial<Brief> = {}): Brief => ({ now: "", due: [], today: [],
 describe("menu prefs", () => {
   it("default: three groups, chat and tasks first, settings last", () => {
     const p = cleanPrefs(null);
-    expect(arrange(p).map((g) => g.items.map((n) => n.id))).toEqual([["chat", "tasks"], ["brain", "modules"], ["mobile", "update", "settings"]]);
+    expect(arrange(p).map((g) => g.items.map((n) => n.id))).toEqual([["chat", "tasks", "disk"], ["brain", "modules"], ["mobile", "update", "settings"]]);
     expect(p.collapsed).toBe(false);
   });
   it("repairs stored junk: unknown ids dropped, missing ones added, settings never hidden", () => {
     const p = cleanPrefs({ collapsed: true, order: ["update", "nope", "update", 5], hidden: ["settings", "modules", "x"] });
     expect(p.collapsed).toBe(true);
     expect(p.order[0]).toBe("update");
-    expect(new Set(p.order).size).toBe(7);
+    expect(new Set(p.order).size).toBe(8);
     expect(p.hidden).toEqual(["modules"]);
     expect(cleanPrefs("garbage")).toEqual(cleanPrefs(null));
   });
@@ -27,7 +27,7 @@ describe("menu prefs", () => {
     p = move(p, "settings", -1);
     expect(arrange(p)[2]!.items.map((n) => n.id)).toEqual(["mobile", "settings", "update"]);
     expect(move(p, "chat", -1)).toBe(p); // already first
-    expect(arrange(move(p, "tasks", -1))[0]!.items.map((n) => n.id)).toEqual(["tasks", "chat"]);
+    expect(arrange(move(p, "tasks", -1))[0]!.items.map((n) => n.id)).toEqual(["tasks", "chat", "disk"]);
   });
   it("drag and drop places before a target of the same group, or last", () => {
     const p = cleanPrefs(null);
@@ -39,7 +39,7 @@ describe("menu prefs", () => {
     const p = toggleHidden(cleanPrefs(null), "modules");
     expect(ids(p)).not.toContain("modules");
     expect(arrange(p, true)[1]!.items.map((n) => n.id)).toContain("modules");
-    expect(hotkeyLabel(p, "mobile")).toBe("Alt+4");
+    expect(hotkeyLabel(p, "mobile")).toBe("Alt+5");
     expect(toggleHidden(p, "modules").hidden).toEqual([]);
     expect(toggleHidden(p, "settings")).toBe(p);
   });
@@ -47,9 +47,10 @@ describe("menu prefs", () => {
     const p = cleanPrefs(null);
     expect(itemForDigit(p, "Digit1")?.id).toBe("chat");
     expect(itemForDigit(p, "Numpad2")?.id).toBe("tasks");
-    expect(itemForDigit(p, "Digit8")).toBeNull();
+    expect(itemForDigit(p, "Digit8")?.id).toBe("settings");
+    expect(itemForDigit(p, "Digit9")).toBeNull();
     expect(itemForDigit(p, "KeyA")).toBeNull();
-    expect(hotkeyLabel(p, "settings")).toBe("Alt+7");
+    expect(hotkeyLabel(p, "settings")).toBe("Alt+8");
   });
 });
 

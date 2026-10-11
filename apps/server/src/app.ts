@@ -1,3 +1,4 @@
+import type { LocalDisk } from "./local-disk";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -55,6 +56,7 @@ export interface AppDeps {
   settings?: AssistantSettingsStore;
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
+  disk?: LocalDisk;
   /** «Дела и достижения»: figures, awards, records, the time machine. */
   achievements?: Achievements;
   /** «Жизнь проекта»: figures about the project's history for the «Обновление» page. */
@@ -171,6 +173,19 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
       if (p.startsWith("/api/")) {
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
         const a = deps.getAssistant?.() ?? deps.assistant;
+        if (p.startsWith("/api/disk")) {
+          const disk=deps.disk;
+          if(!disk)return send(res,503,{error:"Диск недоступен"});
+          if(req.method==="GET"&&p==="/api/disk")return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
+          if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
+          if(req.method==="POST"&&p==="/api/disk/files"){const body=await readJson(req,14*1024*1024);return send(res,201,await disk.upload(body.name,body.folder,body.base64));}
+          const parts=p.split("/");
+          if(parts.length===5&&parts[3]==="files"&&/^[a-f0-9-]{36}$/.test(parts[4]??"")){
+            if(req.method==="GET")return send(res,200,await disk.download(parts[4]!));
+            if(req.method==="DELETE")return send(res,200,await disk.remove(parts[4]!));
+          }
+          return send(res,404,{error:"Не найдено"});
+        }
         if (req.method === "GET" && p === "/api/status") return send(res, 200, { assistant: !!a, ...deps.configured, ...(deps.cloudStatus ? { model: deps.cloudStatus().model } : {}) });
         if (req.method === "GET" && p === "/api/cloudru/models") {
           if (!deps.cloudModels) return send(res, 503, { error: "Список моделей недоступен" });
