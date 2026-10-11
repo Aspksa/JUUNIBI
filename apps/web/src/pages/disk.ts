@@ -283,7 +283,7 @@ export function diskPage():HTMLElement {
       return node;
     };
     tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),
-      draw("",0),...((children.get("")??[]).map(p=>draw(p,1))),
+      draw("",0),
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
       button("Корзина · "+trash.length,()=>{viewFilter="trash";current="";void refresh();}));
   };
