@@ -190,7 +190,7 @@ const evals = new EvalService(evalHistory, {
 });
 const openable = new OpenableUrls();
 const disk = new LocalDisk(path.join(dataDir,"disk"));
-await disk.load();
+await loadOrQuarantine("Диск", path.join(dataDir, "disk", "index.json"), () => disk.load());
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());

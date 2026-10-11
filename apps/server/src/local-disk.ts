@@ -30,11 +30,57 @@ export class LocalDisk {
   private writes:Promise<void>=Promise.resolve();
   /** Days a file stays in the trash before it is removed for good; 0 keeps it until the owner empties the trash. */
   private trashDays=30;
+  private mutations:Promise<void>=Promise.resolve();
+  private async acquireMutation(){
+    const previous=this.mutations;
+    let release!:()=>void;
+    this.mutations=new Promise<void>(resolve=>{release=resolve;});
+    await previous;
+    return release;
+  }
+  private state(){return structuredClone({entries:this.entries,versions:this.versions,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders,trashDays:this.trashDays});}
+  /** Serialize whole operations, including streamed input, and restore rejected in-memory edits. */
+  private async mutate<T>(operation:()=>Promise<T>):Promise<T>{
+    const release=await this.acquireMutation();
+    try{
+      const before=this.state();
+      try{return await operation();}catch(error){Object.assign(this,before);throw error;}
+    }finally{release();}
+  }
   constructor(private readonly root:string) {}
+
+  importBackup(lines:AsyncIterable<string>) { return this.mutate(() => this.importBackupUnlocked(lines)); }
+  createFolder(name:unknown) { return this.mutate(() => this.createFolderUnlocked(name)); }
+  renameFolder(oldName:unknown,newName:unknown) { return this.mutate(() => this.renameFolderUnlocked(oldName,newName)); }
+  moveFolder(from:unknown,parent:unknown) { return this.mutate(() => this.moveFolderUnlocked(from,parent)); }
+  setFolderStyle(name:unknown,color:unknown,pinned:unknown,cover:unknown) { return this.mutate(() => this.setFolderStyleUnlocked(name,color,pinned,cover)); }
+  copyFolder(source:unknown,parent:unknown) { return this.mutate(() => this.copyFolderUnlocked(source,parent)); }
+  restoreFolder(name:unknown) { return this.mutate(() => this.restoreFolderUnlocked(name)); }
+  trashFolder(name:unknown) { return this.mutate(() => this.trashFolderUnlocked(name)); }
+  upload(name:unknown,folder:unknown,data:unknown) { return this.mutate(() => this.uploadUnlocked(name,folder,data)); }
+  uploadStream(name:unknown,folder:unknown,stream:AsyncIterable<Buffer>) { return this.mutate(() => this.uploadStreamUnlocked(name,folder,stream)); }
+  uploadBytes(name:unknown,folder:unknown,buf:Buffer) { return this.mutate(() => this.uploadBytesUnlocked(name,folder,buf)); }
+  setMetadata(id:string,input:{tags?:unknown;color?:unknown;note?:unknown}) { return this.mutate(() => this.setMetadataUnlocked(id,input)); }
+  syncFolders(from:unknown,to:unknown,apply:unknown=false) { return this.mutate(() => this.syncFoldersUnlocked(from,to,apply)); }
+  copyFile(id:string,folder:unknown) { return this.mutate(() => this.copyFileUnlocked(id,folder)); }
+  undoFileChange() { return this.mutate(() => this.undoFileChangeUnlocked()); }
+  replaceStream(id:string,stream:AsyncIterable<Buffer>,expectedSha256?:unknown) { return this.mutate(() => this.replaceStreamUnlocked(id,stream,expectedSha256)); }
+  restoreFileVersion(id:string,revision:unknown) { return this.mutate(() => this.restoreFileVersionUnlocked(id,revision)); }
+  renameFile(id:string,name:unknown) { return this.mutate(() => this.renameFileUnlocked(id,name)); }
+  toggleFavorite(id:string,favorite:unknown) { return this.mutate(() => this.toggleFavoriteUnlocked(id,favorite)); }
+  moveFile(id:string,folder:unknown) { return this.mutate(() => this.moveFileUnlocked(id,folder)); }
+  restore(id:string) { return this.mutate(() => this.restoreUnlocked(id)); }
+  purge(id:string) { return this.mutate(() => this.purgeUnlocked(id)); }
+  bulk(ids:unknown, action:unknown, folder?:unknown) { return this.mutate(() => this.bulkUnlocked(ids,action,folder)); }
+  remove(id:string) { return this.mutate(() => this.removeUnlocked(id)); }
+  setTrashDays(days:unknown) { return this.mutate(() => this.setTrashDaysUnlocked(days)); }
+  emptyTrash(olderThanMs?:number,now=Date.now()) { return this.mutate(() => this.emptyTrashUnlocked(olderThanMs,now)); }
+
   private get index(){return path.join(this.root,"index.json");}
   private objectPath(id:string){return path.join(this.root,"objects",id);}
   private file(id:string){const entry=this.entries.find(e=>e.id===id);return this.objectPath(entry?.objectId??id);}
   async load(){
+    const before=this.state();
     try {
       const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[];trashDays?:number};
       if(raw.versions&&typeof raw.versions==="object")this.versions=raw.versions;
@@ -45,7 +91,7 @@ export class LocalDisk {
       if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
       if(Number.isInteger(raw.trashDays)&&raw.trashDays!>=0&&raw.trashDays!<=365)this.trashDays=raw.trashDays!;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
-    }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
+    }catch(e){Object.assign(this,before);if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
     const content=JSON.stringify({versions:this.versions,entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders,trashDays:this.trashDays});
@@ -60,6 +106,10 @@ export class LocalDisk {
 
   /** Portable newline-delimited archive: immutable object checksums are verified on both sides. */
   async *exportBackup():AsyncGenerator<string>{
+    const release=await this.acquireMutation();
+    try{yield* this.exportBackupUnlocked();}finally{release();}
+  }
+  private async *exportBackupUnlocked():AsyncGenerator<string>{
     const state={
       entries:this.entries.map(e=>({...e})),
       versions:JSON.parse(JSON.stringify(this.versions)) as Record<string,DiskRevision[]>,
@@ -88,7 +138,7 @@ export class LocalDisk {
     yield JSON.stringify({type:"complete",objects:count})+"\n";
   }
   /** Restore only to an empty vault; validate all bytes before committing the new index. */
-  async importBackup(lines:AsyncIterable<string>){
+  private async importBackupUnlocked(lines:AsyncIterable<string>){
     if(this.entries.length||this.folders.length||Object.keys(this.versions).length)throw bad("Для восстановления требуется пустой Диск",409);
     const staged:string[]=[];const verified=new Map<string,{size:number;sha256:string}>();let committed=false;let manifest:unknown=null;let active:{id:string;size:number;sha256:string;bytes:number;hash:ReturnType<typeof createHash>;handle:Awaited<ReturnType<typeof open>>}|null=null;
     let count=0,complete=false;
@@ -129,6 +179,15 @@ export class LocalDisk {
       const entries=state.entries as DiskEntry[];
       const versions=state.versions as Record<string,DiskRevision[]>;
       const folders=state.folders as string[];
+      const deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
+      const deletedPaths=new Set<string>();
+      for(const item of deletedFolders){
+        if(!item||!item.root||validFolder(item.root)!==item.root||!Array.isArray(item.paths)||!item.paths.includes(item.root)||typeof item.at!=="string"||!Number.isFinite(Date.parse(item.at)))throw bad("Некорректная удалённая папка",409);
+        for(const folder of item.paths){
+          if(!folder||validFolder(folder)!==folder||(folder!==item.root&&!folder.startsWith(item.root+"/")))throw bad("Некорректный путь удалённой папки",409);
+          deletedPaths.add(folder);
+        }
+      }
       const referenced=new Set<string>();
       const entryIds=new Set<string>();
       for(const e of entries){
@@ -136,7 +195,7 @@ export class LocalDisk {
         if(typeof e.id!=="string"||!/^[0-9a-f-]{36}$/.test(e.id)||!Number.isSafeInteger(e.size)||e.size<0||e.size>LIMIT||!/^[0-9a-f]{64}$/.test(e.sha256))throw bad("Некорректный файл в индексе");
         if(entryIds.has(e.id))throw bad("Повторный идентификатор файла",409);
         entryIds.add(e.id);
-        if(e.folder&&!folders.includes(e.folder))throw bad("Отсутствует каталог файла",409);
+        if(e.folder&&!folders.includes(e.folder)&&!(e.deletedAt&&deletedPaths.has(e.folder)))throw bad("Отсутствует каталог файла",409);
         const object=verified.get(e.objectId??e.id);
         if(!object||object.size!==e.size||object.sha256!==e.sha256)throw bad("Индекс не совпадает с содержимым файла",409);
         referenced.add(e.objectId??e.id);
@@ -153,10 +212,10 @@ export class LocalDisk {
       for(const folder of folders)if(!folder||validFolder(folder)!==folder)throw bad("Некорректная папка архива");
       this.entries=entries;this.folders=folders;this.versions=versions;
       this.folderStyles=(state.folderStyles??{}) as typeof this.folderStyles;
-      this.deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
+      this.deletedFolders=deletedFolders;
+      if(state.trashDays!==undefined){if(!Number.isInteger(state.trashDays)||Number(state.trashDays)<0||Number(state.trashDays)>365)throw bad("Некорректный срок хранения корзины",409);this.trashDays=Number(state.trashDays);}
       this.folderActions=Array.isArray(state.folderActions)?state.folderActions as typeof this.folderActions:[];
       this.fileActions=Array.isArray(state.fileActions)?state.fileActions as typeof this.fileActions:[];
-      if(Number.isInteger(state.trashDays)&&(state.trashDays as number)>=0&&(state.trashDays as number)<=365)this.trashDays=state.trashDays as number;
       await this.save();committed=true;
       return {files:entries.length,folders:folders.length,objects:count};
     }catch(e){
@@ -173,7 +232,7 @@ export class LocalDisk {
     const f=folder===undefined?undefined:validFolder(folder);
     return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0),maxFileBytes:LIMIT};
   }
-  async createFolder(name:unknown){
+  private async createFolderUnlocked(name:unknown){
     const f=validFolder(name);
     if(!f)throw bad("Укажите название папки");
     if(this.folders.includes(f))throw bad("Такая папка уже есть",409);
@@ -182,7 +241,7 @@ export class LocalDisk {
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
     this.folders.push(f);this.folderStyles[f]={color:"#b89cff",pinned:false,cover:"",createdAt:new Date().toISOString()};this.logFolder("create",f);await this.save();return {name:f};
   }
-  async renameFolder(oldName:unknown,newName:unknown){
+  private async renameFolderUnlocked(oldName:unknown,newName:unknown){
     const from=validFolder(oldName),to=validFolder(newName);
     if(!from||!to||!this.folders.includes(from))throw bad("Папка не найдена",404);
     if(from===to)return {name:from};
@@ -191,6 +250,7 @@ export class LocalDisk {
     if(parent&&!this.folders.includes(parent))throw bad("Родительская папка не найдена",404);
     const affected=this.folders.filter(f=>f===from||f.startsWith(from+"/"));
     const renamed=(f:string)=>to+f.slice(from.length);
+    for(const f of affected)validFolder(renamed(f));
     if(this.folders.some(f=>!affected.includes(f)&&affected.some(a=>renamed(a)===f)))throw bad("Папка с таким именем уже существует",409);
     this.folders=this.folders.map(f=>affected.includes(f)?renamed(f):f);
     for(const f of affected){if(this.folderStyles[f]){this.folderStyles[renamed(f)]=this.folderStyles[f]!;delete this.folderStyles[f];}}
@@ -198,13 +258,13 @@ export class LocalDisk {
     this.logFolder("rename",from,to);await this.save();return {name:to};
   }
   /** Move an entire branch, reusing collision checks in renameFolder. */
-  async moveFolder(from:unknown,parent:unknown){
+  private async moveFolderUnlocked(from:unknown,parent:unknown){
     const src=validFolder(from),dest=validFolder(parent);
     if(!src||!this.folders.includes(src))throw bad("Папка не найдена",404);
     if(dest&&!this.folders.includes(dest))throw bad("Папка назначения не найдена",404);
-    return this.renameFolder(src,(dest?dest+"/":"")+src.split("/").pop()!);
+    return this.renameFolderUnlocked(src,(dest?dest+"/":"")+src.split("/").pop()!);
   }
-  async setFolderStyle(name:unknown,color:unknown,pinned:unknown,cover:unknown){
+  private async setFolderStyleUnlocked(name:unknown,color:unknown,pinned:unknown,cover:unknown){
     const folder=validFolder(name);
     if(!this.folders.includes(folder))throw bad("Папка не найдена",404);
     if(typeof color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(color))throw bad("Неверный цвет");
@@ -215,14 +275,16 @@ export class LocalDisk {
     this.logFolder("style",folder);await this.save();return {name:folder,...this.folderStyles[folder]};
   }
   folderDecorations(){return {...this.folderStyles};}
-  async copyFolder(source:unknown,parent:unknown){
+  private async copyFolderUnlocked(source:unknown,parent:unknown){
     const from=validFolder(source),toParent=validFolder(parent);
     if(!from||!this.folders.includes(from))throw bad("Папка не найдена",404);
     if(toParent&&!this.folders.includes(toParent))throw bad("Папка назначения не найдена",404);
-    const original=(toParent?toParent+"/":"")+from.split("/").pop()!;
-    let target=original+" - копия",number=2;
-    while(this.folders.includes(target)){target=original+" - копия "+number++;if(number>1000)throw bad("Нельзя выбрать имя копии",409);}
+    const prefix=toParent?toParent+"/":"",base=from.split("/").pop()!;
+    const copyName=(number:number)=>{const suffix=" - копия"+(number===1?"":" "+number);return prefix+base.slice(0,80-suffix.length).trimEnd()+suffix;};
+    let target=copyName(1),number=2;
+    while(this.folders.includes(target)){target=copyName(number++);if(number>1000)throw bad("Нельзя выбрать имя копии",409);}
     const folders=this.folders.filter(f=>f===from||f.startsWith(from+"/"));
+    for(const folder of folders)validFolder(target+folder.slice(from.length));
     const entries=this.entries.filter(e=>!e.deletedAt&&(e.folder===from||e.folder.startsWith(from+"/")));
     if(this.folders.length+folders.length>100||this.entries.length+entries.length>1000)throw bad("Превышен лимит хранилища",409);
     const copied:string[]=[];
@@ -235,12 +297,16 @@ export class LocalDisk {
       }
     }catch(e){for(const id of copied)await rm(this.file(id),{force:true});throw e;}
     this.folders.push(...folders.map(f=>target+f.slice(from.length)));
-    for(const folder of folders)this.folderStyles[target+folder.slice(from.length)]={...(this.folderStyles[folder]??{color:"#b89cff",pinned:false,cover:""}),createdAt:new Date().toISOString()};
+    const copiedIds=new Map(entries.map((e,i)=>[e.id,copied[i]!]));
+    for(const folder of folders){
+      const style=this.folderStyles[folder]??{color:"#b89cff",pinned:false,cover:""};
+      this.folderStyles[target+folder.slice(from.length)]={...style,cover:copiedIds.get(style.cover)??"",createdAt:new Date().toISOString()};
+    }
     this.entries.push(...entries.map((e,i)=>{const copy={...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString(),revision:1};delete copy.objectId;return copy;}));
     this.logFolder("copy",from,target,copied.length);await this.save();return {name:target,files:copied.length};
   }
   listDeletedFolders(){return this.deletedFolders.map(({root,paths,at})=>({root,count:paths.length,at}));}
-  async restoreFolder(name:unknown){
+  private async restoreFolderUnlocked(name:unknown){
     const root=validFolder(name),index=this.deletedFolders.findIndex(f=>f.root===root);
     if(index<0)throw bad("Удалённая папка не найдена",404);
     const item=this.deletedFolders[index]!;
@@ -253,7 +319,7 @@ export class LocalDisk {
     this.deletedFolders.splice(index,1);
     this.logFolder("restore",root);await this.save();return {root,files:this.entries.filter(e=>!e.deletedAt&&(e.folder===root||e.folder.startsWith(root+"/"))).length};
   }
-  async trashFolder(name:unknown){
+  private async trashFolderUnlocked(name:unknown){
     const folder=validFolder(name);
     if(!folder||!this.folders.includes(folder))throw bad("Папка не найдена",404);
     const entries=this.entries.filter(e=>!e.deletedAt&&(e.folder===folder||e.folder.startsWith(folder+"/")));
@@ -266,7 +332,7 @@ export class LocalDisk {
     this.folders=this.folders.filter(f=>!paths.includes(f));
     this.logFolder("trash",folder,undefined,entries.length);await this.save();return {files:entries.length,folder};
   }
-  async upload(name:unknown,folder:unknown,data:unknown){
+  private async uploadUnlocked(name:unknown,folder:unknown,data:unknown){
     const filename=validName(name), f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
     if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит 50 МБ",413);
@@ -295,7 +361,7 @@ export class LocalDisk {
     return ids;
   }
   /** Bounded streaming write: bytes are never assembled into one large request buffer. */
-  async uploadStream(name:unknown,folder:unknown,stream:AsyncIterable<Buffer>){
+  private async uploadStreamUnlocked(name:unknown,folder:unknown,stream:AsyncIterable<Buffer>){
     const filename=validName(name),f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
     if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
@@ -325,7 +391,7 @@ export class LocalDisk {
     return {...entry};
   }
   /** Binary upload path shared by the streaming endpoint. */
-  async uploadBytes(name:unknown,folder:unknown,buf:Buffer){
+  private async uploadBytesUnlocked(name:unknown,folder:unknown,buf:Buffer){
     const filename=validName(name),f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
     if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 50 МБ",413);
@@ -376,7 +442,7 @@ export class LocalDisk {
     }
     return [...groups.values()].filter(group=>group.length>1);
   }
-  async setMetadata(id:string,input:{tags?:unknown;color?:unknown;note?:unknown}){
+  private async setMetadataUnlocked(id:string,input:{tags?:unknown;color?:unknown;note?:unknown}){
     const e=this.entries.find(x=>x.id===id&&!x.deletedAt);
     if(!e)throw bad("Файл не найден",404);
     if(input.tags!==undefined){
@@ -397,7 +463,7 @@ export class LocalDisk {
   snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
   /** Copy a file under a new identity without changing its original. */
   /** Sync two local folders without ever overwriting a conflicting filename. */
-  async syncFolders(from:unknown,to:unknown,apply:unknown=false){
+  private async syncFoldersUnlocked(from:unknown,to:unknown,apply:unknown=false){
     const source=validFolder(from),target=validFolder(to);
     if(source===target)throw bad("Нельзя синхронизировать папку саму с собой");
     if(source&&!this.folders.includes(source))throw bad("Исходная папка не найдена",404);
@@ -441,7 +507,7 @@ export class LocalDisk {
     }
     return {copied:copied.length,pending:0,unchanged,conflicts};
   }
-  async copyFile(id:string,folder:unknown){
+  private async copyFileUnlocked(id:string,folder:unknown){
     const original=this.entries.find(e=>e.id===id&&!e.deletedAt);
     if(!original)throw bad("Файл не найден",404);
     const target=validFolder(folder);
@@ -465,7 +531,7 @@ export class LocalDisk {
     this.fileActions.push({id:e.id,before,after:{name:e.name,folder:e.folder},at:new Date().toISOString()});
     if(this.fileActions.length>300)this.fileActions.shift();
   }
-  async undoFileChange(){
+  private async undoFileChangeUnlocked(){
     const record=this.fileActions.at(-1);
     if(!record)throw bad("Нет операций для отмены",404);
     const entry=this.entries.find(e=>e.id===record.id&&!e.deletedAt);
@@ -481,7 +547,7 @@ export class LocalDisk {
     return [...(this.versions[id]??[]).map(({revision,size,sha256,at})=>({revision,size,sha256,at})),
       {revision:entry.revision??1,size:entry.size,sha256:entry.sha256,at:entry.uploadedAt}];
   }
-  async replaceStream(id:string,stream:AsyncIterable<Buffer>,expectedSha256?:unknown){
+  private async replaceStreamUnlocked(id:string,stream:AsyncIterable<Buffer>,expectedSha256?:unknown){
     const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
     if(!entry)throw bad("Файл не найден",404);
     if(typeof expectedSha256!=="string"||expectedSha256!==entry.sha256)throw bad("Файл изменился: обновите список перед заменой",409);
@@ -507,7 +573,7 @@ export class LocalDisk {
     try{await this.save();}catch(e){Object.assign(entry,old);this.versions[id]=oldHistory;await rm(this.objectPath(nextObject),{force:true});throw e;}
     return {...entry};
   }
-  async restoreFileVersion(id:string,revision:unknown){
+  private async restoreFileVersionUnlocked(id:string,revision:unknown){
     const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
     if(!entry)throw bad("Файл не найден",404);
     if(!Number.isSafeInteger(revision))throw bad("Недопустимый номер редакции");
@@ -515,9 +581,9 @@ export class LocalDisk {
     if(!past)throw bad("Редакция не найдена",404);
     const data=await readFile(this.objectPath(past.objectId));
     if(data.length!==past.size||createHash("sha256").update(data).digest("hex")!==past.sha256)throw bad("Архивная редакция повреждена",409);
-    return this.replaceStream(id,(async function*(){yield data;})(),entry.sha256);
+    return this.replaceStreamUnlocked(id,(async function*(){yield data;})(),entry.sha256);
   }
-  async renameFile(id:string,name:unknown){
+  private async renameFileUnlocked(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
     const next=validName(name);
@@ -526,28 +592,28 @@ export class LocalDisk {
     await this.save();
     return {...entry};
   }
-  async toggleFavorite(id:string,favorite:unknown){
+  private async toggleFavoriteUnlocked(id:string,favorite:unknown){
     const entry=this.entries.find(x=>x.id===id&&!x.deletedAt);
     if(!entry)throw bad("Файл не найден",404);
     if(typeof favorite!=="boolean")throw bad("Ожидается favorite: true или false");
     entry.favorite=favorite;
     await this.save();return {...entry};
   }
-  async moveFile(id:string,folder:unknown){
+  private async moveFileUnlocked(id:string,folder:unknown){
     const entry=this.entries.find(x=>x.id===id&&!x.deletedAt);
     if(!entry)throw bad("Файл не найден",404);
     const next=validFolder(folder);
     if(next&&!this.folders.includes(next))throw bad("Папка не найдена",404);
     const before={name:entry.name,folder:entry.folder};entry.folder=next;this.logFileChange(entry,before);await this.save();return {...entry};
   }
-  async restore(id:string){
+  private async restoreUnlocked(id:string){
     const entry=this.entries.find(x=>x.id===id&&x.deletedAt);
     if(!entry)throw bad("В корзине нет этого файла",404);
     if(entry.folder&&!this.folders.includes(entry.folder))entry.folder="";
     delete entry.deletedAt;
     await this.save();return {...entry};
   }
-  async purge(id:string){
+  private async purgeUnlocked(id:string){
     const entry=this.entries.find(x=>x.id===id&&x.deletedAt);
     if(!entry)throw bad("В корзине нет этого файла",404);
     // Remove the object before deleting its index, so a failed filesystem operation remains retryable.
@@ -558,7 +624,7 @@ export class LocalDisk {
     await this.save();return {ok:true};
   }
   /** Validate every target first, then persist one batch mutation. */
-  async bulk(ids:unknown, action:unknown, folder?:unknown){
+  private async bulkUnlocked(ids:unknown, action:unknown, folder?:unknown){
     if(!Array.isArray(ids)||!ids.length||ids.length>100||!ids.every(x=>typeof x==="string")||new Set(ids).size!==ids.length)
       throw bad("Выберите от 1 до 100 уникальных файлов");
     if(action!=="trash"&&action!=="restore"&&action!=="move"&&action!=="favorite"&&action!=="unfavorite")
@@ -583,7 +649,7 @@ export class LocalDisk {
     await this.save();
     return {updated:entries.length};
   }
-  async remove(id:string){
+  private async removeUnlocked(id:string){
     const e=this.entries.find(x=>x.id===id);
     if(!e)throw bad("Файл не найден",404);
     if(e.deletedAt)throw bad("Файл уже в корзине",409);
@@ -604,12 +670,12 @@ export class LocalDisk {
     return this.entries.filter(x=>x.id!==id&&!x.deletedAt&&x.sha256===entry.sha256&&x.size===entry.size).map(x=>({id:x.id,name:x.name,folder:x.folder}));
   }
   trashSettings(){return {days:this.trashDays};}
-  async setTrashDays(days:unknown){
+  private async setTrashDaysUnlocked(days:unknown){
     if(typeof days!=="number"||!Number.isInteger(days)||days<0||days>365)throw bad("Срок хранения корзины: от 0 до 365 дней");
     this.trashDays=days;await this.save();return this.trashSettings();
   }
   /** Removes trashed files for good: all of them, or only those older than `olderThanMs`. */
-  async emptyTrash(olderThanMs?:number,now=Date.now()){
+  private async emptyTrashUnlocked(olderThanMs?:number,now=Date.now()){
     const doomed=this.entries.filter(e=>e.deletedAt&&(olderThanMs===undefined||now-new Date(e.deletedAt).getTime()>=olderThanMs));
     const staleFolders=this.deletedFolders.some(d=>olderThanMs===undefined||now-new Date(d.at).getTime()>=olderThanMs);
     if(!doomed.length&&!staleFolders)return {purged:0,bytes:0};
