@@ -3,7 +3,7 @@ import { characterAvatar } from "./art";
 import { renderMarkdownInto } from "../markdown";
 import type { ChatMsg, Step } from "./chats";
 import type { ChatController } from "./controller";
-import { actionSummary, formatBytes, stepLabel } from "./helpers";
+import { actionProgress, actionSummary, formatBytes, stepLabel } from "./helpers";
 import { speechSupported } from "./voice";
 import { promiseCard, toTasksButton } from "./to-tasks";
 
@@ -64,11 +64,18 @@ function fillUser(root: HTMLElement, m: ChatMsg, c: MsgCtx) {
 function stepsBlock(steps: Step[], expanded = false): HTMLElement {
   const running = steps.some((step) => step.status === "running");
   const failed = steps.some((step) => step.status === "error" || step.status === "denied");
+  const progress = actionProgress(steps);
   const d = el("details", { cls: "steps action-timeline" + (running ? " running" : failed ? " has-errors" : " complete"), open: running || expanded },
     el("summary", { attrs: { "aria-label": "Действия помощницы: " + actionSummary(steps) } },
       running ? el("i", { cls: "spin", attrs: { "aria-hidden": "true" } }) : icon(failed ? "alert" : "check", 14),
       el("span", { textContent: actionSummary(steps) }),
       el("span", { cls: "action-counter", textContent: String(steps.length) })));
+  const metrics = el("div", { cls: "action-metrics" },
+    el("span", { textContent: `Завершено: ${progress.done} из ${progress.total} известных шагов` }),
+    el("span", { textContent: progress.elapsed ? `Инструменты: ${(progress.elapsed / 1000).toFixed(1)} с` : "Выполнение" }));
+  const segments = el("div", { cls: "action-rail", attrs: { role: "img", "aria-label": `Завершено ${progress.done} из ${progress.total} известных шагов` } },
+    ...steps.map(step => el("span", { cls: `action-segment ${step.status}`, attrs: { "aria-hidden": "true" } })));
+  d.append(metrics, segments);
   const list = el("div", { cls: "action-timeline-list", attrs: { role: "list", "aria-label": "Шаги помощницы" } });
   for (const step of steps) {
     list.append(el("div", { cls: `step action-event ${step.status}`, attrs: { role: "listitem" } },
