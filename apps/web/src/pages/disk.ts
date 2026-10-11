@@ -64,19 +64,19 @@ export function diskPage():HTMLElement {
     const response=await api.diskChronicles();
     if(!response.ok){showToast(response.error.message);return;}
     const data=response.value;
-    const toolbar=el("div",{cls:"disk-preview-head"},el("strong",{textContent:"Хроники Диска · 90 показателей"}),button("Закрыть",()=>statistics.close()));
-    const summary=el("p",{cls:"muted small",textContent:"Файлов: "+data.summary.files+" · Папок: "+data.summary.folders+" · Рассчитано: "+data.summary.ready+" из "+data.summary.total});
+    const toolbar=el("div",{cls:"disk-preview-head disk-chronicles-heading"},el("strong",{textContent:"Хроники Диска · 100 показателей"}),button("Закрыть",()=>statistics.close()));
+    const summary=el("div",{cls:"disk-chronicles-hero"},el("span",{cls:"disk-chronicles-orbit",textContent:"✦"}),el("div",{},el("small",{textContent:"ЛИЧНАЯ ВСЕЛЕННАЯ ФАЙЛОВ"}),el("strong",{textContent:data.summary.total+" показателей"}),el("span",{textContent:"Подтверждено: "+data.summary.ready+" · Ожидают данных: "+(data.summary.total-data.summary.ready)})));
     const q=el("input",{type:"search",placeholder:"Поиск показателя",cls:"mem-input",attrs:{"aria-label":"Поиск показателя"}});
     const content=el("div",{cls:"disk-stats-groups"});
     const render=()=>{
       const text=q.value.toLocaleLowerCase().trim();
       content.replaceChildren(...data.groups.flatMap(g=>{
-        const metrics=data.metrics.filter(m=>m.id&&Number(m.id.slice(1))>data.groups.findIndex(x=>x.id===g.id)*9&&Number(m.id.slice(1))<=(data.groups.findIndex(x=>x.id===g.id)+1)*9).filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
+        const metrics=data.metrics.filter(m=>g.id==="g10"?Number(m.id.slice(1))>=91:Number(m.id.slice(1))>data.groups.findIndex(x=>x.id===g.id)*9&&Number(m.id.slice(1))<=(data.groups.findIndex(x=>x.id===g.id)+1)*9).filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
         if(!metrics.length)return [];
         const section=el("details",{cls:"disk-stats-group",open:!!text});
         section.append(el("summary",{textContent:g.title+" · "+metrics.length}));
         section.append(el("div",{cls:"disk-stats-tiles"},...metrics.map(m=>{
-          const tile=el("div",{cls:"disk-stats-tile"});
+          const tile=el("div",{cls:"disk-stats-tile"+(m.ready?" is-ready":" is-pending")});
           tile.append(el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),el("strong",{textContent:m.value}),el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}));
           return tile;
         })));
