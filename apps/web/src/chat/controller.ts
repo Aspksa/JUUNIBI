@@ -87,7 +87,7 @@ export class ChatController {
     if (app.get().showScenes) {
       void api.nextScene().then((r) => {
         if (r.ok) this.chats.patch(convId, reply.id, { scene: { action: r.value.action.text, ...(r.value.phrase ? { phrase: r.value.phrase.text } : {}) } });
-      });
+      }).catch(() => { /* Character scene is optional: never interrupt the answer. */ });
     }
 
     let text = "";

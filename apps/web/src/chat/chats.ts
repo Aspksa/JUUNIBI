@@ -140,13 +140,11 @@ export class Chats {
   private schedulePersist() { clearTimeout(this.timer); this.timer = setTimeout(() => this.persistNow(), 400); }
   persistNow() {
     clearTimeout(this.timer);
-    let { items } = this.store.get();
+    const { items } = this.store.get();
     const activeId = this.store.get().activeId;
-    for (let tries = 0; tries < 6; tries++) {
-      const r = attempt(() => localStorage.setItem(KEY, JSON.stringify({ items, activeId })));
-      if (r.ok) return;
-      items = items.slice(0, Math.max(1, Math.floor(items.length / 2))); // quota: keep the newest half
-    }
+    // Never silently overwrite the durable archive with a truncated conversation list.
+    const r = attempt(() => localStorage.setItem(KEY, JSON.stringify({ items, activeId })));
+    if (!r.ok) console.error("JUUNIBI: не удалось сохранить историю чатов — хранилище браузера заполнено", r.error);
   }
 }
 
