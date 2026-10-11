@@ -70,6 +70,15 @@ export class LocalDisk {
     if(createHash("sha256").update(data).digest("hex")!==entry.sha256)throw bad("Файл повреждён: контрольная сумма не совпадает",409);
     return {entry:{...entry},base64:data.toString("base64")};
   }
+  async renameFile(id:string,name:unknown){
+    const entry=this.entries.find(x=>x.id===id);
+    if(!entry)throw bad("Файл не найден",404);
+    const next=validName(name);
+    if(next===entry.name)return {...entry};
+    entry.name=next;
+    await this.save();
+    return {...entry};
+  }
   async remove(id:string){
     const e=this.entries.find(x=>x.id===id);
     if(!e)throw bad("Файл не найден",404);
