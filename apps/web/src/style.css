@@ -1252,7 +1252,7 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-fold svg{color:var(--muted);transition:transform var(--dur-fast)}
 .tasks-fold:hover svg{color:var(--brand)}
 .tasks-side-card.folded .tasks-fold svg{transform:rotate(-90deg)}
-.tasks-side-card.folded>:not(.tasks-side-head){display:none}
+.tasks-side-card.folded>:not(.tasks-side-head):not(.ach-panel-head){display:none}
 .tasks-side-card.folded .tasks-side-head{margin:0}
 .tasks-side-card.folded .tasks-side-head>:not(h2){display:none}
 /* goals */

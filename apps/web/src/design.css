@@ -122,7 +122,8 @@ select option{background:var(--bg);color:var(--fg)}
 .ach-path-track small{font-size:var(--fs-xs)}
 
 /* ---------- 16. «Дела»: the achievements card stays short ---------- */
-.ach-panel-scene{max-height:220px;overflow:hidden}
+/* the picture is cropped, never the caption under it */
+.ach-panel-scene .kitsune-art img{max-height:200px;object-fit:cover;object-position:50% 25%}
 
 /* ---------- 22. chat open: the page under it keeps a quiet mark ---------- */
 .nav-item.here{font-weight:600}
@@ -135,3 +136,6 @@ select option{background:var(--bg);color:var(--fg)}
 .empty-state p{font-size:var(--fs-md)}
 /* «Диск» on the phone: the sort list shows its whole label */
 .dk-select{min-width:150px;flex:none}
+/* folded, the card is one tidy line: title, «0/78 наград», unfold button */
+.ach-panel-open{text-align:left;white-space:nowrap}
+.ach-panel.folded .ach-panel-mini{white-space:nowrap}
