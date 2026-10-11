@@ -96,6 +96,7 @@ export class BrainCore {
       verification: { completedSteps: plan.steps.filter(s => s.status === "done").map(s => s.id),
         failedSteps: plan.steps.filter(s => s.status === "failed").map(s => s.id),
         evidence: this.logs.filter(x => x.planId === planId && x.outcome.startsWith("verified:")).slice(0, 20).map(x => ({stepId:x.stepId, at:x.at})) },
+      stepTrace: this.stepExecutionTrace(planId),
       experience: { confirmedMemory: this.recallExperience(plan.goal) },
       research: { openQuestions: grounded.researchGaps, requiresSourceCheck: true as const },
       adaptiveRecovery: plan.status === "failed" ? {
@@ -136,6 +137,19 @@ export class BrainCore {
   }
   private toolObservations: {tool:string;status:"ok"|"error"|"denied";risk:"read"|"write"|"danger";elapsedMs:number;at:string}[]=[];
   toolOutcomeHistory(){return this.toolObservations.map(x=>({...x}));}
+  /** Per-step verified execution traces, not inferred from unrelated tool failures. */
+  stepExecutionTrace(planId: string) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    return plan.steps.map(step => {
+      const events = this.logs.filter(e => e.planId === planId && e.stepId === step.id);
+      return { stepId: step.id, title: step.title, status: step.status,
+        verified: events.some(e => e.outcome.startsWith("verified:")),
+        events: events.slice(0, 10).map(e => ({at: e.at, kind: e.outcome.startsWith("verified:") ? "verified" : e.outcome.split(":")[0]})),
+        error: step.lastError ?? null };
+    });
+  }
+
   /** Evidence-based tool reliability: insufficient samples never imply success. */
   toolConfidence(tool: string) {
     const samples = this.toolObservations.filter(x => x.tool === tool).slice(0, 20);
