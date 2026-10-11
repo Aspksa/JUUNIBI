@@ -330,9 +330,28 @@ export function diskPage():HTMLElement {
       toggle.addEventListener("click",()=>{if(treeExpanded.has(folder))treeExpanded.delete(folder);else treeExpanded.add(folder);renderTree();});
       const select=el("button",{type:"button",cls:"disk-tree-select",attrs:{"aria-current":current===folder&&viewFilter==="all"?"page":"false"}},icon(expanded?"folder-open":"folder",16),el("span",{textContent:(folderStyles[folder]?.pinned?"★ ":"")+label}),el("small",{textContent:String(counts.get(folder)??0)}));
       if(folderStyles[folder]?.color)select.style.color=folderStyles[folder]!.color;
-      if(folderStyles[folder]?.cover)select.title="Обложка: "+folderStyles[folder]!.cover;
+      const coverId=folderStyles[folder]?.cover;
+      if(coverId){
+        const pic=el("img",{cls:"disk-tree-cover",alt:""});
+        const cached=thumbnailUrls.get(coverId);
+        if(cached)pic.src=cached;
+        else void (async()=>{
+          const r=await api.diskGet(coverId);
+          if(!r.ok||!page.isConnected)return;
+          const bytes=Uint8Array.from(atob(r.value.base64),c=>c.charCodeAt(0));
+          const url=URL.createObjectURL(new Blob([bytes],{type:"image/png"}));
+          if(thumbnailUrls.size>=MAX_THUMBNAILS){const old=thumbnailUrls.keys().next().value;if(old){URL.revokeObjectURL(thumbnailUrls.get(old)!);thumbnailUrls.delete(old);}}
+          thumbnailUrls.set(coverId,url);pic.src=url;
+        })();
+        select.prepend(pic);
+      }
       select.addEventListener("click",()=>openFolder(folder));
       select.addEventListener("keydown",e=>{
+        if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+          e.preventDefault();const buttons=[...tree.querySelectorAll<HTMLButtonElement>(".disk-tree-select")];
+          const n=buttons.indexOf(select)+(e.key==="ArrowDown"?1:-1);buttons[Math.max(0,Math.min(buttons.length-1,n))]?.focus();
+        }
+        if(e.key==="Enter"){e.preventDefault();openFolder(folder);}
         if(e.key==="ArrowRight"){e.preventDefault();treeExpanded.add(folder);renderTree();}
         if(e.key==="ArrowLeft"){e.preventDefault();treeExpanded.delete(folder);renderTree();}
         if(e.key==="F2"&&folder){e.preventDefault();const menu=line.querySelector<HTMLDetailsElement>(".disk-folder-actions");if(menu){menu.open=true;menu.querySelector<HTMLInputElement>("input")?.focus();}}
@@ -380,7 +399,10 @@ export function diskPage():HTMLElement {
         });
         const color=el("input",{type:"color",value:folderStyles[folder]?.color??"#b89cff",attrs:{"aria-label":"Цвет папки"}});
         const pinned=el("input",{type:"checkbox",checked:folderStyles[folder]?.pinned??false});
-        const cover=el("input",{type:"text",cls:"mem-input",value:folderStyles[folder]?.cover??"",placeholder:"Описание обложки",maxLength:100});
+        const cover=el("select",{cls:"mem-select",attrs:{"aria-label":"Обложка папки"}},
+          el("option",{value:"",textContent:"Без обложки"}),
+          ...treeFiles.filter(f=>f.folder===folder&&/\.(png|jpe?g|webp|gif)$/i.test(f.name)).map(f=>el("option",{value:f.id,textContent:f.name})));
+        cover.value=folderStyles[folder]?.cover??"";
         const style=button("Сохранить оформление",async()=>{
           const r=await api.diskFolderStyle(folder,color.value,pinned.checked,cover.value);
           if(!r.ok)feedback.textContent=r.error.message;
