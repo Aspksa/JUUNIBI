@@ -702,15 +702,15 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const menu = el("details", { cls: "tasks-hero-menu tasks-menu" });
     const item = (label: string, ic: Parameters<typeof icon>[0], run: () => void) => btn(label, () => { menu.open = false; run(); }, { small: true, icon: ic });
     const canNotify = typeof Notification !== "undefined" && Notification.permission === "default";
-    menu.append(el("summary", { title: "Ещё", attrs: { "aria-label": "Ещё: итог дня, сводка, уведомления" } }, icon("more", 18)),
+    menu.append(el("summary", { title: "Ещё", attrs: { "aria-label": "Ещё: итог дня, сводка, уведомления, автоматика" } }, icon("more", 18)),
       el("div", { cls: "tasks-hero-menu-list" },
         item(evening ? "Закрыть «Итог дня»" : "Итог дня", "moon", () => { evening = !evening; renderTop(); if (evening) eveHost.scrollIntoView({ behavior: "smooth", block: "nearest" }); }),
         b ? el("small", { cls: "muted", textContent: (isEve ? "Итог составлен в " : "Сводка составлена в ") + hm(b.createdAt) }) : null,
         item(eveMode ? (b ? "Подвести итог заново" : "Подвести итог сейчас") : b ? "Составить сводку заново" : "Составить сводку сейчас", "refresh",
           () => void act(() => (eveMode ? api.runEvening() : api.runBrief()), eveMode ? "Итог дня готов" : "Сводка готова")),
         b ? item(isEve ? "Скрыть итог дня" : "Скрыть сводку", "eyeOff", () => removeLater(b.id, isEve ? "Итог скрыт" : "Сводка скрыта", () => api.removeNote(b.id))) : null,
-        canNotify ? item("Включить уведомления", "bell", () => void Notification.requestPermission().then(() => renderTop())) : null));
-    const gear = iconButton("settings", "Автоматика: сводка, переносы, напоминания, правила", () => openAuto(), "icon-btn tasks-hero-gear");
+        canNotify ? item("Включить уведомления", "bell", () => void Notification.requestPermission().then(() => renderTop())) : null,
+        item("Автоматика", "settings", () => openAuto())));
     // Sunday: spread the to-dos without a date over the coming week
     const undated = data?.notes.some((n) => n.kind === "todo" && !n.done && !n.dueAt && !n.parentId) ?? false;
     const planBtn = now.getDay() === 0 && undated && !weekPlan ? btn("Спланировать неделю", () => openWeekPlan(), { small: true, icon: "calendar", title: "Разложить дела без срока по рабочим дням недели" }) : null;
@@ -723,7 +723,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       el("div", { cls: "tasks-hero-main" },
         el("div", { cls: "tasks-hero-top" }, el("span", { cls: "tasks-hero-ic", attrs: { "aria-hidden": "true" } }, icon(h >= 17 || h < 5 ? "moon" : "sun", 22)),
           el("div", { cls: "grow" }, el("strong", { cls: "tasks-hero-hello", textContent: hello }), el("span", { cls: "tasks-hero-date" }, date[0]!.toUpperCase() + date.slice(1), kind, ach.title() ? el("button", { type: "button", cls: "ach-title-chip", textContent: ach.title()!, title: "Титул из «Дел и достижений»", onclick: () => deps.go("achievements") }) : null)),
-          gear, menu),
+          menu),
         b ? el("p", { cls: "tasks-hero-text" + (isEve ? " eve" : ""), textContent: briefBody(b.text, isEve) })
           : el("p", { cls: "tasks-hero-text muted", textContent: fb.text }),
         tomorrowNotice(),

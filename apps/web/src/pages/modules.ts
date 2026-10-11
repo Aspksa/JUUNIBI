@@ -90,7 +90,7 @@ export function modulesPage(s: AppState, go: (r: Route) => void): HTMLElement {
       el("p", { cls: "mt-note" + (failedReason ? " bad" : ""), textContent: failedReason || meta.what || m.note }),
       el("div", { cls: "mt-foot" },
         deps.length ? el("span", { cls: "mt-deps", title: "Зависит от: " + deps.map((d) => moduleMeta(d).short).join(", ") }, icon("link", 12), ...deps.map((d) => el("span", { cls: "mt-dep " + d.status, title: moduleMeta(d).short }, icon(moduleMeta(d).icon, 13))))
-          : el("span", { cls: "mt-deps none muted", textContent: "самостоятельный" }),
+          : el("span"),
         ...(quick.length ? [el("span", { cls: "mt-quick" }, ...quick)] : [])));
     const open = () => { opener = t; openModal(m.name); };
     t.addEventListener("click", open);

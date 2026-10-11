@@ -85,7 +85,8 @@ describe("module tiles", () => {
     expect(m("brain", "Мозг JUUNIBI")).toMatchObject({ short: "Мозг", icon: "brain" });
     expect(m("approvals", "Подтверждение действий").short.length).toBeLessThanOrEqual(10);
     expect(m("scenes", "Сцены и реплики").icon).toBe("scenes");
-    expect(m("future", "Очень длинное название модуля").short).toBe("Очень длинное…");
+    expect(m("future", "Мобильное приложение").short).toBe("Мобильное приложение"); // wraps onto two lines, not cut
+    expect(m("future", "Очень длинное название нового модуля").short).toBe("Очень длинное название ново…");
     expect(m("future", "Короткое").short).toBe("Короткое");
     expect(m("w", "Погода", "manifest").icon).toBe("puzzle");
     expect(m("future", "X").icon).toBe("modules");

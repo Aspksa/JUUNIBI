@@ -139,7 +139,10 @@ kernel.register({
     const renderNav = (s: AppState) => {
       menu.render(s);
       navScrim.classList.toggle("show", s.navOpen);
-      topTitle.textContent = NAV_ITEMS.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : SUB_ROUTES[s.route] ?? s.route))?.label ?? "";
+      // on the phone the top bar is the page's only title: the page's own heading if it has one, else the menu label
+      const head = pageHost.querySelector(".pg-head h1")?.textContent;
+      topTitle.textContent = head || (s.route === "achievements" ? "Достижения"
+        : NAV_ITEMS.find((n) => n.route === (BRAIN_TILE_ROUTES[s.route] ? "brain" : SUB_ROUTES[s.route] ?? s.route))?.label) || "";
     };
 
     // ----- pages (re-rendered only when what they show actually changed, so typing in forms is never disturbed)
@@ -180,7 +183,7 @@ kernel.register({
       avatar.setState({ hidden: s.chatOpen, busy: ctl.busy, unread: ctl.store.get().unread, ready: !!s.status?.assistant, attention: s.approvals.length > 0 });
     };
 
-    const onApp = () => { const s = app.get(); renderNav(s); renderPage(s); renderAvatar(); };
+    const onApp = () => { const s = app.get(); renderPage(s); renderNav(s); renderAvatar(); };
     ctx.onStop(app.subscribe(onApp));
     ctx.onStop(ctl.store.subscribe(() => { renderAvatar(); menu.render(app.get()); }));
     ctx.onStop(chats.store.subscribe(() => { menu.render(app.get()); if (app.get().route === "settings") renderPage(app.get()); }));

@@ -126,7 +126,8 @@ export class Menu {
       return b;
     }
     if (active) attrs["aria-current"] = "page";
-    return el("a", { href: "#/" + n.route, cls: "nav-item" + (active ? " active" : ""), title: tip, attrs }, ...kids);
+    // while the chat window is open only «Беседа» is filled; the page under it keeps a quieter mark
+    return el("a", { href: "#/" + n.route, cls: "nav-item" + (active ? (s.chatOpen ? " here" : " active") : ""), title: tip, attrs }, ...kids);
   }
 
   private statusPlate(s: AppState): HTMLElement {
