@@ -5,8 +5,8 @@
   --fs-xs:.75rem;--fs-sm:.8125rem;--fs-md:.875rem;--fs-base:1rem;--fs-lg:1.25rem;--fs-xl:1.75rem;--fs-2xl:2.25rem;
   /* corner scale */
   --r-sm:8px;--r-md:12px;--r-lg:16px;--r-xl:24px;
-  /* page widths: working pages and reading pages */
-  --page-wide:1440px;--page-narrow:980px;
+  /* page widths: working pages, reading pages and the Disk (a whole-day workplace with three columns) */
+  --page-wide:1440px;--page-narrow:980px;--page-full:1760px;
   --brand-fg:#1a1306;
   /* soft tinted surfaces that follow the theme instead of fixed light colours */
   --tint-brand:color-mix(in srgb,var(--brand) 10%,var(--surface));
@@ -22,11 +22,12 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--warn:#f0a030;--violet:#a78bfa}}
 :root[data-theme=dark]{--warn:#f0a030;--violet:#a78bfa}
 
-/* ---------- 1. page widths: two sizes only ---------- */
+/* ---------- 1. page widths: three sizes only ---------- */
 .content-main,
 .content-main:has(.settings-page),.content-main:has(.tasks-page),.content-main:has(.page.upd),
 .content-main:has(.ach-page),.content-main:has(.disk-page),.content-main:has(.page){max-width:var(--page-wide)}
 .content-main:has(.mob-page),.content-main:has(.vault-page){max-width:var(--page-narrow)}
+.content-main:has(.disk-page){max-width:var(--page-full)}
 .page,.page.upd,.page.disk-page,.page.ach-page,.page.tasks-page,.settings-page{max-width:none}
 
 /* ---------- 2. one primary button: flat brand colour; disabled stays a pale brand, not grey ---------- */

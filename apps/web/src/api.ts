@@ -174,7 +174,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string;revision?:number}
-export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:string;group:string;title:string;value:string;ready:boolean;reason?:string}[];summary:{files:number;bytes:number;folders:number;ready:number;total:number}}
+/** «Жизнь документов»: 150 figures counted on this computer (apps/server/src/disk-life.ts). */
+export interface DiskLifeMetric {id:string;group:string;icon:string;title:string;hint:string;value:string;detail?:string;kind?:string;series?:number[];labels?:string[];list?:string[];ring?:number;empty?:boolean}
+export interface DiskLife {generatedAt:string;groups:{id:string;title:string;icon:string;color:string;note:string}[];metrics:DiskLifeMetric[];highlights:string[];analysis:{documents:number;read:number;scans:number;unreadable:number;images:number;measured:number}}
 /** A plain URL to the file's bytes: thumbnails, previews, players and downloads (also from the phone). */
 /** The name is part of the cache key: a rename changes the type and the download name. */
 const nameKey=(name:string)=>{let h=0;for(let i=0;i<name.length;i++)h=Math.imul(h^name.charCodeAt(i),16777619);return (h>>>0).toString(36);};
@@ -182,8 +184,7 @@ export const diskRawUrl=(f:{id:string;sha256:string;name:string},download=false)
 export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:string;folder:string}[]}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
-  diskInsights: () => attemptAsync(()=>call<{generatedAt:string;analyzed:number;eligible:number;skipped:number;metrics:{id:number;value:string;detail?:string}[];links:{from:string;to:string;score:number}[];findings:{kind:string;text:string;ids:string[]}[]} >("/api/disk/insights")),
-  diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
+  diskLife: () => attemptAsync(()=>call<DiskLife>("/api/disk/life")),
   diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[];revisionsChecked?:number;revisionIssues?:{fileId:string;revision:number;status:string}[]}>("/api/disk/audit")),
   diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),
   diskSnapshot: () => attemptAsync(()=>call<{exportedAt:string;files:DiskFile[];folders:string[]}>("/api/disk/snapshot")),

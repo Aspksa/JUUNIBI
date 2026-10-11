@@ -32,7 +32,7 @@ try{
     }else if(pathname==="/api/disk/folders/styles")body={"Проекты":{color:"#b89cff",pinned:false,cover:"",createdAt:"2026-10-10T09:00:00.000Z"},"Архив":{color:"#b89cff",pinned:false,cover:"",createdAt:"2026-10-01T09:00:00.000Z"}};
     else if(pathname==="/api/disk/folders/move")body={name:"Архив/Проекты"};
     else if(pathname==="/api/disk/trash")body={days:30};
-    else if(pathname==="/api/disk/chronicles")body={groups:[],metrics:[],summary:{total:0,ready:0,files:2,bytes:11,folders:3}};
+    else if(pathname==="/api/disk/life")body={generatedAt:new Date().toISOString(),groups:[{id:"core",title:"Сердце Диска",icon:"core",color:"#e0a43a",note:"сколько всего"}],metrics:[{id:"files",group:"core",icon:"stack",title:"Файлов на Диске",hint:"столько лежит сейчас",value:"2",kind:"line",series:[1,2]}],highlights:["files"],analysis:{documents:0,read:0,scans:0,unreadable:0,images:0,measured:0}};
     await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(body)});
   });
   await page.goto("http://127.0.0.1:"+port+"/#/disk");
@@ -80,5 +80,8 @@ try{
   assert.ok(await page.locator(".dk-file.picked").count()>150,"Ctrl+A selects every shown file");
   await page.keyboard.press("Escape");
   assert.equal(await page.locator(".dk-file.picked").count(),0,"Esc clears the selection");
-  console.log("Browser smoke passed: folder sort, sections, destination picker, views, filters, paging, selection");
+  await page.locator("#disk-life").scrollIntoViewIfNeeded();
+  await page.locator(".dkl-tile",{hasText:"Файлов на Диске"}).waitFor();
+  assert.equal(await page.locator(".dkl-tab[aria-selected=true]").count(),1,"«Жизнь документов» shows one group at a time");
+  console.log("Browser smoke passed: folder sort, sections, destination picker, views, filters, paging, selection, document life");
 }finally{await browser?.close();if(process.platform==="win32")server.kill();else if(server.pid){try{process.kill(-server.pid,"SIGTERM");}catch{}}}
