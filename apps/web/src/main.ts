@@ -6,6 +6,7 @@ import { Avatar } from "./avatar";
 import { Chats } from "./chat/chats";
 import { ChatController } from "./chat/controller";
 import { ChatView } from "./chat/view";
+import { ChatSync } from "./chat/sync";
 import { el, icon, settleAnimations } from "./dom";
 import { Menu, openConnection } from "./nav/menu";
 import { NAV_ITEMS, itemForDigit } from "./nav/model";
@@ -33,10 +34,13 @@ import "./nav/nav.css";
 import "./pages/tasks-work.css";
 import "./design.css";
 import "./pages/fox-network.css";
+import "./chat/chat.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
 const chats = new Chats();
 const ctl = new ChatController(chats);
+// the phone and the computer share one chat history (merged through the computer's server)
+new ChatSync(chats, ctl).start();
 
 const syncMeta = (): void => {
   const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
@@ -159,7 +163,7 @@ kernel.register({
         case "disk": case "modules": case "tasks": case "mobile": case "fox-network": case "achievements": case "vault": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
-        case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.customAccent, s.uiRadius, s.uiScale, s.chatDensity, s.chatFont, s.showScenes, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
+        case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.customAccent, s.uiRadius, s.uiScale, s.chatDensity, s.chatFont, s.showScenes, s.chatFollowUps, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
       }
     };
     const renderPage = (s: AppState) => {

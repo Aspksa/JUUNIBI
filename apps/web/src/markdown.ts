@@ -1,4 +1,5 @@
 import { tokenize } from "./highlight";
+import { copyText, downloadText } from "./dom";
 
 /** Small, safe Markdown renderer: parser -> AST (pure, tested) -> DOM nodes (never innerHTML). */
 
@@ -144,17 +145,38 @@ function inlineNodes(list: Inline[]): Node[] {
   });
 }
 export const COLLAPSE_LINES = 22;
+const EXT: Record<string, string> = { js: "js", javascript: "js", ts: "ts", typescript: "ts", tsx: "tsx", jsx: "jsx", py: "py", python: "py", json: "json", html: "html", css: "css", sh: "sh", bash: "sh", shell: "sh", sql: "sql", md: "md", markdown: "md", yaml: "yml", yml: "yml", xml: "xml", java: "java", go: "go", rust: "rs", rs: "rs", c: "c", cpp: "cpp", "c++": "cpp", cs: "cs", csharp: "cs", php: "php", ruby: "rb", rb: "rb", powershell: "ps1", ps1: "ps1", bat: "bat", toml: "toml", ini: "ini", csv: "csv", kotlin: "kt", swift: "swift", lua: "lua" };
+/** File extension for a fenced block's language ("txt" when unknown). */
+export const extFor = (lang: string) => EXT[lang.trim().toLowerCase()] ?? "txt";
+function mdButton(text: string, title: string): HTMLButtonElement {
+  const b = document.createElement("button"); b.type = "button"; b.className = "md-copy"; b.textContent = text; b.title = title;
+  return b;
+}
+const plainText = (c: Inline[]): string => c.map((n) => (n.t === "text" || n.t === "code" ? n.v : plainText(n.c))).join("");
+/** A table as CSV (comma, quotes doubled), Excel opens it as is. */
+export function tableCsv(head: string[], rows: string[][], sep = ","): string {
+  const cell = (v: string) => (/[",;\t\n]/.test(v) || v !== v.trim() ? '"' + v.replace(/"/g, '""') + '"' : v);
+  return [head, ...rows].map((r) => r.map(cell).join(sep)).join("\r\n") + "\r\n";
+}
+/** The chat adds «На Диск» to tables (markdown.ts itself knows nothing about the server). */
+export const mdHooks: { saveTable?: (csv: string) => void } = {};
 function codeBlock(b: Extract<Block, { t: "code" }>, collapse = false): HTMLElement {
   const wrap = document.createElement("div"); wrap.className = "md-code";
   const head = document.createElement("div"); head.className = "md-code-head";
   const dots = document.createElement("span"); dots.className = "md-dots"; dots.setAttribute("aria-hidden", "true"); dots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
   const lang = document.createElement("span"); lang.className = "md-lang"; lang.textContent = b.lang || "код";
-  const copy = document.createElement("button"); copy.type = "button"; copy.className = "md-copy"; copy.textContent = "Копировать";
+  const copy = mdButton("Копировать", "Скопировать код");
   copy.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(b.text); copy.textContent = "Скопировано ✓"; copy.classList.add("done"); } catch { copy.textContent = "Не удалось"; }
+    const ok = await copyText(b.text);
+    copy.textContent = ok ? "Скопировано ✓" : "Не удалось"; copy.classList.toggle("done", ok);
     setTimeout(() => { copy.textContent = "Копировать"; copy.classList.remove("done"); }, 1600);
   });
-  head.append(dots, lang, copy);
+  const wrapBtn = mdButton("Перенос", "Переносить длинные строки");
+  wrapBtn.setAttribute("aria-pressed", "false");
+  wrapBtn.addEventListener("click", () => wrapBtn.setAttribute("aria-pressed", String(wrap.classList.toggle("wrap"))));
+  const save = mdButton("Скачать", "Скачать файлом");
+  save.addEventListener("click", () => downloadText("code." + extFor(b.lang), b.text));
+  head.append(dots, lang, wrapBtn, save, copy);
   const pre = document.createElement("pre"); const code = document.createElement("code");
   for (const t of tokenize(b.text, b.lang)) {
     if (t.t === "plain") code.append(document.createTextNode(t.v));
@@ -195,7 +217,19 @@ function blockNode(b: Block, collapse = false): Node {
       for (const c of b.head) { const e = document.createElement("th"); e.append(...inlineNodes(c)); th.append(e); }
       const tb = t.createTBody();
       for (const r of b.rows) { const tr = tb.insertRow(); for (const c of r) { const td = tr.insertCell(); td.append(...inlineNodes(c)); } }
-      wrap.append(t); return wrap;
+      const head = b.head.map(plainText), rows = b.rows.map((r) => r.map(plainText));
+      const bar = document.createElement("div"); bar.className = "md-table-bar";
+      const copy = mdButton("Копировать", "Скопировать таблицу (вставляется в Excel)");
+      copy.addEventListener("click", async () => {
+        const ok = await copyText([head, ...rows].map((r) => r.join("\t")).join("\n"));
+        copy.textContent = ok ? "Скопировано ✓" : "Не удалось";
+        setTimeout(() => { copy.textContent = "Копировать"; }, 1600);
+      });
+      const csv = mdButton("CSV", "Скачать таблицу файлом CSV");
+      csv.addEventListener("click", () => downloadText("таблица.csv", "\ufeff" + tableCsv(head, rows), "text/csv;charset=utf-8"));
+      bar.append(copy, csv);
+      if (mdHooks.saveTable) { const disk = mdButton("На Диск", "Сохранить таблицу на Диск как CSV"); disk.addEventListener("click", () => mdHooks.saveTable?.("\ufeff" + tableCsv(head, rows))); bar.append(disk); }
+      wrap.append(bar, t); return wrap;
     }
   }
 }

@@ -1,7 +1,7 @@
 /** Building blocks of the Modules page: detail panel, dependency graph, assistant tools, "what the assistant sees", manifests. */
 import { api, type ManifestPreview, type ModuleDetail, type ModuleToolInfo } from "../api";
 import { formatBytes } from "../chat/helpers";
-import { el } from "../dom";
+import { copyText, el } from "../dom";
 import { btn, dot } from "./kit";
 import { impactOf, layoutGraph, needsOf, type ModStatus, type ModView } from "./models";
 
@@ -137,7 +137,7 @@ export function assistantViewPanel(): HTMLElement {
   const box = el("div", { cls: "br-block" }, el("p", { cls: "muted", textContent: "Загрузка…" }));
   void api.assistantView().then((r) => {
     if (!r.ok) { box.replaceChildren(el("p", { cls: "flash bad", textContent: r.error.message })); return; }
-    const copy = btn("Копировать", async () => { try { await navigator.clipboard.writeText(r.value.json); copy.textContent = "Скопировано ✓"; } catch { copy.textContent = "Не удалось"; } }, { small: true, icon: "copy" });
+    const copy = btn("Копировать", async () => { copy.textContent = (await copyText(r.value.json)) ? "Скопировано ✓" : "Не удалось"; }, { small: true, icon: "copy" });
     box.replaceChildren(
       el("header", { cls: "br-block-head" }, el("h2", { textContent: "Что видит помощница" }),
         el("p", { cls: "muted", textContent: `Это точный JSON, который попадает в её системный промпт и в ответ инструмента list_modules (${r.value.chars} символов). Журналов, ошибок и путей к файлам в нём нет.` })),

@@ -24,6 +24,8 @@ export interface AppState {
   /** Work that a restart would interrupt, shown for confirmation before "install now". */
   updateWarnings: string[];
   theme: Theme; showScenes: boolean;
+  /** Two or three questions to ask next under the last answer. */
+  chatFollowUps: boolean;
   chatOpen: boolean; chatMax: boolean; chatDensity: "comfortable" | "compact"; chatFont: "sm" | "md" | "lg"; accent: AccentId;
   /** The owner's own accent colour (#rrggbb), used when `accent` is "custom". */
   customAccent: string;
@@ -43,7 +45,7 @@ export const app = new Store<AppState>({
   route: routeFromHash(), navOpen: false,
   status: null, memory: [], modules: [], approvals: [], assistantSettings: null, brief: null, repeatSuggestions: [],
   update: null, updateEvents: [], updateError: "", updateHistory: null, updateRestarting: "", updateWarnings: [],
-  theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false,
+  theme: pick(saved.theme, ["auto", "light", "dark"], "auto"), showScenes: saved.showScenes !== false, chatFollowUps: saved.chatFollowUps !== false,
   chatOpen: false, chatMax: saved.chatMax === true,
   chatDensity: pick(saved.chatDensity, ["comfortable", "compact"], "comfortable"), chatFont: pick(saved.chatFont, ["sm", "md", "lg"], "md"), accent: pick(saved.accent, ACCENT_IDS, "gold"),
   customAccent: isHexColor(saved.customAccent) ? saved.customAccent : DEFAULT_CUSTOM_ACCENT,
@@ -55,7 +57,7 @@ export function routeFromHash(): Route {
   return (ROUTES as string[]).includes(h) ? (h as Route) : ROUTE_ALIASES[h] ?? "tasks";
 }
 export function persistPrefs(s: AppState) {
-  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatMax: s.chatMax, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent, customAccent: s.customAccent, uiRadius: s.uiRadius, uiScale: s.uiScale })));
+  attempt(() => localStorage.setItem(KEY, JSON.stringify({ theme: s.theme, showScenes: s.showScenes, chatFollowUps: s.chatFollowUps, chatMax: s.chatMax, chatDensity: s.chatDensity, chatFont: s.chatFont, accent: s.accent, customAccent: s.customAccent, uiRadius: s.uiRadius, uiScale: s.uiScale })));
 }
 
 export async function refreshStatus() {

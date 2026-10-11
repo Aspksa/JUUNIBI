@@ -145,3 +145,36 @@ export function pickDiskFile(o: { files: DiskFile[]; title: string; have?: strin
     requestAnimationFrame(() => search.focus());
   });
 }
+
+/** Several files of «Диск» at once (for the chat): tick up to `max`, newest first, searchable. */
+export function pickDiskFiles(o: { files: DiskFile[]; title: string; max: number; ok: string }): Promise<DiskFile[]> {
+  return new Promise((resolve) => {
+    let done = false;
+    const picked = new Set<string>();
+    const search = el("input", { type: "search", cls: "mem-input", placeholder: "Найти файл", attrs: { "aria-label": "Найти файл" } });
+    const list = el("div", { cls: "dk-dest-list", attrs: { role: "listbox", "aria-multiselectable": "true", "aria-label": "Файлы" } });
+    const ok = btn(o.ok, () => finish(o.files.filter((f) => picked.has(f.id))), { primary: true });
+    const finish = (v: DiskFile[]) => { if (done) return; done = true; sheet.close(); resolve(v); };
+    const draw = () => {
+      const q = search.value.trim().toLocaleLowerCase();
+      const shown = o.files.filter((f) => !q || (f.name + " " + f.folder + " " + (f.tags ?? []).join(" ")).toLocaleLowerCase().includes(q)).slice(0, 120);
+      list.replaceChildren(...shown.map((f) => {
+        const on = picked.has(f.id);
+        const b = el("button", { type: "button", cls: "dk-dest dk-dest-task" + (on ? " on" : ""), disabled: !on && picked.size >= o.max, attrs: { role: "option", "aria-selected": String(on) } },
+          el("input", { type: "checkbox", checked: on, tabIndex: -1, attrs: { "aria-hidden": "true" } }), fileBadge(f.name, 24),
+          el("span", { cls: "dk-dest-text" }, el("span", { textContent: f.name }), el("small", { cls: "muted", textContent: f.folder || "Корень" })));
+        b.addEventListener("click", () => { if (on) picked.delete(f.id); else picked.add(f.id); draw(); });
+        return b;
+      }), ...(!shown.length ? [el("p", { cls: "muted small", textContent: o.files.length ? "Ничего не нашлось." : "На Диске пока нет файлов." })] : []));
+      ok.disabled = !picked.size;
+      ok.textContent = picked.size ? `${o.ok} (${picked.size})` : o.ok;
+    };
+    search.addEventListener("input", draw);
+    draw();
+    const body = el("div", { cls: "dk-form" }, search, el("p", { cls: "muted small", textContent: `Можно выбрать до ${o.max} файлов: текст, PDF, Word, Excel, PowerPoint.` }), list,
+      el("div", { cls: "dk-form-actions" }, btn("Отмена", () => finish([])), ok));
+    const sheet = openSheet({ title: o.title, icon: "folder", content: body, onClose: () => { if (!done) { done = true; resolve([]); } } });
+    body.closest(".mod-sheet")?.classList.add("dk-small-sheet");
+    requestAnimationFrame(() => search.focus());
+  });
+}

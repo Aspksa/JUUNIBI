@@ -206,3 +206,64 @@ export function actionProgress(steps: { status: "running" | "ok" | "error" | "de
   const elapsed = steps.reduce((sum, step) => sum + (typeof step.ms === "number" && Number.isFinite(step.ms) && step.ms >= 0 ? step.ms : 0), 0);
   return { total, done, failed, elapsed, observedPercent: total ? Math.round(done / total * 100) : 0 };
 }
+
+// ---------- sources of an answer from the internet ----------
+const WEB_TOOLS = new Set(["web_search", "web_open", "wiki_search", "wiki_read"]);
+export interface Source { url: string; host: string; title: string }
+/** Links in an answer that used the internet, as cards: markdown links first, then bare addresses; one per address. */
+export function sourcesOf(content: string, tools: string[] | undefined, max = 6): Source[] {
+  if (!tools?.some((t) => WEB_TOOLS.has(t))) return [];
+  const out: Source[] = [];
+  const seen = new Set<string>();
+  const add = (url: string, title: string) => {
+    const clean = url.replace(/[).,;:!?»"']+$/, "");
+    let u: URL;
+    try { u = new URL(clean); } catch { return; }
+    if (!/^https?:$/.test(u.protocol) || seen.has(u.href)) return;
+    seen.add(u.href);
+    const host = u.hostname.replace(/^www\./, "");
+    const path = decodeURIComponent(u.pathname).replace(/\/$/, "").split("/").pop()?.replace(/[_-]+/g, " ") ?? "";
+    out.push({ url: u.href, host, title: (title.trim() && title.trim() !== clean ? title.trim() : path || host).slice(0, 90) });
+  };
+  for (const m of content.matchAll(/\[([^\]]{1,200})\]\((https?:\/\/[^)\s]+)\)/g)) add(m[2]!, m[1]!);
+  for (const m of content.replace(/\[[^\]]*\]\([^)]*\)/g, " ").matchAll(/https?:\/\/[^\s<>()]+/g)) add(m[0], "");
+  return out.slice(0, max);
+}
+
+// ---------- how much of the conversation the model still sees ----------
+export const CONTEXT_BUDGET = 48_000;
+export const CONTEXT_TURNS = 60;
+export interface ContextInfo { used: number; budget: number; kept: number; total: number; dropped: number; percent: number }
+/** Mirrors `recentContext`: the newest turns that fit the budget are sent, older ones are left out. */
+export function contextInfo(turns: { content: string }[], budget = CONTEXT_BUDGET, maxTurns = CONTEXT_TURNS): ContextInfo {
+  let used = 0, kept = 0;
+  for (let i = turns.length - 1; i >= 0 && kept < maxTurns; i--) {
+    const n = turns[i]!.content.length;
+    if (used + n > budget) break;
+    used += n; kept++;
+  }
+  const total = turns.length;
+  const all = turns.reduce((n, t) => n + t.content.length, 0);
+  return { used, budget, kept, total, dropped: total - kept, percent: Math.min(100, Math.round((total > kept ? 1 : all / budget) * 100)) };
+}
+
+// ---------- long messages, search snippets, files ----------
+/** A message of the owner that is folded under «Показать целиком». */
+export const isLongText = (text: string) => text.length > 900 || text.split("\n").length > 14;
+/** A few words around the first match, for the search results in the history. */
+export function snippetAround(text: string, q: string, radius = 36): { before: string; hit: string; after: string } | null {
+  const flat = text.replace(/\s+/g, " ");
+  const i = flat.toLowerCase().indexOf(q.toLowerCase());
+  if (!q || i < 0) return null;
+  const from = Math.max(0, i - radius), to = Math.min(flat.length, i + q.length + radius);
+  return { before: (from > 0 ? "…" : "") + flat.slice(from, i), hit: flat.slice(i, i + q.length), after: flat.slice(i + q.length, to) + (to < flat.length ? "…" : "") };
+}
+/** Text -> base64 of its UTF-8 bytes (what the Disk upload takes). */
+export function utf8Base64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+/** Number with spaces between thousands: 12 400. */
+export const groupDigits = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");

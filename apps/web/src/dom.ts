@@ -121,6 +121,31 @@ export function iconButton(name: IconName, label: string, onClick: (e: MouseEven
   return b;
 }
 
+/**
+ * Copies text everywhere: the Clipboard API exists only on https and localhost, and the phone opens JUUNIBI
+ * over plain http on the home network, so there the old way (a hidden text field + "copy") is used.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try { await navigator.clipboard.writeText(text); return true; } catch { /* try the old way */ }
+  }
+  const ta = el("textarea", { value: text, readOnly: true, attrs: { "aria-hidden": "true" } });
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none";
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  document.body.append(ta);
+  ta.select(); ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch { ok = false; }
+  ta.remove(); active?.focus({ preventScroll: true });
+  return ok;
+}
+
+/** Saves text as a file in the browser's downloads (works over http too). */
+export function downloadText(name: string, text: string, type = "text/plain;charset=utf-8") {
+  const a = el("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 export const short = (v?: string | null) => (v && /^[0-9a-f]{40}$/.test(v) ? v.slice(0, 8) : v ?? "…");
 
 /**
