@@ -84,7 +84,8 @@ export class BrainCore {
       const words = tokenize(option);
       const evidence = confirmed.filter(item => {
         const chosen = tokenize(item.chosen);
-        return [...words].some(word=>chosen.has(word));
+        return item.chosen.trim().toLocaleLowerCase("ru") === option.trim().toLocaleLowerCase("ru") ||
+          [...words].some(word=>chosen.has(word));
       });
       const successes = evidence.filter(item=>item.observed==="success").length;
       const failures = evidence.filter(item=>item.observed==="failure").length;
