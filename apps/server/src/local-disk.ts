@@ -85,6 +85,7 @@ export class LocalDisk {
     if(typeof color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(color))throw bad("Неверный цвет");
     if(typeof pinned!=="boolean")throw bad("Неверное значение закрепления");
     if(typeof cover!=="string"||cover.length>100)throw bad("Неверная обложка");
+    if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
     this.folderStyles[folder]={color,pinned,cover};
     await this.save();return {name:folder,...this.folderStyles[folder]};
   }
