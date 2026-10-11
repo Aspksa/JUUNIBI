@@ -31,9 +31,9 @@ export function diskPage():HTMLElement {
   const files=el("div",{cls:"disk-files"});
   const tree=el("nav",{cls:"disk-tree",attrs:{"aria-label":"Дерево папок"}});
   const treeExpanded=new Set<string>([""]);
-  let folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
-  let folderSort:"name"|"files"|"size"|"pinned"="pinned";
-  let virtualFilter:"none"|"images"|"documents"|"large"="none";
+  let folderStyles:Record<string,{color:string;pinned:boolean;cover:string;createdAt?:string}>={};
+  let folderSort:"name"|"files"|"size"|"pinned"|"created"="pinned";
+  let virtualFilter:"none"|"images"|"documents"|"large"|"recent"="none";
   let folderQuery="";
   let treeHidden=false;
   const details=el("aside",{cls:"disk-file-details",attrs:{"aria-label":"Сведения о файле"}});
@@ -57,7 +57,7 @@ export function diskPage():HTMLElement {
   const bulkBar=el("div",{cls:"disk-bulk-bar"});
   let firstPaint=true;
   const setBusy=(busy:boolean)=>{drop.classList.toggle("disk-is-busy",busy);drop.setAttribute("aria-busy",String(busy));};
-  const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>(viewFilter!=="favorites"||f.favorite)&&(virtualFilter==="none"||virtualFilter==="large"&&f.size>5*1024*1024||virtualFilter==="images"&&/\\.(png|jpe?g|webp|gif)$/i.test(f.name)||virtualFilter==="documents"&&/\\.(pdf|docx?|xlsx?|txt|md)$/i.test(f.name)));
+  const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>(viewFilter!=="favorites"||f.favorite)&&(virtualFilter==="none"||virtualFilter==="recent"&&Date.now()-new Date(f.uploadedAt).getTime()<7*86400000||virtualFilter==="large"&&f.size>5*1024*1024||virtualFilter==="images"&&/\\.(png|jpe?g|webp|gif)$/i.test(f.name)||virtualFilter==="documents"&&/\\.(pdf|docx?|xlsx?|txt|md)$/i.test(f.name)));
   /** Animate only after a successful mutation; reduced-motion skips the transition. */
   const exitFile=async(id:string)=>{
     const node=[...files.querySelectorAll<HTMLElement>(".disk-file")].find(card=>card.dataset.fileId===id);
@@ -261,9 +261,9 @@ export function diskPage():HTMLElement {
       });
       const move=button("Переместить в папку",async()=>{
         actions.open=false;
-        const folder=prompt("Папка (доступные: "+["Главная",...allFolders].join(", ")+"). Пустое поле — главная.",f.folder);
+        const folder=await pickDestination();
         if(folder===null)return;
-        const r=await api.diskMove(f.id,folder.trim());
+        const r=await api.diskMove(f.id,folder);
         if(!r.ok)showToast(r.error.message);else {await exitFile(f.id);void refresh();}
       });
       const restore=button("Восстановить",async()=>{actions.open=false;const r=await api.diskRestore(f.id);if(!r.ok)showToast(r.error.message);else {await exitFile(f.id);void refresh();}});
@@ -299,6 +299,31 @@ export function diskPage():HTMLElement {
     firstPaint=false;
     if(gridMode&&viewFilter!=="trash")void thumbnails(visible);
   };
+  const pickDestination=(movingFolder?:string):Promise<string|null>=>new Promise(resolve=>{
+    const dialog=el("dialog",{cls:"disk-preview disk-destination-dialog"});
+    const searchInput=el("input",{type:"search",cls:"mem-input",placeholder:"Найти папку назначения"});
+    const list=el("div",{cls:"disk-destination-list"});
+    let chosen=movingFolder?movingFolder.includes("/")?movingFolder.slice(0,movingFolder.lastIndexOf("/")):"":current;
+    const summary=el("p",{cls:"muted small"});
+    const draw=()=>{
+      const query=searchInput.value.trim().toLocaleLowerCase();
+      const candidates=["",...allFolders].filter(folder=>(!movingFolder||folder!==movingFolder&&!folder.startsWith(movingFolder+"/"))&&(!query||folder.toLocaleLowerCase().includes(query)||!folder));
+      list.replaceChildren(...candidates.map(folder=>{
+        const control=button((folder?"📁 "+folder:"⌂ Корень диска")+(chosen===folder?" ✓":""),()=>{chosen=folder;draw();});
+        control.classList.add("disk-destination-item");
+        if(chosen===folder)control.classList.add("selected");
+        return control;
+      }));
+      summary.textContent="Назначение: "+(chosen||"Корень диска");
+    };
+    let finished=false;
+    const close=(value:string|null)=>{if(finished)return;finished=true;dialog.close();resolve(value);};
+    searchInput.addEventListener("input",draw);
+    dialog.append(el("div",{cls:"disk-preview-head"},el("strong",{textContent:"Выбрать папку назначения"}),button("Закрыть",()=>close(null))),searchInput,list,summary,
+      el("div",{cls:"disk-preview-head"},button("Переместить сюда",()=>close(chosen)),button("Отмена",()=>close(null))));
+    dialog.addEventListener("close",()=>{dialog.remove();if(!finished){finished=true;resolve(null);}},{once:true});
+    page.append(dialog);draw();dialog.showModal();
+  });
   const renderTree=()=>{
     const counts=new Map<string,number>();
     const bytes=new Map<string,number>();
@@ -312,7 +337,7 @@ export function diskPage():HTMLElement {
       const parent=full.includes("/")?full.slice(0,full.lastIndexOf("/")):"";
       const list=children.get(parent)??[];list.push(full);children.set(parent,list);
     }
-    for(const list of children.values())list.sort((a,b)=>folderSort==="files"?(counts.get(b)??0)-(counts.get(a)??0):folderSort==="size"?(bytes.get(b)??0)-(bytes.get(a)??0):folderSort==="pinned"?Number(!!folderStyles[b]?.pinned)-Number(!!folderStyles[a]?.pinned)||a.localeCompare(b,"ru"):a.localeCompare(b,"ru"));
+    for(const list of children.values())list.sort((a,b)=>folderSort==="files"?(counts.get(b)??0)-(counts.get(a)??0):folderSort==="size"?(bytes.get(b)??0)-(bytes.get(a)??0):folderSort==="created"?(folderStyles[b]?.createdAt??"").localeCompare(folderStyles[a]?.createdAt??""):folderSort==="pinned"?Number(!!folderStyles[b]?.pinned)-Number(!!folderStyles[a]?.pinned)||a.localeCompare(b,"ru"):a.localeCompare(b,"ru"));
     const openFolder=(folder:string)=>{
       current=folder;viewFilter="all";virtualFilter="none";allSearch.checked=false;selected.clear();visibleLimit=100;
       for(let p=folder;p.includes("/");p=p.slice(0,p.lastIndexOf("/")))treeExpanded.add(p.slice(0,p.lastIndexOf("/")));
@@ -390,9 +415,9 @@ export function diskPage():HTMLElement {
           if(!r.ok)feedback.textContent=r.error.message;else{menu.open=false;void refresh();}
         });
         const move=button("Переместить папку",async()=>{
-          const target=prompt("Путь папки назначения (пусто — корень)",parentName);
-          if(target===null)return;
-          const r=await api.diskFolderMove(folder,target.trim());
+          const destination=await pickDestination(folder);
+          if(destination===null)return;
+          const r=await api.diskFolderMove(folder,destination);
           if(!r.ok)feedback.textContent=r.error.message;
           else{menu.open=false;current="";void refresh();}
         });
@@ -445,13 +470,13 @@ export function diskPage():HTMLElement {
     };
     const filter=el("input",{type:"search",cls:"mem-input",placeholder:"Найти папку",value:folderQuery});
     filter.addEventListener("input",()=>{const position=filter.selectionStart;folderQuery=filter.value;renderTree();const next=tree.querySelector<HTMLInputElement>("input[type=search]");next?.focus();if(position!==null)next?.setSelectionRange(position,position);});
-    const sort=el("select",{cls:"mem-select"},...(["pinned","name","files","size"] as const).map(v=>el("option",{value:v,textContent:v==="name"?"По имени":v==="files"?"По файлам":v==="size"?"По размеру":"Закреплённые"})));
+    const sort=el("select",{cls:"mem-select"},...(["pinned","name","files","size","created"] as const).map(v=>el("option",{value:v,textContent:v==="name"?"По имени":v==="files"?"По файлам":v==="size"?"По размеру":v==="created"?"По дате создания":"Закреплённые"})));
     sort.value=folderSort;sort.addEventListener("change",()=>{folderSort=sort.value as typeof folderSort;renderTree();});
     tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),filter,sort,
       draw("",0),
       button("★ Избранное",()=>{viewFilter="favorites";virtualFilter="none";current="";void refresh();}),
       button("Корзина · "+trash.length,()=>{viewFilter="trash";virtualFilter="none";current="";void refresh();}),
-      ...([["images","Изображения"],["documents","Документы"],["large","Крупные файлы"]] as const).map(([kind,title])=>button("◇ "+title,()=>{virtualFilter=kind;viewFilter="all";allSearch.checked=true;current="";void refresh();})),
+      ...([["images","Изображения"],["documents","Документы"],["large","Крупные файлы"],["recent","Недавние · 7 дней"]] as const).map(([kind,title])=>button("◇ "+title,()=>{virtualFilter=kind;viewFilter="all";allSearch.checked=true;current="";void refresh();})),
       button("Журнал папок",async()=>{
         const r=await api.diskFolderHistory();if(!r.ok){showToast(r.error.message);return;}
         const dialog=el("dialog",{cls:"disk-preview"});

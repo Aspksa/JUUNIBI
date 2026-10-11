@@ -1907,3 +1907,13 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-tree-recovery{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px;border-bottom:1px solid rgba(150,150,150,.2)}
 .disk-tree-recovery>span{min-width:0;overflow-wrap:anywhere}
 .disk-tree .mem-input,.disk-tree .mem-select{width:100%;max-width:100%;box-sizing:border-box}
+
+
+/* Accessible folder-destination chooser */
+.disk-destination-dialog{width:min(540px,92vw)}
+.disk-destination-list{display:grid;gap:5px;max-height:340px;overflow-y:auto;padding:4px 0}
+.disk-destination-item{width:100%;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.disk-destination-item.selected{outline:2px solid var(--accent,#c3a5fc);background:rgba(161,139,204,.14)}
+
+/* Keep folder action popovers inside the Disk panel, away from the global navigation. */
+.disk-tree .disk-folder-popover{left:0;right:auto;max-width:min(260px,calc(100vw - 48px))}

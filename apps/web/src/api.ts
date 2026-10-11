@@ -172,7 +172,7 @@ export const api = {
   diskList: (folder?:string) => attemptAsync(()=>call<DiskListing>("/api/disk"+(folder!==undefined?"?folder="+encodeURIComponent(folder):""))),
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
   diskRenameFolder: (from:string,to:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/rename",post({from,to}))),
-  diskFolderStyles: () => attemptAsync(()=>call<Record<string,{color:string;pinned:boolean;cover:string}>>("/api/disk/folders/styles")),
+  diskFolderStyles: () => attemptAsync(()=>call<Record<string,{color:string;pinned:boolean;cover:string;createdAt?:string}>>("/api/disk/folders/styles")),
   diskFolderHistory: () => attemptAsync(()=>call<{actions:{at:string;action:string;folder:string;destination?:string;files?:number}[]}>("/api/disk/folders/history")),
   diskFolderStyle: (name:string,color:string,pinned:boolean,cover:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/style",post({name,color,pinned,cover}))),
   diskFolderMove: (from:string,parent:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/move",post({from,parent}))),
