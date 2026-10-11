@@ -103,4 +103,20 @@ describe("Local Disk",()=>{
    } finally {await rm(dir,{recursive:true,force:true});}
  });
 
+ it("tracks exact duplicates, metadata and detects corrupt objects",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-audit-"));
+   try{
+     const disk=new LocalDisk(dir);
+     const a=await disk.uploadBytes("one.txt","",Buffer.from("same"));
+     const b=await disk.uploadBytes("two.txt","",Buffer.from("same"));
+     expect(disk.duplicates()).toHaveLength(1);
+     expect(disk.duplicates()[0]?.map(x=>x.id)).toEqual([a.id,b.id]);
+     await disk.setMetadata(a.id,{tags:["личное","важное"],color:"#abcdef",note:"Запись"});
+     expect(disk.list().files.find(x=>x.id===a.id)?.tags).toEqual(["личное","важное"]);
+     expect(disk.snapshot().folders).toEqual([]);
+     expect((await disk.audit()).ok).toBe(2);
+     await expect(disk.setMetadata(a.id,{color:"red"})).rejects.toMatchObject({status:400});
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
