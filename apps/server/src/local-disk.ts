@@ -29,16 +29,17 @@ export class LocalDisk {
   private file(id:string){return path.join(this.root,"objects",id);}
   async load(){
     try {
-      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
+      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
       if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
       if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
+      if(Array.isArray(raw.fileActions))this.fileActions=raw.fileActions.slice(-300);
       if(Array.isArray(raw.folderActions))this.folderActions=raw.folderActions.slice(-300);
       if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
     }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
-    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,deletedFolders:this.deletedFolders});
+    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders});
     this.writes=this.writes.catch(()=>{}).then(async()=>{
       await mkdir(this.root,{recursive:true});
       const tmp=path.join(this.root,randomUUID()+".tmp");
@@ -262,12 +263,44 @@ export class LocalDisk {
   }
   /** Export an explicit snapshot of metadata; bytes are not included. */
   snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
+  /** Copy a file under a new identity without changing its original. */
+  async copyFile(id:string,folder:unknown){
+    const original=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!original)throw bad("Файл не найден",404);
+    const target=validFolder(folder);
+    if(target&&!this.folders.includes(target))throw bad("Папка назначения не найдена",404);
+    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    const bytes=await readFile(this.file(id));
+    if(bytes.length!==original.size||createHash("sha256").update(bytes).digest("hex")!==original.sha256)throw bad("Файл повреждён",409);
+    const copied:DiskEntry={...original,id:randomUUID(),name:original.name,folder:target,uploadedAt:new Date().toISOString()};
+    delete copied.deletedAt;
+    await writeFile(this.file(copied.id),bytes,{flag:"wx",mode:0o600});
+    this.entries.push(copied);
+    try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==copied.id);await rm(this.file(copied.id),{force:true});throw e;}
+    return {...copied};
+  }
+  /** Roll back the latest file rename or move; each entry is bounded and persisted. */
+  private fileActions:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[]=[];
+  fileHistory(){return [...this.fileActions].reverse();}
+  private logFileChange(e:DiskEntry,before:{name:string;folder:string}){
+    this.fileActions.push({id:e.id,before,after:{name:e.name,folder:e.folder},at:new Date().toISOString()});
+    if(this.fileActions.length>300)this.fileActions.shift();
+  }
+  async undoFileChange(){
+    const record=this.fileActions.at(-1);
+    if(!record)throw bad("Нет операций для отмены",404);
+    const entry=this.entries.find(e=>e.id===record.id&&!e.deletedAt);
+    if(!entry||entry.name!==record.after.name||entry.folder!==record.after.folder)throw bad("Файл изменился после операции",409);
+    if(record.before.folder&&!this.folders.includes(record.before.folder))throw bad("Исходная папка больше не существует",409);
+    entry.name=record.before.name;entry.folder=record.before.folder;
+    this.fileActions.pop();await this.save();return {...entry};
+  }
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
     const next=validName(name);
     if(next===entry.name)return {...entry};
-    entry.name=next;
+    const before={name:entry.name,folder:entry.folder};entry.name=next;this.logFileChange(entry,before);
     await this.save();
     return {...entry};
   }
@@ -283,7 +316,7 @@ export class LocalDisk {
     if(!entry)throw bad("Файл не найден",404);
     const next=validFolder(folder);
     if(next&&!this.folders.includes(next))throw bad("Папка не найдена",404);
-    entry.folder=next;await this.save();return {...entry};
+    const before={name:entry.name,folder:entry.folder};entry.folder=next;this.logFileChange(entry,before);await this.save();return {...entry};
   }
   async restore(id:string){
     const entry=this.entries.find(x=>x.id===id&&x.deletedAt);

@@ -1917,3 +1917,5 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 
 /* Keep folder action popovers inside the Disk panel, away from the global navigation. */
 .disk-tree .disk-folder-popover{left:0;right:auto;max-width:min(260px,calc(100vw - 48px))}
+
+.disk-group-heading{grid-column:1/-1;font-size:12px;font-weight:700;opacity:.75;padding:9px 4px 4px;border-bottom:1px solid rgba(127,127,127,.2)}
