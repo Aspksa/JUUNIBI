@@ -699,6 +699,21 @@ export class LocalDisk {
   }
   /** Auto-clean on the owner's schedule; cheap when nothing is due. */
   purgeExpired(now=Date.now()){return this.mutate(() => this.trashDays?this.emptyTrashUnlocked(this.trashDays*86400000,now):Promise.resolve({purged:0,bytes:0}));}
+  /** Read an immutable saved revision for local paragraph comparison. */
+  async readRevisionText(id:string,revision:number,max=100*1024){
+    if(!Number.isSafeInteger(revision)||revision<1)throw bad("Некорректный номер редакции");
+    const {entry}=this.rawFile(id);
+    if(revision===(entry.revision??1))return this.readText(id,max);
+    const version=(this.versions[id]??[]).find(x=>x.revision===revision);
+    if(!version)throw bad("Редакция не найдена",404);
+    const bytes=await readFile(this.objectPath(version.objectId));
+    if(createHash("sha256").update(bytes).digest("hex")!==version.sha256)throw bad("Повреждена сохранённая редакция",409);
+    const ext=entry.name.toLowerCase().split(".").pop()??"";
+    let text=ext==="pdf"?pdfText(bytes):ext==="docx"?docxText(bytes):/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext)?bytes.toString("utf8"):"";
+    text=text.replace(/\\r\\n?/g,"\\n").replace(/\\n{3,}/g,"\\n\\n").trim();
+    if(!text)throw bad("Текст редакции недоступен",422);
+    return {name:entry.name,text:text.slice(0,max),truncated:text.length>max};
+  }
   /** Plain text of a text file or a simple PDF, so JUUNIBI can answer questions about it. */
   async readText(id:string,max=100*1024){
     const {entry,path:file}=this.rawFile(id);

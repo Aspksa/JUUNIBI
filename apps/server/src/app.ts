@@ -1,5 +1,6 @@
 import type { LocalDisk } from "./local-disk";
 import { analyzeDisk } from "./disk-insights";
+import type { DocumentIntelligence } from "./document-intelligence-v2";
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -61,6 +62,8 @@ export interface AppDeps {
   /** Notes, to-dos and reminders. */
   organizer?: Organizer;
   disk?: LocalDisk;
+  documentIntelligence?: DocumentIntelligence;
+  documentCloudAnalysis?: (question:string, docs:{id:string;name:string;excerpt:string}[])=>Promise<string>;
   /** «Пароли»: the encrypted vault, answered only on the computer itself (never over the home Wi-Fi). */
   vault?: Vault;
   /** «Дела и достижения»: figures, awards, records, the time machine. */
@@ -265,6 +268,25 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             // The trash empties itself on the owner's schedule; checked at most once an hour.
             if(Date.now()-lastTrashSweep>3600000){lastTrashSweep=Date.now();await disk.purgeExpired().catch(()=>undefined);}
             return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
+          }
+          if(req.method==="GET"&&p==="/api/disk/intelligence/compare"){
+            if(!deps.documentIntelligence)return send(res,503,{error:"Сервис сравнения недоступен"});
+            const id=url.searchParams.get("id")??"";
+            const from=Number(url.searchParams.get("from")),to=Number(url.searchParams.get("to"));
+            if(!/^[0-9a-f-]{36}$/.test(id)||!Number.isSafeInteger(from)||!Number.isSafeInteger(to))return send(res,400,{error:"Некорректная редакция"});
+            const before=await disk.readRevisionText(id,from);
+            const after=await disk.readRevisionText(id,to);
+            return send(res,200,await deps.documentIntelligence.compare(id,before.text,after.text));
+          }
+          if(req.method==="GET"&&p==="/api/disk/intelligence")return deps.documentIntelligence ? send(res,200,await deps.documentIntelligence.get()) : send(res,503,{error:"Индекс недоступен"});
+          if(req.method==="POST"&&p==="/api/disk/intelligence/cloud"){
+            if(!deps.documentIntelligence||!deps.documentCloudAnalysis)return send(res,503,{error:"Облачный анализ недоступен"});
+            const b=await readJson(req);
+            if(b.consent!==true)return send(res,403,{error:"Требуется явное разрешение отправки содержимого документов в Cloud.ru"});
+            if(!Array.isArray(b.ids)||!b.ids.every((x:unknown)=>typeof x==="string")||typeof b.question!=="string"||b.question.length>1000)return send(res,400,{error:"Некорректный запрос"});
+            const docs=await deps.documentIntelligence.cloudPayload(b.ids);
+            const answer=await deps.documentCloudAnalysis(b.question,docs);
+            return send(res,200,{answer,sources:docs.map(({id,name})=>({id,name}))});
           }
           if(req.method==="GET"&&p==="/api/disk/insights")return send(res,200,await analyzeDisk(disk));
           if(req.method==="GET"&&p==="/api/disk/trash")return send(res,200,disk.trashSettings());
