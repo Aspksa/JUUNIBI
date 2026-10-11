@@ -215,6 +215,18 @@ export function diskPage():HTMLElement {
   });
   const restoreBackupButton=button("Восстановить из копии",()=>restoreInput.click());
   page.append(restoreInput);
+  const backupButton=button("Скачать резервную копию",async()=>{
+    status.textContent="Проверка и упаковка данных...";
+    const r=await api.diskBackup();
+    if(!r.ok){showToast(r.error.message);return;}
+    const bytes=Uint8Array.from(atob(r.value.base64),c=>c.charCodeAt(0));
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",bytes))).map(x=>x.toString(16).padStart(2,"0")).join("");
+    if(hash!==r.value.sha256){showToast("Проверка архива не прошла: SHA-256 не совпал");return;}
+    const url=URL.createObjectURL(new Blob([bytes],{type:"application/json"}));
+    const a=document.createElement("a");a.href=url;a.download=r.value.filename;a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    status.textContent="Резервная копия готова · "+r.value.objects+" объектов · SHA-256 проверен";
+  });
   const exportButton=button("Экспорт каталога",async()=>{
     const r=await api.diskSnapshot();if(!r.ok){showToast(r.error.message);return;}
     const url=URL.createObjectURL(new Blob([JSON.stringify(r.value,null,2)],{type:"application/json"}));
