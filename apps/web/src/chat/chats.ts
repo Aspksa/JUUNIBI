@@ -149,7 +149,10 @@ export class Chats {
     // Never silently overwrite the durable archive with a truncated conversation list.
     // Preserve one previous complete checkpoint for recovery after a corrupt primary value.
     const previous = attempt(() => localStorage.getItem(KEY));
-    if (previous.ok && previous.value) attempt(() => localStorage.setItem(BACKUP_KEY, previous.value!));
+    if (previous.ok && previous.value) {
+      const valid = attempt(() => JSON.parse(previous.value!) as { items?: unknown });
+      if (valid.ok && Array.isArray(valid.value?.items)) attempt(() => localStorage.setItem(BACKUP_KEY, previous.value!));
+    }
     const r = attempt(() => localStorage.setItem(KEY, JSON.stringify({ items, activeId })));
     if (!r.ok) console.error("JUUNIBI: не удалось сохранить историю чатов — хранилище браузера заполнено", r.error);
   }
