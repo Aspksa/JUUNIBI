@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 
 const port=5189;
-const server=spawn("npm",["run","preview","-w","@juunibi/web","--","--host","127.0.0.1","--port",String(port)],{stdio:"pipe",shell:process.platform==="win32"});
+const server=spawn("npm",["run","preview","-w","@juunibi/web","--","--host","127.0.0.1","--port",String(port)],{stdio:"ignore",shell:process.platform==="win32",detached:process.platform!=="win32"});
 let browser;
 try{
   let ready=false;
@@ -14,7 +14,8 @@ try{
   }
   assert.ok(ready,"Preview server did not start");
   browser=await chromium.launch({headless:true});
-  const page=await browser.newPage();
+  const page=await browser.newPage({viewport:{width:1600,height:1000}});
+  page.setDefaultTimeout(10000);
   const folders=["Проекты","Проекты/Документы","Архив"];
   const entries=[
     {id:"11111111-1111-4111-8111-111111111111",name:"recent.txt",folder:"Проекты",size:6,uploadedAt:new Date().toISOString(),sha256:"a".repeat(64)},
@@ -47,4 +48,4 @@ try{
   await dialog.getByRole("button",{name:"Переместить сюда"}).click();
   await dialog.waitFor({state:"hidden"});
   console.log("Browser smoke passed: creation sort, recent files, destination picker");
-}finally{await browser?.close();server.kill();}
+}finally{await browser?.close();if(process.platform==="win32")server.kill();else if(server.pid){try{process.kill(-server.pid,"SIGTERM");}catch{}}}
