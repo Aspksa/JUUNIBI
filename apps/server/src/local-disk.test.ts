@@ -21,8 +21,24 @@ describe("Local Disk",()=>{
    expect(fresh.list("Документы").files[0]?.name).toBe("новое имя.txt");
    await expect(fresh.createFolder("../escape")).rejects.toMatchObject({status:400});
    await expect(fresh.upload("../bad","Документы","YQ==")).rejects.toMatchObject({status:400});
+   await fresh.toggleFavorite(uploaded.id,true);
+   expect(fresh.list().files[0]?.favorite).toBe(true);
+   await fresh.createFolder("Работа");
+   await fresh.moveFile(uploaded.id,"Работа");
+   expect(fresh.list("Работа").files).toHaveLength(1);
+   await expect(fresh.moveFile(uploaded.id,"missing")).rejects.toMatchObject({status:404});
    await fresh.remove(uploaded.id);
    expect(fresh.list().files).toHaveLength(0);
+   expect(fresh.list().trash).toHaveLength(1);
+   await expect(fresh.download(uploaded.id)).rejects.toMatchObject({status:404});
+   const afterDelete=new LocalDisk(dir);await afterDelete.load();
+   expect(afterDelete.list().trash).toHaveLength(1);
+   await afterDelete.restore(uploaded.id);
+   expect(afterDelete.list("Работа").files).toHaveLength(1);
+   await afterDelete.remove(uploaded.id);
+   await afterDelete.purge(uploaded.id);
+   expect(afterDelete.list().trash).toHaveLength(0);
+   await expect(afterDelete.restore(uploaded.id)).rejects.toMatchObject({status:404});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
  it("limits sizes and refuses unknown folders",async()=>{
