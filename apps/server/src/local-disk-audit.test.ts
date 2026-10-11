@@ -14,6 +14,30 @@ const archive = async () => { const lines: string[] = []; for await (const line 
 const linesOf = async function* (lines: string[]) { yield* lines; };
 
 describe("Disk audit regressions", () => {
+  it("rechecks keep-forever retention after queued setting changes", async () => {
+    const file=await disk.uploadBytes("keep.txt","",Buffer.from("keep"));
+    await disk.remove(file.id);
+    const started=deferred(), release=deferred();
+    const pending=disk.uploadStream("block.txt","",(async function*(){started.resolve();await release.promise;yield Buffer.from("block");})());
+    await started.promise;
+    const setting=disk.setTrashDays(0);
+    const cleanup=disk.purgeExpired(Date.now()+40*86400000);
+    release.resolve();
+    await Promise.all([pending,setting,cleanup]);
+    expect(disk.list().trash.map(e=>e.id)).toContain(file.id);
+    expect((await reload()).trashSettings().days).toBe(0);
+  });
+  it("preserves indexed bytes if a destructive index save is rejected", async () => {
+    const file=await disk.uploadBytes("keep.txt","",Buffer.from("keep"));
+    await disk.remove(file.id);
+    const saved=(disk as any).save;
+    (disk as any).save=async()=>{throw new Error("index unavailable");};
+    try { await expect(disk.purge(file.id)).rejects.toThrow("index unavailable"); }
+    finally { (disk as any).save=saved; }
+    expect(disk.list().trash).toHaveLength(1);
+    expect(Buffer.from((await disk.download(file.id)).base64,"base64").toString()).toBe("keep");
+  });
+
   it("round-trips deleted branches, revisions, covers and trash retention", async () => {
     await disk.createFolder("Работа"); await disk.createFolder("Работа/Фото");
     const file = await disk.uploadBytes("cover.png", "Работа/Фото", Buffer.from("old"));
