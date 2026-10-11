@@ -20,7 +20,7 @@ export class LocalDisk {
   private folders:string[]=[];
   private folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
   private folderActions:{at:string;action:string;folder:string;destination?:string;files?:number}[]=[];
-  private logFolder(action:string,folder:string,destination?:string,files?:number){this.folderActions.push({at:new Date().toISOString(),action,folder,destination,files});if(this.folderActions.length>300)this.folderActions.shift();}
+  private logFolder(action:string,folder:string,destination?:string,files?:number){this.folderActions.push({at:new Date().toISOString(),action,folder,...(destination===undefined?{}:{destination}),...(files===undefined?{}:{files})});if(this.folderActions.length>300)this.folderActions.shift();}
   folderHistory(){return [...this.folderActions].reverse();}
   private deletedFolders:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]=[];
   private writes:Promise<void>=Promise.resolve();
