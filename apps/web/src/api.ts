@@ -182,6 +182,7 @@ export const diskRawUrl=(f:{id:string;sha256:string;name:string},download=false)
 export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:string;folder:string}[]}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
+  diskInsights: () => attemptAsync(()=>call<{generatedAt:string;analyzed:number;eligible:number;skipped:number;metrics:{id:number;value:string;detail?:string}[];links:{from:string;to:string;score:number}[];findings:{kind:string;text:string;ids:string[]}[]} >("/api/disk/insights")),
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
   diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[];revisionsChecked?:number;revisionIssues?:{fileId:string;revision:number;status:string}[]}>("/api/disk/audit")),
   diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),

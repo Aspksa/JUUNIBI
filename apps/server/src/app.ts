@@ -1,4 +1,5 @@
 import type { LocalDisk } from "./local-disk";
+import { analyzeDisk } from "./disk-insights";
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -265,6 +266,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             if(Date.now()-lastTrashSweep>3600000){lastTrashSweep=Date.now();await disk.purgeExpired().catch(()=>undefined);}
             return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
           }
+          if(req.method==="GET"&&p==="/api/disk/insights")return send(res,200,await analyzeDisk(disk));
           if(req.method==="GET"&&p==="/api/disk/trash")return send(res,200,disk.trashSettings());
           if(req.method==="POST"&&p==="/api/disk/trash"){const b=await readJson(req);return send(res,200,await disk.setTrashDays(b.days));}
           if(req.method==="POST"&&p==="/api/disk/trash/empty")return send(res,200,await disk.emptyTrash());

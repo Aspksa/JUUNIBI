@@ -484,3 +484,8 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
   .dk-layout.with-life:not(.no-tree){grid-template-columns:230px minmax(0,1fr)}
   .dk-layout.with-life .dk-right{grid-column:1/-1}
 }
+
+.dk-life-findings{display:grid;gap:6px}
+.dk-life-findings:empty{display:none}
+.dk-life-findings p{margin:0;padding:9px 10px;background:color-mix(in srgb,var(--brand) 9%,var(--bg));border:1px solid color-mix(in srgb,var(--brand) 18%,var(--line));border-radius:10px;font-size:11px;line-height:1.4}
+.dk-life>.btn{width:100%;justify-content:center;font-size:12px}
