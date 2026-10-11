@@ -12,6 +12,7 @@ test("assistant tool names have no duplicates", () => {
 test("agent execution cannot accept arbitrary shell commands",()=>{
   const brain=readFileSync(new URL("../apps/server/src/brain.ts",import.meta.url),"utf8");
   const agent=brain.slice(brain.indexOf("async executeAgentBatch("),brain.indexOf("  updateStep(",brain.indexOf("async executeAgentBatch(")));
-  assert.ok(agent.includes('a === "list_modules" || a === "search_memory"'));
+  assert.ok(agent.includes('this.validateReadActions(actions, allowed)'), 'agent batch must invoke shared safety validation');
+  assert.ok(brain.includes('a === "list_modules" || a === "search_memory"'), 'shared validator must enforce the read-only allowlist');
   assert.doesNotMatch(agent,/execSync\(|spawn\(|execFile\(/);
 });
