@@ -160,12 +160,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string}
+export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string;revision?:number}
 export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:string;title:string;value:string;ready:boolean;reason?:string}[];summary:{files:number;bytes:number;folders:number;ready:number;total:number}}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
-  diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[]}>("/api/disk/audit")),
+  diskAudit: () => attemptAsync(()=>call<{total:number;ok:number;results:{id:string;name:string;status:string}[];revisionsChecked?:number;revisionIssues?:{fileId:string;revision:number;status:string}[]}>("/api/disk/audit")),
   diskDuplicates: () => attemptAsync(()=>call<{groups:DiskFile[][]}>("/api/disk/duplicates")),
   diskSnapshot: () => attemptAsync(()=>call<{exportedAt:string;files:DiskFile[];folders:string[]}>("/api/disk/snapshot")),
   diskMetadata: (id:string,tags:string[],color:string,note:string) => attemptAsync(()=>call<DiskFile>("/api/disk/metadata",post({id,tags,color,note}))),
@@ -186,6 +186,8 @@ export const api = {
   diskBulk: (ids:string[],action:"trash"|"restore"|"move"|"favorite"|"unfavorite",folder?:string) => attemptAsync(()=>call<{updated:number}>("/api/disk/bulk",post({ids,action,folder}))),
   diskMove: (id:string,folder:string) => attemptAsync(()=>call<DiskFile>("/api/disk/move",post({id,folder}))),
   diskCopy: (id:string,folder:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/copy",post({id,folder}))),
+  diskVersions: (id:string) => attemptAsync(()=>call<{versions:{revision:number;size:number;sha256:string;at:string}[]}>("/api/disk/files/"+encodeURIComponent(id)+"/versions")),
+  diskRestoreVersion: (id:string,revision:number) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id)+"/versions/restore",post({revision}))),
   diskUndo: () => attemptAsync(()=>call<DiskFile>("/api/disk/files/undo",post({}))),
   diskFileHistory: () => attemptAsync(()=>call<{actions:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[]}>("/api/disk/files/history")),
   diskFavorite: (id:string,favorite:boolean) => attemptAsync(()=>call<DiskFile>("/api/disk/favorite",post({id,favorite}))),

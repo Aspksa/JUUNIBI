@@ -195,6 +195,16 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="POST"&&p==="/api/disk/folders/trash"){const b=await readJson(req);return send(res,200,await disk.trashFolder(b.name));}
           if(req.method==="GET"&&p==="/api/disk/folders/deleted")return send(res,200,{folders:disk.listDeletedFolders()});
           if(req.method==="POST"&&p==="/api/disk/folders/restore"){const b=await readJson(req);return send(res,200,await disk.restoreFolder(b.name));}
+          const versionsMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/versions$/.exec(p);
+          const replaceMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/versions\/binary$/.exec(p);
+          const restoreMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/versions\/restore$/.exec(p);
+          if(req.method==="GET"&&versionsMatch)return send(res,200,{versions:disk.fileVersions(versionsMatch[1]!)});
+          if(req.method==="POST"&&restoreMatch){const b=await readJson(req);return send(res,200,await disk.restoreFileVersion(restoreMatch[1]!,b.revision));}
+          if(req.method==="POST"&&replaceMatch){
+            const declared=Number(req.headers["content-length"]??0);
+            if(declared>50*1024*1024)return send(res,413,{error:"Редакция превышает 50 МБ"});
+            return send(res,200,await disk.replaceStream(replaceMatch[1]!,req,url.searchParams.get("expected")));
+          }
           if(req.method==="POST"&&p==="/api/disk/files/binary"){
             const name=url.searchParams.get("name"),folder=url.searchParams.get("folder")??"";
             const limit=50*1024*1024;

@@ -166,6 +166,8 @@ export function diskPage():HTMLElement {
     const output=el("div",{cls:"disk-tool-report"},
       el("strong",{textContent:"Файлов проверено: "+audit.value.total+" · Исправных: "+audit.value.ok}),
       el("p",{textContent:failures.length?"Проблемы: "+failures.map(x=>x.name+" ("+x.status+")").join("; "):"Повреждённых и отсутствующих файлов не обнаружено"}),
+      el("strong",{textContent:"Исторических редакций проверено: "+(audit.value.revisionsChecked??0)}),
+      el("p",{textContent:audit.value.revisionIssues?.length?"Проблемы с версиями: "+audit.value.revisionIssues.map(v=>v.fileId.slice(0,8)+" · редакция "+v.revision+" ("+v.status+")").join("; "):"Архивные редакции без ошибок"}),
       el("strong",{textContent:"Группы одинаковых файлов: "+duplicates.value.groups.length}),
       ...duplicates.value.groups.map(g=>el("p",{textContent:g.map(x=>x.name).join(" / ")}))
     );
@@ -296,6 +298,38 @@ export function diskPage():HTMLElement {
         if(!r.ok)showToast(r.error.message);else void refresh();
       });
       const copy=button("Копировать в папку",async()=>{actions.open=false;const folder=await pickDestination();if(folder===null)return;const r=await api.diskCopy(f.id,folder);if(!r.ok)showToast(r.error.message);else void refresh();});
+      const revisions=button("История версий",async()=>{
+        actions.open=false;
+        const r=await api.diskVersions(f.id);if(!r.ok){showToast(r.error.message);return;}
+        const dialog=el("dialog",{cls:"disk-preview disk-versions-dialog"});
+        const message=el("p",{cls:"muted small",attrs:{"aria-live":"polite"}});
+        const uploader=el("input",{type:"file",attrs:{"aria-label":"Файл новой редакции"}});
+        const save=button("Загрузить новую редакцию",async()=>{
+          const file=uploader.files?.[0];if(!file){message.textContent="Выберите файл";return;}
+          if(!file.size||file.size>50*1024*1024){message.textContent="Разрешено от 1 байта до 50 МБ";return;}
+          save.disabled=true;message.textContent="Сохранение новой редакции…";
+          try{
+            const res=await fetch("/api/disk/files/"+encodeURIComponent(f.id)+"/versions/binary?expected="+encodeURIComponent(f.sha256),
+              {method:"POST",headers:{"Content-Type":"application/octet-stream"},body:file});
+            if(!res.ok){const error=await res.json() as {error?:string};throw new Error(error.error??"Ошибка сохранения");}
+            dialog.close();void refresh();
+          }catch(e){message.textContent=e instanceof Error?e.message:"Ошибка сохранения";}
+          finally{save.disabled=false;}
+        });
+        const history=r.value.versions.slice().reverse().map(v=>el("div",{cls:"disk-tree-recovery"},
+          el("span",{textContent:"Редакция "+v.revision+" · "+human(v.size)+" · "+new Date(v.at).toLocaleString("ru-RU")}),
+          v.revision===(f.revision??1)?
+            el("small",{textContent:"Текущая"}):
+            button("Восстановить",async()=>{
+              if(!confirm("Восстановить редакцию "+v.revision+" файла «"+f.name+"»? Текущая редакция сохранится в истории."))return;
+              const result=await api.diskRestoreVersion(f.id,v.revision);
+              if(!result.ok){message.textContent=result.error.message;return;}
+              dialog.close();void refresh();
+            })));
+        dialog.append(el("div",{cls:"disk-preview-head"},el("strong",{textContent:"Версии · "+f.name}),button("Закрыть",()=>dialog.close())),
+          ...history,el("hr"),el("p",{textContent:"Новая редакция"}),uploader,save,message);
+        dialog.addEventListener("close",()=>dialog.remove(),{once:true});page.append(dialog);dialog.showModal();
+      });
       const favorite=button(f.favorite?"★ Убрать из избранного":"☆ В избранное",async()=>{
         actions.open=false;const r=await api.diskFavorite(f.id,!f.favorite);
         if(!r.ok)showToast(r.error.message);else void refresh();
@@ -312,7 +346,7 @@ export function diskPage():HTMLElement {
         actions.open=false;if(!confirm("Безвозвратно удалить «"+f.name+"»?"))return;
         const r=await api.diskPurge(f.id);if(!r.ok)showToast(r.error.message);else void refresh();
       });
-      actions.append(summary,el("div",{cls:"disk-actions-menu"},...(viewFilter==="trash"?[restore,purge]:[show,favorite,copy,move,rename,download,del])));
+      actions.append(summary,el("div",{cls:"disk-actions-menu"},...(viewFilter==="trash"?[restore,purge]:[show,revisions,favorite,copy,move,rename,download,del])));
       const open=button(viewFilter==="trash"?"В корзине":"Открыть",()=>{if(viewFilter!=="trash")void openPreview(f);});
       open.disabled=viewFilter==="trash";
       const info=button("Сведения",()=>{details.replaceChildren(el("strong",{textContent:f.name}),el("p",{textContent:"Размер: "+human(f.size)}),el("p",{textContent:"Папка: "+(f.folder||"Главная")}),el("p",{textContent:"Загружен: "+new Date(f.uploadedAt).toLocaleString("ru-RU")}),el("small",{textContent:"SHA-256: "+f.sha256}));});

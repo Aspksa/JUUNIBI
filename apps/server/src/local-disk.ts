@@ -4,7 +4,7 @@ import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
-export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string };
+export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string; objectId?:string; revision?:number };
 const LIMIT = 50 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
@@ -15,8 +15,10 @@ const validName = (v:unknown) => {
   if (typeof v!=="string" || !v.trim() || v.length>180 || /[\\/\x00-\x1f]/.test(v) || v==="." || v==="..") throw bad("Недопустимое имя файла");
   return v.trim();
 };
+type DiskRevision = {revision:number;objectId:string;size:number;sha256:string;at:string};
 export class LocalDisk {
   private entries:DiskEntry[]=[];
+  private versions:Record<string,DiskRevision[]>={};
   private folders:string[]=[];
   private folderStyles:Record<string,{color:string;pinned:boolean;cover:string;createdAt?:string}>={};
   private folderActions:{at:string;action:string;folder:string;destination?:string;files?:number}[]=[];
@@ -26,10 +28,12 @@ export class LocalDisk {
   private writes:Promise<void>=Promise.resolve();
   constructor(private readonly root:string) {}
   private get index(){return path.join(this.root,"index.json");}
-  private file(id:string){return path.join(this.root,"objects",id);}
+  private objectPath(id:string){return path.join(this.root,"objects",id);}
+  private file(id:string){const entry=this.entries.find(e=>e.id===id);return this.objectPath(entry?.objectId??id);}
   async load(){
     try {
-      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
+      const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
+      if(raw.versions&&typeof raw.versions==="object")this.versions=raw.versions;
       if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
       if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
       if(Array.isArray(raw.fileActions))this.fileActions=raw.fileActions.slice(-300);
@@ -39,7 +43,7 @@ export class LocalDisk {
     }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
-    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders});
+    const content=JSON.stringify({versions:this.versions,entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders});
     this.writes=this.writes.catch(()=>{}).then(async()=>{
       await mkdir(this.root,{recursive:true});
       const tmp=path.join(this.root,randomUUID()+".tmp");
@@ -51,7 +55,7 @@ export class LocalDisk {
   chronicles(){return diskChronicles(this.entries,this.folders);}
   list(folder?:string){
     const f=folder===undefined?undefined:validFolder(folder);
-    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0),maxFileBytes:LIMIT};
+    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0),maxFileBytes:LIMIT};
   }
   async createFolder(name:unknown){
     const f=validFolder(name);
@@ -110,13 +114,13 @@ export class LocalDisk {
       for(const e of entries){
         const bytes=await readFile(this.file(e.id));
         if(createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Повреждён исходный файл",409);
-        const id=randomUUID();await writeFile(this.file(id),bytes,{flag:"wx",mode:0o600});
+        const id=randomUUID();await writeFile(this.objectPath(id),bytes,{flag:"wx",mode:0o600});
         copied.push(id);
       }
     }catch(e){for(const id of copied)await rm(this.file(id),{force:true});throw e;}
     this.folders.push(...folders.map(f=>target+f.slice(from.length)));
     for(const folder of folders)this.folderStyles[target+folder.slice(from.length)]={...(this.folderStyles[folder]??{color:"#b89cff",pinned:false,cover:""}),createdAt:new Date().toISOString()};
-    this.entries.push(...entries.map((e,i)=>({...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString()})));
+    this.entries.push(...entries.map((e,i)=>{const copy={...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString(),revision:1};delete copy.objectId;return copy;}));
     this.logFolder("copy",from,target,copied.length);await this.save();return {name:target,files:copied.length};
   }
   listDeletedFolders(){return this.deletedFolders.map(({root,paths,at})=>({root,count:paths.length,at}));}
@@ -234,7 +238,19 @@ export class LocalDisk {
         results.push({id:e.id,name:e.name,status:valid?"ok":"corrupt"});
       }catch{results.push({id:e.id,name:e.name,status:"missing"});}
     }
-    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results};
+    const revisionIssues:{fileId:string;revision:number;status:"missing"|"corrupt"}[]=[];
+    let revisionsChecked=0;
+    for(const [fileId,history] of Object.entries(this.versions)){
+      for(const v of history){
+        revisionsChecked++;
+        try{
+          const bytes=await readFile(this.objectPath(v.objectId));
+          if(bytes.length!==v.size||createHash("sha256").update(bytes).digest("hex")!==v.sha256)
+            revisionIssues.push({fileId,revision:v.revision,status:"corrupt"});
+        }catch{revisionIssues.push({fileId,revision:v.revision,status:"missing"});}
+      }
+    }
+    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results,revisionsChecked,revisionIssues};
   }
   duplicates(){
     const groups=new Map<string,DiskEntry[]>();
@@ -274,6 +290,8 @@ export class LocalDisk {
     if(bytes.length!==original.size||createHash("sha256").update(bytes).digest("hex")!==original.sha256)throw bad("Файл повреждён",409);
     const copied:DiskEntry={...original,id:randomUUID(),name:original.name,folder:target,uploadedAt:new Date().toISOString()};
     delete copied.deletedAt;
+    delete copied.objectId;
+    copied.revision=1;
     await writeFile(this.file(copied.id),bytes,{flag:"wx",mode:0o600});
     this.entries.push(copied);
     try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==copied.id);await rm(this.file(copied.id),{force:true});throw e;}
@@ -294,6 +312,49 @@ export class LocalDisk {
     if(record.before.folder&&!this.folders.includes(record.before.folder))throw bad("Исходная папка больше не существует",409);
     entry.name=record.before.name;entry.folder=record.before.folder;
     this.fileActions.pop();await this.save();return {...entry};
+  }
+  /** Immutable file revisions. Existing bytes remain intact until index persistence succeeds. */
+  fileVersions(id:string){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    return [...(this.versions[id]??[]).map(({revision,size,sha256,at})=>({revision,size,sha256,at})),
+      {revision:entry.revision??1,size:entry.size,sha256:entry.sha256,at:entry.uploadedAt}];
+  }
+  async replaceStream(id:string,stream:AsyncIterable<Buffer>,expectedSha256?:unknown){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(typeof expectedSha256!=="string"||expectedSha256!==entry.sha256)throw bad("Файл изменился: обновите список перед заменой",409);
+    if((this.versions[id]?.length??0)>=20)throw bad("Лимит 20 сохранённых редакций для файла",409);
+    const nextObject=randomUUID(),temp=this.objectPath(nextObject)+".part";
+    const handle=await open(temp,"wx",0o600);
+    let size=0;const hash=createHash("sha256");
+    try{
+      for await(const chunk of stream){
+        size+=chunk.length;if(size>LIMIT)throw bad("Превышен лимит 50 МБ",413);
+        hash.update(chunk);let off=0;
+        while(off<chunk.length){const wrote=await handle.write(chunk,off,chunk.length-off,null);if(!wrote.bytesWritten)throw new Error("Невозможно записать файл");off+=wrote.bytesWritten;}
+      }
+      if(!size)throw bad("Пустая редакция недопустима",413);
+    }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
+    await handle.close();
+    await rename(temp,this.objectPath(nextObject));
+    const old={...entry};
+    const oldHistory=[...(this.versions[id]??[])];
+    this.versions[id]=[...oldHistory,{revision:old.revision??1,objectId:old.objectId??old.id,size:old.size,sha256:old.sha256,at:old.uploadedAt}];
+    entry.objectId=nextObject;entry.revision=(old.revision??1)+1;
+    entry.size=size;entry.sha256=hash.digest("hex");entry.uploadedAt=new Date().toISOString();
+    try{await this.save();}catch(e){Object.assign(entry,old);this.versions[id]=oldHistory;await rm(this.objectPath(nextObject),{force:true});throw e;}
+    return {...entry};
+  }
+  async restoreFileVersion(id:string,revision:unknown){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(!Number.isSafeInteger(revision))throw bad("Недопустимый номер редакции");
+    const past=(this.versions[id]??[]).find(v=>v.revision===revision);
+    if(!past)throw bad("Редакция не найдена",404);
+    const data=await readFile(this.objectPath(past.objectId));
+    if(data.length!==past.size||createHash("sha256").update(data).digest("hex")!==past.sha256)throw bad("Архивная редакция повреждена",409);
+    return this.replaceStream(id,(async function*(){yield data;})(),entry.sha256);
   }
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
@@ -330,6 +391,8 @@ export class LocalDisk {
     if(!entry)throw bad("В корзине нет этого файла",404);
     // Remove the object before deleting its index, so a failed filesystem operation remains retryable.
     await rm(this.file(id));
+    for(const revision of this.versions[id]??[])await rm(this.objectPath(revision.objectId),{force:true});
+    delete this.versions[id];
     this.entries=this.entries.filter(x=>x.id!==id);
     await this.save();return {ok:true};
   }
