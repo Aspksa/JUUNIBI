@@ -35,6 +35,7 @@ describe("Disk audit regressions", () => {
     try { await expect(disk.purge(file.id)).rejects.toThrow("index unavailable"); }
     finally { (disk as any).save=saved; }
     expect(disk.list().trash).toHaveLength(1);
+    await disk.restore(file.id);
     expect(Buffer.from((await disk.download(file.id)).base64,"base64").toString()).toBe("keep");
   });
 
