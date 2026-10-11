@@ -1,4 +1,4 @@
-/** Disk Chronicles: exactly 90 distinct metrics, 10 groups. Unavailable metrics are explicit. */
+/** Disk Chronicles: exactly 100 distinct metrics, 11 groups. Unavailable metrics are explicit. */
 import type { DiskEntry } from "./local-disk";
 export const DISK_GROUPS = [
   {
@@ -421,7 +421,7 @@ export const DISK_GROUPS = [
       }
     ]
   }
-] as const;
+,{"id":"g10","title":"Созвездие коллекции","metrics":[{"id":"d91","title":"Файлов в корзине"},{"id":"d92","title":"Объём корзины"},{"id":"d93","title":"Крупнейший файл корзины"},{"id":"d94","title":"Доля объёма избранного"},{"id":"d95","title":"Папки с избранным"},{"id":"d96","title":"Файлы меньше килобайта"},{"id":"d97","title":"Файлы от 1 КБ до 10 МБ"},{"id":"d98","title":"Популярнейшее расширение"},{"id":"d99","title":"Уникальные контрольные суммы"},{"id":"d100","title":"Доля удалённых файлов"}]}] as const;
 export type DiskMetric = {id:string;title:string;value:string;ready:boolean;reason?:string;series?:number[]};
 const fmt=(n:number)=>Math.round(n).toLocaleString("ru-RU");
 const bytes=(n:number)=>n<1024?fmt(n)+" Б":n<1048576?(n/1024).toFixed(1)+" КБ":(n/1048576).toFixed(1)+" МБ";
