@@ -216,4 +216,27 @@ describe("Local Disk",()=>{
    }finally{await rm(source,{recursive:true,force:true});await rm(target,{recursive:true,force:true});await rm(broken,{recursive:true,force:true});}
  });
 
+ it("previews local folder sync and refuses conflicting filenames without overwrite",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-sync-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Source");await disk.createFolder("Target");
+     await disk.uploadBytes("report.txt","Source",Buffer.from("report-A"));
+     const same=await disk.uploadBytes("same.txt","Source",Buffer.from("identical"));
+     await disk.copyFile(same.id,"Target");
+     const plan=await disk.syncFolders("Source","Target",false);
+     expect(plan.pending).toBe(1);expect(plan.unchanged).toBe(1);
+     expect((await disk.syncFolders("Source","Target",true)).copied).toBe(1);
+     expect((await disk.syncFolders("Source","Target",false)).pending).toBe(0);
+     await disk.uploadBytes("conflict.txt","Source",Buffer.from("one"));
+     await disk.uploadBytes("conflict.txt","Target",Buffer.from("two"));
+     const conflicts=await disk.syncFolders("Source","Target",false);
+     expect(conflicts.conflicts).toHaveLength(1);
+     await expect(disk.syncFolders("Source","Target",true)).rejects.toMatchObject({status:409});
+     const target=disk.list("Target").files.filter(e=>e.name==="conflict.txt");
+     expect(target).toHaveLength(1);
+     expect(Buffer.from((await disk.download(target[0]!.id)).base64,"base64").toString()).toBe("two");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
