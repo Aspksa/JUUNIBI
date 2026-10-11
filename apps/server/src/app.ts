@@ -179,6 +179,10 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="GET"&&p==="/api/disk")return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
           if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
           if(req.method==="POST"&&p==="/api/disk/files"){const body=await readJson(req,14*1024*1024);return send(res,201,await disk.upload(body.name,body.folder,body.base64));}
+          if(req.method==="POST"&&p==="/api/disk/restore"){const b=await readJson(req);return send(res,200,await disk.restore(String(b.id??"")));}
+          if(req.method==="POST"&&p==="/api/disk/purge"){const b=await readJson(req);return send(res,200,await disk.purge(String(b.id??"")));}
+          if(req.method==="POST"&&p==="/api/disk/move"){const b=await readJson(req);return send(res,200,await disk.moveFile(String(b.id??""),b.folder));}
+          if(req.method==="POST"&&p==="/api/disk/favorite"){const b=await readJson(req);return send(res,200,await disk.toggleFavorite(String(b.id??""),b.favorite));}
           const parts=p.split("/");
           if(parts.length===5&&parts[3]==="files"&&/^[a-f0-9-]{36}$/.test(parts[4]??"")){
             if(req.method==="GET")return send(res,200,await disk.download(parts[4]!));
