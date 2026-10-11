@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Organizer } from "./organizer";
@@ -206,6 +206,40 @@ describe("сезоны, задание дня и итоги недели", () =>
       // the same task all day
       expect((await a.refresh()).quest!.metric).toBe(v.quest!.metric);
       for (const m of v.metrics.filter((x) => !x.ready)) expect(m.detail).not.toMatch(/: нет /);
+    } finally { await done(); }
+  });
+});
+
+describe("устойчивость архива рекордов", () => {
+  it("отбрасывает пустые истории и невалидные значения при загрузке", async () => {
+    const { a, dir, done } = await setup(local(10, 12, 12));
+    try {
+      await writeFile(path.join(dir, "a.json"), JSON.stringify({
+        records: {
+          empty: [],
+          broken: [{ value: "bad", at: "never", label: "?" }],
+          valid: [{ value: 2, at: iso(local(10, 11)), label: "2" }],
+        },
+      }));
+      await a.load();
+      const view = await a.refresh();
+      expect(view.records.some((x) => x.id === "empty" || x.id === "broken")).toBe(false);
+      expect(view.records.some((x) => x.id === "valid")).toBe(true);
+    } finally { await done(); }
+  });
+
+  it("не считает будущий рекорд рекордом текущей недели", async () => {
+    const { a, dir, done } = await setup(local(10, 12, 12));
+    try {
+      await writeFile(path.join(dir, "a.json"), JSON.stringify({
+        records: { future: [
+          { value: 1, at: iso(local(10, 11)), label: "1", first: true },
+          { value: 2, at: iso(local(10, 20)), label: "2" },
+        ] },
+      }));
+      await a.load();
+      const view = await a.refresh();
+      expect(view.metrics.find((x) => x.id === "records")?.value).not.toBe("1");
     } finally { await done(); }
   });
 });
