@@ -24,6 +24,8 @@ import { ManifestStore, fetchManifest } from "./module-manifest";
 import { AssistantSettingsStore, DEFAULT_CHAT_MODEL, instructionsPrompt } from "./assistant-settings";
 import { Vault } from "./vault";
 import { Organizer, buildBrief } from "./organizer";
+import { ChatStore } from "./chat-store";
+import { chatExtras } from "./chat-extras";
 import { Achievements } from "./achievements";
 import { OpenableUrls, webSearch } from "./web-access";
 import { runSelfTest } from "./self-test";
@@ -207,6 +209,9 @@ const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 const vault = new Vault(path.join(dataDir, "vault.json"));
 await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
+/** Chats shared by the computer and the phone. */
+const chatStore = new ChatStore(path.join(dataDir, "chats.json"));
+await loadOrQuarantine("чаты", path.join(dataDir, "chats.json"), () => chatStore.load());
 /** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
 const achievements = new Achievements(path.join(dataDir, "achievements.json"), () => ({ now: Date.now(), notes: organizer.listNotes(), reminders: organizer.listReminders(), missions: organizer.listMissions(), history: organizer.listHistory(), autoCount: organizer.autoCounts() }));
 await loadOrQuarantine("достижения", path.join(dataDir, "achievements.json"), () => achievements.load());
@@ -489,6 +494,8 @@ const appDeps: AppDeps = {
   scenes,
   modules: () => modules.list(),
   settings, organizer, vault, disk, achievements, brief: briefData,
+  chats: chatStore,
+  chatExtras: () => { const l = sceneLlm; return l ? (o) => chatExtras(l, o) : undefined; },
   splitSteps: () => { const l = sceneLlm; return l ? (t: string, signal?: AbortSignal) => splitIntoSteps(l, t, signal) : undefined; }, evals, noteUserText: (t: string) => openable.noteText(t),
   moduleControl: {
     list: () => modules.list(), isActive: (n) => modules.isActive(n),

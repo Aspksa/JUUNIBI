@@ -2,7 +2,7 @@ import { ACCENTS, fgFor, isHexColor, swatchColor } from "../accents";
 import { api, type AssistantSettings, type SettingsPatch } from "../api";
 import type { Chats } from "../chat/chats";
 import { PLACEHOLDERS, formatBytes } from "../chat/helpers";
-import { el, icon, iconButton, short, type IconName } from "../dom";
+import { copyText, el, icon, iconButton, short, type IconName } from "../dom";
 import { hotkeyTable, openHotkeys } from "../hotkeys";
 import { app, persistPrefs, refreshStatus, type AppState, type Theme, type UiRadius, type UiScale } from "../state";
 import { showToast } from "../toast";
@@ -570,14 +570,15 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
     el("div", { cls: "cp-user" }, el("span", { textContent: "Что у меня на завтра?" })),
     s.showScenes ? el("div", { cls: "cp-scene", textContent: "Листает блокнот. «Сейчас посмотрю.»" }) : null,
     el("div", { cls: "cp-bot", textContent: "Завтра в 10:00 созвон с командой, а вечером вы хотели позвонить маме." }));
-  const chatChanged = s.chatDensity !== "comfortable" || s.chatFont !== "md" || !s.showScenes;
+  const chatChanged = s.chatDensity !== "comfortable" || s.chatFont !== "md" || !s.showScenes || !s.chatFollowUps;
   const chat = card("chat", "Как выглядят сообщения в окне чата.",
-    { reset: chatChanged ? () => setLook({ chatDensity: "comfortable", chatFont: "md", showScenes: true }) : undefined },
+    { reset: chatChanged ? () => setLook({ chatDensity: "comfortable", chatFont: "md", showScenes: true, chatFollowUps: true }) : undefined },
     el("div", { cls: "set-split" },
       el("div", { cls: "grow" },
         segmented("rows", "Плотность", "Расстояние между сообщениями", [["comfortable", "Свободно"], ["compact", "Компактно"]], s.chatDensity, (v) => app.set({ chatDensity: v })),
         segmented("textSize", "Размер текста", "Только в окне чата", [["sm", "Мелкий"], ["md", "Обычный"], ["lg", "Крупный"]], s.chatFont, (v) => app.set({ chatFont: v })),
-        switchRow("scenes", "Сцены персонажа", "Описание действия и реплика над ответами", s.showScenes, (v) => app.set({ showScenes: v }))),
+        switchRow("scenes", "Сцены персонажа", "Описание действия и реплика над ответами", s.showScenes, (v) => app.set({ showScenes: v })),
+        switchRow("chat", "Вопросы для продолжения", "Две-три подсказки под последним ответом", s.chatFollowUps, (v) => app.set({ chatFollowUps: v }))),
       el("figure", { cls: "set-preview" }, el("figcaption", { cls: "muted small", textContent: "Так будет в чате" }), preview)));
 
   // ---- data
@@ -660,7 +661,7 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
   // ---- about
   const link = el("a", { href: "https://github.com/Aspksa/JUUNIBI", target: "_blank", rel: "noopener noreferrer", textContent: "github.com/Aspksa/JUUNIBI" });
   const version = short(s.update?.localVersion);
-  const copy = iconButton("copy", "Скопировать версию", () => { void navigator.clipboard?.writeText(s.update?.localVersion ?? version).then(() => showToast("Версия скопирована", { ms: 2000 })); }, "icon-btn sm");
+  const copy = iconButton("copy", "Скопировать версию", () => { void copyText(s.update?.localVersion ?? version).then((ok) => showToast(ok ? "Версия скопирована" : "Не удалось скопировать", { ms: 2000 })); }, "icon-btn sm");
   const about = card("about", "Версия, исходный код и горячие клавиши.", {},
     el("div", { cls: "about-grid" },
       el("span", { cls: "set-flabel muted" }, ic("update"), "Версия"), el("span", { cls: "row" }, el("code", { textContent: version }), copy, el("a", { href: "#/update", cls: "small", textContent: "Проверить обновления" })),

@@ -4,3 +4,4 @@ export * from "./events";
 export * from "./store";
 export * from "./kernel";
 export * from "./prod-calendar";
+export * from "./chat-sync";

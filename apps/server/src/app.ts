@@ -37,6 +37,8 @@ import { buildQualityReport } from "./quality";
 import { repeatedRequests } from "./suggestions";
 import { qrSvg, type MobileAccess } from "./mobile-access";
 import type { Vault } from "./vault";
+import type { ChatStore } from "./chat-store";
+import type { ChatExtras } from "./chat-extras";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
   list(): unknown;
@@ -72,6 +74,10 @@ export interface AppDeps {
   projectStats?: { get(force?: boolean): Promise<unknown> };
   /** Breaks a to-do or goal into steps with the model; undefined while Cloud.ru is not configured. */
   splitSteps?: () => ((text: string, signal?: AbortSignal) => Promise<string[]>) | undefined;
+  /** Chats shared by the computer and the phone (merged, never replaced). */
+  chats?: ChatStore;
+  /** Title for a new chat and questions to ask next; undefined while Cloud.ru is not configured. */
+  chatExtras?: () => ((o: { question: string; reply: string; wantTitle: boolean; followUps: boolean }) => Promise<ChatExtras>) | undefined;
   /** Sees what the owner wrote in the chat (and earlier in the same chat), so links there may be opened. */
   noteUserText?: (text: string) => void;
   /** Control questions that show whether the assistant got better or worse. */
@@ -110,6 +116,7 @@ export interface AppDeps {
 const MAX_BODY = 64 * 1024;
 const MAX_CHAT_BODY = 700 * 1024; // chat requests may carry attached text files and long history
 const MAX_CHAT_MESSAGE = 100_000;
+const MAX_SYNC_BODY = 16 * 1024 * 1024; // all chats of a device, attached texts included
 const TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".map": "application/json",
   ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".webp": "image/webp", ".ico": "image/x-icon",
@@ -779,6 +786,18 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             if (req.method === "POST" && p === "/api/achievements/title") { const b = await readJson(req); return send(res, 200, await ach.setTitle(b.id ?? null)); }
           } catch (e) { return send(res, (e as { status?: number }).status ?? 500, { error: (e as Error).message }); }
           return send(res, 404, { error: "Не найдено" });
+        }
+        if (deps.chats && p === "/api/chats") {
+          if (req.method === "GET") return send(res, 200, deps.chats.get());
+          if (req.method === "PUT") return send(res, 200, await deps.chats.put(await readJson(req, MAX_SYNC_BODY)));
+          return send(res, 405, { error: "Метод не поддерживается" });
+        }
+        if (req.method === "POST" && p === "/api/chat/extras") {
+          const b = await readJson(req);
+          const run = deps.chatExtras?.();
+          if (!run) return send(res, 503, { error: "Помощница не подключена" });
+          if (typeof b.question !== "string" || typeof b.reply !== "string") return send(res, 400, { error: "Нужны question и reply" });
+          return send(res, 200, await run({ question: b.question, reply: b.reply, wantTitle: b.wantTitle === true, followUps: b.followUps !== false }));
         }
         if (deps.organizer && p.startsWith("/api/organizer")) {
           const o = deps.organizer;
