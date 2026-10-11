@@ -18,19 +18,27 @@ const validName = (v:unknown) => {
 export class LocalDisk {
   private entries:DiskEntry[]=[];
   private folders:string[]=[];
+  private folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+  private folderActions:{at:string;action:string;folder:string;destination?:string;files?:number}[]=[];
+  private logFolder(action:string,folder:string,destination?:string,files?:number){this.folderActions.push({at:new Date().toISOString(),action,folder,...(destination===undefined?{}:{destination}),...(files===undefined?{}:{files})});if(this.folderActions.length>300)this.folderActions.shift();}
+  folderHistory(){return [...this.folderActions].reverse();}
+  private deletedFolders:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]=[];
   private writes:Promise<void>=Promise.resolve();
   constructor(private readonly root:string) {}
   private get index(){return path.join(this.root,"index.json");}
   private file(id:string){return path.join(this.root,"objects",id);}
   async load(){
     try {
-      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[]};
+      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
       if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
+      if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
+      if(Array.isArray(raw.folderActions))this.folderActions=raw.folderActions.slice(-300);
+      if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
     }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
-    const content=JSON.stringify({entries:this.entries,folders:this.folders});
+    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,deletedFolders:this.deletedFolders});
     this.writes=this.writes.catch(()=>{}).then(async()=>{
       await mkdir(this.root,{recursive:true});
       const tmp=path.join(this.root,randomUUID()+".tmp");
@@ -51,7 +59,7 @@ export class LocalDisk {
     const parent=f.includes("/")?f.slice(0,f.lastIndexOf("/")):"";
     if(parent&&!this.folders.includes(parent))throw bad("Сначала создайте родительскую папку",404);
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
-    this.folders.push(f);await this.save();return {name:f};
+    this.folders.push(f);this.logFolder("create",f);await this.save();return {name:f};
   }
   async renameFolder(oldName:unknown,newName:unknown){
     const from=validFolder(oldName),to=validFolder(newName);
@@ -64,8 +72,77 @@ export class LocalDisk {
     const renamed=(f:string)=>to+f.slice(from.length);
     if(this.folders.some(f=>!affected.includes(f)&&affected.some(a=>renamed(a)===f)))throw bad("Папка с таким именем уже существует",409);
     this.folders=this.folders.map(f=>affected.includes(f)?renamed(f):f);
+    for(const f of affected){if(this.folderStyles[f]){this.folderStyles[renamed(f)]=this.folderStyles[f]!;delete this.folderStyles[f];}}
     for(const entry of this.entries)if(entry.folder===from||entry.folder.startsWith(from+"/"))entry.folder=renamed(entry.folder);
-    await this.save();return {name:to};
+    this.logFolder("rename",from,to);await this.save();return {name:to};
+  }
+  /** Move an entire branch, reusing collision checks in renameFolder. */
+  async moveFolder(from:unknown,parent:unknown){
+    const src=validFolder(from),dest=validFolder(parent);
+    if(!src||!this.folders.includes(src))throw bad("Папка не найдена",404);
+    if(dest&&!this.folders.includes(dest))throw bad("Папка назначения не найдена",404);
+    return this.renameFolder(src,(dest?dest+"/":"")+src.split("/").pop()!);
+  }
+  async setFolderStyle(name:unknown,color:unknown,pinned:unknown,cover:unknown){
+    const folder=validFolder(name);
+    if(!this.folders.includes(folder))throw bad("Папка не найдена",404);
+    if(typeof color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(color))throw bad("Неверный цвет");
+    if(typeof pinned!=="boolean")throw bad("Неверное значение закрепления");
+    if(typeof cover!=="string"||cover.length>100)throw bad("Неверная обложка");
+    if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
+    this.folderStyles[folder]={color,pinned,cover};
+    this.logFolder("style",folder);await this.save();return {name:folder,...this.folderStyles[folder]};
+  }
+  folderDecorations(){return {...this.folderStyles};}
+  async copyFolder(source:unknown,parent:unknown){
+    const from=validFolder(source),toParent=validFolder(parent);
+    if(!from||!this.folders.includes(from))throw bad("Папка не найдена",404);
+    if(toParent&&!this.folders.includes(toParent))throw bad("Папка назначения не найдена",404);
+    const original=(toParent?toParent+"/":"")+from.split("/").pop()!;
+    let target=original+" - копия",number=2;
+    while(this.folders.includes(target)){target=original+" - копия "+number++;if(number>1000)throw bad("Нельзя выбрать имя копии",409);}
+    const folders=this.folders.filter(f=>f===from||f.startsWith(from+"/"));
+    const entries=this.entries.filter(e=>!e.deletedAt&&(e.folder===from||e.folder.startsWith(from+"/")));
+    if(this.folders.length+folders.length>100||this.entries.length+entries.length>1000)throw bad("Превышен лимит хранилища",409);
+    const copied:string[]=[];
+    try{
+      for(const e of entries){
+        const bytes=await readFile(this.file(e.id));
+        if(createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Повреждён исходный файл",409);
+        const id=randomUUID();await writeFile(this.file(id),bytes,{flag:"wx",mode:0o600});
+        copied.push(id);
+      }
+    }catch(e){for(const id of copied)await rm(this.file(id),{force:true});throw e;}
+    this.folders.push(...folders.map(f=>target+f.slice(from.length)));
+    this.entries.push(...entries.map((e,i)=>({...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString()})));
+    this.logFolder("copy",from,target,copied.length);await this.save();return {name:target,files:copied.length};
+  }
+  listDeletedFolders(){return this.deletedFolders.map(({root,paths,at})=>({root,count:paths.length,at}));}
+  async restoreFolder(name:unknown){
+    const root=validFolder(name),index=this.deletedFolders.findIndex(f=>f.root===root);
+    if(index<0)throw bad("Удалённая папка не найдена",404);
+    const item=this.deletedFolders[index]!;
+    const parent=root.includes("/")?root.slice(0,root.lastIndexOf("/")):"";
+    if(parent&&!this.folders.includes(parent))throw bad("Сначала восстановите родительскую папку",409);
+    if(item.paths.some(p=>this.folders.includes(p))||this.folders.length+item.paths.length>100)throw bad("Пути папок заняты или превышен лимит",409);
+    this.folders.push(...item.paths);
+    Object.assign(this.folderStyles,item.styles);
+    for(const e of this.entries)if(e.deletedAt===item.at&&(e.folder===root||e.folder.startsWith(root+"/")))delete e.deletedAt;
+    this.deletedFolders.splice(index,1);
+    this.logFolder("restore",root);await this.save();return {root,files:this.entries.filter(e=>!e.deletedAt&&(e.folder===root||e.folder.startsWith(root+"/"))).length};
+  }
+  async trashFolder(name:unknown){
+    const folder=validFolder(name);
+    if(!folder||!this.folders.includes(folder))throw bad("Папка не найдена",404);
+    const entries=this.entries.filter(e=>!e.deletedAt&&(e.folder===folder||e.folder.startsWith(folder+"/")));
+    const at=new Date().toISOString();
+    for(const e of entries)e.deletedAt=at;
+    const paths=this.folders.filter(f=>f===folder||f.startsWith(folder+"/"));
+    const styles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+    for(const p of paths){if(this.folderStyles[p]){styles[p]=this.folderStyles[p]!;delete this.folderStyles[p];}}
+    this.deletedFolders.push({root:folder,paths,at,styles});
+    this.folders=this.folders.filter(f=>!paths.includes(f));
+    this.logFolder("trash",folder,undefined,entries.length);await this.save();return {files:entries.length,folder};
   }
   async upload(name:unknown,folder:unknown,data:unknown){
     const filename=validName(name), f=validFolder(folder);

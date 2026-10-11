@@ -119,4 +119,32 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("copies, moves, styles and trashes nested folder branches",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-tree12-"));
+   try{
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Главная");await disk.createFolder("Главная/Внутри");
+     const a=await disk.uploadBytes("hello.txt","Главная/Внутри",Buffer.from("hello"));
+     const cover=await disk.uploadBytes("cover.png","Главная",Buffer.from([137,80,78,71]));
+     await disk.setFolderStyle("Главная","#abcdef",true,cover.id);
+     await expect(disk.setFolderStyle("Главная","#abcdef",true,"Обложка")).rejects.toMatchObject({status:400});
+     expect(disk.folderDecorations()["Главная"]?.pinned).toBe(true);
+     const cp=await disk.copyFolder("Главная","");
+     expect(cp.files).toBe(2);
+     expect(disk.list("Главная - копия/Внутри").files).toHaveLength(1);
+     await disk.moveFolder("Главная - копия","Главная/Внутри");
+     expect(disk.list("Главная/Внутри/Главная - копия/Внутри").files).toHaveLength(1);
+     const removed=await disk.trashFolder("Главная/Внутри/Главная - копия");
+     expect(removed.files).toBe(2);
+     expect(disk.list().trash).toHaveLength(2);
+     expect(disk.listDeletedFolders()).toHaveLength(1);
+     const loaded=new LocalDisk(dir);await loaded.load();
+     expect(loaded.listDeletedFolders()[0]?.root).toBe("Главная/Внутри/Главная - копия");
+     const restored=await loaded.restoreFolder("Главная/Внутри/Главная - копия");
+     expect(restored.files).toBe(2);
+     expect(loaded.list("Главная/Внутри/Главная - копия/Внутри").files).toHaveLength(1);
+     expect(Buffer.from((await disk.download(a.id)).base64,"base64").toString()).toBe("hello");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
