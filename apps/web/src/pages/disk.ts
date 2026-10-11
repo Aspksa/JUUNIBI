@@ -37,6 +37,8 @@ export function diskPage():HTMLElement {
   const observer=new MutationObserver(()=>{if(!page.isConnected){thumbnailGeneration++;cleanupThumbnails();observer.disconnect();}});
   observer.observe(document.body,{childList:true,subtree:true});
   const bulkBar=el("div",{cls:"disk-bulk-bar"});
+  let firstPaint=true;
+  const setBusy=(busy:boolean)=>{drop.classList.toggle("disk-is-busy",busy);drop.setAttribute("aria-busy",String(busy));};
   const allFiles=()=>viewFilter==="trash"?trash:items.filter(f=>viewFilter!=="favorites"||f.favorite);
   const renderBulk=()=>{
     const count=selected.size;
@@ -122,6 +124,8 @@ export function diskPage():HTMLElement {
     q.addEventListener("input",render);render();
     statistics.replaceChildren(toolbar,summary,q,content);
     statistics.showModal();
+    statistics.classList.add("disk-dialog-enter");
+    statistics.addEventListener("animationend",()=>statistics.classList.remove("disk-dialog-enter"),{once:true});
   };
   const statsButton=button("Хроники Диска",()=>void openStatistics());
   statsButton.prepend(diskIcon("constellation"));statsButton.classList.add("disk-chronicles-button");
@@ -158,11 +162,13 @@ export function diskPage():HTMLElement {
     files.classList.toggle("disk-list",!gridMode);
     viewButton.textContent=gridMode?"Вид: плитка":"Вид: список";
     const visible=shown.slice(0,100);
-    files.replaceChildren(...(visible.length?visible.map(f=>{
+    files.replaceChildren(...(visible.length?visible.map((f,index)=>{
       const name=el("strong",{textContent:f.name});
-      const card=el("div",{cls:"disk-file"});
+      const card=el("div",{cls:"disk-file"+(firstPaint&&index<16?" disk-reveal":"")});
+      if(firstPaint&&index<16)card.style.setProperty("--disk-order",String(index));
       const choose=el("input",{type:"checkbox",checked:selected.has(f.id),attrs:{"aria-label":"Выбрать "+f.name}});
-      choose.addEventListener("change",()=>{if(choose.checked)selected.add(f.id);else selected.delete(f.id);renderBulk();});
+      choose.addEventListener("change",()=>{if(choose.checked)selected.add(f.id);else selected.delete(f.id);card.classList.toggle("disk-selected",choose.checked);renderBulk();});
+      card.classList.toggle("disk-selected",selected.has(f.id));
       const thumbnail=el("span",{cls:"disk-file-icon"},diskIcon("vault"));
       if(/\.(png|jpe?g|webp|gif)$/i.test(f.name) && viewFilter!=="trash"){
         const img=el("img",{cls:"disk-thumbnail",alt:"",attrs:{"data-disk-id":f.id}});
@@ -217,6 +223,7 @@ export function diskPage():HTMLElement {
     }):[el("p",{cls:"muted",textContent:q?"Ничего не найдено":"Здесь пока нет файлов."})]));
     if(shown.length>visible.length)files.append(el("p",{cls:"muted",textContent:"Показаны первые 100 файлов из "+shown.length+". Уточни поиск для остальных."}));
     renderBulk();
+    firstPaint=false;
     if(gridMode&&viewFilter!=="trash")void thumbnails(visible);
   };
   const refresh=async()=>{
@@ -247,7 +254,9 @@ export function diskPage():HTMLElement {
     newFolder.value="";current=r.value.name;void refresh();
   });
   const uploadFiles=async(fileList:File[])=>{
-    for(const file of fileList){
+    if(!fileList.length)return;
+    setBusy(true);
+    try{for(const file of fileList){
       if(file.size>10*1024*1024){showToast(file.name+": размер больше 10 МБ");continue;}
       const encoded=await new Promise<string>((resolve,reject)=>{
         const reader=new FileReader();
@@ -258,7 +267,7 @@ export function diskPage():HTMLElement {
       const r=await api.diskUpload(file.name,current,encoded);
       if(!r.ok)showToast(r.error.message);
     }
-    upload.value="";void refresh();
+    }finally{setBusy(false);upload.value="";void refresh();}
   };
   upload.addEventListener("change",()=>void uploadFiles([...(upload.files??[])]));
   drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("active");});
