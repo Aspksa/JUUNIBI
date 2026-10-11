@@ -79,7 +79,7 @@ export function diskPage():HTMLElement {
           const tile=el("div",{cls:"disk-stats-tile"});
           tile.append(el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),el("strong",{textContent:m.value}),el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}));
           return tile;
-        }));
+        })));
         return section;
       }).filter((x):x is HTMLElement=>x!==null));
     };
