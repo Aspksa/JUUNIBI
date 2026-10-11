@@ -437,6 +437,14 @@ export function diskPage():HTMLElement {
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
       button("Корзина · "+trash.length,()=>{viewFilter="trash";virtualFilter="none";current="";void refresh();}),
       ...([["images","Изображения"],["documents","Документы"],["large","Крупные файлы"]] as const).map(([kind,title])=>button("◇ "+title,()=>{virtualFilter=kind;viewFilter="all";allSearch.checked=true;current="";void refresh();})),
+      button("Журнал папок",async()=>{
+        const r=await api.diskFolderHistory();if(!r.ok){showToast(r.error.message);return;}
+        const dialog=el("dialog",{cls:"disk-preview"});
+        const rows=r.value.actions.slice(0,100).map(item=>el("div",{cls:"disk-tree-recovery"},
+          el("span",{textContent:new Date(item.at).toLocaleString("ru-RU")+" · "+item.action+" · "+item.folder+(item.destination?" → "+item.destination:"")})));
+        dialog.append(el("h3",{textContent:"История операций с папками"}),...rows,button("Закрыть",()=>dialog.close()));
+        dialog.addEventListener("close",()=>dialog.remove(),{once:true});page.append(dialog);dialog.showModal();
+      }),
       button("Удалённые папки",async()=>{
         const r=await api.diskDeletedFolders();if(!r.ok){showToast(r.error.message);return;}
         const dialog=el("dialog",{cls:"disk-preview"});
