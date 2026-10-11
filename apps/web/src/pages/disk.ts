@@ -113,7 +113,18 @@ export function diskPage():HTMLElement {
   const allSearch=el("input",{type:"checkbox",attrs:{"aria-label":"Искать по всем папкам"}});
   allSearch.addEventListener("change",()=>{selected.clear();void refresh();});
 
-  const viewButton=button("Вид: плитка",()=>{gridMode=!gridMode;localStorage.setItem("juunibi.disk.grid",String(gridMode));renderFiles();});
+  type DiskView="tiles"|"large"|"list"|"table";
+  const savedView=localStorage.getItem("juunibi.disk.view");
+  let displayMode:DiskView=savedView==="tiles"||savedView==="large"||savedView==="list"||savedView==="table"?savedView:gridMode?"tiles":"list";
+  const modes:DiskView[]=["tiles","large","list","table"];
+  const labels:Record<DiskView,string>={tiles:"Плитка",large:"Крупные плитки",list:"Список",table:"Таблица"};
+  const viewButton=button("Вид: "+labels[displayMode],()=>{
+    displayMode=modes[(modes.indexOf(displayMode)+1)%modes.length]!;
+    gridMode=displayMode==="tiles"||displayMode==="large";
+    localStorage.setItem("juunibi.disk.view",displayMode);
+    localStorage.setItem("juunibi.disk.grid",String(gridMode));
+    renderFiles();
+  });
   const sortSelect=el("select",{cls:"mem-select",attrs:{"aria-label":"Сортировать файлы"}},el("option",{value:"new",textContent:"Сначала новые"}),el("option",{value:"name",textContent:"По имени"}),el("option",{value:"size",textContent:"По размеру"}));
   sortSelect.addEventListener("change",()=>renderFiles());
   const breadcrumb=el("span",{cls:"muted small"});
@@ -264,7 +275,9 @@ export function diskPage():HTMLElement {
     const shown=allFiles().filter(f=>(!extensionFilter||f.name.toLowerCase().endsWith("."+extensionFilter))&&(!q||f.name.toLocaleLowerCase().includes(q)||(contentIds?.has(f.id)??false))).sort((a,b)=>sortSelect.value==="name"?a.name.localeCompare(b.name,"ru"):sortSelect.value==="size"?b.size-a.size:b.uploadedAt.localeCompare(a.uploadedAt));
     files.classList.toggle("disk-grid",gridMode);
     files.classList.toggle("disk-list",!gridMode);
-    viewButton.textContent=gridMode?"Вид: плитка":"Вид: список";
+    files.classList.toggle("disk-large",displayMode==="large");
+    files.classList.toggle("disk-table",displayMode==="table");
+    viewButton.textContent="Вид: "+labels[displayMode];
     const visible=shown.slice(0,visibleLimit);
     files.replaceChildren(...(visible.length?visible.map((f,index)=>{
       const name=el("strong",{textContent:f.name});
@@ -520,6 +533,19 @@ export function diskPage():HTMLElement {
           const r=await api.diskFolderCopy(folder,parentName);
           if(!r.ok)feedback.textContent=r.error.message;else{menu.open=false;void refresh();}
         });
+        const synchronize=button("Синхронизировать в…",async()=>{
+          const destination=await pickDestination(folder);if(destination===null)return;
+          const planned=await api.diskFolderSync(folder,destination,false);
+          if(!planned.ok){feedback.textContent=planned.error.message;return;}
+          const plan=planned.value;
+          const summary="Копировать: "+plan.pending+" · Уже одинаковые: "+plan.unchanged+" · Конфликты: "+plan.conflicts.length;
+          if(plan.conflicts.length){feedback.textContent=summary+"; "+plan.conflicts.map(x=>x.name+" ("+x.reason+")").join("; ");return;}
+          if(!plan.pending){feedback.textContent="Синхронизация не требуется. "+summary;return;}
+          if(!confirm("Без перезаписи файлов: «"+folder+"» → «"+(destination||"Корень")+"». "+summary+". Выполнить?"))return;
+          const result=await api.diskFolderSync(folder,destination,true);
+          if(!result.ok){feedback.textContent=result.error.message;return;}
+          menu.open=false;status.textContent="Синхронизировано файлов: "+result.value.copied;void refresh();
+        });
         const move=button("Переместить папку",async()=>{
           const destination=await pickDestination(folder);
           if(destination===null)return;
@@ -544,7 +570,7 @@ export function diskPage():HTMLElement {
           if(!r.ok)feedback.textContent=r.error.message;
           else{folderStyles[folder]={color:color.value,pinned:pinned.checked,cover:cover.value};menu.open=false;renderTree();}
         });
-        operations.append(copy,move,remove,color,el("label",{},pinned," Закрепить"),cover,style);
+        operations.append(copy,move,synchronize,remove,color,el("label",{},pinned," Закрепить"),cover,style);
         controls.append(field,submit,rename,operations,feedback);menu.append(summary,controls);
         line.append(menu);
         line.addEventListener("dragover",e=>{if(e.dataTransfer?.types.includes("application/x-juunibi-file")||e.dataTransfer?.types.includes("application/x-juunibi-folder")){e.preventDefault();line.classList.add("disk-tree-drop");}});
