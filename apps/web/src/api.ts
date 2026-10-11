@@ -183,6 +183,7 @@ export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:strin
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
   diskIntelligence: () => attemptAsync(()=>call<{generatedAt:string;total:number;indexed:number;pending:number;reused:number;failed:number;records:{id:string;name:string;folder:string;headings:string[];dates:string[];urls:string[]}[];links:{from:string;to:string;score:number;shared:string[]}[];clusters:string[][];findings:{id:string;kind:string;text:string;fileIds:string[]}[]}>("/api/disk/intelligence")),
+  diskCompare: (id:string,from:number,to:number) => attemptAsync(()=>call<{id:string;added:string[];removed:string[]}>("/api/disk/intelligence/compare?id="+encodeURIComponent(id)+"&from="+from+"&to="+to)),
   diskCloudAnalysis: (ids:string[],question:string,consent:boolean) => attemptAsync(()=>call<{answer:string;sources:{id:string;name:string}[]}>("/api/disk/intelligence/cloud",post({ids,question,consent}))),
   diskInsights: () => attemptAsync(()=>call<{generatedAt:string;analyzed:number;eligible:number;skipped:number;metrics:{id:number;value:string;detail?:string}[];links:{from:string;to:string;score:number}[];findings:{kind:string;text:string;ids:string[]}[]} >("/api/disk/insights")),
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
