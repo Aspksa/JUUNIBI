@@ -258,6 +258,22 @@ describe("BrainCore", () => {
     expect(() => brain.searchConfirmedExperience("backup",undefined,21)).toThrow();
     expect(brain.toolRegistry()).toMatchObject({writeEnabled:false,arbitraryToolsEnabled:false});
   });
+  it("advises a plan using only confirmed experience without acting", () => {
+    const brain = new BrainCore(() => true);
+    const p = brain.plan("проверить архив", ["поиск", "проверка"]);
+    const confirmed = brain.recordDecision({ goal:"проверить архив",chosen:"прочитать список",reason:"низкий риск",predictedSuccess:true,taskType:"audit" });
+    brain.recordDecision({goal:"проверить архив",chosen:"удалить",reason:"предложение",predictedSuccess:true,taskType:"audit"});
+    brain.confirmDecision(confirmed.id,"success");
+    const historyCount = brain.history().length;
+    const preview = brain.previewExperiencePlan(p.id,"audit");
+    expect(preview.experience.items.map((x:{id:string})=>x.id)).toEqual([confirmed.id]);
+    expect(preview.nextStepId).toBe(p.steps[0]!.id);
+    expect(preview.requiresExplicitExecution).toBe(true);
+    expect(brain.history()).toHaveLength(historyCount);
+    expect(brain.status().plans[0]?.steps.every(step=>step.status==="pending")).toBe(true);
+    expect(() => brain.previewExperiencePlan("missing")).toThrow("План не найден");
+    expect(() => brain.previewExperiencePlan(p.id, "x".repeat(70))).toThrow();
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
