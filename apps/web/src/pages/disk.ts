@@ -2,12 +2,24 @@
 import {api,type DiskFile} from "../api";
 import {el,icon} from "../dom";
 import {showToast} from "../toast";
+import {diskIcon} from "./disk-icons";
 
 const human=(b:number)=>b<1024?b+" Б":b<1048576?(b/1024).toFixed(1)+" КБ":(b/1048576).toFixed(1)+" МБ";
 const button=(label:string,fn:()=>void)=>{const b=el("button",{type:"button",cls:"mem-btn",textContent:label});b.addEventListener("click",fn);return b;};
 export function diskPage():HTMLElement {
   const page=el("div",{cls:"pg disk-page"});
-  const status=el("p",{cls:"muted small",textContent:"Личное локальное хранилище. Документы не отправляются в Cloud.ru."});
+  const status=el("p",{cls:"muted small disk-status-line",textContent:"Загрузка сведений о локальном хранилище…",attrs:{"aria-live":"polite"}});
+  const heroTitle=el("strong",{textContent:"Твоё цифровое пространство"});
+  const fileCount=el("strong",{textContent:"—"}),storage=el("strong",{textContent:"—"}),trashCount=el("strong",{textContent:"—"});
+  const tiles=el("div",{cls:"disk-summary"},...[
+    ["Файлы",fileCount,diskIcon("vault")],["Хранение",storage,diskIcon("constellation")],["В корзине",trashCount,diskIcon("archive")]
+  ].map(([label,value,glyph])=>el("div",{cls:"disk-summary-cell"},glyph as SVGSVGElement,
+    el("span",{cls:"disk-summary-number"},value as HTMLElement),el("span",{cls:"disk-summary-label",textContent:label as string}))));
+  const hero=el("section",{cls:"disk-hero",attrs:{"aria-label":"Обзор хранилища"}},
+    el("div",{cls:"disk-hero-intro"},el("small",{textContent:"JUUNIBI  /  ЛИЧНЫЙ АРХИВ"}),
+      el("h2",{},heroTitle),el("p",{textContent:"Файлы и воспоминания — спокойно, удобно, под контролем."})),
+    tiles);
+
   const folders=el("div",{cls:"disk-folders"});
   const files=el("div",{cls:"disk-files"});
   const search=el("input",{type:"search",cls:"mem-input",placeholder:"Поиск по названиям файлов",attrs:{"aria-label":"Поиск файлов"}});
@@ -78,7 +90,7 @@ export function diskPage():HTMLElement {
     const response=await api.diskChronicles();
     if(!response.ok){showToast(response.error.message);return;}
     const data=response.value;
-    const toolbar=el("div",{cls:"disk-preview-head disk-chronicles-heading"},el("strong",{textContent:"Хроники Диска · 100 показателей"}),button("Закрыть",()=>statistics.close()));
+    const toolbar=el("div",{cls:"disk-preview-head disk-chronicles-heading"},diskIcon("constellation"),el("strong",{textContent:"Хроники Диска · 100 показателей"}),button("Закрыть",()=>statistics.close()));
     const summary=el("div",{cls:"disk-chronicles-hero"},el("span",{cls:"disk-chronicles-orbit",textContent:"✦"}),el("div",{},el("small",{textContent:"ЛИЧНАЯ ВСЕЛЕННАЯ ФАЙЛОВ"}),el("strong",{textContent:data.summary.total+" показателей"}),el("span",{textContent:"Подтверждено: "+data.summary.ready+" · Ожидают данных: "+(data.summary.total-data.summary.ready)})));
     const q=el("input",{type:"search",placeholder:"Поиск показателя",cls:"mem-input",attrs:{"aria-label":"Поиск показателя"}});
     const content=el("div",{cls:"disk-stats-groups"});
@@ -98,7 +110,7 @@ export function diskPage():HTMLElement {
           tiles.append(...found.map(m=>el("div",{cls:"disk-stats-tile"+(m.ready?" is-ready":" is-pending")},
             el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),
             el("strong",{textContent:m.value}),
-            el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}))));
+            el("small",{cls:"disk-metric-status",textContent:m.ready?"● Рассчитано по данным Диска":"◌ Нет данных"}))));
         };
         section.addEventListener("toggle",()=>{if(section.open)draw();});
         if(text)draw();
@@ -111,7 +123,8 @@ export function diskPage():HTMLElement {
     statistics.replaceChildren(toolbar,summary,q,content);
     statistics.showModal();
   };
-  const statsButton=button("📊 Хроники Диска",()=>void openStatistics());
+  const statsButton=button("Хроники Диска",()=>void openStatistics());
+  statsButton.prepend(diskIcon("constellation"));statsButton.classList.add("disk-chronicles-button");
   page.append(statistics);
   const preview=el("dialog",{cls:"disk-preview"});
   const openPreview=async(f:DiskFile)=>{
@@ -150,7 +163,7 @@ export function diskPage():HTMLElement {
       const card=el("div",{cls:"disk-file"});
       const choose=el("input",{type:"checkbox",checked:selected.has(f.id),attrs:{"aria-label":"Выбрать "+f.name}});
       choose.addEventListener("change",()=>{if(choose.checked)selected.add(f.id);else selected.delete(f.id);renderBulk();});
-      const thumbnail=el("span",{cls:"disk-file-icon"},icon("folder",20));
+      const thumbnail=el("span",{cls:"disk-file-icon"},diskIcon("vault"));
       if(/\.(png|jpe?g|webp|gif)$/i.test(f.name) && viewFilter!=="trash"){
         const img=el("img",{cls:"disk-thumbnail",alt:"",attrs:{"data-disk-id":f.id}});
         const url=thumbnailUrls.get(f.id);if(url)img.src=url;
@@ -212,7 +225,10 @@ export function diskPage():HTMLElement {
     items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
-    status.textContent="Занято: "+human(r.value.usedBytes)+" · Файлов в папке: "+items.length+" · До "+human(r.value.maxFileBytes)+" на файл. Файлы хранятся на этом компьютере.";
+    status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
+    fileCount.textContent=String(items.length);
+    storage.textContent=human(r.value.usedBytes);
+    trashCount.textContent=String(trash.length);
     folders.replaceChildren(
       button("Все файлы",()=>{viewFilter="all";current="";void refresh();}),
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
@@ -248,8 +264,7 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("active");});
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
-  page.append(el("h1",{textContent:"Диск"}),el("p",{cls:"muted",textContent:"Документы и файлы в одном месте. Создавай папки, находи нужное, скачивай и удаляй."}),
-    status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton),folders,el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),sortSelect,viewButton),drop,bulkBar,files);
+  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton),folders,el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),sortSelect,viewButton),drop,bulkBar,files);
   void refresh();
   return page;
 }
