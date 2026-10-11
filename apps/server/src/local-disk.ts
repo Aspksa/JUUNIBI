@@ -301,6 +301,49 @@ export class LocalDisk {
     entry.name=record.before.name;entry.folder=record.before.folder;
     this.fileActions.pop();await this.save();return {...entry};
   }
+  /** Immutable file revisions. Existing bytes remain intact until index persistence succeeds. */
+  fileVersions(id:string){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    return [...(this.versions[id]??[]).map(({revision,size,sha256,at})=>({revision,size,sha256,at})),
+      {revision:entry.revision??1,size:entry.size,sha256:entry.sha256,at:entry.uploadedAt}];
+  }
+  async replaceStream(id:string,stream:AsyncIterable<Buffer>,expectedSha256?:unknown){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(typeof expectedSha256!=="string"||expectedSha256!==entry.sha256)throw bad("Файл изменился: обновите список перед заменой",409);
+    if((this.versions[id]?.length??0)>=20)throw bad("Лимит 20 сохранённых редакций для файла",409);
+    const nextObject=randomUUID(),temp=this.objectPath(nextObject)+".part";
+    const handle=await open(temp,"wx",0o600);
+    let size=0;const hash=createHash("sha256");
+    try{
+      for await(const chunk of stream){
+        size+=chunk.length;if(size>LIMIT)throw bad("Превышен лимит 50 МБ",413);
+        hash.update(chunk);let off=0;
+        while(off<chunk.length){const wrote=await handle.write(chunk,off,chunk.length-off,null);if(!wrote.bytesWritten)throw new Error("Невозможно записать файл");off+=wrote.bytesWritten;}
+      }
+      if(!size)throw bad("Пустая редакция недопустима",413);
+    }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
+    await handle.close();
+    await rename(temp,this.objectPath(nextObject));
+    const old={...entry};
+    const oldHistory=[...(this.versions[id]??[])];
+    this.versions[id]=[...oldHistory,{revision:old.revision??1,objectId:old.objectId??old.id,size:old.size,sha256:old.sha256,at:old.uploadedAt}];
+    entry.objectId=nextObject;entry.revision=(old.revision??1)+1;
+    entry.size=size;entry.sha256=hash.digest("hex");entry.uploadedAt=new Date().toISOString();
+    try{await this.save();}catch(e){Object.assign(entry,old);this.versions[id]=oldHistory;await rm(this.objectPath(nextObject),{force:true});throw e;}
+    return {...entry};
+  }
+  async restoreFileVersion(id:string,revision:unknown){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(!Number.isSafeInteger(revision))throw bad("Недопустимый номер редакции");
+    const past=(this.versions[id]??[]).find(v=>v.revision===revision);
+    if(!past)throw bad("Редакция не найдена",404);
+    const data=await readFile(this.objectPath(past.objectId));
+    if(data.length!==past.size||createHash("sha256").update(data).digest("hex")!==past.sha256)throw bad("Архивная редакция повреждена",409);
+    return this.replaceStream(id,(async function*(){yield data;})(),entry.sha256);
+  }
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
