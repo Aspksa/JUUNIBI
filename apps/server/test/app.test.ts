@@ -167,3 +167,22 @@ describe("Brain recovery preview HTTP", () => {
     } finally {srv.close();}
   });
 });
+
+describe("Brain confirmed experience API", () => {
+  it("searches only confirmed decisions and advertises read-only tools", async () => {
+    const brain = new BrainCore(() => true);
+    const decision = brain.recordDecision({goal:"Find saved document",chosen:"search memory",reason:"Previous success",predictedSuccess:true,taskType:"search"});
+    brain.confirmDecision(decision.id,"success");
+    const server = createApp({brain,modules:()=>[],configured:{model:"m"}});
+    const url = `http://127.0.0.1:${await start(server)}`;
+    try {
+      const result = await post(url,"/api/brain/search-experience",{query:"saved document",taskType:"search"});
+      expect(result.status).toBe(200);
+      expect((await result.json()).items.map((item:{id:string})=>item.id)).toEqual([decision.id]);
+      expect((await post(url,"/api/brain/search-experience",{query:""})).status).toBe(400);
+      const registry = await (await fetch(url+"/api/brain/tool-registry")).json();
+      expect(registry.tools.map((tool:{name:string})=>tool.name)).toEqual(["list_modules","search_memory"]);
+      expect(registry.writeEnabled).toBe(false);
+    } finally {server.close();}
+  });
+});
