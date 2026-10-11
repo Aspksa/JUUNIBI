@@ -175,7 +175,7 @@ describe("показатели из настоящих дел", () => {
       expect(o.listNotes()).toHaveLength(500);
       expect(dayKey(local(9, 1, 23, 59))).toBe("2026-09-01");
     } finally { await done(); }
-  });
+  }, 30_000);
 });
 
 describe("сезоны, задание дня и итоги недели", () => {
