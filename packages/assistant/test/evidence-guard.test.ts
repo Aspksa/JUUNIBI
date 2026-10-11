@@ -30,6 +30,18 @@ describe("evidence guard", () => {
     const report = guardToolClaims("План: пять шагов", [], "Составь план проверки модулей");
     expect(report).not.toContain("Протокол текущей диагностики");
   });
+  it("scopes functional health report to its requested tool", () => {
+    const text = guardToolClaims("4 PASS 3 SKIPPED", [{ name: "functional_health_check", status: "ok", at: Date.UTC(2026, 9, 11) }], "Вызови functional_health_check и проверь модули");
+    expect(text).toContain("Протокол функциональной диагностики");
+    expect(text).toContain("2026-10-11T00:00:00.000Z");
+    expect(text).not.toContain("Диагностика компьютера | Не проверено");
+    expect(text).toContain("не означает PASS каждого");
+  });
+  it("flags missing functional tool instead of claiming execution", () => {
+    const text = guardToolClaims("Готово", [], "Вызови functional_health_check");
+    expect(text).toContain("Не проверено");
+    expect(text).not.toContain("Протокол текущей диагностики");
+  });
   it("leaves evidence-supported normal replies untouched", () => {
     const text = "Проверка `computer_status` ✅";
     expect(guardToolClaims(text, [{ name: "computer_status", status: "ok" }])).toBe(text);

@@ -9,6 +9,14 @@ export function guardToolClaims(reply: string, evidence: ToolEvidence[], request
   if (unsupported.length) warnings.push("Не подтверждено журналом текущего ответа: " + unsupported.map(x => "`" + x + "`").join(", ") + ". Эти вызовы могли относиться к прошлой беседе.");
   if (moduleClaims) warnings.push("Статус started подтверждает запуск модулей, но не доказывает исправность всех функций.");
   const base = warnings.length ? reply + "\n\n**Проверка доказательств:** " + warnings.join(" ") : reply;
+  // A single functional health request must not be audited as a four-tool system inspection.
+  if (/functional_health_check/iu.test(request) || (/функциональн/iu.test(request) && /(?:здоров|диагностик|провер)/iu.test(request))) {
+    const checks = evidence.filter(e => e.name === "functional_health_check");
+    const ok = checks.find(e => e.status === "ok");
+    const status = ok ? "Выполнен" : checks.length ? "Ошибка/отказ" : "Не проверено";
+    const source = ok ? "functional_health_check" + (ok.at ? " · " + new Date(ok.at).toISOString() : "") : checks.length ? "functional_health_check: " + checks[checks.length - 1]!.status : "нет вызова";
+    return base + "\n\n**Протокол функциональной диагностики (журнал вызовов):**\n\n| Инструмент | Статус вызова | Источник |\n|---|---|---|\n| functional_health_check | " + status + " | " + source + " |\n\nУспешный вызов инструмента не означает PASS каждого внутреннего теста: смотрите результаты семи проверок.";
+  }
   const inspection = /(?:проверь|проверить|выполни|выполнить|диагностик|аудит|проверку)/iu.test(request) && /модул|систем|компьютер|процесс/iu.test(request) && !/(?:составь|напиши|предложи)\s+(?:мне\s+)?план/iu.test(request);
   if (!inspection) return base;
   const categories = [
