@@ -13,8 +13,9 @@ import { btn, chip, emptyState } from "./kit";
 import { openSheet, type Sheet } from "./sheet";
 import { isWorkday, nextHoliday, nextLongRest, nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import kitsuneUrl from "../assets/kitsune.webp";
+import { taskBoard } from "./tasks-board";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
-import { REPEAT_LABEL, REPEAT_OPTIONS, STATUS_LABEL, areaOf, dropDismissed, awayOn, boardColumns, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, meetingSpan, memoryDates, monthItems, moveTargets, planWeek, preferredArea, projectList, recognizedSpans, toLocalInput, weekProgress, workWeek, type AreaFilter, type ProjectInfo, type TaskFilter, type TimedItem } from "./tasks-model";
+import { REPEAT_LABEL, REPEAT_OPTIONS, STATUS_LABEL, areaOf, dropDismissed, awayOn, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, meetingSpan, memoryDates, monthItems, moveTargets, planWeek, preferredArea, projectList, recognizedSpans, toLocalInput, weekProgress, workWeek, type AreaFilter, type ProjectInfo, type TaskFilter, type TimedItem } from "./tasks-model";
 
 type Mission = { id: string; title: string; description: string; status: "active" | "paused" | "complete"; total: number; done: number; percent: number; blocked: number; idleDays?: number; next: { id: string; text: string; reason: string } | null; stages: { id: string; text: string; done: boolean }[] };
 const KINDS: [QuickKind, string][] = [["auto", "Авто"], ["todo", "Дело"], ["reminder", "Напоминание"], ["note", "Заметка"]];
@@ -648,7 +649,13 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const open = new Set(all.notes.filter((n) => n.kind === "todo" && !n.done).map((n) => n.id));
     for (const id of selected) if (!open.has(id)) selected.delete(id);
     renderBulk();
-    if (UI.view === "board") { listHost.replaceChildren(board(org)); return; }
+    root.classList.toggle("board-mode", UI.view === "board");
+    if (UI.view === "board") {
+      const q = UI.query.trim().toLowerCase();
+      boardNotes = org.notes.filter((n) => (UI.area === "all" || areaOf(n, projectsMeta()) === UI.area) && (!q || n.text.toLowerCase().includes(q)));
+      listHost.replaceChildren(board());
+      return;
+    }
     const kids = t.children;
     const finished = [...t.finished.todos.map((n) => todoRow(n)), ...t.finished.reminders.map(reminderRow)];
     const groups = [
@@ -786,58 +793,27 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   }
   const fmtMin = (m: number) => (Math.round(m / 6) / 10).toLocaleString("ru-RU") + " ч";
 
-  // ---------- the board: «Надо сделать → В работе → Жду ответа → Готово» ----------
-  const COLS = ["todo", "doing", "waiting", "done"] as const;
-  /** Moves a card to a column: a status, or ticked off / back in work. */
-  const toColumn = (n: Note, col: typeof COLS[number]) => {
-    if (col === "done") { if (!n.done) setDone(n.id, true); return; }
-    void act(async () => {
-      if (n.done) { const r = await api.setTodoDone(n.id, false); if (!r.ok) return r; }
-      return (n.status ?? "todo") === col ? { ok: true } : api.updateTask(n.id, { status: col });
-    }, STATUS_LABEL[col] + ": " + n.text);
-  };
-  function board(org: { notes: Note[] }): HTMLElement {
-    const q = UI.query.trim().toLowerCase();
-    const notes = org.notes.filter((n) => n.kind === "todo" && !n.auto && !n.parentId && (UI.area === "all" || areaOf(n, projectsMeta()) === UI.area) && (!q || n.text.toLowerCase().includes(q)));
-    const cols = boardColumns(notes);
-    const kidsOf = (id: string) => data?.notes.filter((k) => k.parentId === id) ?? [];
-    const card = (n: Note) => {
-      const kids = kidsOf(n.id);
-      const overdue = !n.done && n.dueAt && Date.parse(n.dueAt) < Date.now();
-      const sel = el("select", { cls: "mem-select tasks-card-status", attrs: { "aria-label": "Статус: " + n.text } }, ...COLS.map((c) => el("option", { value: c, textContent: STATUS_LABEL[c] })));
-      sel.value = n.done ? "done" : n.status ?? "todo";
-      sel.addEventListener("change", () => toColumn(n, sel.value as typeof COLS[number]));
-      const c = el("article", { cls: "tasks-card" + (n.priority === "high" && !n.done ? " important" : "") + (n.done ? " done" : ""), attrs: { "data-id": n.id, tabindex: "0" } },
-        el("div", { cls: "tasks-card-top" }, n.project ? dot(projectsMeta().find((p) => p.name.toLowerCase() === n.project!.toLowerCase())?.color) : null,
-          el("span", { cls: "grow tasks-card-text" }, ...markParts(n.text, UI.query).map(([x, hit]) => hit ? el("mark", { textContent: x }) : x)),
-          n.done ? null : iconButton("edit", "Изменить: " + n.text, () => { UI.view = "list"; store.set(VIEW, "list"); editing = n.id; renderList(); }, "icon-btn sm")),
-        meta(n.meeting && n.dueAt ? "встреча " + whenLabel(n.dueAt, true) + " " + meetingSpan(n) : n.dueAt ? el("span", { cls: overdue ? "late" : "", textContent: whenLabel(n.dueAt, isDateOnly(n.dueAt)) }) : null,
-          n.status === "waiting" && n.waitingFor ? "жду: " + n.waitingFor : null,
-          n.followUpAt && !n.done ? "спросить " + whenLabel(n.followUpAt, false) : null,
-          kids.length ? `шаги ${kids.filter((k) => k.done).length}/${kids.length}` : null,
-          n.estimateMinutes && !n.meeting ? n.estimateMinutes + " мин" : null,
-          missionTitle(n.project) ? "◎ " + missionTitle(n.project) : n.project ? "#" + n.project : null),
-        sel);
-      c.draggable = true;
-      c.addEventListener("dragstart", (e) => { if (!e.dataTransfer) return; e.dataTransfer.setData(DRAG_TYPE, n.id); e.dataTransfer.effectAllowed = "move"; root.classList.add("tasks-dragging"); });
-      c.addEventListener("dragend", () => root.classList.remove("tasks-dragging"));
-      return c;
-    };
-    return el("div", { cls: "tasks-board", attrs: { role: "list", "aria-label": "Доска дел по статусам" } }, ...COLS.map((col) => {
-      const list = cols[col];
-      const zone = el("section", { cls: "tasks-col " + col, attrs: { role: "listitem", "aria-label": STATUS_LABEL[col] } },
-        el("h2", {}, el("span", { textContent: STATUS_LABEL[col] }), el("span", { cls: "n", textContent: String(list.length) })),
-        ...(list.length ? list.map(card) : [el("p", { cls: "muted small tasks-col-empty", textContent: col === "waiting" ? "Дела, где вы ждёте ответа от кого-то" : col === "doing" ? "Перетащите сюда то, чем заняты" : col === "done" ? "Сделанное за неделю" : "Пусто" })]));
-      zone.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes(DRAG_TYPE)) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; zone.classList.add("drop"); } });
-      zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget as Node | null)) zone.classList.remove("drop"); });
-      zone.addEventListener("drop", (e) => {
-        e.preventDefault(); zone.classList.remove("drop"); root.classList.remove("tasks-dragging");
-        const n = data?.notes.find((x) => x.id === e.dataTransfer?.getData(DRAG_TYPE));
-        if (n) toColumn(n, col);
-      });
-      return zone;
-    }));
-  }
+  // ---------- the board: «Надо сделать → В работе → Жду ответа → Готово» (tasks-board.ts) ----------
+  let boardNotes: Note[] = [];
+  const board = taskBoard({
+    notes: () => boardNotes,
+    all: () => data?.notes.filter((n) => !pendingDelete.has(n.id)) ?? [],
+    projects: projectsMeta,
+    goalTitle: missionTitle,
+    query: () => UI.query,
+    area: () => UI.area,
+    act,
+    setDone: (id, done, node) => setDone(id, done, node),
+    remove: (n) => { const k = data?.notes.filter((x) => x.parentId === n.id).length ?? 0; removeLater(n.id, k ? `Дело удалено, его шаги (${k}) стали отдельными делами` : "Дело удалено", () => api.removeNote(n.id)); },
+    openEditor: (n) => { UI.view = "list"; store.set(VIEW, "list"); editing = n.id; renderList(); },
+    saveQuick,
+    when: whenLabel,
+    dot,
+    selected,
+    onSelect: () => renderBulk(),
+    redraw: () => renderList(),
+    page: () => root,
+  });
   /** Shown only while a to-do is dragged: drop it on «Сегодня», «Завтра» or «Без срока», even when that group is empty. */
   const dropBar = el("div", { cls: "tasks-dropbar", attrs: { "aria-hidden": "true" } },
     ...([["today", "На сегодня"], ["tomorrow", "На завтра"], ["someday", "Без срока"]] as const).map(([to, label]) => dropTarget(el("div", { cls: "tasks-drop", textContent: label }), to)));

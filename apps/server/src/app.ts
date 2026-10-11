@@ -726,6 +726,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if (req.method === "POST" && lu) return send(res, 200, await o.undoLog(lu[1]!));
           if (req.method === "GET" && p === "/api/organizer/load") return send(res, 200, o.dayLoad(url.searchParams.get("day") ?? ""));
           if (req.method === "POST" && p === "/api/organizer/arrange") { const b = await readJson(req); return send(res, 200, await o.arrangeDay(String(b.day ?? ""), b.apply === true, Array.isArray(b.ids) ? b.ids.filter((x: unknown): x is string => typeof x === "string") : undefined)); }
+          if (req.method === "POST" && p === "/api/organizer/order") { const b = await readJson(req); return send(res, 200, await o.orderTasks(b.ids)); }
           if (req.method === "POST" && p === "/api/organizer/move") { const b = await readJson(req); return send(res, 200, await o.moveTasks(b.ids, b.to, b.requestId)); }
           if (req.method === "POST" && p === "/api/organizer/brief") { const n = await o.runBrief(Date.now(), true); return n ? send(res, 200, n) : send(res, 409, { error: "Сводка уже готовится" }); }
           if (req.method === "POST" && p === "/api/organizer/split") {

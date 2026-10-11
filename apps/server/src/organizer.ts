@@ -31,6 +31,10 @@ export interface Note {
   followedUp?: string;
   /** A meeting: `dueAt` is its start and `estimateMinutes` its length. */
   meeting?: boolean;
+  /** When the status last changed (so the board can say «ждёте 3 дня»). */
+  statusAt?: string;
+  /** The place on the board within its column, set by dragging (lower first; unset after the ranked ones). */
+  rank?: number;
 }
 export type Area = "work" | "personal";
 export type TaskStatus = "doing" | "waiting";
@@ -274,7 +278,9 @@ function cleanNote(n: Note): Note {
   for (const k of ["followUpAt", "followedUp"] as const) if (c[k] !== undefined && (typeof c[k] !== "string" || !Number.isFinite(Date.parse(c[k]!)))) delete c[k];
   if (c.status !== "waiting") { delete c.waitingFor; delete c.followUpAt; delete c.followedUp; }
   if (c.meeting !== undefined && c.meeting !== true) delete c.meeting;
-  if (c.kind === "note") { delete c.area; delete c.status; delete c.meeting; delete c.priority; delete c.dueAt; delete c.parentId; delete c.estimateMinutes; delete c.repeat; delete c.repeatDay; delete c.rolled; delete c.streak; delete c.ruled; }
+  if (c.statusAt !== undefined && (typeof c.statusAt !== "string" || !Number.isFinite(Date.parse(c.statusAt)))) delete c.statusAt;
+  if (c.rank !== undefined && !(Number.isInteger(c.rank) && c.rank >= 0 && c.rank < 100_000)) delete c.rank;
+  if (c.kind === "note") { delete c.area; delete c.status; delete c.meeting; delete c.priority; delete c.dueAt; delete c.parentId; delete c.estimateMinutes; delete c.repeat; delete c.repeatDay; delete c.rolled; delete c.streak; delete c.ruled; delete c.statusAt; delete c.rank; }
   return c;
 }
 
@@ -597,6 +603,7 @@ export class Organizer {
     // asking someone is part of «Жду ответа»: setting who or when puts the to-do there
     if ((next.waitingFor || next.followUpAt) && !("status" in patch)) next.status = "waiting";
     if (next.status !== "waiting") { delete next.waitingFor; delete next.followUpAt; delete next.followedUp; }
+    if ((next.status ?? null) !== (n.status ?? null)) { if (next.status) next.statusAt = new Date(this.now()).toISOString(); else delete next.statusAt; }
     if ("meeting" in patch) {
       if (patch.meeting === true) next.meeting = true;
       else if (patch.meeting === false || patch.meeting === null) delete next.meeting;
@@ -649,6 +656,17 @@ export class Organizer {
       overdue:overdue.length,completedThisMonth,completionPercent:todos.length?Math.round(100*finished.length/todos.length):0},
       brainRecommendations:plan.suggested.slice(0,5).map(x=>({...x,evidence:"Срок и приоритет задачи",source:"local-task-metrics" as const})),
       advisoryOnly:true as const};
+  }
+  /** The board's order: the to-dos of one column in the order they were dragged to (ranks 0, 1, 2…). */
+  async orderTasks(ids: unknown): Promise<{ ok: true }> {
+    if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every((x) => typeof x === "string")) throw bad("Порядок: от 1 до 500 дел");
+    let i = 0;
+    for (const id of ids as string[]) {
+      const n = this.notes.find((x) => x.id === id && x.kind === "todo");
+      if (n) n.rank = i++;
+    }
+    await this.save();
+    return { ok: true };
   }
   async setDone(id: string, done: boolean): Promise<Note> {
     const n = this.notes.find((x) => x.id === id);

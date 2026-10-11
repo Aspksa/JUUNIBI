@@ -21,11 +21,21 @@ export function preferredArea(now: Date, o: { workFrom: string; workTo: string; 
   return o.workday && m >= at(o.workFrom) && m < at(o.workTo) ? "work" : "personal";
 }
 export const STATUS_LABEL: Record<TaskStatus | "todo" | "done", string> = { todo: "Надо сделать", doing: "В работе", waiting: "Жду ответа", done: "Готово" };
-/** The board: open to-dos by status and the ones finished in the last week (newest first, at most 20). */
-export function boardColumns(notes: Note[], now = new Date()): Record<"todo" | TaskStatus | "done", Note[]> {
+export type BoardCol = "todo" | TaskStatus | "done";
+export const BOARD_COLS: readonly BoardCol[] = ["todo", "doing", "waiting", "done"];
+/** The column a card stands in. */
+export const columnOf = (n: Pick<Note, "done" | "status">): BoardCol => (n.done ? "done" : n.status ?? "todo");
+/** The neighbour column to the left (-1) or right (+1), if any. */
+export const sideColumn = (col: BoardCol, dir: -1 | 1): BoardCol | null => BOARD_COLS[BOARD_COLS.indexOf(col) + dir] ?? null;
+/**
+ * The board: open to-dos by status and the ones finished in the last week (newest first, at most 20).
+ * Cards placed by dragging (`rank`) come first in their order, the rest by importance and due date.
+ */
+export function boardColumns(notes: Note[], now = new Date()): Record<BoardCol, Note[]> {
   const todos = notes.filter((n) => n.kind === "todo" && !n.auto);
   const due = (n: Note) => (n.dueAt ? Date.parse(n.dueAt) : Infinity);
-  const order = (a: Note, b: Note) => Number(b.priority === "high") - Number(a.priority === "high") || due(a) - due(b) || a.createdAt.localeCompare(b.createdAt);
+  const rank = (n: Note) => n.rank ?? 1e9;
+  const order = (a: Note, b: Note) => rank(a) - rank(b) || Number(b.priority === "high") - Number(a.priority === "high") || due(a) - due(b) || a.createdAt.localeCompare(b.createdAt);
   const open = todos.filter((n) => !n.done);
   const weekAgo = now.getTime() - 7 * 86_400_000;
   return {
@@ -34,6 +44,65 @@ export function boardColumns(notes: Note[], now = new Date()): Record<"todo" | T
     waiting: open.filter((n) => n.status === "waiting").sort(order),
     done: todos.filter((n) => n.done && Date.parse(n.completedAt ?? n.createdAt) >= weekAgo).sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")).slice(0, 20),
   };
+}
+/** The end of this week (Sunday 23:59:59.999, local time). */
+const weekEnd = (now: Date) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + (7 - now.getDay()) % 7, 23, 59, 59, 999).getTime();
+/** The board's filters: only important ones; only what is due by the end of this week (started and waiting ones always stay). */
+export function boardFilter(notes: Note[], f: { important?: boolean; week?: boolean }, now = new Date()): Note[] {
+  const end = weekEnd(now);
+  return notes.filter((n) => (!f.important || n.priority === "high") && (!f.week || n.done || !!n.status || (!!n.dueAt && Date.parse(n.dueAt) <= end)));
+}
+export type TodoBucket = "late" | "today" | "week" | "later";
+export const BUCKET_LABEL: Record<TodoBucket, string> = { late: "Просрочено", today: "Сегодня", week: "На неделе", later: "Позже и без срока" };
+/** «Надо сделать» split by when: overdue, today, the rest of this week, later or without a date (empty groups dropped). */
+export function todoBuckets(list: Note[], now = new Date()): { key: TodoBucket; notes: Note[] }[] {
+  const today = localDay(now), end = weekEnd(now);
+  const of = (n: Note): TodoBucket => {
+    if (!n.dueAt) return "later";
+    const t = Date.parse(n.dueAt), key = localDay(n.dueAt);
+    if (t < now.getTime() && key < today) return "late";
+    if (key === today) return t < now.getTime() && !isDateOnly(n.dueAt) ? "late" : "today";
+    return t <= end ? "week" : "later";
+  };
+  const out: Record<TodoBucket, Note[]> = { late: [], today: [], week: [], later: [] };
+  for (const n of list) out[of(n)].push(n);
+  return (Object.keys(out) as TodoBucket[]).filter((k) => out[k].length).map((key) => ({ key, notes: out[key] }));
+}
+/** Whole days since the status was set (for «ждёте 3 дня»), or null when unknown. */
+export function statusDays(n: Pick<Note, "statusAt">, now = new Date()): number | null {
+  if (!n.statusAt || !Number.isFinite(Date.parse(n.statusAt))) return null;
+  const d = new Date(n.statusAt);
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.max(0, Math.round((b - a) / 86_400_000));
+}
+/** «3 дня», «1 день», «5 дней». */
+export function daysWord(n: number): string {
+  const m10 = n % 10, m100 = n % 100;
+  return `${n} ${m10 === 1 && m100 !== 11 ? "день" : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? "дня" : "дней"}`;
+}
+export type LaneMode = "none" | "project" | "area";
+export interface Lane { key: string; label: string; color?: string; notes: Note[] }
+/** Rows of the board: one per project (biggest first, «Без проекта» last) or «Работа» / «Личное». */
+export function boardLanes(notes: Note[], mode: LaneMode, projects: ProjectMeta[] = [], goalTitle: (id: string) => string | undefined = () => undefined): Lane[] {
+  if (mode === "none") return [{ key: "", label: "", notes }];
+  if (mode === "area") {
+    const work = notes.filter((n) => areaOf(n, projects) === "work");
+    return [{ key: "work", label: "Работа", notes: work }, { key: "personal", label: "Личное", notes: notes.filter((n) => !work.includes(n)) }];
+  }
+  const by = new Map<string, Note[]>();
+  for (const n of notes) { const k = n.project ?? ""; by.set(k, [...(by.get(k) ?? []), n]); }
+  return [...by.entries()].sort(([a, x], [b, y]) => Number(a === "") - Number(b === "") || y.length - x.length || a.localeCompare(b, "ru"))
+    .map(([key, list]) => {
+      const goal = key ? goalTitle(key) : undefined;
+      const color = projects.find((p) => p.name.toLowerCase() === key.toLowerCase())?.color;
+      return { key, label: !key ? "Без проекта" : goal ? "◎ " + goal : "#" + key, ...(color ? { color } : {}), notes: list };
+    });
+}
+/** The column's ids with `id` put at `index` (dragged within the column or in from another one). */
+export function placeAt(ids: string[], id: string, index: number): string[] {
+  const rest = ids.filter((x) => x !== id);
+  const at = Math.max(0, Math.min(rest.length, index - (ids.indexOf(id) >= 0 && ids.indexOf(id) < index ? 1 : 0)));
+  return [...rest.slice(0, at), id, ...rest.slice(at)];
 }
 /** This week's work to-dos (Monday to Sunday): minutes planned and minutes done (30 for a to-do without an estimate). */
 export function workWeek(notes: Note[], projects: ProjectMeta[], now = new Date()): { planned: number; done: number; count: number } {

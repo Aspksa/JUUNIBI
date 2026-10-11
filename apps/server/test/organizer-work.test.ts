@@ -19,6 +19,21 @@ describe("«Дела»: work to-dos", () => {
     expect(areaOf({})).toBe("personal");
   });
 
+  it("remembers when the status changed and the board order", async () => {
+    const file = await tmp();
+    const o = new Organizer(file);
+    const a = await o.addNote("todo", "А"), b = await o.addNote("todo", "Б");
+    expect((await o.updateTask(a.id, { status: "waiting" })).statusAt).toBeTruthy();
+    expect((await o.updateTask(a.id, { status: "todo" })).statusAt).toBeUndefined();
+    await o.orderTasks([b.id, a.id, "нет такого"]);
+    expect(o.listNotes().map((n) => [n.text, n.rank])).toEqual([["А", 1], ["Б", 0]]);
+    await expect(o.orderTasks([])).rejects.toThrow(/Порядок/);
+    await o.flush();
+    const again = new Organizer(file);
+    await again.load();
+    expect(again.listNotes().find((n) => n.id === b.id)?.rank).toBe(0);
+  });
+
   it("keeps status, waiting and meeting fields and drops the waiting ones when the status changes", async () => {
     const file = await tmp();
     const o = new Organizer(file);
