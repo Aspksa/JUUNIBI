@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { foxWifiSnapshot } from "./fox-network";
 describe("Fox Network read-only scanner", () => {
   it("does not invoke netsh on unsupported platforms", async () => {
-    const result = await foxWifiSnapshot("linux", async () => { throw new Error("must not run"); });
+    const result = await foxWifiSnapshot("linux", (async () => { throw new Error("must not run"); }) as any);
     expect(result.supported).toBe(false);
   });
   it("calls only the read-only Windows WLAN commands", async () => {
