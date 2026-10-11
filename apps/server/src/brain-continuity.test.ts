@@ -7,6 +7,7 @@ describe("personal assistant continuity", () => {
     const storage = { load: async () => snapshot, save: async (value: string) => { snapshot = value; } };
     const first = new BrainCore(() => true, storage);
     const plan = first.plan("Подготовить отчёт", ["Найти материалы", "Проверить данные", "Составить итог"]);
+    first.updateStep(plan.id, plan.steps[0]!.id, "active");
     first.updateStep(plan.id, plan.steps[0]!.id, "done");
     first.updateStep(plan.id, plan.steps[1]!.id, "active");
     await first.flush();
@@ -26,8 +27,10 @@ describe("personal assistant continuity", () => {
   it("excludes completed plans and reports failures for manual review", async () => {
     const brain = new BrainCore(() => false);
     const ok = brain.plan("Готовое", ["Шаг"]);
+    brain.updateStep(ok.id, ok.steps[0]!.id, "active");
     brain.updateStep(ok.id, ok.steps[0]!.id, "done");
     const error = brain.plan("Незавершённое", ["Сбой"]);
+    brain.updateStep(error.id, error.steps[0]!.id, "active");
     brain.updateStep(error.id, error.steps[0]!.id, "failed");
     expect(brain.pendingWork()).toHaveLength(1);
     expect(brain.pendingWork()[0]).toMatchObject({id: error.id, nextStep:{status:"failed"}});
