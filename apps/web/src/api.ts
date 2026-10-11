@@ -220,6 +220,11 @@ export const api = {
     advisoryOnly:boolean;
   }>(`/api/organizer/insights?month=${encodeURIComponent(month)}`)),
   timeBlocks: (day:string) => attemptAsync(() => call<{day:string;workingMinutes:number;plannedMinutes:number;remainingMinutes:number;blocks:{id:string;text:string;start:string;end:string;minutes:number}[];note:string;advisoryOnly:boolean}>(`/api/organizer/time-blocks?day=${encodeURIComponent(day)}`)),
+  automationEvidence: () => attemptAsync(() => call<{
+    totals:{logged:number;active:number;undone:number;automaticMoves:number;taskCompletion:number};
+    permissions:{rollOverdue:boolean;reminders:boolean;brief:boolean;rules:number};
+    warnings:string[];evidence:string;advisoryOnly:boolean;
+  }>("/api/organizer/evidence")),
   autoLog: () => attemptAsync(() => call<AutoLogEntry[]>("/api/organizer/log")),
   undoAuto: (id: string) => attemptAsync(() => call<AutoLogEntry>(`/api/organizer/log/${encodeURIComponent(id)}/undo`, post({}))),
   dayLoad: (day: string) => attemptAsync(() => call<DayLoad>(`/api/organizer/load?day=${encodeURIComponent(day)}`)),
