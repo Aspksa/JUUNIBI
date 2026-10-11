@@ -131,7 +131,7 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     }
     const tabs = el("div", { cls: "dkl-tabs", attrs: { role: "tablist", "aria-label": "Группы показателей" } }, ...d.groups.map((g) => {
       const ready = readyIn(d.metrics, g.id), total = d.metrics.filter((m) => m.group === g.id).length;
-      const b = el("button", { type: "button", cls: "dkl-tab", attrs: { role: "tab", "aria-selected": String(g.id === group), title: g.note } },
+      const b = el("button", { type: "button", cls: "dkl-tab", attrs: { role: "tab", "aria-selected": String(g.id === group), title: `${g.title}: ${g.note} · ${ready} из ${total}` } },
         el("span", { cls: "dkl-ic sm" }, lifeGlyph(g.icon, g.id, 18)),
         el("span", { cls: "dkl-tab-text" }, el("b", { textContent: g.title }), el("small", { textContent: `${ready} из ${total}` })),
         el("i", { cls: "dkl-tab-bar", attrs: { "aria-hidden": "true" } }));
