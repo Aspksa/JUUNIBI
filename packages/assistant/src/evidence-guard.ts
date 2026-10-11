@@ -2,7 +2,7 @@
 export interface ToolEvidence { name: string; status: "ok" | "error" | "denied" }
 export function guardToolClaims(reply: string, evidence: ToolEvidence[]): string {
   const succeeded = new Set(evidence.filter(x => x.status === "ok").map(x => x.name));
-  const claimed = [...reply.matchAll(/`(list_modules|computer_status|computer_processes|daily_brief`)\s*(?:✅|—\s*(?:выполнен|проверен)|успешно)/giu)].map(x => x[1]!);
+  const claimed = [...reply.matchAll(/`(list_modules|computer_status|computer_processes|daily_brief)`\s*(?:✅|—\s*(?:выполнен|проверен)|успешно)/giu)].map(x => x[1]!);
   const unsupported = [...new Set(claimed)].filter(name => !succeeded.has(name));
   const moduleClaims = /(?:все\s+(?:7\s+)?модул[ьяеи]+\s+(?:работают|исправны)|все\s+\d+\s+модул[ьяеи]+\s+(?:работают|исправны))/iu.test(reply);
   const warnings: string[] = [];
