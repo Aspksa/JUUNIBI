@@ -190,7 +190,16 @@ const evals = new EvalService(evalHistory, {
 });
 const openable = new OpenableUrls();
 const disk = new LocalDisk(path.join(dataDir,"disk"));
-await loadOrQuarantine("Диск", path.join(dataDir, "disk", "index.json"), () => disk.load());
+// Quarantine the complete damaged vault, not only its index: orphaned UUID objects
+// would otherwise block a restore into an apparently empty catalog.
+try {
+  await disk.load();
+} catch (error) {
+  const diskDir=path.join(dataDir,"disk");
+  const quarantine=diskDir+".corrupt-"+Date.now()+"-"+randomUUID();
+  await rename(diskDir,quarantine);
+  log.warn("Диск: повреждённое хранилище перемещено целиком в "+quarantine,(error as Error).message);
+}
 const organizer = new Organizer(path.join(dataDir, "organizer.json"));
 await loadOrQuarantine("мобильное приложение", path.join(dataDir, "mobile.json"), () => mobile.load());
 await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.json"), () => organizer.load());
