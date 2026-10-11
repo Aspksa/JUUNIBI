@@ -79,7 +79,7 @@ describe("Local Disk",()=>{
      await disk.createFolder("Проекты/JUUNIBI");
      await expect(disk.createFolder("Нет/Вложение")).rejects.toMatchObject({status:404});
      const uploaded=await disk.uploadBytes("readme.md","Проекты/JUUNIBI",Buffer.from("Мозг JUUNIBI использует память"));
-     const binary=await disk.uploadBytes("image.png","Проекты/JUUNIBI",Buffer.from([1,2,3,4]));
+     const binary=await disk.uploadStream("image.png","Проекты/JUUNIBI",(async function*(){yield Buffer.from([1,2]);yield Buffer.from([3,4]);})());
      expect(disk.list("Проекты/JUUNIBI").files).toHaveLength(2);
      expect(await disk.searchContent("память")).toEqual([uploaded.id]);
      expect(await disk.searchContent("несуществующий")).toEqual([]);
