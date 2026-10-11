@@ -41,6 +41,27 @@ describe("Local Disk",()=>{
    await expect(afterDelete.restore(uploaded.id)).rejects.toMatchObject({status:404});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
+ it("validates and persists batch operations without partial changes",async()=>{
+  const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-"));
+  try{
+   const disk=new LocalDisk(dir);
+   await disk.createFolder("Работа");
+   const a=await disk.upload("one.txt","",Buffer.from("1").toString("base64"));
+   const b=await disk.upload("two.txt","",Buffer.from("2").toString("base64"));
+   await expect(disk.bulk([a.id,b.id],"move","missing")).rejects.toMatchObject({status:404});
+   expect(disk.list("").files).toHaveLength(2);
+   await disk.bulk([a.id,b.id],"move","Работа");
+   await disk.bulk([a.id,b.id],"favorite");
+   expect(disk.list("Работа").files.every(x=>x.favorite)).toBe(true);
+   await disk.bulk([a.id,b.id],"trash");
+   expect(disk.list().trash).toHaveLength(2);
+   await expect(disk.bulk([a.id,b.id],"favorite")).rejects.toMatchObject({status:409});
+   const restored=new LocalDisk(dir);await restored.load();
+   await restored.bulk([a.id,b.id],"restore");
+   expect(restored.list("Работа").files).toHaveLength(2);
+   await expect(restored.bulk([a.id,a.id],"trash")).rejects.toMatchObject({status:400});
+  }finally{await rm(dir,{recursive:true,force:true});}
+ });
  it("limits sizes and refuses unknown folders",async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-"));
   try{

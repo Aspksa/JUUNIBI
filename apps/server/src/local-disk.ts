@@ -108,6 +108,32 @@ export class LocalDisk {
     this.entries=this.entries.filter(x=>x.id!==id);
     await this.save();return {ok:true};
   }
+  /** Validate every target first, then persist one batch mutation. */
+  async bulk(ids:unknown, action:unknown, folder?:unknown){
+    if(!Array.isArray(ids)||!ids.length||ids.length>100||!ids.every(x=>typeof x==="string")||new Set(ids).size!==ids.length)
+      throw bad("Выберите от 1 до 100 уникальных файлов");
+    if(action!=="trash"&&action!=="restore"&&action!=="move"&&action!=="favorite"&&action!=="unfavorite")
+      throw bad("Неизвестная пакетная операция");
+    const destination=action==="move"?validFolder(folder):"";
+    if(action==="move"&&destination&&!this.folders.includes(destination))throw bad("Папка не найдена",404);
+    const entries=(ids as string[]).map(id=>this.entries.find(e=>e.id===id));
+    if(entries.some(e=>!e))throw bad("Один из файлов не найден",404);
+    for(const entry of entries){
+      const e=entry!;
+      if(action==="restore"?!e.deletedAt:!!e.deletedAt)throw bad("Файл имеет неподходящий статус для операции",409);
+    }
+    const now=new Date().toISOString();
+    for(const entry of entries){
+      const e=entry!;
+      if(action==="trash")e.deletedAt=now;
+      if(action==="restore"){delete e.deletedAt;if(e.folder&&!this.folders.includes(e.folder))e.folder="";}
+      if(action==="move")e.folder=destination;
+      if(action==="favorite")e.favorite=true;
+      if(action==="unfavorite")e.favorite=false;
+    }
+    await this.save();
+    return {updated:entries.length};
+  }
   async remove(id:string){
     const e=this.entries.find(x=>x.id===id);
     if(!e)throw bad("Файл не найден",404);
