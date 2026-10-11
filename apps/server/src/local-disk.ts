@@ -1,10 +1,11 @@
 import { diskChronicles } from "./disk-chronicles";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
-export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string };
+export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string; objectId?:string; revision?:number };
 const LIMIT = 50 * 1024 * 1024;
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
@@ -15,10 +16,12 @@ const validName = (v:unknown) => {
   if (typeof v!=="string" || !v.trim() || v.length>180 || /[\\/\x00-\x1f]/.test(v) || v==="." || v==="..") throw bad("Недопустимое имя файла");
   return v.trim();
 };
+type DiskRevision = {revision:number;objectId:string;size:number;sha256:string;at:string};
 export class LocalDisk {
   private entries:DiskEntry[]=[];
+  private versions:Record<string,DiskRevision[]>={};
   private folders:string[]=[];
-  private folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+  private folderStyles:Record<string,{color:string;pinned:boolean;cover:string;createdAt?:string}>={};
   private folderActions:{at:string;action:string;folder:string;destination?:string;files?:number}[]=[];
   private logFolder(action:string,folder:string,destination?:string,files?:number){this.folderActions.push({at:new Date().toISOString(),action,folder,...(destination===undefined?{}:{destination}),...(files===undefined?{}:{files})});if(this.folderActions.length>300)this.folderActions.shift();}
   folderHistory(){return [...this.folderActions].reverse();}
@@ -26,19 +29,22 @@ export class LocalDisk {
   private writes:Promise<void>=Promise.resolve();
   constructor(private readonly root:string) {}
   private get index(){return path.join(this.root,"index.json");}
-  private file(id:string){return path.join(this.root,"objects",id);}
+  private objectPath(id:string){return path.join(this.root,"objects",id);}
+  private file(id:string){const entry=this.entries.find(e=>e.id===id);return this.objectPath(entry?.objectId??id);}
   async load(){
     try {
-      const raw=JSON.parse(await readFile(this.index,"utf8")) as {entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
+      const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
+      if(raw.versions&&typeof raw.versions==="object")this.versions=raw.versions;
       if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
       if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
+      if(Array.isArray(raw.fileActions))this.fileActions=raw.fileActions.slice(-300);
       if(Array.isArray(raw.folderActions))this.folderActions=raw.folderActions.slice(-300);
       if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
     }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
-    const content=JSON.stringify({entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,deletedFolders:this.deletedFolders});
+    const content=JSON.stringify({versions:this.versions,entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders});
     this.writes=this.writes.catch(()=>{}).then(async()=>{
       await mkdir(this.root,{recursive:true});
       const tmp=path.join(this.root,randomUUID()+".tmp");
@@ -47,10 +53,119 @@ export class LocalDisk {
     });
     return this.writes;
   }
+
+  /** Portable newline-delimited archive: immutable object checksums are verified on both sides. */
+  async *exportBackup():AsyncGenerator<string>{
+    const state={
+      entries:this.entries.map(e=>({...e})),
+      versions:JSON.parse(JSON.stringify(this.versions)) as Record<string,DiskRevision[]>,
+      folders:[...this.folders],folderStyles:{...this.folderStyles},
+      deletedFolders:this.deletedFolders.map(d=>({...d})),
+      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a}))
+    };
+    yield JSON.stringify({type:"manifest",format:1,state})+"\n";
+    const objects=new Map<string,{size:number;sha256:string}>();
+    for(const e of state.entries)objects.set(e.objectId??e.id,{size:e.size,sha256:e.sha256});
+    for(const history of Object.values(state.versions))for(const v of history)objects.set(v.objectId,{size:v.size,sha256:v.sha256});
+    let count=0;
+    for(const [id,expected] of objects){
+      if(!/^[0-9a-f-]{36}$/.test(id))throw bad("Недопустимый объект архива",409);
+      yield JSON.stringify({type:"object",id,...expected})+"\n";
+      const hash=createHash("sha256");let size=0;
+      for await(const chunk of createReadStream(this.objectPath(id),{highWaterMark:256*1024})){
+        const buf=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);
+        size+=buf.length;hash.update(buf);
+        yield JSON.stringify({type:"chunk",data:buf.toString("base64")})+"\n";
+      }
+      if(size!==expected.size||hash.digest("hex")!==expected.sha256)throw bad("Файл изменён или повреждён во время резервирования",409);
+      yield '{"type":"end"}\n';count++;
+    }
+    yield JSON.stringify({type:"complete",objects:count})+"\n";
+  }
+  /** Restore only to an empty vault; validate all bytes before committing the new index. */
+  async importBackup(lines:AsyncIterable<string>){
+    if(this.entries.length||this.folders.length||Object.keys(this.versions).length)throw bad("Для восстановления требуется пустой Диск",409);
+    const staged:string[]=[];const verified=new Map<string,{size:number;sha256:string}>();let committed=false;let manifest:unknown=null;let active:{id:string;size:number;sha256:string;bytes:number;hash:ReturnType<typeof createHash>;handle:Awaited<ReturnType<typeof open>>}|null=null;
+    let count=0,complete=false;
+    await mkdir(path.join(this.root,"objects"),{recursive:true});
+    try{
+      for await(const line of lines){
+        if(line.length>17*1024*1024)throw bad("Превышен допустимый размер строки архива",413);
+        const rec=JSON.parse(line) as Record<string,unknown>;
+        if(!manifest){
+          if(rec.type!=="manifest"||rec.format!==1||typeof rec.state!=="object"||!rec.state)throw bad("Неверный формат архива");
+          manifest=rec.state;continue;
+        }
+        if(complete)throw bad("Данные после конца архива");
+        if(rec.type==="object"&&!active){
+          if(typeof rec.id!=="string"||!/^[0-9a-f-]{36}$/.test(rec.id)||!Number.isSafeInteger(rec.size)||Number(rec.size)>LIMIT||Number(rec.size)<0||typeof rec.sha256!=="string"||!/^[a-f0-9]{64}$/.test(rec.sha256))throw bad("Неверная запись файла в архиве");
+          if(staged.includes(rec.id))throw bad("Повторный объект архива");
+          const handle=await open(this.objectPath(rec.id),"wx",0o600);
+          staged.push(rec.id);active={id:rec.id,size:Number(rec.size),sha256:rec.sha256,bytes:0,hash:createHash("sha256"),handle};continue;
+        }
+        if(rec.type==="chunk"&&active){
+          if(typeof rec.data!=="string"||rec.data.length>800000||!/^([a-zA-Z0-9+/]*={0,2})$/.test(rec.data))throw bad("Неверный блок данных архива");
+          const buf=Buffer.from(rec.data,"base64");
+          active.bytes+=buf.length;if(active.bytes>active.size)throw bad("Размер файла не совпадает с архивом");
+          active.hash.update(buf);await active.handle.writeFile(buf);continue;
+        }
+        if(rec.type==="end"&&active){
+          const item=active;active=null;await item.handle.close();
+          if(item.bytes!==item.size||item.hash.digest("hex")!==item.sha256)throw bad("Контрольная сумма резервного файла не совпадает",409);
+          verified.set(item.id,{size:item.size,sha256:item.sha256});count++;continue;
+        }
+        if(rec.type==="complete"&&!active&&Number.isSafeInteger(rec.objects)&&rec.objects===count){complete=true;continue;}
+        throw bad("Повреждённая последовательность архива");
+      }
+      if(!complete||active)throw bad("Неполная резервная копия",409);
+      const state=manifest as Record<string,unknown>;
+      if(!Array.isArray(state.entries)||!Array.isArray(state.folders)||typeof state.versions!=="object"||!state.versions)throw bad("Неверный индекс архива");
+      if(state.entries.length>1000||state.folders.length>100)throw bad("Архив превышает лимиты хранилища",409);
+      const entries=state.entries as DiskEntry[];
+      const versions=state.versions as Record<string,DiskRevision[]>;
+      const folders=state.folders as string[];
+      const referenced=new Set<string>();
+      const entryIds=new Set<string>();
+      for(const e of entries){
+        validName(e.name);validFolder(e.folder);
+        if(typeof e.id!=="string"||!/^[0-9a-f-]{36}$/.test(e.id)||!Number.isSafeInteger(e.size)||e.size<0||e.size>LIMIT||!/^[0-9a-f]{64}$/.test(e.sha256))throw bad("Некорректный файл в индексе");
+        if(entryIds.has(e.id))throw bad("Повторный идентификатор файла",409);
+        entryIds.add(e.id);
+        if(e.folder&&!folders.includes(e.folder))throw bad("Отсутствует каталог файла",409);
+        const object=verified.get(e.objectId??e.id);
+        if(!object||object.size!==e.size||object.sha256!==e.sha256)throw bad("Индекс не совпадает с содержимым файла",409);
+        referenced.add(e.objectId??e.id);
+        const seenRevisions=new Set<number>();
+        for(const v of versions[e.id]??[]){
+          if(!Number.isSafeInteger(v.revision)||v.revision<1||seenRevisions.has(v.revision))throw bad("Некорректная история версий",409);
+          seenRevisions.add(v.revision);
+          const previous=verified.get(v.objectId);
+          if(!previous||previous.size!==v.size||previous.sha256!==v.sha256)throw bad("Индекс не совпадает с архивной редакцией",409);
+          referenced.add(v.objectId);
+        }
+      }
+      if(referenced.size!==count||[...referenced].some(id=>!staged.includes(id)))throw bad("Архив не содержит все объекты индекса",409);
+      for(const folder of folders)if(!folder||validFolder(folder)!==folder)throw bad("Некорректная папка архива");
+      this.entries=entries;this.folders=folders;this.versions=versions;
+      this.folderStyles=(state.folderStyles??{}) as typeof this.folderStyles;
+      this.deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
+      this.folderActions=Array.isArray(state.folderActions)?state.folderActions as typeof this.folderActions:[];
+      this.fileActions=Array.isArray(state.fileActions)?state.fileActions as typeof this.fileActions:[];
+      await this.save();committed=true;
+      return {files:entries.length,folders:folders.length,objects:count};
+    }catch(e){
+      if(active)await active.handle.close().catch(()=>{});
+      if(!committed){
+        this.entries=[];this.versions={};this.folders=[];this.folderStyles={};this.deletedFolders=[];this.folderActions=[];this.fileActions=[];
+        for(const id of staged)await rm(this.objectPath(id),{force:true});
+      }
+      throw e;
+    }
+  }
   chronicles(){return diskChronicles(this.entries,this.folders);}
   list(folder?:string){
     const f=folder===undefined?undefined:validFolder(folder);
-    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0),maxFileBytes:LIMIT};
+    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0),maxFileBytes:LIMIT};
   }
   async createFolder(name:unknown){
     const f=validFolder(name);
@@ -59,7 +174,7 @@ export class LocalDisk {
     const parent=f.includes("/")?f.slice(0,f.lastIndexOf("/")):"";
     if(parent&&!this.folders.includes(parent))throw bad("Сначала создайте родительскую папку",404);
     if(this.folders.length>=100)throw bad("Слишком много папок",409);
-    this.folders.push(f);this.logFolder("create",f);await this.save();return {name:f};
+    this.folders.push(f);this.folderStyles[f]={color:"#b89cff",pinned:false,cover:"",createdAt:new Date().toISOString()};this.logFolder("create",f);await this.save();return {name:f};
   }
   async renameFolder(oldName:unknown,newName:unknown){
     const from=validFolder(oldName),to=validFolder(newName);
@@ -90,7 +205,7 @@ export class LocalDisk {
     if(typeof pinned!=="boolean")throw bad("Неверное значение закрепления");
     if(typeof cover!=="string"||cover.length>100)throw bad("Неверная обложка");
     if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
-    this.folderStyles[folder]={color,pinned,cover};
+    this.folderStyles[folder]={color,pinned,cover,...(this.folderStyles[folder]?.createdAt?{createdAt:this.folderStyles[folder]!.createdAt}:{})};
     this.logFolder("style",folder);await this.save();return {name:folder,...this.folderStyles[folder]};
   }
   folderDecorations(){return {...this.folderStyles};}
@@ -109,12 +224,13 @@ export class LocalDisk {
       for(const e of entries){
         const bytes=await readFile(this.file(e.id));
         if(createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Повреждён исходный файл",409);
-        const id=randomUUID();await writeFile(this.file(id),bytes,{flag:"wx",mode:0o600});
+        const id=randomUUID();await writeFile(this.objectPath(id),bytes,{flag:"wx",mode:0o600});
         copied.push(id);
       }
     }catch(e){for(const id of copied)await rm(this.file(id),{force:true});throw e;}
     this.folders.push(...folders.map(f=>target+f.slice(from.length)));
-    this.entries.push(...entries.map((e,i)=>({...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString()})));
+    for(const folder of folders)this.folderStyles[target+folder.slice(from.length)]={...(this.folderStyles[folder]??{color:"#b89cff",pinned:false,cover:""}),createdAt:new Date().toISOString()};
+    this.entries.push(...entries.map((e,i)=>{const copy={...e,id:copied[i]!,folder:target+e.folder.slice(from.length),uploadedAt:new Date().toISOString(),revision:1};delete copy.objectId;return copy;}));
     this.logFolder("copy",from,target,copied.length);await this.save();return {name:target,files:copied.length};
   }
   listDeletedFolders(){return this.deletedFolders.map(({root,paths,at})=>({root,count:paths.length,at}));}
@@ -232,7 +348,19 @@ export class LocalDisk {
         results.push({id:e.id,name:e.name,status:valid?"ok":"corrupt"});
       }catch{results.push({id:e.id,name:e.name,status:"missing"});}
     }
-    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results};
+    const revisionIssues:{fileId:string;revision:number;status:"missing"|"corrupt"}[]=[];
+    let revisionsChecked=0;
+    for(const [fileId,history] of Object.entries(this.versions)){
+      for(const v of history){
+        revisionsChecked++;
+        try{
+          const bytes=await readFile(this.objectPath(v.objectId));
+          if(bytes.length!==v.size||createHash("sha256").update(bytes).digest("hex")!==v.sha256)
+            revisionIssues.push({fileId,revision:v.revision,status:"corrupt"});
+        }catch{revisionIssues.push({fileId,revision:v.revision,status:"missing"});}
+      }
+    }
+    return {total:results.length,ok:results.filter(x=>x.status==="ok").length,results,revisionsChecked,revisionIssues};
   }
   duplicates(){
     const groups=new Map<string,DiskEntry[]>();
@@ -261,12 +389,134 @@ export class LocalDisk {
   }
   /** Export an explicit snapshot of metadata; bytes are not included. */
   snapshot(){return {exportedAt:new Date().toISOString(),files:this.entries.map(e=>({...e})),folders:[...this.folders]};}
+  /** Copy a file under a new identity without changing its original. */
+  /** Sync two local folders without ever overwriting a conflicting filename. */
+  async syncFolders(from:unknown,to:unknown,apply:unknown=false){
+    const source=validFolder(from),target=validFolder(to);
+    if(source===target)throw bad("Нельзя синхронизировать папку саму с собой");
+    if(source&&!this.folders.includes(source))throw bad("Исходная папка не найдена",404);
+    if(target&&!this.folders.includes(target))throw bad("Папка назначения не найдена",404);
+    if(typeof apply!=="boolean")throw bad("Недопустимый режим синхронизации");
+    const originals=this.entries.filter(e=>!e.deletedAt&&e.folder===source);
+    const incoming=this.entries.filter(e=>!e.deletedAt&&e.folder===target);
+    const candidate:DiskEntry[]=[],conflicts:{name:string;reason:string}[]=[];
+    let unchanged=0;
+    const seen=new Set<string>();
+    for(const entry of originals){
+      const key=entry.name.toLocaleLowerCase();
+      if(seen.has(key)){conflicts.push({name:entry.name,reason:"Повторяющееся имя в источнике"});continue;}
+      seen.add(key);
+      const matches=incoming.filter(e=>e.name.toLocaleLowerCase()===key);
+      if(matches.some(e=>e.sha256===entry.sha256&&e.size===entry.size)){unchanged++;continue;}
+      if(matches.length){conflicts.push({name:entry.name,reason:"Различается содержимое"});continue;}
+      candidate.push(entry);
+    }
+    if(!apply)return {copied:0,pending:candidate.length,unchanged,conflicts};
+    if(conflicts.length)throw bad("Обнаружены конфликты. Синхронизация отменена",409);
+    if(this.entries.length+candidate.length>1000)throw bad("Недостаточно свободных слотов в хранилище",409);
+    const written:string[]=[];const copied:DiskEntry[]=[];
+    try{
+      for(const e of candidate){
+        const bytes=await readFile(this.file(e.id));
+        if(bytes.length!==e.size||createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Исходный файл повреждён",409);
+        const id=randomUUID();
+        await writeFile(this.objectPath(id),bytes,{flag:"wx",mode:0o600});
+        written.push(id);
+        const copy:DiskEntry={...e,id,folder:target,revision:1,uploadedAt:new Date().toISOString()};
+        delete copy.objectId;delete copy.deletedAt;
+        copied.push(copy);
+      }
+      this.entries.push(...copied);
+      await this.save();
+    }catch(e){
+      this.entries=this.entries.filter(e=>!written.includes(e.id));
+      for(const id of written)await rm(this.objectPath(id),{force:true});
+      throw e;
+    }
+    return {copied:copied.length,pending:0,unchanged,conflicts};
+  }
+  async copyFile(id:string,folder:unknown){
+    const original=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!original)throw bad("Файл не найден",404);
+    const target=validFolder(folder);
+    if(target&&!this.folders.includes(target))throw bad("Папка назначения не найдена",404);
+    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    const bytes=await readFile(this.file(id));
+    if(bytes.length!==original.size||createHash("sha256").update(bytes).digest("hex")!==original.sha256)throw bad("Файл повреждён",409);
+    const copied:DiskEntry={...original,id:randomUUID(),name:original.name,folder:target,uploadedAt:new Date().toISOString()};
+    delete copied.deletedAt;
+    delete copied.objectId;
+    copied.revision=1;
+    await writeFile(this.file(copied.id),bytes,{flag:"wx",mode:0o600});
+    this.entries.push(copied);
+    try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==copied.id);await rm(this.file(copied.id),{force:true});throw e;}
+    return {...copied};
+  }
+  /** Roll back the latest file rename or move; each entry is bounded and persisted. */
+  private fileActions:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[]=[];
+  fileHistory(){return [...this.fileActions].reverse();}
+  private logFileChange(e:DiskEntry,before:{name:string;folder:string}){
+    this.fileActions.push({id:e.id,before,after:{name:e.name,folder:e.folder},at:new Date().toISOString()});
+    if(this.fileActions.length>300)this.fileActions.shift();
+  }
+  async undoFileChange(){
+    const record=this.fileActions.at(-1);
+    if(!record)throw bad("Нет операций для отмены",404);
+    const entry=this.entries.find(e=>e.id===record.id&&!e.deletedAt);
+    if(!entry||entry.name!==record.after.name||entry.folder!==record.after.folder)throw bad("Файл изменился после операции",409);
+    if(record.before.folder&&!this.folders.includes(record.before.folder))throw bad("Исходная папка больше не существует",409);
+    entry.name=record.before.name;entry.folder=record.before.folder;
+    this.fileActions.pop();await this.save();return {...entry};
+  }
+  /** Immutable file revisions. Existing bytes remain intact until index persistence succeeds. */
+  fileVersions(id:string){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    return [...(this.versions[id]??[]).map(({revision,size,sha256,at})=>({revision,size,sha256,at})),
+      {revision:entry.revision??1,size:entry.size,sha256:entry.sha256,at:entry.uploadedAt}];
+  }
+  async replaceStream(id:string,stream:AsyncIterable<Buffer>,expectedSha256?:unknown){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(typeof expectedSha256!=="string"||expectedSha256!==entry.sha256)throw bad("Файл изменился: обновите список перед заменой",409);
+    if((this.versions[id]?.length??0)>=20)throw bad("Лимит 20 сохранённых редакций для файла",409);
+    const nextObject=randomUUID(),temp=this.objectPath(nextObject)+".part";
+    const handle=await open(temp,"wx",0o600);
+    let size=0;const hash=createHash("sha256");
+    try{
+      for await(const chunk of stream){
+        size+=chunk.length;if(size>LIMIT)throw bad("Превышен лимит 50 МБ",413);
+        hash.update(chunk);let off=0;
+        while(off<chunk.length){const wrote=await handle.write(chunk,off,chunk.length-off,null);if(!wrote.bytesWritten)throw new Error("Невозможно записать файл");off+=wrote.bytesWritten;}
+      }
+      if(!size)throw bad("Пустая редакция недопустима",413);
+    }catch(e){await handle.close();await rm(temp,{force:true});throw e;}
+    await handle.close();
+    await rename(temp,this.objectPath(nextObject));
+    const old={...entry};
+    const oldHistory=[...(this.versions[id]??[])];
+    this.versions[id]=[...oldHistory,{revision:old.revision??1,objectId:old.objectId??old.id,size:old.size,sha256:old.sha256,at:old.uploadedAt}];
+    entry.objectId=nextObject;entry.revision=(old.revision??1)+1;
+    entry.size=size;entry.sha256=hash.digest("hex");entry.uploadedAt=new Date().toISOString();
+    try{await this.save();}catch(e){Object.assign(entry,old);this.versions[id]=oldHistory;await rm(this.objectPath(nextObject),{force:true});throw e;}
+    return {...entry};
+  }
+  async restoreFileVersion(id:string,revision:unknown){
+    const entry=this.entries.find(e=>e.id===id&&!e.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    if(!Number.isSafeInteger(revision))throw bad("Недопустимый номер редакции");
+    const past=(this.versions[id]??[]).find(v=>v.revision===revision);
+    if(!past)throw bad("Редакция не найдена",404);
+    const data=await readFile(this.objectPath(past.objectId));
+    if(data.length!==past.size||createHash("sha256").update(data).digest("hex")!==past.sha256)throw bad("Архивная редакция повреждена",409);
+    return this.replaceStream(id,(async function*(){yield data;})(),entry.sha256);
+  }
   async renameFile(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
     const next=validName(name);
     if(next===entry.name)return {...entry};
-    entry.name=next;
+    const before={name:entry.name,folder:entry.folder};entry.name=next;this.logFileChange(entry,before);
     await this.save();
     return {...entry};
   }
@@ -282,7 +532,7 @@ export class LocalDisk {
     if(!entry)throw bad("Файл не найден",404);
     const next=validFolder(folder);
     if(next&&!this.folders.includes(next))throw bad("Папка не найдена",404);
-    entry.folder=next;await this.save();return {...entry};
+    const before={name:entry.name,folder:entry.folder};entry.folder=next;this.logFileChange(entry,before);await this.save();return {...entry};
   }
   async restore(id:string){
     const entry=this.entries.find(x=>x.id===id&&x.deletedAt);
@@ -296,6 +546,8 @@ export class LocalDisk {
     if(!entry)throw bad("В корзине нет этого файла",404);
     // Remove the object before deleting its index, so a failed filesystem operation remains retryable.
     await rm(this.file(id));
+    for(const revision of this.versions[id]??[])await rm(this.objectPath(revision.objectId),{force:true});
+    delete this.versions[id];
     this.entries=this.entries.filter(x=>x.id!==id);
     await this.save();return {ok:true};
   }

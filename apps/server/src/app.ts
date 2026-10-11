@@ -180,6 +180,38 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="GET"&&p==="/api/disk/chronicles")return send(res,200,disk.chronicles());
           if(req.method==="GET"&&p==="/api/disk/audit")return send(res,200,await disk.audit());
           if(req.method==="GET"&&p==="/api/disk/duplicates")return send(res,200,{groups:disk.duplicates()});
+          if(req.method==="GET"&&p==="/api/disk/files/history")return send(res,200,{actions:disk.fileHistory()});
+          if(req.method==="POST"&&p==="/api/disk/files/undo")return send(res,200,await disk.undoFileChange());
+          if(req.method==="POST"&&p==="/api/disk/files/copy"){const b=await readJson(req);return send(res,201,await disk.copyFile(String(b.id??""),b.folder));}
+          if(req.method==="POST"&&p==="/api/disk/folders/sync"){const b=await readJson(req);return send(res,200,await disk.syncFolders(b.from,b.to,b.apply??false));}
+          if(req.method==="GET"&&p==="/api/disk/backup"){
+            res.writeHead(200,{"Content-Type":"application/x-ndjson; charset=utf-8","Content-Disposition":'attachment; filename="JUUNIBI-backup.ndjson"',"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"});
+            try{
+              for await(const line of disk.exportBackup()){
+                if(!res.write(line))await new Promise<void>(resolve=>res.once("drain",resolve));
+              }
+              res.end();
+            }catch(e){res.destroy(e as Error);}
+            return;
+          }
+          if(req.method==="POST"&&p==="/api/disk/backup/restore"){
+            async function* backupLines():AsyncGenerator<string>{
+              const decoder=new TextDecoder("utf-8",{fatal:true});let buffer="";
+              for await(const chunk of req){
+                buffer+=decoder.decode(chunk,{stream:true});
+                if(buffer.length>17*1024*1024&&!buffer.includes("\n"))throw Object.assign(new Error("Слишком длинная запись архива"),{status:413});
+                let index:number;
+                while((index=buffer.indexOf("\n"))>=0){
+                  const line=buffer.slice(0,index);buffer=buffer.slice(index+1);
+                  if(line)yield line;
+                  if(buffer.length>17*1024*1024)throw Object.assign(new Error("Слишком длинная запись архива"),{status:413});
+                }
+              }
+              buffer+=decoder.decode();
+              if(buffer.trim())yield buffer;
+            }
+            return send(res,200,await disk.importBackup(backupLines()));
+          }
           if(req.method==="GET"&&p==="/api/disk/snapshot")return send(res,200,disk.snapshot());
           if(req.method==="POST"&&p==="/api/disk/metadata"){const body=await readJson(req);return send(res,200,await disk.setMetadata(String(body.id??""),body));}
           if(req.method==="POST"&&p==="/api/disk/folders"){const body=await readJson(req);return send(res,201,await disk.createFolder(body.name));}
@@ -192,6 +224,16 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="POST"&&p==="/api/disk/folders/trash"){const b=await readJson(req);return send(res,200,await disk.trashFolder(b.name));}
           if(req.method==="GET"&&p==="/api/disk/folders/deleted")return send(res,200,{folders:disk.listDeletedFolders()});
           if(req.method==="POST"&&p==="/api/disk/folders/restore"){const b=await readJson(req);return send(res,200,await disk.restoreFolder(b.name));}
+          const versionsMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/versions$/.exec(p);
+          const replaceMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/versions\/binary$/.exec(p);
+          const restoreMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/versions\/restore$/.exec(p);
+          if(req.method==="GET"&&versionsMatch)return send(res,200,{versions:disk.fileVersions(versionsMatch[1]!)});
+          if(req.method==="POST"&&restoreMatch){const b=await readJson(req);return send(res,200,await disk.restoreFileVersion(restoreMatch[1]!,b.revision));}
+          if(req.method==="POST"&&replaceMatch){
+            const declared=Number(req.headers["content-length"]??0);
+            if(declared>50*1024*1024)return send(res,413,{error:"Редакция превышает 50 МБ"});
+            return send(res,200,await disk.replaceStream(replaceMatch[1]!,req,url.searchParams.get("expected")));
+          }
           if(req.method==="POST"&&p==="/api/disk/files/binary"){
             const name=url.searchParams.get("name"),folder=url.searchParams.get("folder")??"";
             const limit=50*1024*1024;
