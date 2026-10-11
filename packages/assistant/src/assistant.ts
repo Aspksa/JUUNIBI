@@ -245,7 +245,7 @@ export class Assistant {
     // Execute owner-requested diagnostics in code, rather than trusting the model to choose tool calls.
     // runTool enforces disabled tools, arguments, and risk; the allowlist is read-only.
     const diagnostics = !opts.ephemeral && needsModuleDiagnosticExecution(text, hist.map(m => ({ role: m.role, content: m.content ?? "" })));
-    const cacheKey = session + "\\u0000" + text;
+    const cacheKey = session + ":" + text;
     const cached = this.diagnosticCache.get(cacheKey);
     const reuse = diagnostics && cached && Date.now() - cached.at < DIAGNOSTIC_CACHE_TTL_MS;
     if (diagnostics) {
@@ -253,10 +253,10 @@ export class Assistant {
       const saved: { name: string; status: ToolStatus; text: string; at: number }[] = [];
       for (const name of DIAGNOSTIC_TOOLS) {
         if (signal?.aborted) break;
-        const prior = reuse ? cached.results.find(r => r.name === name) : undefined;
+        const prior = reuse ? cached?.results.find(r => r.name === name) : undefined;
         if (prior) {
           used.push(name);
-          toolEvidence.push({ name, status: prior.status, at: prior.at });
+          toolEvidence.push({ name, status: prior.status, at: prior.at, source: "cache" });
           saved.push(prior);
           freshResults.push(name + " [" + prior.status + ", повторный отчёт по данным " + new Date(prior.at).toISOString() + "] " + compactDiagnosticOutput(name, prior.text));
           continue;
