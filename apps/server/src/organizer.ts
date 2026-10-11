@@ -91,7 +91,7 @@ export interface AutoLogEntry {
   kind: "roll" | "remind" | "brief" | "evening" | "week" | "quiet" | "arrange" | "move" | "rule";
   text: string;
   /** Previous due date, «перенесено» count and importance of the to-dos it changed; reminders and notes it created. */
-  undo?: { notes?: { id: string; dueAt: string | null; rolled: number | null; priority?: Note["priority"] | null }[]; reminders?: string[]; created?: string[] };
+  undo?: { notes?: { id: string; dueAt: string | null; rolled: number | null; priority?: Note["priority"] | null; expectedDueAt?: string | null }[]; reminders?: string[]; created?: string[] };
   undone?: boolean;
 }
 /** How a reminder or to-do repeats. */
@@ -673,6 +673,11 @@ export class Organizer {
     if (!e) throw bad("Запись журнала не найдена", 404);
     if (e.undone) throw bad("Уже отменено", 409);
     if (!e.undo) throw bad("Это действие нельзя отменить", 409);
+    // All-or-nothing: do not overwrite changes the owner made after an automatic move.
+    for (const u of e.undo.notes ?? []) {
+      const n = this.notes.find((x) => x.id === u.id);
+      if (!n || n.done || (u.expectedDueAt !== undefined && (n.dueAt ?? null) !== u.expectedDueAt)) throw bad("Отмена невозможна: дело изменено после действия. Проверьте его вручную.", 409);
+    }
     for (const u of e.undo.notes ?? []) {
       const n = this.notes.find((x) => x.id === u.id);
       if (!n || n.done) continue;
@@ -706,6 +711,7 @@ export class Organizer {
         const was = n.dueAt;
         n.dueAt = (t.getTime() < now ? new Date(start + (23 * 60 + 59) * 60_000) : t).toISOString();
         n.rolled = (n.rolled ?? 0) + 1;
+        undo[undo.length - 1]!.expectedDueAt = n.dueAt;
         this.record("move", n, { from: was, to: n.dueAt, auto: true });
         if (n.repeat) n.streak = 0; // a missed repeating to-do breaks its streak
         delete n.remindedFor;
@@ -1012,6 +1018,7 @@ export class Organizer {
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
       this.record("move", n, { from: n.dueAt ?? null, to: p.start, auto: true });
       n.dueAt = p.start; delete n.rolled; delete n.remindedFor;
+      undo[undo.length - 1]!.expectedDueAt = n.dueAt;
     }
     if (pick.length) { this.addLog("arrange", `Разложила день ${new Date(base + 12 * 3_600_000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: дел ${pick.length}`, { notes: undo }); await this.save(); }
     return { day, window, placed, left, applied: pick.length };
@@ -1033,6 +1040,7 @@ export class Organizer {
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
       this.record("move", n, { from: n.dueAt ?? null, to: d.toISOString() });
       n.dueAt = d.toISOString(); delete n.rolled; delete n.remindedFor;
+      undo[undo.length - 1]!.expectedDueAt = n.dueAt;
       out.push({ ...n });
     }
     if (!out.length) throw bad("Нечего переносить", 409);
