@@ -26,7 +26,7 @@ describe("Local Disk",()=>{
   try{
    const disk=new LocalDisk(dir);
    await expect(disk.upload("x.txt","missing","YQ==")).rejects.toMatchObject({status:404});
-   await expect(disk.upload("x.txt","","")).rejects.toMatchObject({status:400});
+   await expect(disk.upload("x.txt","","")).rejects.toMatchObject({status:413});
    await expect(disk.upload("x.txt","","!!!")).rejects.toMatchObject({status:413});
   }finally{await rm(dir,{recursive:true,force:true});}
  });
