@@ -1,6 +1,8 @@
 import type { LocalDisk } from "./local-disk";
 import http from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
@@ -146,6 +148,61 @@ function readJson(req: http.IncomingMessage, limit = MAX_BODY): Promise<Record<s
   });
 }
 
+/** Only types a browser shows safely inline; everything else (html, svg, scripts) is plain bytes. */
+const INLINE_TYPES: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", avif: "image/avif", bmp: "image/bmp",
+  pdf: "application/pdf", mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", m4v: "video/mp4",
+  mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", m4a: "audio/mp4", flac: "audio/flac",
+  txt: "text/plain; charset=utf-8", md: "text/plain; charset=utf-8", csv: "text/plain; charset=utf-8", json: "text/plain; charset=utf-8", log: "text/plain; charset=utf-8",
+};
+/**
+ * Streams one stored file: thumbnails, previews and downloads use a plain URL instead of base64 JSON.
+ * The sha256 is the ETag, so a picture is fetched once; Range requests let video and audio seek.
+ */
+/** Objects already checked, by path; re-checked whenever the file's size or time changes. */
+const verified = new Map<string, string>();
+async function verifiedObject(file: string, info: { size: number; mtimeMs: number }, entry: { size: number; sha256: string }) {
+  if (info.size !== entry.size) return false;
+  const key = info.size + ":" + info.mtimeMs + ":" + entry.sha256;
+  if (verified.get(file) === key) return true;
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(file, { highWaterMark: 256 * 1024 })) hash.update(chunk as Buffer);
+  if (hash.digest("hex") !== entry.sha256) return false;
+  if (verified.size > 2000) verified.clear();
+  verified.set(file, key);
+  return true;
+}
+async function sendRaw(req: http.IncomingMessage, res: http.ServerResponse, disk: LocalDisk, id: string, download: boolean) {
+  const { entry, path: file } = disk.rawFile(id);
+  const ext = entry.name.toLowerCase().split(".").pop() ?? "";
+  const type = (!download && INLINE_TYPES[ext]) || "application/octet-stream";
+  // the name decides the type and the download name, so a rename must not reuse a cached response
+  const etag = `"${entry.sha256}-${createHash("sha256").update(entry.name).digest("hex").slice(0, 12)}"`;
+  const headers: Record<string, string> = {
+    "content-type": type, etag, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff", "accept-ranges": "bytes",
+    "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
+    "content-disposition": `${download || !INLINE_TYPES[ext] ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(entry.name)}`,
+  };
+  if (ext === "pdf") delete headers["content-security-policy"]; // the browser's own PDF viewer needs its scripts
+  if (req.headers["if-none-match"] === etag) { res.writeHead(304, headers); res.end(); return; }
+  const info = await stat(file);
+  const size = info.size;
+  // never serve (or let the browser cache) bytes that no longer match the checksum
+  if (!(await verifiedObject(file, info, entry))) { res.writeHead(409, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify({ error: "Файл изменён или повреждён на диске" })); return; }
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
+  let start = 0, end = size - 1;
+  if (range && (range[1] || range[2])) {
+    start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+    if (start > end || start >= size) { res.writeHead(416, { "content-range": `bytes */${size}` }); res.end(); return; }
+    res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": String(end - start + 1) });
+  } else res.writeHead(200, { ...headers, "content-length": String(size) });
+  if (req.method === "HEAD") { res.end(); return; }
+  const stream = createReadStream(file, { start, end });
+  stream.on("error", (e) => res.destroy(e));
+  stream.pipe(res);
+}
+
 export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
   const send = (res: http.ServerResponse, status: number, body: unknown, type = "application/json") => {
     res.writeHead(status, {
@@ -156,6 +213,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
   };
 
   let chatsInFlight = 0;
+  let lastTrashSweep = 0;
   /** What a restart would interrupt right now. */
   const interruptions = (): string[] => [
     ...(chatsInFlight ? ["идёт ответ помощницы"] : []),
@@ -176,7 +234,18 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (p.startsWith("/api/disk")) {
           const disk=deps.disk;
           if(!disk)return send(res,503,{error:"Диск недоступен"});
-          if(req.method==="GET"&&p==="/api/disk")return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
+          if(req.method==="GET"&&p==="/api/disk"){
+            // The trash empties itself on the owner's schedule; checked at most once an hour.
+            if(Date.now()-lastTrashSweep>3600000){lastTrashSweep=Date.now();await disk.purgeExpired().catch(()=>undefined);}
+            return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
+          }
+          if(req.method==="GET"&&p==="/api/disk/trash")return send(res,200,disk.trashSettings());
+          if(req.method==="POST"&&p==="/api/disk/trash"){const b=await readJson(req);return send(res,200,await disk.setTrashDays(b.days));}
+          if(req.method==="POST"&&p==="/api/disk/trash/empty")return send(res,200,await disk.emptyTrash());
+          const rawMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/raw$/.exec(p);
+          if((req.method==="GET"||req.method==="HEAD")&&rawMatch)return sendRaw(req,res,disk,rawMatch[1]!,url.searchParams.has("download"));
+          const textMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/text$/.exec(p);
+          if(req.method==="GET"&&textMatch)return send(res,200,await disk.readText(textMatch[1]!));
           if(req.method==="GET"&&p==="/api/disk/chronicles")return send(res,200,disk.chronicles());
           if(req.method==="GET"&&p==="/api/disk/audit")return send(res,200,await disk.audit());
           if(req.method==="GET"&&p==="/api/disk/duplicates")return send(res,200,{groups:disk.duplicates()});
@@ -239,7 +308,8 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             const limit=50*1024*1024;
             const declared=Number(req.headers["content-length"]??0);
             if(declared>limit)return send(res,413,{error:"Файл превышает 50 МБ"});
-            return send(res,201,await disk.uploadStream(name,folder,req));
+            const entry=await disk.uploadStream(name,folder,req);
+            return send(res,201,{...entry,duplicates:disk.sameContent(entry.id)});
           }
           if(req.method==="POST"&&p==="/api/disk/files"){const body=await readJson(req,14*1024*1024);return send(res,201,await disk.upload(body.name,body.folder,body.base64));}
           if(req.method==="GET"&&p==="/api/disk/search"){return send(res,200,{ids:await disk.searchContent(url.searchParams.get("q")??"")});}

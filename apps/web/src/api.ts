@@ -161,7 +161,12 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
 export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string;revision?:number}
-export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:string;title:string;value:string;ready:boolean;reason?:string}[];summary:{files:number;bytes:number;folders:number;ready:number;total:number}}
+export interface DiskChronicles {groups:{id:string;title:string}[];metrics:{id:string;group:string;title:string;value:string;ready:boolean;reason?:string}[];summary:{files:number;bytes:number;folders:number;ready:number;total:number}}
+/** A plain URL to the file's bytes: thumbnails, previews, players and downloads (also from the phone). */
+/** The name is part of the cache key: a rename changes the type and the download name. */
+const nameKey=(name:string)=>{let h=0;for(let i=0;i<name.length;i++)h=Math.imul(h^name.charCodeAt(i),16777619);return (h>>>0).toString(36);};
+export const diskRawUrl=(f:{id:string;sha256:string;name:string},download=false)=>"/api/disk/files/"+encodeURIComponent(f.id)+"/raw?v="+f.sha256.slice(0,12)+"-"+nameKey(f.name)+(download?"&download=1":"");
+export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:string;folder:string}[]}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export const api = {
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
@@ -194,6 +199,10 @@ export const api = {
   diskFavorite: (id:string,favorite:boolean) => attemptAsync(()=>call<DiskFile>("/api/disk/favorite",post({id,favorite}))),
   diskRestore: (id:string) => attemptAsync(()=>call<DiskFile>("/api/disk/restore",post({id}))),
   diskPurge: (id:string) => attemptAsync(()=>call<{ok:boolean}>("/api/disk/purge",post({id}))),
+  diskTrash: () => attemptAsync(()=>call<{days:number}>("/api/disk/trash")),
+  diskTrashDays: (days:number) => attemptAsync(()=>call<{days:number}>("/api/disk/trash",post({days}))),
+  diskEmptyTrash: () => attemptAsync(()=>call<{purged:number;bytes:number}>("/api/disk/trash/empty",post({}))),
+  diskText: (id:string) => attemptAsync(()=>call<{name:string;text:string;truncated:boolean}>("/api/disk/files/"+encodeURIComponent(id)+"/text")),
   diskDelete: (id:string) => attemptAsync(()=>call<{ok:boolean}>("/api/disk/files/"+encodeURIComponent(id),{method:"DELETE"})),
   mobile: () => attemptAsync(() => call<MobileStatus>("/api/mobile")),
   mobileEnable: (enabled: boolean) => attemptAsync(() => call<MobileStatus>("/api/mobile", post({ enabled }))),

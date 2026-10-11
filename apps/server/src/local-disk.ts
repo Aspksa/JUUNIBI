@@ -1,6 +1,7 @@
 import { diskChronicles } from "./disk-chronicles";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 
@@ -27,24 +28,27 @@ export class LocalDisk {
   folderHistory(){return [...this.folderActions].reverse();}
   private deletedFolders:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]=[];
   private writes:Promise<void>=Promise.resolve();
+  /** Days a file stays in the trash before it is removed for good; 0 keeps it until the owner empties the trash. */
+  private trashDays=30;
   constructor(private readonly root:string) {}
   private get index(){return path.join(this.root,"index.json");}
   private objectPath(id:string){return path.join(this.root,"objects",id);}
   private file(id:string){const entry=this.entries.find(e=>e.id===id);return this.objectPath(entry?.objectId??id);}
   async load(){
     try {
-      const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[]};
+      const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[];trashDays?:number};
       if(raw.versions&&typeof raw.versions==="object")this.versions=raw.versions;
       if(Array.isArray(raw.entries)) this.entries=raw.entries.filter(x=>!!x&&typeof x.id==="string"&&/^[0-9a-f-]{36}$/.test(x.id)&&typeof x.name==="string"&&typeof x.folder==="string"&&Number.isSafeInteger(x.size)&&typeof x.sha256==="string");
       if(raw.folderStyles&&typeof raw.folderStyles==="object")this.folderStyles=raw.folderStyles;
       if(Array.isArray(raw.fileActions))this.fileActions=raw.fileActions.slice(-300);
       if(Array.isArray(raw.folderActions))this.folderActions=raw.folderActions.slice(-300);
       if(Array.isArray(raw.deletedFolders))this.deletedFolders=raw.deletedFolders;
+      if(Number.isInteger(raw.trashDays)&&raw.trashDays!>=0&&raw.trashDays!<=365)this.trashDays=raw.trashDays!;
       if(Array.isArray(raw.folders)) this.folders=raw.folders.filter(x=>{try{return validFolder(x)===x&&!!x;}catch{return false;}});
     }catch(e){if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;}
   }
   private save(){
-    const content=JSON.stringify({versions:this.versions,entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders});
+    const content=JSON.stringify({versions:this.versions,entries:this.entries,folders:this.folders,folderStyles:this.folderStyles,folderActions:this.folderActions,fileActions:this.fileActions,deletedFolders:this.deletedFolders,trashDays:this.trashDays});
     this.writes=this.writes.catch(()=>{}).then(async()=>{
       await mkdir(this.root,{recursive:true});
       const tmp=path.join(this.root,randomUUID()+".tmp");
@@ -61,7 +65,8 @@ export class LocalDisk {
       versions:JSON.parse(JSON.stringify(this.versions)) as Record<string,DiskRevision[]>,
       folders:[...this.folders],folderStyles:{...this.folderStyles},
       deletedFolders:this.deletedFolders.map(d=>({...d})),
-      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a}))
+      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a})),
+      trashDays:this.trashDays
     };
     yield JSON.stringify({type:"manifest",format:1,state})+"\n";
     const objects=new Map<string,{size:number;sha256:string}>();
@@ -151,6 +156,7 @@ export class LocalDisk {
       this.deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
       this.folderActions=Array.isArray(state.folderActions)?state.folderActions as typeof this.folderActions:[];
       this.fileActions=Array.isArray(state.fileActions)?state.fileActions as typeof this.fileActions:[];
+      if(Number.isInteger(state.trashDays)&&(state.trashDays as number)>=0&&(state.trashDays as number)<=365)this.trashDays=state.trashDays as number;
       await this.save();committed=true;
       return {files:entries.length,folders:folders.length,objects:count};
     }catch(e){
@@ -204,7 +210,7 @@ export class LocalDisk {
     if(typeof color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(color))throw bad("Неверный цвет");
     if(typeof pinned!=="boolean")throw bad("Неверное значение закрепления");
     if(typeof cover!=="string"||cover.length>100)throw bad("Неверная обложка");
-    if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
+    if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
     this.folderStyles[folder]={color,pinned,cover,...(this.folderStyles[folder]?.createdAt?{createdAt:this.folderStyles[folder]!.createdAt}:{})};
     this.logFolder("style",folder);await this.save();return {name:folder,...this.folderStyles[folder]};
   }
@@ -378,8 +384,8 @@ export class LocalDisk {
       e.tags=[...new Set((input.tags as string[]).map(t=>t.trim()))];
     }
     if(input.color!==undefined){
-      if(typeof input.color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(input.color))throw bad("Недопустимый цвет");
-      e.color=input.color;
+      if(typeof input.color!=="string"||(input.color&&!/^#[0-9a-fA-F]{6}$/.test(input.color)))throw bad("Недопустимый цвет");
+      if(input.color)e.color=input.color;else delete e.color;
     }
     if(input.note!==undefined){
       if(typeof input.note!=="string"||input.note.length>2000)throw bad("Описание слишком длинное");
@@ -585,4 +591,117 @@ export class LocalDisk {
     await this.save();
     return {ok:true};
   }
+  /** Where the bytes of an active file live, for streaming previews and downloads without base64. */
+  rawFile(id:string){
+    const entry=this.entries.find(x=>x.id===id&&!x.deletedAt);
+    if(!entry)throw bad("Файл не найден",404);
+    return {entry:{...entry},path:this.file(id)};
+  }
+  /** Other active files with exactly the same bytes: the upload warning names where the twin already is. */
+  sameContent(id:string){
+    const entry=this.entries.find(x=>x.id===id);
+    if(!entry)return [];
+    return this.entries.filter(x=>x.id!==id&&!x.deletedAt&&x.sha256===entry.sha256&&x.size===entry.size).map(x=>({id:x.id,name:x.name,folder:x.folder}));
+  }
+  trashSettings(){return {days:this.trashDays};}
+  async setTrashDays(days:unknown){
+    if(typeof days!=="number"||!Number.isInteger(days)||days<0||days>365)throw bad("Срок хранения корзины: от 0 до 365 дней");
+    this.trashDays=days;await this.save();return this.trashSettings();
+  }
+  /** Removes trashed files for good: all of them, or only those older than `olderThanMs`. */
+  async emptyTrash(olderThanMs?:number,now=Date.now()){
+    const doomed=this.entries.filter(e=>e.deletedAt&&(olderThanMs===undefined||now-new Date(e.deletedAt).getTime()>=olderThanMs));
+    const staleFolders=this.deletedFolders.some(d=>olderThanMs===undefined||now-new Date(d.at).getTime()>=olderThanMs);
+    if(!doomed.length&&!staleFolders)return {purged:0,bytes:0};
+    let bytes=0;
+    for(const e of doomed){
+      await rm(this.file(e.id),{force:true});
+      for(const revision of this.versions[e.id]??[]){await rm(this.objectPath(revision.objectId),{force:true});bytes+=revision.size;}
+      delete this.versions[e.id];bytes+=e.size;
+    }
+    const gone=new Set(doomed.map(e=>e.id));
+    this.entries=this.entries.filter(e=>!gone.has(e.id));
+    // a trashed folder whose files are gone for good can no longer be restored
+    this.deletedFolders=this.deletedFolders.filter(d=>(olderThanMs!==undefined&&now-new Date(d.at).getTime()<olderThanMs)||this.entries.some(e=>e.deletedAt&&(e.folder===d.root||e.folder.startsWith(d.root+"/"))));
+    await this.save();
+    return {purged:doomed.length,bytes};
+  }
+  /** Auto-clean on the owner's schedule; cheap when nothing is due. */
+  purgeExpired(now=Date.now()){return this.trashDays?this.emptyTrash(this.trashDays*86400000,now):Promise.resolve({purged:0,bytes:0});}
+  /** Plain text of a text file or a simple PDF, so JUUNIBI can answer questions about it. */
+  async readText(id:string,max=100*1024){
+    const {entry,path:file}=this.rawFile(id);
+    const ext=entry.name.toLowerCase().split(".").pop()??"";
+    const data=await readFile(file);
+    let text:string;
+    if(ext==="pdf")text=pdfText(data);
+    else if(/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext))text=new TextDecoder().decode(data);
+    else throw bad("JUUNIBI читает только текстовые файлы и PDF",415);
+    text=text.replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+    if(!text)throw bad(ext==="pdf"?"В этом PDF нет текстового слоя (скан или картинки)":"Файл пустой",422);
+    return {name:entry.name,text:text.slice(0,max),truncated:text.length>max};
+  }
+}
+
+/**
+ * Text from a PDF without a library: inflate content streams and read the strings shown by Tj/TJ.
+ * Works for ordinary text PDFs; scans and fonts with private encodings give no readable text.
+ */
+/** A small PDF can unpack into gigabytes; reading text never needs more than this in total. */
+const PDF_INFLATE_BUDGET=16*1024*1024;
+export function pdfText(data:Buffer):string{
+  const src=data.toString("latin1");
+  const chunks:string[]=[];
+  let budget=PDF_INFLATE_BUDGET;
+  const stream=/stream\r?\n/g;let m:RegExpExecArray|null;
+  while((m=stream.exec(src))){
+    const start=m.index+m[0].length,end=src.indexOf("endstream",start);
+    if(end<0)break;
+    const dict=src.slice(Math.max(0,m.index-400),m.index);
+    let body:Buffer=data.subarray(start,end);
+    if(/FlateDecode/.test(dict.slice(dict.lastIndexOf("<<")))){
+      if(budget<=0)break;
+      try{body=inflateSync(body,{maxOutputLength:budget});}catch{stream.lastIndex=end;continue;}
+      budget-=body.length;
+    }
+    const content=body.toString("latin1");
+    if(/\bBT\b/.test(content))chunks.push(showText(content));
+    stream.lastIndex=end;
+  }
+  const text=chunks.join("\n");
+  // Mostly unreadable symbols means a private font encoding: say there is no text rather than return noise.
+  const letters=(text.match(/[\p{L}\p{N}]/gu)??[]).length;
+  return letters>=Math.max(8,text.replace(/\s/g,"").length*.6)?text:"";
+}
+function pdfString(raw:string):string{
+  let out="";
+  for(let i=0;i<raw.length;i++){
+    const c=raw[i]!;
+    if(c!=="\\"){out+=c;continue;}
+    const n=raw[++i]??"";
+    if(/[0-7]/.test(n)){let oct=n;while(oct.length<3&&/[0-7]/.test(raw[i+1]??""))oct+=raw[++i];out+=String.fromCharCode(parseInt(oct,8));}
+    else out+=({n:"\n",r:"\r",t:"\t",b:"\b",f:"\f"} as Record<string,string>)[n]??(n==="\n"?"":n);
+  }
+  // UTF-16BE strings start with a byte-order mark.
+  if(out.startsWith("\xfe\xff")){let u="";for(let i=2;i+1<out.length;i+=2)u+=String.fromCharCode(out.charCodeAt(i)<<8|out.charCodeAt(i+1));return u;}
+  return out;
+}
+function showText(content:string):string{
+  let out="";
+  const token=/\((?:\\.|[^\\)])*\)|\[(?:\((?:\\.|[^\\)])*\)|[^\]])*\]\s*TJ|\bT\*|\bT[dD]\b|\bET\b|'|"/g;
+  let t:RegExpExecArray|null;
+  while((t=token.exec(content))){
+    const v=t[0];
+    if(v==="T*"||v==="Td"||v==="TD"||v==="'"||v==="\""){if(out&&!out.endsWith("\n"))out+="\n";continue;}
+    if(v==="ET"){out+="\n";continue;}
+    if(v.startsWith("[")){
+      for(const part of v.matchAll(/\((?:\\.|[^\\)])*\)|-?\d+(?:\.\d+)?/g)){
+        if(part[0].startsWith("("))out+=pdfString(part[0].slice(1,-1));
+        else if(Number(part[0])<-200)out+=" ";
+      }
+      continue;
+    }
+    out+=pdfString(v.slice(1,-1));
+  }
+  return out;
 }

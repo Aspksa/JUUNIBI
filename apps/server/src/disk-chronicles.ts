@@ -422,7 +422,7 @@ export const DISK_GROUPS = [
     ]
   }
 ,{"id":"g10","title":"Созвездие коллекции","metrics":[{"id":"d91","title":"Файлов в корзине"},{"id":"d92","title":"Объём корзины"},{"id":"d93","title":"Крупнейший файл корзины"},{"id":"d94","title":"Доля объёма избранного"},{"id":"d95","title":"Папки с избранным"},{"id":"d96","title":"Файлы меньше килобайта"},{"id":"d97","title":"Файлы от 1 КБ до 10 МБ"},{"id":"d98","title":"Популярнейшее расширение"},{"id":"d99","title":"Уникальные контрольные суммы"},{"id":"d100","title":"Доля удалённых файлов"}]}] as const;
-export type DiskMetric = {id:string;title:string;value:string;ready:boolean;reason?:string;series?:number[]};
+export type DiskMetric = {id:string;group:string;title:string;value:string;ready:boolean;reason?:string;series?:number[]};
 const fmt=(n:number)=>Math.round(n).toLocaleString("ru-RU");
 const bytes=(n:number)=>n<1024?fmt(n)+" Б":n<1048576?(n/1024).toFixed(1)+" КБ":(n/1048576).toFixed(1)+" МБ";
 const ext=(name:string)=>name.includes(".")?name.split(".").pop()!.toLowerCase():"";
@@ -519,6 +519,6 @@ export function diskChronicles(entries:DiskEntry[],folders:string[],now=Date.now
  set(98,[...extensions.entries()].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0]?.[0]??"Нет");
  set(99,fmt(new Set(active.map(e=>e.sha256)).size));
  set(100,entries.length?Math.round(trash.length/entries.length*100)+"%":"0%");
- const metrics:DiskMetric[]=DISK_GROUPS.flatMap(g=>g.metrics.map(m=>values.has(m.id)?{id:m.id,title:m.title,value:values.get(m.id)!,ready:true}:{id:m.id,title:m.title,value:"—",ready:false,reason:"Нет данных: требуется журнал событий, проверка файлов или анализ содержимого"}));
+ const metrics:DiskMetric[]=DISK_GROUPS.flatMap(g=>g.metrics.map(m=>values.has(m.id)?{id:m.id,group:g.id,title:m.title,value:values.get(m.id)!,ready:true}:{id:m.id,group:g.id,title:m.title,value:"—",ready:false,reason:"Нет данных: требуется журнал событий, проверка файлов или анализ содержимого"}));
  return {groups:DISK_GROUPS.map(g=>({id:g.id,title:g.title})),metrics,summary:{files:active.length,bytes:size(entries),folders:folders.length,ready:metrics.filter(m=>m.ready).length,total:metrics.length}};
 }
