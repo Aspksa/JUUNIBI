@@ -185,7 +185,7 @@ export class Menu {
     row.addEventListener("dragover", (e) => {
       if (!this.dragId || this.dragId === id || row.parentElement !== this.nav.querySelector(`[data-id="${this.dragId}"]`)?.parentElement) return;
       e.preventDefault();
-      const after = e.offsetY > row.offsetHeight / 2;
+      const after = e.clientY > row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2;
       row.classList.toggle("drop-after", after); row.classList.toggle("drop-before", !after);
     });
     row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
