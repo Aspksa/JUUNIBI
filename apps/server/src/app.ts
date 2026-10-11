@@ -1,5 +1,5 @@
 import type { LocalDisk } from "./local-disk";
-import { analyzeDisk } from "./disk-insights";
+import { collectLife } from "./disk-life";
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -266,7 +266,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             if(Date.now()-lastTrashSweep>3600000){lastTrashSweep=Date.now();await disk.purgeExpired().catch(()=>undefined);}
             return send(res,200,disk.list(url.searchParams.get("folder")??undefined));
           }
-          if(req.method==="GET"&&p==="/api/disk/insights")return send(res,200,await analyzeDisk(disk));
+          if(req.method==="GET"&&p==="/api/disk/life")return send(res,200,await collectLife(disk));
           if(req.method==="GET"&&p==="/api/disk/trash")return send(res,200,disk.trashSettings());
           if(req.method==="POST"&&p==="/api/disk/trash"){const b=await readJson(req);return send(res,200,await disk.setTrashDays(b.days));}
           if(req.method==="POST"&&p==="/api/disk/trash/empty")return send(res,200,await disk.emptyTrash());
@@ -274,7 +274,6 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if((req.method==="GET"||req.method==="HEAD")&&rawMatch)return sendRaw(req,res,disk,rawMatch[1]!,url.searchParams.has("download"));
           const textMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/text$/.exec(p);
           if(req.method==="GET"&&textMatch)return send(res,200,await disk.readText(textMatch[1]!));
-          if(req.method==="GET"&&p==="/api/disk/chronicles")return send(res,200,disk.chronicles());
           if(req.method==="GET"&&p==="/api/disk/audit")return send(res,200,await disk.audit());
           if(req.method==="GET"&&p==="/api/disk/duplicates")return send(res,200,{groups:disk.duplicates()});
           if(req.method==="GET"&&p==="/api/disk/files/history")return send(res,200,{actions:disk.fileHistory()});

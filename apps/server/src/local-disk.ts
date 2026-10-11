@@ -1,4 +1,3 @@
-import { diskChronicles } from "./disk-chronicles";
 import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { inflateSync } from "node:zlib";
@@ -228,7 +227,15 @@ export class LocalDisk {
       throw e;
     }
   }
-  chronicles(){return diskChronicles(this.entries,this.folders);}
+  /** A copy of everything «Жизнь документов» counts from (no object ids, nothing to write back). */
+  lifeSource(){
+    const versions:Record<string,{revision:number;size:number;at:string}[]>={};
+    for(const [id,h] of Object.entries(this.versions))versions[id]=h.map(({revision,size,at})=>({revision,size,at}));
+    return {entries:this.entries.map(e=>({...e})),versions,folders:[...this.folders],folderStyles:structuredClone(this.folderStyles),
+      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a,before:{...a.before},after:{...a.after}})),
+      deletedFolders:this.deletedFolders.map(({root,paths,at})=>({root,paths:[...paths],at})),trashDays:this.trashDays,
+      usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0)};
+  }
   list(folder?:string){
     const f=folder===undefined?undefined:validFolder(folder);
     return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0),maxFileBytes:LIMIT};

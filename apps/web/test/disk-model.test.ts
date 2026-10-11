@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { DiskChronicles, DiskFile } from "../src/api";
-import { chronicleSections, keyFigures } from "../src/pages/disk-chronicles";
+import type { DiskLifeMetric, DiskFile } from "../src/api";
+import { findMetrics, readyIn } from "../src/pages/disk-life";
 import {
   askable, daysLeft, duplicateNote, filterFiles, folderChildren, folderTotals, groupLabel, hasThumb, human, kindOf,
   matchesVirtual, moveBack, plural, previewKind,
@@ -70,19 +70,14 @@ describe("«Диск» без запросов к серверу", () => {
     const back = moveBack([file("1", { folder: "A" }), file("2", { folder: "B" }), file("3", { folder: "A" })]);
     expect([...back]).toEqual([["A", ["1", "3"]], ["B", ["2"]]]);
   });
-  it("«Хроники»: группы по своему полю, готовые показатели первыми, ключевые цифры", () => {
-    const data: DiskChronicles = {
-      groups: [{ id: "g0", title: "Первая" }, { id: "g1", title: "Вторая" }],
-      metrics: [
-        { id: "d01", group: "g0", title: "Нет", value: "—", ready: false },
-        { id: "d02", group: "g0", title: "Файлы", value: "10", ready: true },
-        { id: "d03", group: "g1", title: "Избранные", value: "Нет избранных", ready: true },
-        { id: "d04", group: "g1", title: "Объём", value: "1 МБ", ready: true },
-      ],
-      summary: { files: 1, bytes: 1, folders: 1, ready: 3, total: 4 },
-    };
-    const s = chronicleSections(data);
-    expect(s.map((x) => x.metrics.map((m) => m.id))).toEqual([["d02", "d01"], ["d03", "d04"]]);
-    expect(keyFigures(s[1]!.metrics).map((m) => m.id)).toEqual(["d04"]);
+  it("«Жизнь документов»: поиск по названию, группе и подсказке, готовые показатели в группе", () => {
+    const m = (id: string, group: string, title: string, extra: Partial<DiskLifeMetric> = {}): DiskLifeMetric => ({ id, group, icon: id, title, hint: "", value: "1", ...extra });
+    const metrics = [m("a", "core", "Файлов на Диске"), m("b", "words", "Слов в документах", { empty: true, value: "—", hint: "нет документов" }), m("c", "words", "Знаков", { hint: "с пробелами" })];
+    const groups = [{ id: "core", title: "Сердце Диска" }, { id: "words", title: "Слова и страницы" }];
+    expect(findMetrics(metrics, groups, "файлов").map((x) => x.id)).toEqual(["a"]);
+    expect(findMetrics(metrics, groups, "СТРАНИЦ").map((x) => x.id)).toEqual(["b", "c"]);
+    expect(findMetrics(metrics, groups, "пробел").map((x) => x.id)).toEqual(["c"]);
+    expect(findMetrics(metrics, groups, "  ").length).toBe(3);
+    expect(readyIn(metrics, "words")).toBe(1);
   });
 });
