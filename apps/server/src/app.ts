@@ -182,6 +182,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           const parts=p.split("/");
           if(parts.length===5&&parts[3]==="files"&&/^[a-f0-9-]{36}$/.test(parts[4]??"")){
             if(req.method==="GET")return send(res,200,await disk.download(parts[4]!));
+            if(req.method==="PATCH"){const body=await readJson(req);return send(res,200,await disk.renameFile(parts[4]!,body.name));}
             if(req.method==="DELETE")return send(res,200,await disk.remove(parts[4]!));
           }
           return send(res,404,{error:"Не найдено"});
