@@ -220,11 +220,16 @@ export const api = {
     advisoryOnly:boolean;
   }>(`/api/organizer/insights?month=${encodeURIComponent(month)}`)),
   timeBlocks: (day:string) => attemptAsync(() => call<{day:string;workingMinutes:number;plannedMinutes:number;remainingMinutes:number;blocks:{id:string;text:string;start:string;end:string;minutes:number}[];note:string;advisoryOnly:boolean}>(`/api/organizer/time-blocks?day=${encodeURIComponent(day)}`)),
+  automationEvidence: () => attemptAsync(() => call<{
+    totals:{logged:number;active:number;undone:number;automaticMoves:number;taskCompletion:number};
+    permissions:{rollOverdue:boolean;reminders:boolean;brief:boolean;rules:number};
+    warnings:string[];evidence:string;advisoryOnly:boolean;
+  }>("/api/organizer/evidence")),
   autoLog: () => attemptAsync(() => call<AutoLogEntry[]>("/api/organizer/log")),
   undoAuto: (id: string) => attemptAsync(() => call<AutoLogEntry>(`/api/organizer/log/${encodeURIComponent(id)}/undo`, post({}))),
   dayLoad: (day: string) => attemptAsync(() => call<DayLoad>(`/api/organizer/load?day=${encodeURIComponent(day)}`)),
   arrangeDay: (day: string, apply = false, ids?: string[]) => attemptAsync(() => call<ArrangePlan>("/api/organizer/arrange", post({ day, apply, ...(ids ? { ids } : {}) }))),
-  moveTasks: (ids: string[], to: "tomorrow" | "workday") => attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to }))),
+  moveTasks: (ids: string[], to: "tomorrow" | "workday") => { const requestId = "move_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2); return attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to, requestId }))); },
   runEvening: () => attemptAsync(() => call<Note>("/api/organizer/evening", post({}))),
   runWeek: () => attemptAsync(() => call<Note>("/api/organizer/week", post({}))),
   snoozeReminder: (id:string,minutes:number|"tomorrow") => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),

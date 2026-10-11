@@ -91,7 +91,7 @@ export interface AutoLogEntry {
   kind: "roll" | "remind" | "brief" | "evening" | "week" | "quiet" | "arrange" | "move" | "rule";
   text: string;
   /** Previous due date, «перенесено» count and importance of the to-dos it changed; reminders and notes it created. */
-  undo?: { notes?: { id: string; dueAt: string | null; rolled: number | null; priority?: Note["priority"] | null }[]; reminders?: string[]; created?: string[] };
+  undo?: { notes?: { id: string; dueAt: string | null; rolled: number | null; priority?: Note["priority"] | null; expectedDueAt?: string | null }[]; reminders?: string[]; created?: string[] };
   undone?: boolean;
 }
 /** How a reminder or to-do repeats. */
@@ -224,6 +224,8 @@ export class Organizer {
   private history: TaskEvent[] = [];
   /** Every action of the automation, counted for «Возвращённые часы» (the log itself keeps only the last 60). */
   private autoCount: Partial<Record<AutoLogEntry["kind"], number>> = {};
+  /** Durable operation ids prevent an accidentally repeated request moving tasks twice. */
+  private moveRequests: string[] = [];
   private briefing = false;
   /**
    * Writes the morning brief in words (the assistant, when Cloud.ru is configured); returns null to keep the plain one.
@@ -261,13 +263,14 @@ export class Organizer {
 
   async load() {
     try {
-      const raw = JSON.parse(await this.readRecoverable()) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown };
+      const raw = JSON.parse(await this.readRecoverable()) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown };
       this.automation = cleanAutomation(raw.automation);
       if (raw.autoState && typeof raw.autoState === "object") {
         for (const k of ["briefDay", "rollDay", "eveningDay", "weekDay"] as const) if (typeof raw.autoState[k] === "string") this.autoState[k] = raw.autoState[k] as string;
       }
       if (Array.isArray(raw.log)) this.log = raw.log.filter((e): e is AutoLogEntry => !!e && typeof e.id === "string" && typeof e.at === "string" && typeof e.kind === "string" && typeof e.text === "string").slice(-MAX_LOG);
       if (Array.isArray(raw.history)) this.history = raw.history.filter((e): e is TaskEvent => !!e && typeof e.at === "string" && Number.isFinite(Date.parse(e.at)) && typeof e.id === "string" && EVENT_KINDS.includes(e.kind) && typeof e.text === "string" && typeof e.todo === "boolean").slice(-MAX_HISTORY);
+      if (Array.isArray(raw.moveRequests)) this.moveRequests = raw.moveRequests.filter((v):v is string=>typeof v==="string" && /^[a-zA-Z0-9_-]{8,100}$/.test(v)).slice(-200);
       if (raw.autoCount && typeof raw.autoCount === "object") for (const [k, v] of Object.entries(raw.autoCount)) if (Number.isInteger(v) && (v as number) >= 0) this.autoCount[k as AutoLogEntry["kind"]] = v as number;
       if (Array.isArray(raw.missions)) this.missions = raw.missions.filter((m): m is Mission => !!m && typeof m.id === "string" && typeof m.title === "string" && typeof m.description === "string" && typeof m.createdAt === "string" && ["active","paused","complete"].includes(m.status)).slice(-100);
       if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= (n.auto ? MAX_AUTO_TEXT : MAX_TEXT) && typeof n.done === "boolean" && typeof n.createdAt === "string").slice(-MAX_NOTES).map(cleanNote);
@@ -278,7 +281,7 @@ export class Organizer {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   private save() {
-    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log, history: this.history, autoCount: this.autoCount });
+    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log, history: this.history, autoCount: this.autoCount, moveRequests: this.moveRequests });
     this.writes = this.writes.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + "." + randomUUID() + ".tmp";
@@ -660,6 +663,21 @@ export class Organizer {
   /** Quiet hours are on and `now` is inside them. */
   isQuiet(now = this.now()): boolean { const a = this.automation; return a.quiet && inQuiet(now, a.quietFrom, a.quietTo); }
 
+  /** Brain evidence: deterministic audit metrics, not a claim of model training. */
+  automationEvidence() {
+    const active = this.log.filter(e => !e.undone);
+    const undone = this.log.filter(e => e.undone);
+    const automaticMoves = this.history.filter(h => h.kind === "move" && h.auto);
+    const totals = { logged:this.log.length, active:active.length, undone:undone.length,
+      automaticMoves:automaticMoves.length, taskCompletion:this.notes.filter(n=>n.kind==="todo"&&n.done).length };
+    const warnings: string[] = [];
+    if (this.automation.rollOverdue) warnings.push("Автоперенос включён: просроченные сроки могут меняться без отдельного подтверждения");
+    const frequent = this.notes.filter(n=>n.kind==="todo"&&!n.done&&(n.rolled??0)>=3);
+    if (frequent.length) warnings.push("Дела с тремя и более переносами: "+frequent.length);
+    return { totals, permissions: { rollOverdue:this.automation.rollOverdue, reminders:this.automation.dueReminder!=="off",
+      brief:this.automation.brief, rules:this.automation.rules.length },
+      warnings, evidence:"task-history-and-automation-log", advisoryOnly:true as const };
+  }
   /** «Что сделала автоматика», newest first. */
   listLog(): AutoLogEntry[] { return this.log.map((e) => ({ ...e })).reverse(); }
   private addLog(kind: AutoLogEntry["kind"], text: string, undo?: AutoLogEntry["undo"]) {
@@ -673,6 +691,11 @@ export class Organizer {
     if (!e) throw bad("Запись журнала не найдена", 404);
     if (e.undone) throw bad("Уже отменено", 409);
     if (!e.undo) throw bad("Это действие нельзя отменить", 409);
+    // All-or-nothing: do not overwrite changes the owner made after an automatic move.
+    for (const u of e.undo.notes ?? []) {
+      const n = this.notes.find((x) => x.id === u.id);
+      if (!n || n.done || (u.expectedDueAt !== undefined && (n.dueAt ?? null) !== u.expectedDueAt)) throw bad("Отмена невозможна: дело изменено после действия. Проверьте его вручную.", 409);
+    }
     for (const u of e.undo.notes ?? []) {
       const n = this.notes.find((x) => x.id === u.id);
       if (!n || n.done) continue;
@@ -706,6 +729,7 @@ export class Organizer {
         const was = n.dueAt;
         n.dueAt = (t.getTime() < now ? new Date(start + (23 * 60 + 59) * 60_000) : t).toISOString();
         n.rolled = (n.rolled ?? 0) + 1;
+        undo[undo.length - 1]!.expectedDueAt = n.dueAt;
         this.record("move", n, { from: was, to: n.dueAt, auto: true });
         if (n.repeat) n.streak = 0; // a missed repeating to-do breaks its streak
         delete n.remindedFor;
@@ -1012,13 +1036,16 @@ export class Organizer {
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
       this.record("move", n, { from: n.dueAt ?? null, to: p.start, auto: true });
       n.dueAt = p.start; delete n.rolled; delete n.remindedFor;
+      undo[undo.length - 1]!.expectedDueAt = n.dueAt;
     }
     if (pick.length) { this.addLog("arrange", `Разложила день ${new Date(base + 12 * 3_600_000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: дел ${pick.length}`, { notes: undo }); await this.save(); }
     return { day, window, placed, left, applied: pick.length };
   }
 
   /** Moves to-dos to tomorrow or to the next working day after their own day, keeping their time. Logged, so it can be undone. */
-  async moveTasks(ids: unknown, to: unknown): Promise<Note[]> {
+  async moveTasks(ids: unknown, to: unknown, requestId?: unknown): Promise<Note[]> {
+    if (requestId !== undefined && (typeof requestId !== "string" || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw bad("Некорректный идентификатор операции");
+    if (requestId && this.moveRequests.includes(requestId)) throw bad("Этот перенос уже выполнен", 409);
     if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every((x) => typeof x === "string")) throw bad("Список дел: от 1 до 100");
     if (to !== "tomorrow" && to !== "workday") throw bad("Куда: tomorrow или workday");
     const now = this.now(), undo: NonNullable<AutoLogEntry["undo"]>["notes"] = [], out: Note[] = [];
@@ -1033,11 +1060,13 @@ export class Organizer {
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
       this.record("move", n, { from: n.dueAt ?? null, to: d.toISOString() });
       n.dueAt = d.toISOString(); delete n.rolled; delete n.remindedFor;
+      undo[undo.length - 1]!.expectedDueAt = n.dueAt;
       out.push({ ...n });
     }
     if (!out.length) throw bad("Нечего переносить", 409);
     const where = to === "tomorrow" ? "на завтра" : "на рабочий день";
     this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.names(out.map((n) => n.id)), { notes: undo });
+    if (requestId) this.moveRequests = [...this.moveRequests, requestId].slice(-200);
     await this.save();
     return out;
   }
