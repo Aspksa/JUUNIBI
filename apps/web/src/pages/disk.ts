@@ -194,7 +194,9 @@ export function diskPage():HTMLElement {
       const choose=el("input",{type:"checkbox",checked:selected.has(f.id),attrs:{"aria-label":"Выбрать "+f.name}});
       choose.addEventListener("change",()=>{if(choose.checked)selected.add(f.id);else selected.delete(f.id);card.classList.toggle("disk-selected",choose.checked);renderBulk();});
       card.classList.toggle("disk-selected",selected.has(f.id));
-      const thumbnail=el("span",{cls:"disk-file-icon"},diskIcon("vault"));
+      const ext=f.name.split(".").pop()?.toLowerCase()??"";
+      const fileGlyph=/^(png|jpg|jpeg|gif|webp|svg)$/.test(ext)?"image":/^(pdf|doc|docx|txt|md|rtf)$/.test(ext)?"file-text":/^(ts|tsx|js|jsx|mjs|py|json|html|css)$/.test(ext)?"file-code":/^(zip|7z|rar|tar|gz)$/.test(ext)?"archive":"file";
+      const thumbnail=el("span",{cls:"disk-file-icon"},icon(fileGlyph,22));
       if(/\.(png|jpe?g|webp|gif)$/i.test(f.name) && viewFilter!=="trash"){
         const img=el("img",{cls:"disk-thumbnail",alt:"",attrs:{"data-disk-id":f.id}});
         const url=thumbnailUrls.get(f.id);if(url){img.src=url;img.classList.add("disk-thumbnail-loaded");}
