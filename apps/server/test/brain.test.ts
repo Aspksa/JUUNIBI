@@ -244,6 +244,20 @@ describe("BrainCore", () => {
     expect(preview.requiresExplicitApproval).toBe(true);
     expect(preview.readyForContinuation).toBe(false);
   });
+  it("retrieves only owner-confirmed experience with task and lexical ranking", () => {
+    const brain = new BrainCore(() => true);
+    const confirmed = brain.recordDecision({goal:"Проверить резервную копию",chosen:"Сделать резервную копию",reason:"Снизить риск",predictedSuccess:true,taskType:"backup"});
+    brain.recordDecision({goal:"Проверить резервную копию",chosen:"Другой вариант",reason:"Не проверено",predictedSuccess:true,taskType:"backup"});
+    brain.confirmDecision(confirmed.id,"success");
+    const found = brain.searchConfirmedExperience("резервную копию","backup",5);
+    expect(found.items).toHaveLength(1);
+    expect(found.items[0]?.id).toBe(confirmed.id);
+    expect(found.items[0]?.observed).toBe("success");
+    expect(found.source).toBe("owner-confirmed-decisions");
+    expect(brain.searchConfirmedExperience("несовпадающее")).toMatchObject({items:[]});
+    expect(() => brain.searchConfirmedExperience("backup",undefined,21)).toThrow();
+    expect(brain.toolRegistry()).toMatchObject({writeEnabled:false,arbitraryToolsEnabled:false});
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };

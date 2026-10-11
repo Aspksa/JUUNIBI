@@ -667,6 +667,12 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "GET" && p === "/api/brain/tool-recovery") return send(res, deps.brain ? 200 : 503, deps.brain?.toolRecoveryReport() ?? { error: "Мозг недоступен" });
         if (req.method === "GET" && p === "/api/brain/tool-failure-patterns") return send(res, deps.brain ? 200 : 503, deps.brain?.toolFailurePatterns() ?? { error: "Мозг недоступен" });
         if (req.method === "GET" && p === "/api/brain/tool-outcomes") return send(res, deps.brain ? 200 : 503, deps.brain?.toolOutcomeHistory() ?? { error: "Мозг недоступен" });
+        if (req.method === "GET" && p === "/api/brain/tool-registry") return send(res, deps.brain ? 200 : 503, deps.brain?.toolRegistry() ?? { error: "Мозг недоступен" });
+        if (req.method === "POST" && p === "/api/brain/search-experience") {
+          if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" });
+          const b = await readJson(req);
+          return send(res, 200, deps.brain.searchConfirmedExperience(b.query, b.taskType, b.limit ?? 5));
+        }
         if (req.method === "GET" && p === "/api/brain/evaluation")
           return send(res, deps.brain ? 200 : 503, deps.brain?.brainEvaluation() ?? { error: "Мозг недоступен" });
         if (req.method === "POST" && p === "/api/brain/recovery-preview") {

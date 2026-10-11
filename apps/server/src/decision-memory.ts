@@ -31,6 +31,28 @@ export class DecisionMemory {
     item.observed=observed;item.observedAt=new Date().toISOString();
     return {...item};
   }
+  /** Hybrid lexical + task-type + confirmation recency retrieval; no embeddings required. */
+  searchConfirmed(query: unknown, taskType?: unknown, limit: unknown = 5) {
+    if (typeof query !== "string" || !query.trim() || query.length > 500 ||
+        (taskType !== undefined && !validText(taskType,60)) ||
+        !Number.isSafeInteger(limit) || (limit as number) < 1 || (limit as number) > 20)
+      throw Object.assign(new Error("Некорректный поиск опыта"), {status:400});
+    const tokenize = (text:string) => new Set((text.toLocaleLowerCase("ru").match(/[\\p{L}\\p{N}]{2,}/gu) ?? []));
+    const terms = tokenize(query);
+    const candidates = this.records.filter(r => r.observed !== undefined).map(r => {
+      const words = tokenize(r.goal + " " + r.chosen + " " + r.reason);
+      const matched = [...terms].filter(word => words.has(word)).length;
+      const taskMatch = taskType !== undefined && r.taskType === taskType;
+      const score = matched * 3 + (taskMatch ? 4 : 0);
+      return {record:r,score,matched};
+    }).filter(item => item.score > 0)
+      .sort((a,b) => b.score-a.score || (b.record.observedAt ?? b.record.at).localeCompare(a.record.observedAt ?? a.record.at) || a.record.id.localeCompare(b.record.id))
+      .slice(0,limit as number);
+    return {items:candidates.map(({record,score,matched}) => ({...record,score,matchedTerms:matched})),
+      totalConfirmed:this.records.filter(r=>r.observed!==undefined).length,
+      source:"owner-confirmed-decisions" as const,
+      note:"Лексический поиск с учётом типа задачи; подтверждение владельца не гарантирует истинность вывода."};
+  }
   snapshot(){return this.records.map(r=>({...r}));}
   summary(){
     const confirmed=this.records.filter(r=>r.observed);
