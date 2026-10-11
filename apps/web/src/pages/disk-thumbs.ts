@@ -17,12 +17,22 @@ let running = false;
 
 const toBlob = (c: HTMLCanvasElement) => new Promise<Blob | null>((res) => c.toBlob(res, "image/webp", 0.82));
 const fit = (w: number, h: number) => { const k = SIZE / Math.max(w, h, 1); return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) }; };
-const timeout = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+/** Runs `work` for at most `ms`; on timeout the signal fires so the work drops its download and decoder. */
+async function timeout<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
+  const ctl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([work(ctl.signal), new Promise<never>((_, rej) => { timer = setTimeout(() => { ctl.abort(); rej(new Error("timeout")); }, ms); })]);
+  } finally { clearTimeout(timer); }
+}
 
-async function pdfPicture(f: DiskFile): Promise<Blob | null> {
+async function pdfPicture(f: DiskFile, signal: AbortSignal): Promise<Blob | null> {
   const pdfjs = await import("pdfjs-dist");
   if (!pdfjs.GlobalWorkerOptions.workerSrc) pdfjs.GlobalWorkerOptions.workerSrc = (await import("pdfjs-dist/build/pdf.worker.min.mjs?url")).default;
+  if (signal.aborted) return null;
   const task = pdfjs.getDocument({ url: diskRawUrl(f), isEvalSupported: false, disableAutoFetch: true });
+  const drop = () => void task.destroy();
+  signal.addEventListener("abort", drop, { once: true });
   try {
     const doc = await task.promise;
     const page = await doc.getPage(1);
@@ -36,14 +46,15 @@ async function pdfPicture(f: DiskFile): Promise<Blob | null> {
     ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
     return await toBlob(canvas);
-  } finally { void task.destroy(); }
+  } finally { signal.removeEventListener("abort", drop); void task.destroy(); }
 }
 
-function videoPicture(f: DiskFile): Promise<Blob | null> {
+function videoPicture(f: DiskFile, signal: AbortSignal): Promise<Blob | null> {
   return new Promise((resolve, reject) => {
     const v = document.createElement("video");
     v.muted = true; v.preload = "auto"; v.playsInline = true;
     const stop = () => { v.removeAttribute("src"); v.load(); };
+    signal.addEventListener("abort", () => { stop(); reject(new Error("timeout")); }, { once: true });
     v.addEventListener("error", () => { stop(); reject(new Error("video")); }, { once: true });
     v.addEventListener("loadedmetadata", () => { v.currentTime = Math.min(1.5, (v.duration || 0) / 10); }, { once: true });
     v.addEventListener("seeked", async () => {
@@ -66,7 +77,7 @@ async function pump() {
       const kind = madeThumb(f);
       let ok = false;
       try {
-        const blob = kind ? await timeout(kind === "pdf" ? pdfPicture(f) : videoPicture(f), 15000) : null;
+        const blob = kind ? await timeout((signal) => kind === "pdf" ? pdfPicture(f, signal) : videoPicture(f, signal), 15000) : null;
         if (blob && blob.size <= 400 * 1024) {
           const r = await fetch("/api/disk/files/" + encodeURIComponent(f.id) + "/thumb", { method: "POST", headers: { "Content-Type": blob.type || "image/webp" }, body: blob });
           ok = r.ok;

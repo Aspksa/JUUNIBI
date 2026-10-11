@@ -285,7 +285,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           const textMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/text$/.exec(p);
           if(req.method==="GET"&&textMatch)return send(res,200,await disk.readText(textMatch[1]!));
           if(req.method==="POST"&&p==="/api/disk/zip"){
-            const plan=disk.zipPlan(await readJson(req));
+            const plan=disk.zipPlan(await readJson(req,512*1024)); // room for 10 000 file ids
             const token=randomUUID();
             zipTokens.set(token,{...plan,until:Date.now()+10*60_000});
             for(const [k,v] of zipTokens)if(v.until<Date.now())zipTokens.delete(k);

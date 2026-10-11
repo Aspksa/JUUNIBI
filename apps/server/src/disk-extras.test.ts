@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { LocalDisk, MAX_FILES, LIMIT } from "./local-disk";
 import { crc32, uniqueNames, zipLength, zipStream } from "./zip-write";
 import { listZip, readZipEntry } from "./zip-read";
-import { colIndex, docxPreview, headingLevel, officePreview, pptxPreview, previewText, xlsxPreview } from "./office-preview";
+import { colIndex, docxPreview, headingLevel, officePreview, pptxPreview, previewText, previewTruncated, xlsxPreview } from "./office-preview";
 import { buildExtraTools } from "./assistant-tools";
 import type { Organizer } from "./organizer";
 
@@ -79,6 +79,23 @@ describe("Office preview", () => {
     if (p.kind !== "slides") throw new Error("kind");
     expect(p.slides).toEqual([{ title: "План", lines: [] }, { title: "Итоги", lines: ["Рост 20%"] }]);
   });
+  it("tells the chat when a table or a deck was cut short", async () => {
+    expect(previewTruncated(xlsxPreview(XLSX))).toBe(false);
+    expect(previewTruncated(pptxPreview(PPTX))).toBe(false);
+    const rows = Array.from({ length: 301 }, (_, i) => `<row r="${i + 1}"><c r="A${i + 1}"><v>${i}</v></c></row>`).join("");
+    const big = makeZip({
+      "xl/workbook.xml": `<workbook><sheets><sheet name="Много" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+      "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`,
+      "xl/worksheets/sheet1.xml": `<worksheet><sheetData>${rows}</sheetData></worksheet>`,
+    });
+    expect(previewTruncated(xlsxPreview(big))).toBe(true);
+    const dir = await tmp();
+    try {
+      const disk = new LocalDisk(dir);
+      const f = await disk.uploadBytes("много.xlsx", "", big);
+      expect((await disk.readText(f.id, 1024 * 1024)).truncated).toBe(true);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  });
   it("lists a ZIP from its directory and refuses big Office files", async () => {
     const dir = await tmp();
     try {
@@ -143,6 +160,15 @@ describe("ZIP download", () => {
 });
 
 describe("Disk for the chat, thumbnails and limits", () => {
+  it("refuses a chat save that would not fit without leaving empty folders", async () => {
+    const dir = await tmp();
+    try {
+      const disk = new LocalDisk(dir);
+      for (let i = 0; i < 499; i++) await disk.createFolder("п" + i);
+      await expect(disk.saveText("план", "Новая/Вложенная", "текст")).rejects.toMatchObject({ status: 409 });
+      expect(disk.list().folders).toHaveLength(499);
+    } finally { await rm(dir, { recursive: true, force: true }); }
+  }, 20000);
   it("saves text from the chat as a file, then as a new version, making folders on the way", async () => {
     const dir = await tmp();
     try {

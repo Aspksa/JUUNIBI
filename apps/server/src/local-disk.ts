@@ -5,7 +5,7 @@ import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 import { docxText } from "./docx-text";
 import { uniqueNames, ZIP_MAX_BYTES, ZIP_MAX_FILES, type ZipSource } from "./zip-write";
-import { officePreview, previewable, previewText, pptxPreview, xlsxPreview } from "./office-preview";
+import { officePreview, previewable, previewText, previewTruncated, pptxPreview, xlsxPreview } from "./office-preview";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
 export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string; objectId?:string; revision?:number };
@@ -447,8 +447,12 @@ export class LocalDisk {
     if(buf.length>1024*1024)throw bad("Текст больше 1 МБ",413);
     const f=validFolder(typeof folder==="string"?folder.trim().replace(/^\/+|\/+$/g,""):"");
     const parts=f?f.split("/"):[];
-    for(let i=1;i<=parts.length;i++){const sub=parts.slice(0,i).join("/");if(!this.folders.includes(sub))await this.createFolderUnlocked(sub);}
+    const missing=parts.map((_,i)=>parts.slice(0,i+1).join("/")).filter(sub=>!this.folders.includes(sub));
     const same=this.entries.find(e=>!e.deletedAt&&e.folder===f&&e.name.toLocaleLowerCase()===filename.toLocaleLowerCase());
+    // Room is checked before anything is made, so a refused save leaves no empty folders behind.
+    if(this.folders.length+missing.length>MAX_FOLDERS)throw bad("Достигнут лимит "+MAX_FOLDERS+" папок",409);
+    if(!same&&this.entries.length>=MAX_FILES)throw bad("Достигнут лимит "+MAX_FILES+" файлов",409);
+    for(const sub of missing)await this.createFolderUnlocked(sub);
     if(same){const next=await this.replaceStreamUnlocked(same.id,(async function*(){yield buf;})(),same.sha256);return {...next,savedAs:"version" as const};}
     return {...await this.uploadBytesUnlocked(filename,f,buf),savedAs:"new" as const};
   }
@@ -831,18 +835,18 @@ export class LocalDisk {
     const data=plain&&entry.size>Math.max(max*4,256*1024)
       ?await (async()=>{const h=await open(file,"r");try{const out=Buffer.alloc(Math.min(entry.size,Math.max(max*4,256*1024)));const {bytesRead}=await h.read(out,0,out.length,0);return out.subarray(0,bytesRead);}finally{await h.close();}})()
       :await readFile(file);
-    let text:string;
+    let text:string,cut=false;
     if(ext==="pdf")text=pdfText(data);
     else if(ext==="docx")text=docxText(data);
     else if(ext==="xlsx"||ext==="pptx"){
-      try{text=previewText(ext==="xlsx"?xlsxPreview(data):pptxPreview(data));}
+      try{const p=ext==="xlsx"?xlsxPreview(data):pptxPreview(data);text=previewText(p);cut=previewTruncated(p);}
       catch(e){throw (e as {status?:number}).status?e:bad(e instanceof Error?e.message:"Не удалось прочитать файл",422);}
     }
     else if(/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext))text=new TextDecoder().decode(data);
     else throw bad("JUUNIBI читает только текстовые файлы, PDF, Word, Excel и PowerPoint",415);
     text=text.replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
     if(!text)throw bad(ext==="pdf"?"В этом PDF нет текстового слоя (скан или картинки)":"Файл пустой",422);
-    return {name:entry.name,text:text.slice(0,max),truncated:text.length>max||data.length<entry.size};
+    return {name:entry.name,text:text.slice(0,max),truncated:cut||text.length>max||data.length<entry.size};
   }
 }
 

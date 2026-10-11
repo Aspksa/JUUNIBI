@@ -191,8 +191,8 @@ export const diskRawUrl=(f:{id:string;sha256:string;name:string},download=false)
 export type DiskRun = { t: string; b?: true; i?: true };
 export type DiskPreview =
   | { kind: "doc"; blocks: ({ k: "h"; level: number; runs: DiskRun[] } | { k: "p" | "li"; runs: DiskRun[] } | { k: "table"; rows: string[][] })[]; truncated: boolean }
-  | { kind: "sheet"; sheets: { name: string; rows: string[][]; truncated: boolean }[] }
-  | { kind: "slides"; slides: { title: string; lines: string[] }[] }
+  | { kind: "sheet"; sheets: { name: string; rows: string[][]; truncated: boolean }[]; truncated: boolean }
+  | { kind: "slides"; slides: { title: string; lines: string[] }[]; truncated: boolean }
   | { kind: "zip"; entries: { name: string; size: number; compressed: number; dir: boolean; modified?: string }[]; total: number; bytes: number; truncated: boolean };
 /** A picture preview drawn by the page (PDF first page, video frame) and kept by the server. */
 export const diskThumbUrl=(f:{id:string;sha256:string})=>"/api/disk/files/"+encodeURIComponent(f.id)+"/thumb?v="+f.sha256.slice(0,12);

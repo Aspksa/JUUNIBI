@@ -148,6 +148,9 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   /** A dropped or chosen folder: its subfolders are made on the Disk first, then the files go into them. */
   async function uploadTree(items: { file: File; path: string }[]) {
     if (!items.length) return;
+    // Better to refuse up front than to copy part of a folder and look finished.
+    const room = 10000 - all.length - trash.length; // the trash counts toward the limit on the server too
+    if (items.length > room) { showToast(items.length > 10000 ? "В папке больше 10 000 файлов: столько на Диск не поместится" : "Не хватит места: на Диске до 10 000 файлов, свободно " + Math.max(0, room)); return; }
     if (!items.some((x) => x.path.includes("/"))) { uploader.add(items.map((x) => x.file), uploadFolder()); return; }
     const base = uploadFolder();
     const plan = folderPlan(items.map((x) => x.path), base);

@@ -9,8 +9,8 @@ export type Run = { t: string; b?: true; i?: true };
 export type DocBlock = { k: "h"; level: number; runs: Run[] } | { k: "p"; runs: Run[] } | { k: "li"; runs: Run[] } | { k: "table"; rows: string[][] };
 export type Preview =
   | { kind: "doc"; blocks: DocBlock[]; truncated: boolean }
-  | { kind: "sheet"; sheets: { name: string; rows: string[][]; truncated: boolean }[] }
-  | { kind: "slides"; slides: { title: string; lines: string[] }[] }
+  | { kind: "sheet"; sheets: { name: string; rows: string[][]; truncated: boolean }[]; truncated: boolean }
+  | { kind: "slides"; slides: { title: string; lines: string[] }[]; truncated: boolean }
   | { kind: "zip"; entries: { name: string; size: number; compressed: number; dir: boolean; modified?: string }[]; total: number; bytes: number; truncated: boolean };
 
 /** Office files are unpacked in memory; a bigger one is offered as a download instead. */
@@ -134,7 +134,8 @@ export function xlsxPreview(data: Buffer): Preview {
   const rels = relTargets(zipText(data, "xl/_rels/workbook.xml.rels", entries));
   const shared = [...(zipText(data, "xl/sharedStrings.xml", entries, 32 * 1024 * 1024) ?? "").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => siText(m[1]!));
   const sheets: { name: string; rows: string[][]; truncated: boolean }[] = [];
-  for (const s of [...workbook.matchAll(/<sheet\b[^>]*>/g)].slice(0, MAX_SHEETS)) {
+  const tags = [...workbook.matchAll(/<sheet\b[^>]*>/g)];
+  for (const s of tags.slice(0, MAX_SHEETS)) {
     const name = xmlDecode(/\bname="([^"]*)"/.exec(s[0])?.[1] ?? "Лист");
     const rid = /\br:id="([^"]+)"/.exec(s[0])?.[1];
     const target = rid ? rels.get(rid) : undefined;
@@ -164,14 +165,16 @@ export function xlsxPreview(data: Buffer): Preview {
     sheets.push({ name, rows: rows.map((r) => [...r, ...Array(Math.max(0, width - r.length)).fill("")]), truncated });
   }
   if (!sheets.length) throw bad("В книге нет листов");
-  return { kind: "sheet", sheets };
+  return { kind: "sheet", sheets, truncated: tags.length > MAX_SHEETS || sheets.some((s) => s.truncated) };
 }
 
 /* ---------------- PowerPoint ---------------- */
 export function pptxPreview(data: Buffer): Preview {
   const entries = listZip(data);
-  const files = entries.map((e: ZipEntry) => e.name).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
-    .sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1])).slice(0, MAX_SLIDES);
+  const all = entries.map((e: ZipEntry) => e.name).filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+    .sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1]));
+  const files = all.slice(0, MAX_SLIDES);
+  let truncated = all.length > files.length;
   if (!files.length) throw bad("В презентации нет слайдов");
   const slides = files.map((f) => {
     const xml = zipText(data, f, entries) ?? "";
@@ -180,11 +183,15 @@ export function pptxPreview(data: Buffer): Preview {
       lines: [...s[0].matchAll(/<a:p\b[\s\S]*?<\/a:p>/g)].map((p) => xmlDecode([...p[0].matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((t) => t[1]).join("")).trim()).filter(Boolean),
     }));
     const head = shapes.find((s) => s.title && s.lines.length);
-    return { title: head?.lines.join(" ") ?? "", lines: shapes.filter((s) => s !== head).flatMap((s) => s.lines).slice(0, 60) };
+    const lines = shapes.filter((s) => s !== head).flatMap((s) => s.lines);
+    if (lines.length > 60) truncated = true;
+    return { title: head?.lines.join(" ") ?? "", lines: lines.slice(0, 60) };
   });
-  return { kind: "slides", slides };
+  return { kind: "slides", slides, truncated };
 }
 
+/** Whether the preview left something out (rows, sheets, slides, blocks or archive entries). */
+export const previewTruncated = (p: Preview) => p.truncated;
 /** Plain text of an Office file, for the chat: what the preview shows, flattened. */
 export function previewText(p: Preview): string {
   if (p.kind === "doc") return p.blocks.map((b) => b.k === "table" ? b.rows.map((r) => r.join(" | ")).join("\n") : (b.k === "li" ? "• " : b.k === "h" ? "#".repeat(b.level) + " " : "") + b.runs.map((r) => r.t).join("")).join("\n");

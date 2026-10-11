@@ -104,8 +104,8 @@ export function createUploader(o: { onUploaded: (f: DiskUploaded) => void; onIdl
   };
 }
 
-/** Every file of dropped folders with its path inside them («Фото/2024/a.jpg»); at most `max` files. */
-export async function readDropped(items: DataTransferItem[], max = 10000): Promise<{ file: File; path: string }[]> {
+/** Every file of dropped folders with its path inside them («Фото/2024/a.jpg»); stops after `max` files, so a caller seeing `max` knows the folder is bigger. */
+export async function readDropped(items: DataTransferItem[], max = 10001): Promise<{ file: File; path: string }[]> {
   const out: { file: File; path: string }[] = [];
   const entries = items.map((it) => it.webkitGetAsEntry?.()).filter((x): x is FileSystemEntry => !!x);
   const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
