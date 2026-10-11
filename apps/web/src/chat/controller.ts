@@ -91,6 +91,8 @@ export class ChatController {
     }
 
     let text = "";
+    let lastPaint = 0;
+    const paint = (force = false) => { const now = Date.now(); if (force || now - lastPaint >= 50) { lastPaint = now; this.chats.patch(convId, reply.id, { content: text }); } };
     let gap = false; // text written before a tool call is kept, and the next part starts on a new paragraph (as the server stores it)
     let steps: Step[] = [];
     let finished = false;
@@ -98,7 +100,7 @@ export class ChatController {
       await streamChat({ message: userText, history, session: convId }, ctl.signal, (e) => {
         // "Обдумываю ответ" stays visible while the model reasons and closes as soon as it answers or calls a tool.
         const thought = () => { if (steps.some((st) => st.name === "thinking" && st.status === "running")) { steps = steps.map((st) => (st.name === "thinking" && st.status === "running" ? { ...st, status: "ok" as const } : st)); this.chats.patch(convId, reply.id, { steps }); } };
-        if (e.type === "delta") { thought(); if (!gap) text += e.text; else if (e.text.trim()) { text += "\n\n" + e.text.trimStart(); gap = false; } this.chats.patch(convId, reply.id, { content: text }); }
+        if (e.type === "delta") { thought(); if (!gap) text += e.text; else if (e.text.trim()) { text += "\n\n" + e.text.trimStart(); gap = false; } paint(); }
         else if (e.type === "thinking") { steps = [...steps, { id: "thinking-" + steps.length, name: "thinking", status: "running" }]; this.chats.patch(convId, reply.id, { steps }); }
         else if (e.type === "tool") {
           if (e.phase === "start") { thought(); if (text.trim()) { text = text.trimEnd(); gap = true; } steps = [...steps, { id: e.id, name: e.name, status: "running" }]; }
@@ -107,23 +109,27 @@ export class ChatController {
         }
         else if (e.type === "done") {
           finished = true;
+          paint(true);
           thought();
           const patch: Partial<ChatMsg> = { turnId: e.turnId, tools: e.tools, ...(e.memory?.length ? { memoryUsed: e.memory } : {}) };
           if (e.reply && e.reply !== text) patch.content = e.reply; // the server may append evidence corrections after streaming
           this.chats.patch(convId, reply.id, patch);
         } else if (e.type === "error") {
           finished = true;
+          paint(true);
           this.chats.patch(convId, reply.id, { error: /(?:503|временно недоступен|connection timeout)/i.test(e.message) ? "Cloud.ru временно недоступен. Ваше сообщение сохранено в истории чата. Повторите запрос после восстановления связи. " + e.message : e.message, ...(ctl.signal.aborted ? { stopped: true } : {}) });
         }
       });
       if (!finished) this.chats.patch(convId, reply.id, { error: text.trim() ? "Поток прервался. Полученная часть ответа сохранена. Нажмите «Повторить», чтобы создать новый ответ." : "Соединение прервано. Сообщение сохранено — нажмите «Повторить»." });
     } catch (e) {
+      paint(true);
       if (ctl.signal.aborted) this.chats.patch(convId, reply.id, { stopped: true });
       else {
         const message = (e as Error).message || "Не удалось получить ответ.";
         this.chats.patch(convId, reply.id, { error: /(?:503|временно недоступен|connection timeout)/i.test(message) ? "Cloud.ru недоступен. Сообщение сохранено в истории. Можно повторить отправку. " + message : message });
       }
     } finally {
+      if (!finished) paint(true);
       if (steps.some((st) => st.status === "running")) this.chats.patch(convId, reply.id, { steps: steps.map((st) => (st.status === "running" ? { ...st, status: "error" as const } : st)) });
       if (this.abort === ctl) this.abort = null;
       this.store.set((s) => ({ busyId: null, unread: app.get().chatOpen ? 0 : s.unread + (ctl.signal.aborted ? 0 : 1) }));
