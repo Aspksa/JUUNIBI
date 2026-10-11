@@ -79,12 +79,9 @@ export class BrainCore {
     const confirmed = this.decisions.snapshot().filter(r => r.observed !== undefined &&
       (taskType === undefined || r.taskType === taskType));
     const ranked = (options as string[]).map((option,index) => {
-      const words = tokenize(option);
-      const evidence = confirmed.filter(item => {
-        const chosen = tokenize(item.chosen);
-        return item.chosen.trim().toLocaleLowerCase("ru") === option.trim().toLocaleLowerCase("ru") ||
-          [...words].some(word=>chosen.has(word));
-      });
+      // Attribute outcomes only to the same chosen strategy: shared words are not proof.
+      const evidence = confirmed.filter(item =>
+        item.chosen.trim().toLocaleLowerCase("ru") === option.trim().toLocaleLowerCase("ru"));
       const successes = evidence.filter(item=>item.observed==="success").length;
       const failures = evidence.filter(item=>item.observed==="failure").length;
       return {option,originalIndex:index,successes,failures,samples:evidence.length,
