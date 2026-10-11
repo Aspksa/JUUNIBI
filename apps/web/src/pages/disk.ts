@@ -281,24 +281,31 @@ export function diskPage():HTMLElement {
       const toggle=el("button",{type:"button",cls:"disk-tree-toggle",textContent:expandable?(expanded?"▾":"▸"):"·",attrs:{"aria-label":expanded?"Свернуть "+label:"Развернуть "+label,"aria-expanded":String(expanded)}});
       toggle.disabled=!expandable;
       toggle.addEventListener("click",()=>{if(treeExpanded.has(folder))treeExpanded.delete(folder);else treeExpanded.add(folder);renderTree();});
-      const select=el("button",{type:"button",cls:"disk-tree-select",attrs:{"aria-current":current===folder&&viewFilter==="all"?"page":"false"}},icon("folder",16),el("span",{textContent:label}),el("small",{textContent:String(counts.get(folder)??0)}));
+      const select=el("button",{type:"button",cls:"disk-tree-select",attrs:{"aria-current":current===folder&&viewFilter==="all"?"page":"false"}},icon(expanded?"folder-open":"folder",16),el("span",{textContent:label}),el("small",{textContent:String(counts.get(folder)??0)}));
       select.addEventListener("click",()=>openFolder(folder));
       if(folder){
-        const menu=el("button",{type:"button",cls:"disk-folder-menu",textContent:"⋯",attrs:{"aria-label":"Действия с папкой "+label}});
-        menu.addEventListener("click",async()=>{
-          const action=prompt("Папка «"+folder+"»: введите 1 — создать подпапку, 2 — переименовать","1");
-          if(action==="1"){
-            const name=prompt("Название подпапки");if(!name)return;
-            const r=await api.diskFolder(folder+"/"+name.trim());if(!r.ok)showToast(r.error.message);else{treeExpanded.add(folder);void refresh();}
-          }else if(action==="2"){
-            const name=prompt("Новое название папки",label);if(!name||name===label)return;
-            const parent=folder.includes("/")?folder.slice(0,folder.lastIndexOf("/")+1):"";
-            const next=parent+name.trim();
-            const r=await api.diskRenameFolder(folder,next);
-            if(!r.ok)showToast(r.error.message);
-            else{if(current===folder||current.startsWith(folder+"/"))current=next+current.slice(folder.length);treeExpanded.add(parent.slice(0,-1));void refresh();}
-          }
+        const menu=el("details",{cls:"disk-folder-actions"});
+        const summary=el("summary",{cls:"disk-folder-menu",textContent:"⋯",attrs:{"aria-label":"Действия с папкой "+label}});
+        const controls=el("div",{cls:"disk-folder-popover"});
+        const field=el("input",{type:"text",cls:"mem-input",maxLength:80,placeholder:"Имя папки",attrs:{"aria-label":"Имя папки"}});
+        const feedback=el("small",{cls:"disk-folder-feedback",attrs:{"aria-live":"polite"}});
+        const submit=button("Создать подпапку",async()=>{
+          const name=field.value.trim();if(!name)return;
+          const r=await api.diskFolder(folder+"/"+name);
+          if(!r.ok){feedback.textContent=r.error.message;return;}
+          treeExpanded.add(folder);menu.open=false;void refresh();
         });
+        const rename=button("Переименовать",async()=>{
+          const name=field.value.trim();if(!name||name===label)return;
+          const parent=folder.includes("/")?folder.slice(0,folder.lastIndexOf("/")+1):"";
+          const next=parent+name;
+          const r=await api.diskRenameFolder(folder,next);
+          if(!r.ok){feedback.textContent=r.error.message;return;}
+          if(current===folder||current.startsWith(folder+"/"))current=next+current.slice(folder.length);
+          treeExpanded.add(parent.slice(0,-1));menu.open=false;void refresh();
+        });
+        menu.addEventListener("toggle",()=>{if(menu.open){field.value=label;feedback.textContent="";}});
+        controls.append(field,submit,rename,feedback);menu.append(summary,controls);
         line.append(menu);
         line.addEventListener("dragover",e=>{if(e.dataTransfer?.types.includes("application/x-juunibi-file")){e.preventDefault();line.classList.add("disk-tree-drop");}});
         line.addEventListener("dragleave",()=>line.classList.remove("disk-tree-drop"));
