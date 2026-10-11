@@ -1,5 +1,5 @@
 /**
- * «Диск»: the owner's files on this computer. One hero, one tool row, the folder tree on the left
+ * «Диск»: the owner's files on this computer. One tool row, the folder tree on the left
  * (a slide-out drawer on a phone), the files in the middle and «Сведения» on the right.
  * Actions change the list in place and answer with a toast that can undo them; only folder
  * operations fetch the catalogue again. Pictures are plain lazy <img> links to the raw file.
@@ -127,28 +127,6 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   const page = el("div", { cls: "page disk-page" });
   const byId = (id: string) => all.find((f) => f.id === id) ?? trash.find((f) => f.id === id);
   const uploadFolder = () => (view === "all" && virtual === "none" ? current : "");
-
-  /* ---------------------------------------------------------------- hero */
-  const figTotal = el("strong", { textContent: "—" }), figUsed = el("strong", { textContent: "—" }), figTrash = el("strong", { textContent: "—" });
-  const heroNote = el("p", { cls: "dk-hero-note", textContent: "Файлы хранятся только на этом компьютере и никуда не отправляются." });
-  const tile = (value: HTMLElement, label: string, ic: DiskIconName, run?: () => void) => {
-    const t = el(run ? "button" : "div", { cls: "dk-hero-fig", ...(run ? { type: "button" } : {}) }, el("span", { cls: "dk-hero-ic" }, dIcon(ic, 18)), value, el("small", { textContent: label }));
-    if (run) t.addEventListener("click", run);
-    return t;
-  };
-  const hero = el("section", { cls: "dk-hero", attrs: { "aria-label": "Обзор Диска" } },
-    el("div", { cls: "dk-hero-text" },
-      el("small", { cls: "dk-eyebrow", textContent: "Личный архив" }),
-      el("h1", { textContent: "Диск" }),
-      heroNote),
-    el("div", { cls: "dk-hero-figs" },
-      tile(figTotal, "всего файлов", "vault"), tile(figUsed, "занято", "disk"),
-      tile(figTrash, "в корзине", "trash", () => go({ view: "trash" }))));
-  const setFig = (node: HTMLElement, value: string) => {
-    if (node.textContent === value) return;
-    node.textContent = value;
-    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) node.animate([{ opacity: 0.3, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], { duration: 220, easing: "ease-out" });
-  };
 
   /* ---------------------------------------------------------------- uploads */
   const picker = el("input", { type: "file", multiple: true, hidden: true, attrs: { "aria-hidden": "true", tabindex: "-1" } });
@@ -1093,10 +1071,6 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   };
   function redraw() {
     renderCrumbs();
-    setFig(figTotal, String(all.length));
-    setFig(figUsed, human(used));
-    setFig(figTrash, String(trash.length));
-    heroNote.textContent = "Файлы хранятся только на этом компьютере и никуда не отправляются · до " + human(maxBytes) + " на файл";
     renderTree();
     renderTrashBar();
     renderFiles();
@@ -1169,7 +1143,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   /* ---------------------------------------------------------------- assemble */
   const life = diskLifePanel();
   const layout = el("div", { cls: "dk-layout" + (treeHidden ? " no-tree" : "") }, side, main, life.root, info);
-  page.append(hero, bar, layout, scrim, uploader.root, picker, restorePicker);
+  page.append(el("h1", { cls: "sr-only", textContent: "Диск" }), bar, layout, scrim, uploader.root, picker, restorePicker);
   renderFiles();
   void loadCatalog();
   return page;

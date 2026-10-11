@@ -1,26 +1,6 @@
-/* «Диск»: one calm hero, a tool row, folders on the left, files in the middle, «Сведения» on the right.
+/* «Диск»: a tool row, folders on the left, files in the middle, «Сведения» on the right.
    Colours come from the theme (--brand gold, --surface, --line), so light and dark both work. */
 .page.disk-page{display:flex;flex-direction:column;gap:14px}
-
-/* ---------- hero: gold archive, theme-aware */
-.dk-hero{position:relative;isolation:isolate;overflow:hidden;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:center;padding:22px 26px;border-radius:var(--r-xl);
-  border:1px solid color-mix(in srgb,var(--brand) 26%,var(--line));
-  background:radial-gradient(120% 140% at 0% 0%,color-mix(in srgb,var(--brand) 20%,transparent),transparent 55%),linear-gradient(135deg,color-mix(in srgb,var(--brand) 8%,var(--surface)),var(--surface))}
-.dk-hero::after{content:"";position:absolute;z-index:-1;right:-30px;top:-20px;width:300px;height:220px;opacity:.5;pointer-events:none;
-  background:repeating-linear-gradient(0deg,transparent 0 26px,color-mix(in srgb,var(--brand) 18%,transparent) 26px 28px),repeating-linear-gradient(90deg,transparent 0 46px,color-mix(in srgb,var(--brand) 10%,transparent) 46px 47px);
-  -webkit-mask:radial-gradient(closest-side,#000,transparent);mask:radial-gradient(closest-side,#000,transparent)}
-.dk-hero-text{display:flex;flex-direction:column;gap:6px;min-width:0}
-.dk-eyebrow{font-size:var(--fs-xs);font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--brand)}
-.dk-hero h1{margin:0;font-size:var(--fs-2xl);letter-spacing:-.02em;line-height:1.1}
-.dk-hero-note{margin:0;color:var(--muted);font-size:var(--fs-md);max-width:46ch}
-.dk-hero-figs{display:grid;grid-template-columns:repeat(3,minmax(128px,170px));gap:10px}
-.dk-hero-fig{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;padding:12px 14px;border-radius:var(--r-lg);text-align:left;font:inherit;color:inherit;
-  background:color-mix(in srgb,var(--bg) 72%,transparent);border:1px solid var(--line);min-width:0}
-button.dk-hero-fig{cursor:pointer;transition:border-color var(--dur-fast),transform var(--dur-fast)}
-button.dk-hero-fig:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line));transform:translateY(-1px)}
-.dk-hero-ic{grid-row:1/3;display:grid;place-items:center;width:36px;height:36px;border-radius:var(--r-md);color:var(--brand);background:color-mix(in srgb,var(--brand) 13%,transparent)}
-.dk-hero-fig strong{font-size:var(--fs-lg);font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dk-hero-fig small{color:var(--muted);font-size:var(--fs-xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ---------- tool row */
 .dk-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -363,29 +343,19 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
   .disk-page.drawer-open .dk-side{transform:none}
   .dk-scrim{position:fixed;inset:0;z-index:94;background:rgba(0,0,0,.4);display:none}
   .disk-page.drawer-open .dk-scrim{display:block;animation:dk-fade .2s ease}
-  .dk-hero{grid-template-columns:1fr;gap:14px}
-  .dk-hero::after{display:none}
 }
 @media (max-width:640px){
-  .dk-hero{padding:16px;border-radius:var(--r-xl)}
-  .dk-hero h1{font-size:var(--fs-xl)}
-  .dk-hero-figs{gap:6px}
-  .dk-hero-fig{grid-template-columns:1fr;padding:10px;row-gap:2px}
-  .dk-hero-ic{display:none}
-  .dk-hero-fig strong{font-size:var(--fs-base)}
   .dk-bar{gap:8px}
   .dk-search{order:3;flex:1 1 100%}
   .disk-page .dk-drawer-btn{order:0}
   .dk-bar-actions{order:1;flex:1;margin-left:0}
   .dk-upload-btn{flex:1}
-  .dk-hero-figs{grid-template-columns:repeat(3,minmax(0,1fr))}
   .dk-filters>summary{font-size:0;gap:0;padding:4px 10px}
   .dk-filters>summary .dk-filter-n{font-size:var(--fs-xs);margin-left:4px}
   .dk-head-tools .dk-select{min-width:0}
   .dk-search{flex-wrap:wrap;border-radius:var(--r-lg);padding:0 6px 0 14px}
   .dk-search .dk-bar-chips{flex-basis:100%;margin:0 0 8px;padding-left:2px}
   .disk-page .dk-newfolder-btn{display:none}
-  .dk-hero-note{display:none}
   .dk-head-tools{flex-wrap:nowrap}
   .dk-head-tools .dk-modes .icon-btn{width:30px}
   .dk-upload-btn{padding:8px 14px}
@@ -405,7 +375,6 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
   .dk-node-more,.dk-more,.dk-check{opacity:1}
 }
 @media (prefers-reduced-motion:reduce){
-  .dk-hero-fig,.dk-file,.dk-thumb img,.dk-node-toggle svg,.dk-side,.dk-view-stage img,.dk-up-bar i{transition:none}
   .dk-thumb.loading,.dk-skel .dk-thumb,.dk-skel .dk-meta i,.dk-skel-line,.dk-dropzone svg,.dk-file.flash,.dk-menu,.dk-selbar,.dk-info,.dk-view,.dk-up,.dk-filters-pop{animation:none}
 }
 /* the file badge drawn in disk-icons.ts */
@@ -417,19 +386,15 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dk-badge .dk-label{fill:var(--k)}
 .dk-badge .dk-ext{fill:#fff;font:700 6.2px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.02em}
 
-/* ---------- «Жизнь документов»: full-width block under the files, no inner scrollbars.
+/* ---------- «Жизнь документов»: the right column on wide screens, under the files otherwise; no inner scrollbars.
    Every tile, tab and highlight takes its group colour as --g; the charts come from life-charts.ts. */
-.dkl{display:flex;flex-direction:column;gap:14px;min-width:0;scroll-margin-top:16px;container-type:inline-size}
+.dkl{display:flex;flex-direction:column;gap:20px;min-width:0;scroll-margin-top:16px;container-type:inline-size}
 .dkl-head{position:relative;overflow:hidden;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:18px 20px;border-radius:var(--r-xl);
   border:1px solid var(--line-brand);background:radial-gradient(90% 160% at 0% 0%,color-mix(in srgb,var(--brand) 16%,transparent),transparent 60%),var(--surface)}
 .dkl-head::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(115deg,transparent 35%,color-mix(in srgb,#fff 6%,transparent) 50%,transparent 65%);background-size:250% 100%;animation:life-sheen 7s ease-in-out infinite}
 .dkl-mark{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:var(--r-lg);color:var(--brand);background:linear-gradient(135deg,color-mix(in srgb,var(--brand) 26%,transparent),color-mix(in srgb,var(--brand) 6%,transparent));box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--brand) 30%,transparent)}
-.dkl-title{flex:1 1 280px;min-width:0}
+.dkl-title{flex:1 1 auto;min-width:0}
 .dkl-title h2{display:flex;align-items:center;gap:10px;margin:0;font-size:var(--fs-lg);letter-spacing:-.01em}
-.dkl-sub{margin:4px 0 0;color:var(--muted);font-size:var(--fs-sm);line-height:1.4}
-.dkl-search{flex:0 1 300px;min-width:180px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--muted);transition:border-color var(--dur-fast),box-shadow var(--dur-fast)}
-.dkl-search:focus-within{border-color:color-mix(in srgb,var(--brand) 55%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--brand) 14%,transparent)}
-.dkl-search-input{flex:1;min-width:0;min-height:38px;border:0;background:transparent;color:var(--fg);font:inherit;font-size:var(--fs-md);outline:0}
 .dkl-refresh{flex:none;width:38px;height:38px;border:1px solid var(--line);border-radius:999px}
 .dkl-refresh.spin svg{animation:upd-turn .9s linear infinite}
 
@@ -443,8 +408,8 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dkl-ic.lg{width:48px;height:48px;border-radius:var(--r-lg)}
 
 /* highlights */
-.dkl-hl{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-.dkl-hl-card{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;padding:14px;border-radius:var(--r-lg);border:1px solid var(--line);
+.dkl-hl{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px}
+.dkl-hl-card{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:16px;border-radius:var(--r-lg);border:1px solid var(--line);
   background:radial-gradient(120% 90% at 100% 0%,color-mix(in srgb,var(--g) 14%,transparent),transparent 60%),var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer;
   transition:transform var(--dur-fast),border-color var(--dur-fast),box-shadow var(--dur-fast);animation:life-rise .45s calc(var(--i)*50ms) ease backwards}
 .dkl-hl-card:hover,.dkl-hl-card:focus-visible{transform:translateY(-2px);border-color:color-mix(in srgb,var(--g) 55%,var(--line));box-shadow:0 14px 28px -18px var(--g);outline:none}
@@ -456,25 +421,26 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dkl-hl-chart{align-self:stretch;margin-top:auto;padding-top:8px}
 .dkl-hl-chart .life-ring{position:absolute;top:14px;right:14px}
 
-/* group tabs: a neat grid, each with a thin bar of figures that have data */
-.dkl-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-.dkl-tab{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;min-width:0;padding:9px 10px 11px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast)}
-.dkl-tab:hover{border-color:color-mix(in srgb,var(--g) 45%,var(--line));background:color-mix(in srgb,var(--g) 6%,var(--surface))}
-.dkl-tab:hover .dkl-ic{transform:scale(1.08)}
-.dkl-tab[aria-selected=true]{border-color:var(--g);background:color-mix(in srgb,var(--g) 12%,var(--surface));box-shadow:0 0 0 1px var(--g) inset}
-.dkl-tab-text{display:flex;flex-direction:column;min-width:0}
-.dkl-tab-text b{font-size:var(--fs-sm);font-weight:600;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.dkl-tab-text small{font-size:var(--fs-xs);color:var(--muted)}
-.dkl-tab-bar{position:absolute;left:10px;right:10px;bottom:5px;height:3px;border-radius:3px;background:color-mix(in srgb,var(--fg) 8%,transparent);overflow:hidden}
-.dkl-tab-bar::after{content:"";position:absolute;inset:0;width:calc(var(--p)*1%);border-radius:inherit;background:var(--g)}
+/* group tabs: fifteen glyphs, each in a ring that fills with the share of figures that have data; the name below */
+.dkl-tabs{display:grid;grid-template-columns:repeat(15,minmax(0,1fr));gap:8px}
+.dkl-tab{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0;padding:10px 4px 9px;border:1px solid transparent;border-radius:var(--r-lg);background:transparent;color:inherit;font:inherit;text-align:center;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast)}
+.dkl-tab:hover{background:color-mix(in srgb,var(--g) 8%,transparent)}
+.dkl-tab:hover .dkl-ic{transform:rotate(-8deg) scale(1.08)}
+.dkl-tab:focus-visible{outline:none;border-color:var(--g)}
+.dkl-tab[aria-selected=true]{border-color:color-mix(in srgb,var(--g) 55%,transparent);background:color-mix(in srgb,var(--g) 13%,var(--surface))}
+.dkl-tab-ring{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--g) calc(var(--p)*1%),color-mix(in srgb,var(--fg) 10%,transparent) 0)}
+.dkl-tab-ring .dkl-ic{width:40px;height:40px;border-radius:50%;
+  background:linear-gradient(140deg,color-mix(in srgb,var(--g) 24%,transparent),color-mix(in srgb,var(--g) 6%,transparent)),var(--surface);box-shadow:none}
+.dkl-tab-name{font-size:var(--fs-xs);font-weight:600;line-height:1.25;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.5em}
+.dkl-tab:hover .dkl-tab-name,.dkl-tab[aria-selected=true] .dkl-tab-name{color:var(--fg)}
 
-.dkl-group-head{display:flex;align-items:center;gap:12px;padding:4px 2px 0}
+.dkl-group-head{display:flex;align-items:center;gap:12px;padding:2px}
 .dkl-group-head h3{margin:0;font-size:var(--fs-base)}
 .dkl-group-head p{margin:2px 0 0;color:var(--muted);font-size:var(--fs-sm)}
 
 /* tiles */
-.dkl-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
-.dkl-tile{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:6px;min-width:0;padding:14px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--surface);
+.dkl-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
+.dkl-tile{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:10px;min-width:0;padding:18px 16px;border-radius:var(--r-lg);border:1px solid var(--line);background:var(--surface);
   transition:transform var(--dur-fast),border-color var(--dur-fast),box-shadow var(--dur-fast);animation:life-rise .4s calc(var(--i)*35ms) ease backwards}
 .dkl-tile::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.55;transition:opacity var(--dur-fast);background:radial-gradient(110% 70% at 0% 0%,color-mix(in srgb,var(--g) 13%,transparent),transparent 60%)}
 .dkl-tile:hover,.dkl-tile:focus-visible{transform:translateY(-3px);border-color:color-mix(in srgb,var(--g) 55%,var(--line));box-shadow:0 14px 28px -18px var(--g);outline:none}
@@ -496,47 +462,41 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dkl-tile.is-empty::before{display:none}
 .dkl-tile.is-empty .dkl-ic{filter:grayscale(1);opacity:.55}
 .dkl-tile.is-empty .dkl-value{color:var(--muted)}
-.dkl-skeleton{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.dkl-skeleton{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
 .dkl-skeleton i{height:150px;border-radius:var(--r-lg);background:linear-gradient(90deg,var(--hover),color-mix(in srgb,var(--fg) 6%,transparent),var(--hover));background-size:200% 100%;animation:dk-shimmer 1.2s linear infinite}
 .dkl-empty{display:flex;align-items:center;gap:12px;padding:18px}
 .dkl-empty p{margin:0;color:var(--muted)}
 
 /* ten tiles a group: rows of five, two or one, never a lonely last row */
-@container (max-width:1100px){.dkl-hl,.dkl-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@container (max-width:1100px){.dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr))}.dkl-tabs{grid-template-columns:repeat(5,minmax(0,1fr))}}
 @container (max-width:980px){.dkl-grid,.dkl-skeleton{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* the narrow right column: a compact head, highlights without charts, two tiles a row */
 @container (max-width:520px){
-  .dkl{gap:10px}
-  .dkl-head{padding:14px 58px 14px 14px;gap:10px}
+  .dkl{gap:16px}
+  .dkl-head{padding:14px;gap:12px}
   .dkl-mark{width:40px;height:40px}
-  .dkl-refresh{position:absolute;top:14px;right:14px}
-  .dkl-search{flex:1 1 100%;min-width:0}
-  .dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-  .dkl-hl-card{padding:10px;gap:1px}
+  .dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .dkl-hl-card{padding:12px;gap:2px}
   .dkl-hl-card .dkl-ic{width:30px;height:30px;border-radius:10px;margin-bottom:4px}
   .dkl-hl-card .dkl-ic svg{width:17px;height:17px}
   .dkl-hl-card b{font-size:var(--fs-base)}
   .dkl-hl-chart{display:none}
-  .dkl-tile{padding:12px}
+  .dkl-grid{gap:12px}
+  .dkl-tile{padding:14px;gap:8px}
   .dkl-tile .dkl-ic{width:34px;height:34px}
   .dkl-value{font-size:var(--fs-base)}
-  /* fifteen groups as a 5×3 board of coloured glyphs; the open group's name is right below */
-  .dkl-tabs{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
-  .dkl-tab{justify-content:center;padding:7px 4px 11px}
-  .dkl-tab .dkl-ic{display:grid}
-  .dkl-tab-text{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .dkl-tabs{gap:4px}
+  .dkl-tab{padding:8px 2px 7px;gap:6px}
+  .dkl-tab-ring{width:44px;height:44px}
+  .dkl-tab-ring .dkl-ic{width:37px;height:37px}
 }
 @container (max-width:380px){.dkl-grid,.dkl-skeleton{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:640px){
-  .dkl-head{padding:14px 58px 14px 14px}
-  .dkl-refresh{position:absolute;top:14px;right:14px}
-  .dkl-search{flex:1 1 100%;order:3}
-  .dkl-hl{gap:8px}
+  .dkl-head{padding:14px}
   .dkl-hl-card{padding:12px}
   .dkl-hl-card b{font-size:var(--fs-lg)}
-  .dkl-tabs{gap:6px}
 }
 @media (prefers-reduced-motion:reduce){
   .dkl-head::after,.dkl-hl-card,.dkl-tile,.dkl-skeleton i{animation:none}
-  .dkl-ic,.dkl-tile,.dkl-hl-card{transition:none}
+  .dkl-ic,.dkl-tile,.dkl-hl-card,.dkl-tab{transition:none}
 }
