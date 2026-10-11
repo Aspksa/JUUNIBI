@@ -26,6 +26,8 @@ jobs:
       - name: Установка зависимостей
         id: install
         run: npm ci
+      - name: Автоматический аудит инструментов и исполнителя
+        run: node --test scripts/ai-quality-audit.test.mjs
       - name: Проверка TypeScript
         id: types
         run: npm run typecheck

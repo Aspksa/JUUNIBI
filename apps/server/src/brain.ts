@@ -248,6 +248,8 @@ export class BrainCore {
     const data = JSON.stringify({ mode: this.mode, plans: this.plans, logs: this.logs, decisions: this.decisions.snapshot(), revisions: this.revisions.snapshot(), toolObservations: this.toolObservations, recoveryTrials: this.recoveryTrials.snapshot() });
     this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.storage!.save(data));
   }
+  /** Surface a failed save instead of silently treating in-memory data as durable. */
+  async verifyPersistence() { await this.flush(); return { persisted: true as const }; }
   constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
   async load() {
     const raw = await this.storage?.load();
@@ -301,7 +303,10 @@ export class BrainCore {
     try {
       const result = action === "list_modules" ? readModules() : await searchMemory(step.title);
       const serialized = JSON.stringify(result);
-      if (serialized === undefined || serialized === "null") throw new Error("Инструмент не вернул проверяемый результат");
+      if (serialized === undefined || serialized === "null" ||
+        (action === "list_modules" && !Array.isArray(result)) ||
+        (action === "search_memory" && (!Array.isArray(result) || !result.every(x => typeof x === "string"))))
+        throw new Error("Инструмент не вернул проверяемый результат");
       const summary = serialized.slice(0, 2000);
       this.updateStep(planId, stepId, "done");
       this.logs.unshift({ at: new Date().toISOString(), planId, stepId, outcome: "verified: " + action + ": " + summary });
