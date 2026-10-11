@@ -1,3 +1,4 @@
+import { diskChronicles } from "./disk-chronicles";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
@@ -38,6 +39,7 @@ export class LocalDisk {
     });
     return this.writes;
   }
+  chronicles(){return diskChronicles(this.entries,this.folders);}
   list(folder?:string){
     const f=folder===undefined?undefined:validFolder(folder);
     return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0),maxFileBytes:LIMIT};
