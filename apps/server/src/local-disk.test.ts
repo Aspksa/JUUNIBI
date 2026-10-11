@@ -89,4 +89,18 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("renames a nested folder and updates file paths without losing bytes",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-rename-"));
+   try {
+     const disk=new LocalDisk(dir);
+     await disk.createFolder("Проекты");
+     await disk.createFolder("Проекты/Старое");
+     const e=await disk.upload("note.txt","Проекты/Старое",Buffer.from("data").toString("base64"));
+     await disk.renameFolder("Проекты/Старое","Проекты/Новое");
+     expect(disk.list("Проекты/Новое").files[0]?.id).toBe(e.id);
+     expect(Buffer.from((await disk.download(e.id)).base64,"base64").toString()).toBe("data");
+     await expect(disk.renameFolder("Проекты","Проекты/Новое/Сломано")).rejects.toMatchObject({status:400});
+   } finally {await rm(dir,{recursive:true,force:true});}
+ });
+
 });

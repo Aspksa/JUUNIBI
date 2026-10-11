@@ -167,6 +167,7 @@ export const api = {
   diskChronicles: () => attemptAsync(()=>call<DiskChronicles>("/api/disk/chronicles")),
   diskList: (folder?:string) => attemptAsync(()=>call<DiskListing>("/api/disk"+(folder!==undefined?"?folder="+encodeURIComponent(folder):""))),
   diskFolder: (name:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders",post({name}))),
+  diskRenameFolder: (from:string,to:string) => attemptAsync(()=>call<{name:string}>("/api/disk/folders/rename",post({from,to}))),
   diskUpload: (name:string,folder:string,base64:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files",post({name,folder,base64}))),
   diskGet: (id:string) => attemptAsync(()=>call<{entry:DiskFile;base64:string}>("/api/disk/files/"+encodeURIComponent(id))),
   diskRename: (id:string,name:string) => attemptAsync(()=>call<DiskFile>("/api/disk/files/"+encodeURIComponent(id),{method:"PATCH",body:JSON.stringify({name})})),
