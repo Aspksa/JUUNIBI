@@ -621,7 +621,7 @@ export class LocalDisk {
     this.entries=this.entries.filter(x=>x.id!==id);
     // Persist removal before deleting bytes: failed saves must never resurrect missing objects.
     await this.save();
-    for(const object of objects)await rm(this.objectPath(object),{force:true});
+    for(const object of objects)await rm(this.objectPath(object),{force:true}).catch(()=>{});
     return {ok:true};
   }
   /** Validate every target first, then persist one batch mutation. */
@@ -693,7 +693,7 @@ export class LocalDisk {
     this.deletedFolders=this.deletedFolders.filter(d=>(olderThanMs!==undefined&&now-new Date(d.at).getTime()<olderThanMs)||this.entries.some(e=>e.deletedAt&&(e.folder===d.root||e.folder.startsWith(d.root+"/"))));
     await this.save();
     // Unreferenced bytes can be cleaned later if unlink fails; the catalog stays valid.
-    for(const object of objects)await rm(this.objectPath(object),{force:true});
+    for(const object of objects)await rm(this.objectPath(object),{force:true}).catch(()=>{});
     return {purged:doomed.length,bytes};
   }
   /** Auto-clean on the owner's schedule; cheap when nothing is due. */
