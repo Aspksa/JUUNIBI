@@ -69,6 +69,11 @@ const ICONS = {
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
   volume: "M4 9v6h4l5 4V5L8 9zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12",
   file: "M6 3h8l4 4v14H6zM14 3v4h4",
+  "folder-open": "M3 8V5h6l2 2h9v4M3 11h19l-3 9H5z",
+  image: "M3 4h18v16H3zM7 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM3 17l6-6 4 4 3-3 5 5",
+  "file-text": "M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6",
+  "file-code": "M6 3h8l4 4v14H6zM14 3v4h4M11 12l-2 2 2 2M14 12l2 2-2 2",
+
   help: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01",
   view: "M4 6h16M7 12h10M10 18h4",
   download: "M12 4v12m0 0-4-4m4 4 4-4M5 20h14",
