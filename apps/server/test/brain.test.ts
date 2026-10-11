@@ -174,6 +174,21 @@ describe("BrainCore", () => {
     expect(brain.status().plans[0]?.steps[0]?.status).toBe("failed");
     expect(brain.history().some(entry => entry.outcome.startsWith("verified:"))).toBe(false);
   });
+  it("does not persist private tool results in the Brain audit trail", async () => {
+    let saved: string | null = null;
+    const store = { load: async () => saved, save: async (data: string) => { saved = data; } };
+    const brain = new BrainCore(() => true, store);
+    const plan = brain.plan("Find memory", ["lookup"]);
+    const privateValue = "PRIVATE_TEST_CONTENT_NEVER_LOG_THIS";
+    const output = await brain.executeReadStep(plan.id, plan.steps[0]!.id, "search_memory",
+      () => [], async () => [privateValue]);
+    expect(output.result).toEqual([privateValue]);
+    await brain.flush();
+    expect(brain.history().some(event => event.outcome.startsWith("verified:"))).toBe(true);
+    expect(JSON.stringify(brain.history())).not.toContain(privateValue);
+    expect(saved).not.toContain(privateValue);
+    expect(JSON.stringify(brain.history())).toContain("items=1");
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
