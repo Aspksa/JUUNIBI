@@ -264,6 +264,12 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     }),
   });
   assistant.tools.register({
+    name: "brain_review_live_plan", risk: "read",
+    description: "Проанализировать сохранённый план на основании реальных статусов шагов и истории результатов инструментов. Не выполняет действия и не доказывает причинность.",
+    parameters: { type: "object", properties: { planId: {type:"string"} }, required:["planId"] },
+    run: (args) => brain.reviewLivePlan(typeof args.planId === "string" ? args.planId : ""),
+  });
+  assistant.tools.register({
     name: "brain_review_six_skills", risk: "read",
     description: "Проверить шесть когнитивных аспектов входных данных: причины, альтернативы, доказательства, проверенный опыт, пересмотр плана и пробелы знаний. Только анализ, не выполнение.",
     parameters: { type: "object", properties: {
