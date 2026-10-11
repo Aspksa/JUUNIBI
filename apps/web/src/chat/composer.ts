@@ -1,6 +1,6 @@
 import { attempt } from "@juunibi/core";
 import { el, icon, iconButton } from "../dom";
-import { MAX_FILE_BYTES, checkFile, formatBytes, looksBinary, parseCommand, suggestCommands, type Attachment, type Command } from "./helpers";
+import { MAX_FILES, MAX_FILE_BYTES, MAX_TOTAL_BYTES, checkFile, formatBytes, looksBinary, parseCommand, suggestCommands, type Attachment, type Command } from "./helpers";
 import { Dictation, dictationSupported } from "./voice";
 
 const DRAFTS_KEY = "juunibi:drafts:v1";
@@ -177,6 +177,20 @@ export class Composer {
     this.renderChips(); this.syncSend();
     if (rejected.length) this.say("Не прикреплено — " + rejected.join("; "));
     else if (list.length) this.say(`Файлов прикреплено: ${this.files.length}. Лимит ${formatBytes(MAX_FILE_BYTES)} на файл.`);
+  }
+  /** Files already read elsewhere (from «Диск»): same limits as dropped files; returns what did not fit. */
+  addTexts(list: Attachment[]): string[] {
+    const rejected: string[] = [];
+    for (const f of list) {
+      if (this.files.length >= MAX_FILES) { rejected.push(`${f.name}: не больше ${MAX_FILES} файлов`); continue; }
+      if (this.files.reduce((n, a) => n + a.size, 0) + f.size > MAX_TOTAL_BYTES) { rejected.push(`${f.name}: суммарно больше ${formatBytes(MAX_TOTAL_BYTES)}`); continue; }
+      if (this.files.some((a) => a.name === f.name && a.size === f.size)) continue;
+      this.files = [...this.files, f];
+    }
+    this.renderChips(); this.syncSend();
+    if (rejected.length) this.say("Не прикреплено — " + rejected.join("; "));
+    this.input.focus();
+    return rejected;
   }
   private renderChips() {
     this.chips.hidden = this.files.length === 0;

@@ -37,11 +37,27 @@ export interface Note {
   statusAt?: string;
   /** The place on the board within its column, set by dragging (lower first; unset after the ranked ones). */
   rank?: number;
+  /** Files from «Диск» attached to the to-do (id and the name at the time, so a missing file still reads well). */
+  files?: FileLink[];
+}
+export interface FileLink { id: string; name: string }
+const MAX_LINKS = 20;
+/** Attached files from a request or the saved file: distinct ids, short names, at most MAX_LINKS. */
+export function cleanLinks(v: unknown): FileLink[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: FileLink[] = [];
+  for (const x of v) {
+    const o = x as Partial<FileLink> | null;
+    if (!o || typeof o.id !== "string" || !/^[0-9a-f-]{36}$/.test(o.id) || typeof o.name !== "string" || !o.name.trim() || out.some((l) => l.id === o.id)) continue;
+    out.push({ id: o.id, name: o.name.trim().slice(0, 180) });
+    if (out.length >= MAX_LINKS) break;
+  }
+  return out.length ? out : undefined;
 }
 export type Area = "work" | "personal";
 export type TaskStatus = "doing" | "waiting";
 /** A project's look and plan: colour, deadline and whether it is work. Projects themselves are the `project` names of to-dos. */
-export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area }
+export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area; files?: FileLink[] }
 export const PROJECT_COLORS = ["gold", "blue", "green", "violet", "red", "teal", "orange", "gray"];
 /** A saved quick-entry line («отчёт по пятницам в 17:00 #работа»), added again with one click. */
 export interface TaskTemplate { id: string; text: string }
@@ -156,6 +172,8 @@ function cleanProject(v: unknown): ProjectMeta | null {
   if (typeof o.color === "string" && PROJECT_COLORS.includes(o.color)) p.color = o.color;
   if (typeof o.dueAt === "string" && DAY_RE.test(o.dueAt)) p.dueAt = o.dueAt;
   if (o.area === "work" || o.area === "personal") p.area = o.area;
+  const files = cleanLinks(o.files);
+  if (files) p.files = files;
   return p;
 }
 const bad = (message: string, status = 400) => Object.assign(new Error(message), { status });
@@ -283,6 +301,7 @@ function cleanNote(n: Note): Note {
   if (c.meeting !== undefined && c.meeting !== true) delete c.meeting;
   if (c.statusAt !== undefined && (typeof c.statusAt !== "string" || !Number.isFinite(Date.parse(c.statusAt)))) delete c.statusAt;
   if (c.rank !== undefined && !(Number.isInteger(c.rank) && c.rank >= 0 && c.rank < 100_000)) delete c.rank;
+  if (c.files !== undefined) { const f = cleanLinks(c.files); if (f) c.files = f; else delete c.files; }
   if (c.kind === "note") { delete c.area; delete c.status; delete c.meeting; delete c.priority; delete c.dueAt; delete c.parentId; delete c.estimateMinutes; delete c.repeat; delete c.repeatDay; delete c.rolled; delete c.streak; delete c.ruled; delete c.statusAt; delete c.rank; }
   return c;
 }
@@ -468,8 +487,9 @@ export class Organizer {
     if ("color" in patch) { if (patch.color === null || patch.color === "") delete next.color; else if (typeof patch.color === "string" && PROJECT_COLORS.includes(patch.color)) next.color = patch.color; else throw bad("Цвет: " + PROJECT_COLORS.join(", ")); }
     if ("dueAt" in patch) { if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt; else if (typeof patch.dueAt === "string" && DAY_RE.test(patch.dueAt)) next.dueAt = patch.dueAt; else throw bad("Срок проекта: YYYY-MM-DD"); }
     if ("area" in patch) { if (patch.area === null || patch.area === "") delete next.area; else if (patch.area === "work" || patch.area === "personal") next.area = patch.area; else throw bad("Сфера: work или personal"); }
+    if ("files" in patch) { if (patch.files !== null && !Array.isArray(patch.files)) throw bad("Файлы: список"); const f = cleanLinks(patch.files); if (f) next.files = f; else delete next.files; }
     this.projects = this.projects.filter((p) => p !== cur);
-    if (next.color || next.dueAt || next.area) {
+    if (next.color || next.dueAt || next.area || next.files) {
       if (this.projects.length >= MAX_PROJECTS) throw bad(`Достигнут предел: ${MAX_PROJECTS} проектов`, 409);
       this.projects.push(next);
     }
@@ -607,6 +627,11 @@ export class Organizer {
     if ((next.waitingFor || next.followUpAt) && !("status" in patch)) next.status = "waiting";
     if (next.status !== "waiting") { delete next.waitingFor; delete next.followUpAt; delete next.followedUp; }
     if ((next.status ?? null) !== (n.status ?? null)) { if (next.status) next.statusAt = new Date(this.now()).toISOString(); else delete next.statusAt; }
+    if ("files" in patch) {
+      if (patch.files !== null && !Array.isArray(patch.files)) throw bad("Файлы: список");
+      const f = cleanLinks(patch.files);
+      if (f) next.files = f; else delete next.files;
+    }
     if ("meeting" in patch) {
       if (patch.meeting === true) next.meeting = true;
       else if (patch.meeting === false || patch.meeting === null) delete next.meeting;
@@ -691,7 +716,7 @@ export class Organizer {
         const copy: Note = { id: randomUUID(), kind: "todo", text: n.text, done: false, createdAt: new Date(now).toISOString(), dueAt: new Date(nextAt).toISOString(), repeat: n.repeat, streak,
           ...(n.repeatDay ? { repeatDay: n.repeatDay } : {}), ...(n.priority ? { priority: n.priority } : {}), ...(n.project ? { project: n.project } : {}),
           ...(n.estimateMinutes ? { estimateMinutes: n.estimateMinutes } : {}), ...(n.parentId ? { parentId: n.parentId } : {}),
-          ...(n.area ? { area: n.area } : {}), ...(n.meeting ? { meeting: true as const } : {}) };
+          ...(n.area ? { area: n.area } : {}), ...(n.meeting ? { meeting: true as const } : {}), ...(n.files ? { files: n.files.map((f) => ({ ...f })) } : {}) };
         this.notes.push(copy);
         n.nextId = copy.id;
         n.nextSnapshot = JSON.stringify(copy);

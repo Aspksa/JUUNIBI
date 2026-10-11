@@ -104,6 +104,7 @@ const STEP_LABELS: Record<string, string> = { thinking: "Обдумываю от
   list_modules: "Смотрю модули проекта", search_memory: "Ищу в памяти", remember: "Предлагаю запомнить", get_time: "Узнаю время",
   list_files: "Смотрю папку", read_file: "Читаю файл", search_files: "Ищу в файлах", write_file: "Записываю файл",
   web_search: "Ищу в интернете", web_open: "Читаю страницу", wiki_search: "Ищу в Википедии", wiki_read: "Читаю статью", list_notes: "Смотрю заметки", add_note: "Добавляю заметку", complete_todo: "Отмечаю дело",
+  disk_find: "Ищу на Диске", disk_folders: "Смотрю папки Диска", disk_read: "Читаю файл с Диска", disk_save: "Сохраняю на Диск",
   list_reminders: "Смотрю напоминания", add_reminder: "Ставлю напоминание", cancel_reminder: "Отменяю напоминание", daily_brief: "Собираю сводку дня",
 };
 export const stepLabel = (name: string) => STEP_LABELS[name] ?? `Использую «${name}»`;

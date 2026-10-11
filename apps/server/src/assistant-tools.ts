@@ -6,6 +6,7 @@ import type { Brief, Note, Organizer } from "./organizer";
 import { listDir, readText, searchText, writeText } from "./safe-files";
 import { wikiRead, wikiSearch } from "./reference";
 import { OpenableUrls, readPage, webSearch } from "./web-access";
+import type { LocalDisk } from "./local-disk";
 
 export interface ExtraToolDeps {
   settings: () => AssistantSettings;
@@ -16,6 +17,8 @@ export interface ExtraToolDeps {
   fetcher?: typeof fetch;
   /** Pages the assistant may open: links from the owner's messages and from search results. */
   openable?: OpenableUrls;
+  /** «Диск»: the chat finds, reads and saves files there. */
+  disk?: LocalDisk;
   /** Tests: replace the internet search and page reading. */
   web?: { search: typeof webSearch; read: typeof readPage };
 }
@@ -55,6 +58,7 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
       },
       parameters: { type: "object", properties: { path: str("Путь внутри папки, например заметки/план.md"), content: str("Полный текст файла", { maxLength: 200000 }) }, required: ["path", "content"] },
       run: (a) => writeText(root(), a.path, a.content, d.backupDir) },
+    ...(d.disk ? diskTools(d.disk) : []),
     { name: "web_search", risk: "read", description: "Найти в интернете свежие сведения: новости, цены, расписания, документацию, всё, чего ты можешь не знать. Возвращает заголовки, ссылки и короткие фрагменты; чтобы прочитать страницу целиком, вызови web_open с её url. В ответе всегда указывай ссылки на источники." + DATA,
       parameters: { type: "object", properties: { query: str("Поисковый запрос, лучше коротко и по существу", { minLength: 2, maxLength: 300 }) }, required: ["query"] },
       run: async (a) => {
@@ -116,6 +120,46 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
       parameters: { type: "object", properties: {} }, run: () => d.brief() },
   ];
 }
+/** The owner's «Диск» for the chat: find a file, read it, save a text there. Files never leave the computer except as the text read for an answer. */
+function diskTools(disk: LocalDisk): Tool[] {
+  const brief = (e: { id: string; name: string; folder: string; size: number; uploadedAt: string; tags?: string[]; note?: string; favorite?: boolean }) => ({
+    id: e.id, name: e.name, folder: e.folder || "Корень", size: humanSize(e.size), uploaded: e.uploadedAt.slice(0, 10),
+    ...(e.tags?.length ? { tags: e.tags } : {}), ...(e.note ? { note: e.note } : {}), ...(e.favorite ? { favorite: true } : {}) });
+  return [
+    { name: "disk_find", risk: "read", description: "Найти файлы на «Диске» владельца (его личное хранилище в JUUNIBI) по словам из названия, меток, описания, папки и по тексту внутри документов (txt, md, PDF, Word, Excel). Без запроса — последние загруженные. Возвращает id для disk_read." + DATA,
+      parameters: { type: "object", properties: { query: str("Слова для поиска, например «договор аренды» или «счёт май»; пусто — последние файлы", { maxLength: 160 }), folder: str("Искать только в этой папке (и вложенных), например «Работа/Отчёты»") } },
+      run: async (a) => {
+        const list = disk.list().files;
+        const folder = typeof a.folder === "string" ? a.folder.trim().replace(/^\/+|\/+$/g, "") : "";
+        const inFolder = list.filter((f) => !folder || f.folder.toLowerCase() === folder.toLowerCase() || f.folder.toLowerCase().startsWith(folder.toLowerCase() + "/"));
+        const q = typeof a.query === "string" ? a.query.trim().toLocaleLowerCase() : "";
+        if (!q) return { files: inFolder.slice(0, 20).map(brief), total: inFolder.length };
+        const words = q.split(/\s+/).filter(Boolean);
+        const byName = inFolder.filter((f) => { const hay = [f.name, f.folder, f.note ?? "", ...(f.tags ?? [])].join(" ").toLocaleLowerCase(); return words.every((w) => hay.includes(w)); });
+        const inside = q.length >= 2 ? new Set(await disk.searchContent(q).catch(() => [] as string[])) : new Set<string>();
+        const hits = [...byName, ...inFolder.filter((f) => inside.has(f.id) && !byName.includes(f))];
+        return hits.length ? { files: hits.slice(0, 30).map((f) => ({ ...brief(f), ...(inside.has(f.id) ? { matchInText: true } : {}) })), total: hits.length } : { files: [], hint: "Ничего не нашлось. Попробуйте другое слово или посмотрите disk_folders." };
+      } },
+    { name: "disk_folders", risk: "read", description: "Показать папки «Диска» владельца: сколько в каждой файлов и места." + DATA,
+      parameters: { type: "object", properties: {} },
+      run: () => {
+        const { folders, files, usedBytes } = disk.list();
+        const count = (f: string) => files.filter((x) => x.folder === f || x.folder.startsWith(f + "/"));
+        return { used: humanSize(usedBytes), files: files.length, folders: ["", ...folders].map((f) => { const inside = count(f); return { folder: f || "Корень", files: f ? inside.length : files.filter((x) => !x.folder).length, size: humanSize(inside.reduce((n, x) => n + x.size, 0)) }; }) };
+      } },
+    { name: "disk_read", risk: "read", description: "Прочитать текст файла с «Диска» по id из disk_find: txt, md, csv, json, PDF с текстовым слоем, Word, Excel, PowerPoint (до 60 000 символов). Называй файл по имени, когда отвечаешь по нему." + DATA,
+      parameters: { type: "object", properties: { id: str("id файла из disk_find") }, required: ["id"] },
+      run: async (a) => { const r = await disk.readText(String(a.id), 60_000); return { name: r.name, text: r.text, ...(r.truncated ? { truncated: true, note: "Показано начало файла" } : {}) }; } },
+    { name: "disk_save", risk: "write", description: "Сохранить текст файлом на «Диск» владельца («сохрани этот ответ в папку Работа»). Если в папке уже есть файл с таким именем, сохраняется его новая версия, прежняя остаётся в истории версий. Требует подтверждения.",
+      parameters: { type: "object", properties: {
+        name: str("Имя файла с расширением .md или .txt, например «План на неделю.md»", { maxLength: 120 }),
+        folder: str("Папка, например «Работа» или «Работа/Отчёты»; пусто — корень. Недостающие папки создаются"),
+        content: str("Полный текст файла", { maxLength: 200000 }) }, required: ["name", "content"] },
+      run: (a) => disk.saveText(String(a.name ?? ""), typeof a.folder === "string" ? a.folder : "", String(a.content ?? "")) },
+  ];
+}
+const humanSize = (b: number) => b < 1024 ? b + " Б" : b < 1048576 ? Math.round(b / 1024) + " КБ" : (b / 1048576).toFixed(1).replace(".", ",") + " МБ";
+
 export const defaultBackupDir = (dataDir: string) => path.join(dataDir, "file-backups");
 
 /** Dates as the owner sees them (local time) plus the raw ISO, so the model can both say and change them. */

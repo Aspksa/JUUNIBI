@@ -170,6 +170,7 @@ export function taskBoard(d: BoardDeps): () => HTMLElement {
         col === "doing" && statusDays(n) ? "в работе " + daysWord(statusDays(n)!) : null,
         n.followUpAt && !n.done ? "спросить " + d.when(n.followUpAt, false) : null,
         n.estimateMinutes && !n.meeting ? n.estimateMinutes + " мин" : null,
+        n.files?.length ? el("span", { cls: "tasks-file-count", title: n.files.map((f) => f.name).join("\n") }, icon("paperclip", 12), String(n.files.length)) : null,
         goal ? "◎ " + goal : n.project && B.lanes !== "project" ? "#" + n.project : null,
         n.done && n.completedAt ? "сделано " + d.when(n.completedAt, false) : null),
       stepsBtn,

@@ -32,17 +32,66 @@ export function kindOf(name: string): FileKind {
 export const THUMB_MAX = 12 * 1024 * 1024;
 export const hasThumb = (f: Pick<DiskFile, "name" | "size">) => /^(png|jpe?g|webp|gif|avif|bmp)$/.test(extOf(f.name)) && f.size <= THUMB_MAX;
 /** What the preview can show inside the page. */
-export function previewKind(name: string): "image" | "video" | "audio" | "pdf" | "text" | null {
+export type PreviewKind = "image" | "video" | "audio" | "pdf" | "text" | "markdown" | "table" | "office" | null;
+export function previewKind(name: string): PreviewKind {
   const ext = extOf(name), kind = kindOf(name);
+  if (/^(docx|xlsx|pptx|zip)$/.test(ext)) return "office";
+  if (/^(md|markdown)$/.test(ext)) return "markdown";
+  if (/^(csv|tsv)$/.test(ext)) return "table";
   if (kind === "image" && ext !== "svg" && ext !== "heic" && ext !== "ico") return "image";
   if (kind === "video" && /^(mp4|webm|mov|m4v)$/.test(ext)) return "video";
   if (kind === "audio" && ext !== "aac") return "audio";
   if (kind === "pdf") return "pdf";
-  if (/^(txt|md|log|csv|json)$/.test(ext)) return "text";
+  if (/^(txt|log|json|ini|cfg|conf|srt|xml|ya?ml)$/.test(ext)) return "text";
   return null;
 }
 /** Files JUUNIBI can read to answer a question about them (the server takes the text out). */
-export const askable = (name: string) => kindOf(name) === "pdf" || /^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|ya?ml|ini|py)$/.test(extOf(name));
+export const askable = (name: string) => kindOf(name) === "pdf" || /^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|ya?ml|ini|py|docx|xlsx|pptx)$/.test(extOf(name));
+/** Files whose picture preview the page draws once and the server keeps: the first page of a PDF, a frame of a video. */
+export const madeThumb = (f: Pick<DiskFile, "name" | "size">): "pdf" | "video" | null =>
+  kindOf(f.name) === "pdf" && f.size <= 40 * 1048576 ? "pdf" : /^(mp4|webm|mov|m4v)$/.test(extOf(f.name)) ? "video" : null;
+
+/** CSV or TSV text as rows: quotes, doubled quotes and line breaks inside quotes are handled; the separator is guessed. */
+export function parseCsv(text: string, maxRows = 500): string[][] {
+  const first = text.slice(0, 2000).split("\n")[0] ?? "";
+  const sep = ["\t", ";", ","].map((c) => [c, first.split(c).length] as const).sort((a, b) => b[1] - a[1])[0]![0];
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"' && !cell) quoted = true;
+    else if (c === sep) { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = ""; rows.push(row); row = [];
+      if (rows.length >= maxRows) return rows;
+    } else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+/** Files of a dropped folder: their place inside it becomes Disk folders under `base`. Unsafe characters turn into «_». */
+export function folderPlan(paths: string[], base: string): { folders: string[]; files: { index: number; folder: string }[]; skipped: number } {
+  const part = (p: string) => p.replace(/[^a-zA-Zа-яА-ЯёЁ0-9 _.-]/g, "_").replace(/^\.+$/, "_").trim().slice(0, 80) || "_";
+  const folders = new Set<string>(), files: { index: number; folder: string }[] = [];
+  let skipped = 0;
+  paths.forEach((p, index) => {
+    const segs = p.split("/").filter(Boolean);
+    const name = segs.pop() ?? "";
+    // system clutter from Windows and macOS is never worth uploading
+    if (!name || /^(thumbs\.db|desktop\.ini|\.ds_store)$/i.test(name) || segs.some((s) => s === "__MACOSX")) { skipped++; return; }
+    const folder = [base, ...segs.map(part)].filter(Boolean).join("/");
+    if (folder.length > 240) { skipped++; return; }
+    for (let i = 1, all = folder.split("/"); i <= all.length; i++) folders.add(all.slice(0, i).join("/"));
+    files.push({ index, folder });
+  });
+  return { folders: [...folders].filter(Boolean), files, skipped };
+}
 
 export function human(b: number): string {
   if (b < 1024) return b + " Б";

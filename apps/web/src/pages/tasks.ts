@@ -2,7 +2,7 @@
  * "Дела" — the start page: quick entry in one line, one timeline of to-dos and reminders by day,
  * notes; beside it (below on a phone) a calendar with the production calendar, the day plan and goals.
  */
-import { api, type Area, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type DayOff, type Note, type Organizer, type Reminder, type Repeat, type TaskStatus } from "../api";
+import { api, type Area, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type DayOff, type FileLink, type Note, type Organizer, type Reminder, type Repeat, type TaskStatus } from "../api";
 import { el, icon, iconButton } from "../dom";
 import { app, dismissSuggestion, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
@@ -11,6 +11,8 @@ import { achievementsPanel } from "./achievements-panel";
 import { forecastWeek, simulateWeek } from "./weekly-forecast";
 import { btn, chip, emptyState } from "./kit";
 import { openSheet, type Sheet } from "./sheet";
+import { openDiskLink } from "./disk-link";
+import { pickDiskFile } from "./disk-dialogs";
 import { isWorkday, nextHoliday, nextLongRest, nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import kitsuneUrl from "../assets/kitsune.webp";
 import { taskBoard } from "./tasks-board";
@@ -367,6 +369,21 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   /** Moves a to-do from the row's menu, the keyboard (T) or the bulk bar. */
   const moveTo = (n: Note, key: string | null) => key ? moveToDay(n, key) : void act(() => api.updateTask(n.id, { dueAt: null }), "Срок снят, дело — в «Без срока»");
   const markAct = <T extends HTMLElement>(b: T, a: string): T => { b.dataset.act = a; return b; };
+  /** Files from «Диск» on a to-do or a project: a click opens the file on the Disk. */
+  const fileChips = (files: FileLink[] | undefined, remove?: (id: string) => void): HTMLElement | null => files?.length ? el("span", { cls: "tasks-files" },
+    ...files.map((f) => {
+      const open = el("button", { type: "button", cls: "tasks-file", title: "Открыть на Диске: " + f.name }, icon("paperclip", 13), el("span", { textContent: f.name }));
+      open.addEventListener("click", (e) => { e.stopPropagation(); openDiskLink(f.id); });
+      return remove ? el("span", { cls: "tasks-file-wrap" }, open, iconButton("x", "Открепить " + f.name, () => remove(f.id), "icon-btn sm")) : open;
+    })) : null;
+  /** «Прикрепить файл с Диска»: picks a file and adds it to the to-do or the project. */
+  const attachFile = async (cur: FileLink[] | undefined, save: (files: FileLink[]) => Promise<{ ok: boolean; error?: { message: string } }>, what: string) => {
+    const list = await api.diskList();
+    if (!list.ok) { showToast(list.error.message); return; }
+    const f = await pickDiskFile({ files: list.value.files, title: "Файл с Диска для " + what, have: cur?.map((x) => x.id) ?? [] });
+    if (!f) return;
+    await act(() => save([...(cur ?? []).filter((x) => x.id !== f.id), { id: f.id, name: f.name }].slice(-20)), "Прикреплён «" + f.name + "»");
+  };
   const todoEditor = (n: Note): HTMLElement => {
     const input = el("input", { type: "text", maxLength: 500, value: n.text, cls: "mem-input", attrs: { "aria-label": "Текст дела" } });
     const due = el("input", { type: "datetime-local", cls: "mem-select", value: n.dueAt ? toLocalInput(n.dueAt) : "", attrs: { "aria-label": "Срок" } });
@@ -422,6 +439,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         el("label", {}, el("span", { textContent: "Входит в" }), parent),
         el("label", { cls: "tasks-editor-check" }, meeting, el("span", { textContent: "Встреча: блок в плане дня с начала на «Минут»" }))),
       waitRow,
+      el("div", { cls: "tasks-editor-files" }, el("span", { cls: "muted small", textContent: "Файлы" }),
+        fileChips(n.files, (id) => { const rest = (n.files ?? []).filter((x) => x.id !== id); void act(() => api.updateTask(n.id, { files: rest.length ? rest : null }), "Файл откреплён"); }) ?? el("span", { cls: "muted small", textContent: "нет" }),
+        btn("С Диска", () => void attachFile(n.files, (files) => api.updateTask(n.id, { files }), "дела"), { small: true, icon: "paperclip" })),
       el("div", { cls: "row" }, save, cancel)));
   };
   /** «Жду ответа…» from a row's menu opens the editor on the «от кого» field. */
@@ -487,7 +507,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         n.estimateMinutes && !n.meeting ? n.estimateMinutes + " мин" : null,
         mission ? "◎ " + mission : n.project ? el("span", { cls: "tasks-ptag" }, dot(projectsMeta().find((p) => p.name.toLowerCase() === n.project!.toLowerCase())?.color), "#" + n.project) : null,
         UI.area === "all" && n.area === "work" && !n.project ? "работа" : null,
-        n.done && n.completedAt ? "сделано " + whenLabel(n.completedAt, false) : null)),
+        n.done && n.completedAt ? "сделано " + whenLabel(n.completedAt, false) : null,
+        fileChips(n.files))),
       n.done ? null : star,
       n.done ? null : pop("calendar", "Перенести: " + n.text, [...moveTargets().map(({ key, label }) => [label, "calendar", () => moveTo(n, key)] as [string, Parameters<typeof icon>[0], () => void]),
         n.dueAt ? ["Без срока", "x", () => moveTo(n, null)] : null], "move"),
@@ -497,6 +518,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         n.status !== "waiting" ? ["Жду ответа…", "clock", () => { editing = n.id; editWaiting = true; render(); }] : null,
         n.status ? ["Надо сделать", "undo", () => void act(() => api.updateTask(n.id, { status: "todo" }), "Статус снят")] : null,
         areaOf(n, projectsMeta()) === "work" ? ["Это личное", "home", () => void act(() => api.updateTask(n.id, { area: "personal" }), "Перенесено в «Личное»")] : ["Это по работе", "folder", () => void act(() => api.updateTask(n.id, { area: "work" }), "Перенесено в «Работа»")],
+        ["Прикрепить файл с Диска", "paperclip", () => void attachFile(n.files, (files) => api.updateTask(n.id, { files }), "дела")],
         top ? ["Добавить шаг", "plus", () => { addingStep = n.id; render(); }] : null,
         top ? ["Разбить на шаги", "spark", () => void startSplit(n.id, n.text, render)] : null]),
       n.done ? null : markAct(iconButton("edit", "Изменить: " + n.text, () => { editing = n.id; render(); }, "icon-btn sm"), "edit"),
@@ -782,8 +804,11 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         el("span", { cls: "muted small", textContent: `сделано ${p.done} из ${p.total}` }), bar,
         p.dueAt ? el("span", { cls: "small" + (p.dueAt < localDay(new Date()) && p.open ? " late" : ""), textContent: "до " + dueText(p.dueAt) }) : null,
         el("span", { cls: "grow" }),
+        p.goal ? null : iconButton("paperclip", "Прикрепить файл с Диска к проекту", () => void attachFile(meta?.files, (files) => api.setProject(p.id, { files }), "проекта"), "icon-btn sm"),
         p.goal ? null : iconButton("settings", "Цвет, срок и сфера проекта", () => { projEdit = !projEdit; renderList(); }, "icon-btn sm" + (projEdit ? " on" : "")),
-        iconButton("x", "Показать все дела", () => pickProject(p.id), "icon-btn sm")), ...(editor ? [editor] : []));
+        iconButton("x", "Показать все дела", () => pickProject(p.id), "icon-btn sm")),
+        ...(meta?.files?.length && !p.goal ? [el("div", { cls: "tasks-projfiles" }, fileChips(meta.files, (id) => { const rest = meta.files!.filter((x) => x.id !== id); void act(() => api.setProject(p.id, { files: rest.length ? rest : null }), "Файл откреплён"); })!)] : []),
+        ...(editor ? [editor] : []));
       headInfo.hidden = false;
       return;
     }

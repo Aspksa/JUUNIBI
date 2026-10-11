@@ -737,7 +737,7 @@ async function probe(disk: LocalDisk, e: DiskEntry): Promise<{ doc?: DocProbe; i
     const key = "d:" + e.sha256 + ":" + ext;
     if (cache.has(key)) return { doc: cache.get(key) as DocProbe };
     const doc: DocProbe = { text: null };
-    if (ext === "pdf") { try { doc.pages = pdfPages(await readFile(disk.rawFile(e.id).path)); } catch { /* counted as unknown */ } }
+    if (ext === "pdf" && e.size <= 64 * 1048576) { try { doc.pages = pdfPages(await readFile(disk.rawFile(e.id).path)); } catch { /* counted as unknown */ } }
     try { const r = await disk.readText(e.id, 300 * 1024); doc.text = textStats(r.text, ext === "csv"); }
     catch (err) { if ((err as { status?: number }).status === 422 && ext === "pdf") doc.scan = true; else if ((err as { status?: number }).status !== 422) doc.unreadable = true; }
     if (ext === "pdf" && doc.text && doc.text.words < 5) { doc.scan = true; doc.text = null; }

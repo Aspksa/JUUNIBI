@@ -169,7 +169,8 @@ kernel.register({
       pageSig = sig;
       const page =
         BRAIN_TILE_ROUTES[s.route] ? brainPage({ open: BRAIN_TILE_ROUTES[s.route]!, onClosed: () => { if (routeFromHash() === s.route) go("brain"); } })
-        : s.route === "disk" ? diskPage({ ask: (name, text, question) => { const why = chatWin.askAbout(name, text, question); if (why) showToast(why); else openChat(); } })
+        : s.route === "disk" ? diskPage({ ask: (name, text, question) => { const why = chatWin.askAbout(name, text, question); if (why) showToast(why); else openChat(); },
+            attach: (files) => { const why = chatWin.attachTexts(files); if (!why) openChat(); return why; } })
         : s.route === "tasks" ? tasksPage({ go, openChat })
         : s.route === "achievements" ? achievementsPage({ back: () => go("tasks") })
         : s.route === "vault" ? vaultPage({ back: () => go("tasks") })
