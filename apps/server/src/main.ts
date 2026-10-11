@@ -264,6 +264,17 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     }),
   });
   assistant.tools.register({
+    name: "brain_agent_batch_42", risk: "write",
+    description: "Выполнить до пяти следующих безопасных шагов чтения сохранённого плана после разрешения владельца. Сохраняет результат каждого шага, не повторяет уже завершённое, останавливается при ошибке и требует отдельного подтверждения для нового пакета.",
+    parameters: { type: "object", properties: {
+      planId:{type:"string"}, maxSteps:{type:"number",minimum:1,maximum:5},
+      actions:{type:"array",items:{type:"string",enum:["list_modules","search_memory"]}}
+    },required:["planId","maxSteps","actions"] },
+    run: args => brain.executeAgentBatch(
+      typeof args.planId === "string" ? args.planId : "", args.actions, args.maxSteps,
+      () => moduleList(), async query => (await memory.search(query,8)).map(item=>item.text)),
+  });
+  assistant.tools.register({
     name: "brain_cognitive_cycle_preview", risk: "read",
     description: "Посмотреть единый цикл интеллекта по существующему плану: наблюдения, причины, следующий шаг, проверки, опыт, пробелы знаний и варианты восстановления. Ничего не исполняет.",
     parameters: { type: "object", properties: {planId: {type:"string"}}, required:["planId"] },
