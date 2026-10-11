@@ -526,6 +526,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           }
           if (req.method === "POST" && (p === "/api/organizer/evening" || p === "/api/organizer/week")) { const n = p.endsWith("evening") ? await o.runEvening(Date.now(), true) : await o.runWeek(Date.now(), true); return n ? send(res, 200, n) : send(res, 409, { error: "Уже готовится" }); }
           if (req.method === "GET" && p === "/api/organizer/log") return send(res, 200, o.listLog());
+          if (req.method === "GET" && p === "/api/organizer/evidence") return send(res, 200, o.automationEvidence());
           const lu = /^\/api\/organizer\/log\/([\w-]+)\/undo$/.exec(p);
           if (req.method === "POST" && lu) return send(res, 200, await o.undoLog(lu[1]!));
           if (req.method === "GET" && p === "/api/organizer/load") return send(res, 200, o.dayLoad(url.searchParams.get("day") ?? ""));
