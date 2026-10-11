@@ -909,7 +909,6 @@ p.ok{color:var(--ok)}p.bad{color:var(--danger)}
 .tasks-kinds button{padding:5px 12px;font-size:var(--fs-md)}
 .tasks-when{display:flex;gap:8px;flex-wrap:wrap}
 .tasks-when[hidden]{display:none}
-.tasks-page .mem-toolbar{margin:0 0 14px}
 .tasks-group{margin:0 0 18px}
 .tasks-group>h2{display:flex;align-items:baseline;gap:8px;font-size:var(--fs-sm);letter-spacing:.04em;text-transform:uppercase;margin:0 0 8px;color:var(--muted);font-weight:600}
 .tasks-group>h2 .n{font-variant-numeric:tabular-nums;font-weight:500;opacity:.75}
@@ -1699,8 +1698,6 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .org-row.picked{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,var(--bg))}
 .org-row.leaving{opacity:0;transform:translateX(18px);transition:opacity var(--dur) ease,transform var(--dur) ease}
 .tasks-text mark{background:color-mix(in srgb,var(--brand) 32%,transparent);color:inherit;border-radius:3px;padding:0 1px}
-.tasks-toolbar .tasks-projects{flex-basis:100%}
-.tasks-projects:empty,.tasks-projects[hidden]{display:none}
 .tasks-more{display:block;width:100%;margin:8px 0 0;padding:8px;border:1px dashed var(--line);border-radius:var(--r-md);background:none;color:var(--muted);font:inherit;font-size:var(--fs-md);cursor:pointer}
 .tasks-more:hover{color:var(--fg);border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
 .tasks-bulk-host{position:sticky;top:8px;z-index:20}

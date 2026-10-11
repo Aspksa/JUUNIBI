@@ -2,7 +2,7 @@
  * Quick entry for the "Дела" page: one line of Russian ("завтра в 10 позвонить маме", "каждый пн в 9 планёрка #работа !")
  * becomes a to-do, a reminder or a note with its date, time, repeat, importance and project. Pure and local: no model.
  */
-import type { Repeat } from "../api";
+import type { Area, Repeat } from "../api";
 
 export type QuickKind = "auto" | "todo" | "reminder" | "note";
 export interface QuickParsed {
@@ -14,6 +14,11 @@ export interface QuickParsed {
   repeat?: Repeat;
   priority?: "high";
   project?: string;
+  /** «по работе», «личное»: the sphere said in words. */
+  area?: Area;
+  /** A start and an end («с 10 до 11», «в 15 на час»): a meeting, a block in the day plan; `minutes` is its length. */
+  meeting?: boolean;
+  minutes?: number;
 }
 
 const MONTHS = ["январ", "феврал", "март", "апрел", "ма", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"];
@@ -28,6 +33,8 @@ const B = "(?<![\\p{L}\\p{N}])"; // word start (\b does not know Cyrillic)
 const E = "(?![\\p{L}\\p{N}])"; // word end
 const NUM_WORDS: Record<string, number> = { "один": 1, "одну": 1, "два": 2, "две": 2, "три": 3, "четыре": 4, "пять": 5, "пару": 2, "десять": 10, "пятнадцать": 15, "двадцать": 20, "тридцать": 30, "сорок": 40 };
 const weekday = (w: string) => WEEKDAYS.find(([re]) => re.test(w.toLowerCase()))?.[1];
+/** «по пятницам»: weekday stems in the dative plural, Monday first. */
+const PLURAL: [string, number][] = [["понедельникам", 1], ["вторникам", 2], ["средам", 3], ["четвергам", 4], ["пятницам", 5], ["субботам", 6], ["воскресеньям", 0]];
 
 /** Takes the first match of `re` out of the text and returns its groups. */
 function take(state: { s: string }, re: RegExp): RegExpExecArray | null {
@@ -46,18 +53,22 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
 
   const out: Omit<QuickParsed, "kind" | "text"> = {};
   if (take(st, R(`${B}(важно|срочно)${E}[!,.]?`)) || take(st, R(`(^|\\s)!{1,3}(?=\\s|$)`))) out.priority = "high";
-  const proj = take(st, R(`(^|\\s)#([\\p{L}\\p{N}_-]{1,40})`));
-  if (proj) out.project = proj[2]!;
+  const proj = take(st, R(`(^|\\s)#([\\p{L}\\p{N}_.-]{1,40})`));
+  if (proj) out.project = proj[2]!.replace(/[.]+$/, "");
+  if (take(st, R(`${B}(по\\s+работе|для\\s+работы|рабоч(ее|ий|ая)\\s+дело|рабочее)${E}[:,]?`))) out.area = "work";
+  else if (take(st, R(`${B}(личное|по\\s+дому|для\\s+себя)${E}[:,]?`))) out.area = "personal";
   const remind = !!take(st, R(`^\\s*(напомни(ть)?|напоминание)(\\s+мне)?[:,]?\\s*`));
 
   // ---- repeat
   let repeatWeekday: number | undefined;
+  let m0: RegExpExecArray | null;
   if (take(st, R(`${B}(каждый\\s+день|ежедневно)${E}`))) out.repeat = "daily";
   else if (take(st, R(`${B}(по\\s+будням|каждый\\s+будний\\s+день|в\\s+будни)${E}`))) out.repeat = "weekdays";
   else if (take(st, R(`${B}(каждую\\s+неделю|еженедельно)${E}`))) out.repeat = "weekly";
   else if (take(st, R(`${B}(каждый\\s+месяц|ежемесячно)${E}`))) out.repeat = "monthly";
   else if (take(st, R(`${B}каждые\\s+(3|три)\\s+дня${E}`))) out.repeat = "every3days";
   else if (take(st, R(`${B}(каждый\\s+год|ежегодно)${E}`))) out.repeat = "yearly";
+  else if ((m0 = take(st, R(`${B}по\\s+(${PLURAL.map(([w]) => w).join("|")})${E}`)))) { out.repeat = "weekly"; repeatWeekday = PLURAL.find(([w]) => w === m0![1]!.toLowerCase())![1]; }
   else {
     const m = take(st, R(`${B}(кажд(ый|ую|ое))\\s+${WD}${E}`));
     if (m) { out.repeat = "weekly"; repeatWeekday = weekday(m[3]!); }
@@ -100,9 +111,30 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
   }
   if (date && Number.isNaN(date.getTime())) date = null;
 
-  // ---- time
+  // ---- time; a range («с 10 до 11:30», «10:00-11:00») or a length («на час») makes it a meeting
   let hh: number | null = null, mm = 0;
-  if ((m = take(st, R(`${B}(в|к)\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(утра|дня|вечера|ночи|ч|час(а|ов)?)?${E}`))) || (m = take(st, R(`${B}()(\\d{1,2})[:](\\d{2})${E}`)))) {
+  const hhmm = (h: string, mi?: string, part?: string) => {
+    let x = Number(h); const y = mi ? Number(mi) : 0;
+    if ((part === "вечера" || part === "дня") && x < 12) x += 12;
+    return x > 23 || y > 59 ? null : x * 60 + y;
+  };
+  // «с 10 до 11», «с 10:30 до 12», «в 10-11», «10:00–11:30»; a bare «1-2» (кг, штуки) is not a time
+  const range = take(st, R(`${B}(?:с\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s+до\\s+(\\d{1,2})(?:[:.](\\d{2}))?|в\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*[-–—]\\s*(\\d{1,2})(?:[:.](\\d{2}))?|(\\d{1,2}):(\\d{2})\\s*[-–—]\\s*(\\d{1,2}):(\\d{2}))(?:\\s+(утра|дня|вечера))?${E}`));
+  if (range) {
+    const g = range.slice(1);
+    const [h1, m1, h2, m2] = g[0] ? g.slice(0, 4) : g[4] ? g.slice(4, 8) : g.slice(8, 12);
+    const part = (range[13] ?? "").toLowerCase();
+    const a = hhmm(h1!, m1, part), b = hhmm(h2!, m2, part);
+    if (a !== null && b !== null && b > a) { hh = Math.floor(a / 60); mm = a % 60; out.minutes = b - a; out.meeting = true; }
+  }
+  const len = take(st, R(`${B}на\\s+(?:(\\d{1,3})\\s*(минут[уы]?|мин|час(?:а|ов)?)|(полчаса|час|полтора\\s+часа|два\\s+часа))${E}`));
+  if (len) {
+    const word = (len[3] ?? "").toLowerCase();
+    const n = word ? (word === "полчаса" ? 30 : word === "час" ? 60 : word.startsWith("полтора") ? 90 : 120) : Number(len[1]) * (len[2]!.toLowerCase().startsWith("час") ? 60 : 1);
+    if (n >= 5 && n <= 720) { out.minutes = n; out.meeting = true; }
+  }
+  if (hh !== null) { /* the range set the time */ }
+  else if ((m = take(st, R(`${B}(в|к)\\s+(\\d{1,2})(?:[:.](\\d{2}))?\\s*(утра|дня|вечера|ночи|ч|час(а|ов)?)?${E}`))) || (m = take(st, R(`${B}()(\\d{1,2})[:](\\d{2})${E}`)))) {
     hh = Number(m[2]); mm = m[3] ? Number(m[3]) : 0;
     const part = (m[4] ?? "").toLowerCase();
     if ((part === "вечера" || part === "дня") && hh < 12) hh += 12;
@@ -132,10 +164,12 @@ export function parseQuick(input: string, now = new Date(), forced: QuickKind = 
   } else if (!at && date) { at = new Date(date); at.setHours(9, 0, 0, 0); dateOnly = true; }
 
   const text = st.s.replace(/\s+/g, " ").replace(/^[\s,.:;—–-]+|[\s,.:;—–-]+$/g, "").trim();
+  // a length is a meeting only with a start time; without one it is just how long the to-do takes
+  if (out.meeting && !(at && !dateOnly)) delete out.meeting;
   const kind: QuickParsed["kind"] = forced === "todo" ? "todo" : forced === "reminder" ? "reminder"
-    : remind || (at && !dateOnly) ? "reminder" : "todo";
+    : remind || (at && !dateOnly && !out.meeting) ? "reminder" : "todo";
   const res: QuickParsed = { kind, text: text || raw, ...out };
-  if (kind !== "todo") { delete res.priority; delete res.project; } // reminders have neither
+  if (kind !== "todo") { delete res.priority; delete res.project; delete res.area; delete res.meeting; delete res.minutes; } // reminders have none of these
   if (at) res.at = at.toISOString();
   if (dateOnly) res.dateOnly = true;
   return res;

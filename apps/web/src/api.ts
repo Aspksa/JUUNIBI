@@ -42,7 +42,19 @@ export interface AssistantSettings {
 export type SearchProvider = "duckduckgo" | "brave";
 export type Repeat = "daily" | "weekdays" | "weekly" | "monthly" | "every3days" | "yearly";
 export interface Note { id: string; kind: "note" | "todo"; text: string; done: boolean; createdAt: string; priority?: "low" | "normal" | "high"; dueAt?: string; project?: string; parentId?: string; estimateMinutes?: number; completedAt?: string;
-  repeat?: Repeat; rolled?: number; auto?: "brief" | "evening" | "week"; streak?: number }
+  repeat?: Repeat; rolled?: number; auto?: "brief" | "evening" | "week"; streak?: number;
+  /** Work or personal (unset: from the project, see tasks-model areaOf); «В работе» / «Жду ответа»; a meeting (dueAt + estimateMinutes). */
+  area?: Area; status?: TaskStatus; waitingFor?: string; followUpAt?: string; meeting?: boolean }
+export type Area = "work" | "personal";
+export type TaskStatus = "doing" | "waiting";
+/** A project's colour, deadline (YYYY-MM-DD) and sphere (server: ProjectMeta). */
+export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area }
+export interface TaskTemplate { id: string; text: string }
+export interface DayOff { id: string; from: string; to: string; kind: "vacation" | "sick" }
+export interface Organizer { notes: Note[]; reminders: Reminder[]; projects?: ProjectMeta[]; templates?: TaskTemplate[]; daysOff?: DayOff[] }
+/** «Пароли» (server: vault.ts). */
+export interface VaultStatus { exists: boolean; unlocked: boolean; lockMinutes: number; count: number | null; waitSeconds?: number }
+export interface VaultItem { id: string; title: string; login?: string; password?: string; email?: string; url?: string; note?: string; createdAt: string; updatedAt: string }
 /** «Жизнь проекта»: figures about the project's history (server: project-stats.ts). */
 /** One figure of «Жизнь проекта» with the data of its small chart (server: project-stats.ts Metric). */
 export interface ProjectMetric {
@@ -89,6 +101,7 @@ export interface Automation {
   brief: boolean; briefTime: string; rollOverdue: boolean; dueReminder: "off" | "15" | "60" | "morning"; workdays: boolean;
   evening: boolean; eveningTime: string; quiet: boolean; quietFrom: string; quietTo: string;
   stuckAfter: number; holidayWarn: boolean; weekly: boolean; goalNudge: number; chatPromises: boolean; dayHours: number; weekHours: 40 | 36 | 24; streaks: boolean;
+  workFrom: string; workTo: string; workFirst: boolean; eveningMove: boolean;
   rules: AutoRule[];
 }
 /** «Если — то» (server: AutoRule). */
@@ -260,7 +273,23 @@ export const api = {
   addMission: (title:string,description:string) => attemptAsync(() => call<{id:string;title:string}>("/api/organizer/missions",post({title,description}))),
   addMissionStage: (id:string,text:string) => attemptAsync(() => call<Note>(`/api/organizer/missions/${encodeURIComponent(id)}/stages`,post({text}))),
   changeMissionStatus: (id:string,status:"active"|"paused"|"complete") => attemptAsync(() => call<{id:string;status:string}>(`/api/organizer/missions/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})})),
-  organizer: () => attemptAsync(() => call<{ notes: Note[]; reminders: Reminder[] }>("/api/organizer")),
+  organizer: () => attemptAsync(() => call<Organizer>("/api/organizer")),
+  setProject: (name: string, patch: { color?: string | null; dueAt?: string | null; area?: Area | null }) => attemptAsync(() => call<ProjectMeta>("/api/organizer/projects", post({ name, ...patch }))),
+  addTemplate: (text: string) => attemptAsync(() => call<TaskTemplate>("/api/organizer/templates", post({ text }))),
+  removeTemplate: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/templates/${encodeURIComponent(id)}`, { method: "DELETE" })),
+  addDayOff: (from: string, to: string, kind: DayOff["kind"]) => attemptAsync(() => call<{ dayOff: DayOff; clash: string[] }>("/api/organizer/days-off", post({ from, to, kind }))),
+  removeDayOff: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/days-off/${encodeURIComponent(id)}`, { method: "DELETE" })),
+  vault: () => attemptAsync(() => call<VaultStatus>("/api/vault")),
+  vaultSetup: (password: string) => attemptAsync(() => call<VaultStatus>("/api/vault/setup", post({ password }))),
+  vaultUnlock: (password: string) => attemptAsync(() => call<VaultStatus>("/api/vault/unlock", post({ password }))),
+  vaultLock: () => attemptAsync(() => call<VaultStatus>("/api/vault/lock", post({}))),
+  vaultItems: () => attemptAsync(() => call<VaultItem[]>("/api/vault/items")),
+  vaultAdd: (item: Partial<VaultItem>) => attemptAsync(() => call<VaultItem>("/api/vault/items", post(item))),
+  vaultUpdate: (id: string, item: Partial<VaultItem>) => attemptAsync(() => call<VaultItem>(`/api/vault/items/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(item) })),
+  vaultRemove: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/vault/items/${encodeURIComponent(id)}`, { method: "DELETE" })),
+  vaultPassword: (old: string, next: string) => attemptAsync(() => call<VaultStatus>("/api/vault/password", post({ old, next }))),
+  vaultSettings: (lockMinutes: number) => attemptAsync(() => call<VaultStatus>("/api/vault/settings", post({ lockMinutes }))),
+  vaultImport: (content: string, password: string) => attemptAsync(() => call<VaultStatus>("/api/vault/import", post({ content, password }))),
   taskInsights: (month: string) => attemptAsync(() => call<{
     month:string;
     items:{id:string;text:string;at:string;kind:"todo"|"reminder";done:boolean}[];
@@ -279,12 +308,12 @@ export const api = {
   undoAuto: (id: string) => attemptAsync(() => call<AutoLogEntry>(`/api/organizer/log/${encodeURIComponent(id)}/undo`, post({}))),
   dayLoad: (day: string) => attemptAsync(() => call<DayLoad>(`/api/organizer/load?day=${encodeURIComponent(day)}`)),
   arrangeDay: (day: string, apply = false, ids?: string[]) => attemptAsync(() => call<ArrangePlan>("/api/organizer/arrange", post({ day, apply, ...(ids ? { ids } : {}) }))),
-  moveTasks: (ids: string[], to: "tomorrow" | "workday") => { const requestId = "move_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2); return attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to, requestId }))); },
+  moveTasks: (ids: string[], to: "tomorrow" | "workday" | `${number}-${number}-${number}`) => { const requestId = "move_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2); return attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to, requestId }))); },
   runEvening: () => attemptAsync(() => call<Note>("/api/organizer/evening", post({}))),
   runWeek: () => attemptAsync(() => call<Note>("/api/organizer/week", post({}))),
   snoozeReminder: (id:string,minutes:number|"tomorrow") => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
-  updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none"}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
+  updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none";area?:Area|null;status?:TaskStatus|"todo"|null;waitingFor?:string|null;followUpAt?:string|null;meeting?:boolean}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
   automation: () => attemptAsync(() => call<Automation>("/api/organizer/automation")),
   setAutomation: (patch: Partial<Automation>) => attemptAsync(() => call<Automation>("/api/organizer/automation", post(patch))),
   runBrief: () => attemptAsync(() => call<Note>("/api/organizer/brief", post({}))),

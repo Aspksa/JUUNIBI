@@ -20,6 +20,34 @@ export interface Note {
   streak?: number;
   /** Rules already applied to this to-do, as `ruleId@dueAt`, so each runs once per due date. */
   ruled?: string[];
+  /** Work or personal; unset follows the project (see `areaOf`). */
+  area?: Area;
+  /** Where a to-do stands between «Надо сделать» (unset) and done: «В работе» or «Жду ответа». */
+  status?: TaskStatus;
+  /** «Жду ответа»: from whom, and when to ask again (one reminder at that moment). */
+  waitingFor?: string;
+  followUpAt?: string;
+  /** The `followUpAt` a reminder was already sent for. */
+  followedUp?: string;
+  /** A meeting: `dueAt` is its start and `estimateMinutes` its length. */
+  meeting?: boolean;
+}
+export type Area = "work" | "personal";
+export type TaskStatus = "doing" | "waiting";
+/** A project's look and plan: colour, deadline and whether it is work. Projects themselves are the `project` names of to-dos. */
+export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area }
+export const PROJECT_COLORS = ["gold", "blue", "green", "violet", "red", "teal", "orange", "gray"];
+/** A saved quick-entry line («отчёт по пятницам в 17:00 #работа»), added again with one click. */
+export interface TaskTemplate { id: string; text: string }
+/** Days away from work: on them work to-dos are not planned and not moved in. */
+export interface DayOff { id: string; from: string; to: string; kind: "vacation" | "sick" }
+/** A to-do's sphere: its own, else its project's, else «work» for a project named работа/work. */
+export function areaOf(n: Pick<Note, "area" | "project">, projects: ProjectMeta[] = []): Area {
+  if (n.area) return n.area;
+  if (!n.project) return "personal";
+  const p = projects.find((x) => x.name.toLowerCase() === n.project!.toLowerCase());
+  if (p?.area) return p.area;
+  return /^(работа|work|рабочее)$/i.test(n.project) ? "work" : "personal";
 }
 export type AutoNote = "brief" | "evening" | "week";
 /**
@@ -80,12 +108,19 @@ export interface Automation {
   weekHours: 40 | 36 | 24;
   /** Streaks of repeating to-dos. */
   streaks: boolean;
+  /** Working hours: inside them on a working day the list shows work first, outside them personal first. */
+  workFrom: string;
+  workTo: string;
+  workFirst: boolean;
+  /** After the working day: offer to move the work to-dos still open to the next working day. */
+  eveningMove: boolean;
   rules: AutoRule[];
 }
 export const DEFAULT_AUTOMATION: Automation = {
   brief: true, briefTime: "09:00", rollOverdue: true, dueReminder: "15", workdays: true,
   evening: true, eveningTime: "21:00", quiet: true, quietFrom: "23:00", quietTo: "08:00",
-  stuckAfter: 3, holidayWarn: true, weekly: true, goalNudge: 3, chatPromises: true, dayHours: 8, weekHours: 40, streaks: true, rules: [],
+  stuckAfter: 3, holidayWarn: true, weekly: true, goalNudge: 3, chatPromises: true, dayHours: 8, weekHours: 40, streaks: true,
+  workFrom: "09:00", workTo: "18:00", workFirst: true, eveningMove: true, rules: [],
 };
 /** One line of «Что сделала автоматика», with what is needed to take it back. */
 export interface AutoLogEntry {
@@ -106,6 +141,17 @@ export interface Reminder { id: string; text: string; at: string; createdAt: str
   rule?: string }
 const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_DONE_REMINDERS = 100, MAX_AUTO_TEXT = 1500, MAX_LOG = 60, MAX_HISTORY = 4000;
 const YEAR = 366 * 86_400_000;
+const MAX_PROJECTS = 100, MAX_TEMPLATES = 30, MAX_DAYS_OFF = 50;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+function cleanProject(v: unknown): ProjectMeta | null {
+  const o = v as Partial<ProjectMeta> | null;
+  if (!o || typeof o.name !== "string" || !o.name.trim() || o.name.length > 80) return null;
+  const p: ProjectMeta = { name: o.name.trim() };
+  if (typeof o.color === "string" && PROJECT_COLORS.includes(o.color)) p.color = o.color;
+  if (typeof o.dueAt === "string" && DAY_RE.test(o.dueAt)) p.dueAt = o.dueAt;
+  if (o.area === "work" || o.area === "personal") p.area = o.area;
+  return p;
+}
 const bad = (message: string, status = 400) => Object.assign(new Error(message), { status });
 const repeatOf = (v: unknown): Repeat | undefined => {
   if (v === undefined || v === null || v === "" || v === "none") return undefined;
@@ -175,14 +221,15 @@ function cleanAutomation(v: unknown): Automation {
   const a: Automation = { ...DEFAULT_AUTOMATION, rules: [] };
   if (!v || typeof v !== "object") return a;
   const o = v as Record<string, unknown>;
-  for (const k of ["brief", "rollOverdue", "workdays", "evening", "quiet", "holidayWarn", "weekly", "chatPromises", "streaks"] as const) if (typeof o[k] === "boolean") a[k] = o[k] as boolean;
-  for (const k of ["briefTime", "eveningTime", "quietFrom", "quietTo"] as const) if (typeof o[k] === "string" && TIME_RE.test(o[k] as string)) a[k] = o[k] as string;
+  for (const k of ["brief", "rollOverdue", "workdays", "evening", "quiet", "holidayWarn", "weekly", "chatPromises", "streaks", "workFirst", "eveningMove"] as const) if (typeof o[k] === "boolean") a[k] = o[k] as boolean;
+  for (const k of ["briefTime", "eveningTime", "quietFrom", "quietTo", "workFrom", "workTo"] as const) if (typeof o[k] === "string" && TIME_RE.test(o[k] as string)) a[k] = o[k] as string;
   if (o.dueReminder === "off" || o.dueReminder === "15" || o.dueReminder === "60" || o.dueReminder === "morning") a.dueReminder = o.dueReminder;
   if ([0, 2, 3, 5].includes(o.stuckAfter as number)) a.stuckAfter = o.stuckAfter as number;
   if ([0, 3, 7, 14].includes(o.goalNudge as number)) a.goalNudge = o.goalNudge as number;
   if (o.weekHours === 40 || o.weekHours === 36 || o.weekHours === 24) a.weekHours = o.weekHours;
   if (Number.isInteger(o.dayHours) && (o.dayHours as number) >= 0 && (o.dayHours as number) <= 16) a.dayHours = o.dayHours as number;
   if (Array.isArray(o.rules)) a.rules = o.rules.map(cleanRule).filter((r): r is AutoRule => !!r).slice(0, 20);
+  if (minsOf(a.workFrom) >= minsOf(a.workTo)) { a.workFrom = DEFAULT_AUTOMATION.workFrom; a.workTo = DEFAULT_AUTOMATION.workTo; }
   return a;
 }
 const hoursText = (min: number) => (Math.round(min / 6) / 10).toLocaleString("ru-RU") + " ч";
@@ -208,7 +255,13 @@ function cleanNote(n: Note): Note {
   if (c.auto !== undefined && !AUTO_NOTES.includes(c.auto)) delete c.auto;
   if (c.streak !== undefined && !(Number.isInteger(c.streak) && c.streak >= 0 && c.streak < 10_000)) delete c.streak;
   if (c.ruled !== undefined && !(Array.isArray(c.ruled) && c.ruled.every((x) => typeof x === "string"))) delete c.ruled;
-  if (c.kind === "note") { delete c.priority; delete c.dueAt; delete c.parentId; delete c.estimateMinutes; delete c.repeat; delete c.repeatDay; delete c.rolled; delete c.streak; delete c.ruled; }
+  if (c.area !== undefined && c.area !== "work" && c.area !== "personal") delete c.area;
+  if (c.status !== undefined && c.status !== "doing" && c.status !== "waiting") delete c.status;
+  if (c.waitingFor !== undefined && (typeof c.waitingFor !== "string" || !c.waitingFor.trim() || c.waitingFor.length > 80)) delete c.waitingFor;
+  for (const k of ["followUpAt", "followedUp"] as const) if (c[k] !== undefined && (typeof c[k] !== "string" || !Number.isFinite(Date.parse(c[k]!)))) delete c[k];
+  if (c.status !== "waiting") { delete c.waitingFor; delete c.followUpAt; delete c.followedUp; }
+  if (c.meeting !== undefined && c.meeting !== true) delete c.meeting;
+  if (c.kind === "note") { delete c.area; delete c.status; delete c.meeting; delete c.priority; delete c.dueAt; delete c.parentId; delete c.estimateMinutes; delete c.repeat; delete c.repeatDay; delete c.rolled; delete c.streak; delete c.ruled; }
   return c;
 }
 
@@ -229,6 +282,9 @@ export class Organizer {
   private autoCount: Partial<Record<AutoLogEntry["kind"], number>> = {};
   /** Durable operation ids prevent an accidentally repeated request moving tasks twice. */
   private moveRequests: string[] = [];
+  private projects: ProjectMeta[] = [];
+  private templates: TaskTemplate[] = [];
+  private daysOff: DayOff[] = [];
   private briefing = false;
   /**
    * Writes the morning brief in words (the assistant, when Cloud.ru is configured); returns null to keep the plain one.
@@ -266,7 +322,10 @@ export class Organizer {
 
   async load() {
     try {
-      const raw = JSON.parse(await this.readRecoverable()) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown };
+      const raw = JSON.parse(await this.readRecoverable()) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown };
+      if (Array.isArray(raw.projects)) this.projects = raw.projects.map(cleanProject).filter((x): x is ProjectMeta => !!x).slice(0, MAX_PROJECTS);
+      if (Array.isArray(raw.templates)) this.templates = raw.templates.filter((t): t is TaskTemplate => !!t && typeof t.id === "string" && typeof t.text === "string" && !!t.text.trim() && t.text.length <= MAX_TEXT).slice(0, MAX_TEMPLATES);
+      if (Array.isArray(raw.daysOff)) this.daysOff = raw.daysOff.filter((d): d is DayOff => !!d && typeof d.id === "string" && DAY_RE.test(d.from) && DAY_RE.test(d.to) && d.from <= d.to && (d.kind === "vacation" || d.kind === "sick")).slice(-MAX_DAYS_OFF);
       this.automation = cleanAutomation(raw.automation);
       if (raw.autoState && typeof raw.autoState === "object") {
         for (const k of ["briefDay", "rollDay", "eveningDay", "weekDay"] as const) if (typeof raw.autoState[k] === "string") this.autoState[k] = raw.autoState[k] as string;
@@ -284,7 +343,7 @@ export class Organizer {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   private save() {
-    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log, history: this.history, autoCount: this.autoCount, moveRequests: this.moveRequests });
+    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log, history: this.history, autoCount: this.autoCount, moveRequests: this.moveRequests, projects: this.projects, templates: this.templates, daysOff: this.daysOff });
     this.writes = this.writes.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + "." + randomUUID() + ".tmp";
@@ -376,6 +435,66 @@ export class Organizer {
     const stage=await this.addNote("todo",description);
     return this.updateTask(stage.id,{project:id});
   }
+  // ---------- projects, templates, days away ----------
+  listProjects(): ProjectMeta[] { return this.projects.map((p) => ({ ...p })); }
+  /** Colour, deadline (YYYY-MM-DD) or sphere of a project; null clears a field. A project with nothing set is forgotten. */
+  async setProject(name: unknown, patch: Record<string, unknown>): Promise<ProjectMeta> {
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 80) throw bad("Название проекта: от 1 до 80 символов");
+    const key = name.trim();
+    const cur = this.projects.find((p) => p.name.toLowerCase() === key.toLowerCase()) ?? { name: key };
+    const next: ProjectMeta = { ...cur };
+    if ("color" in patch) { if (patch.color === null || patch.color === "") delete next.color; else if (typeof patch.color === "string" && PROJECT_COLORS.includes(patch.color)) next.color = patch.color; else throw bad("Цвет: " + PROJECT_COLORS.join(", ")); }
+    if ("dueAt" in patch) { if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt; else if (typeof patch.dueAt === "string" && DAY_RE.test(patch.dueAt)) next.dueAt = patch.dueAt; else throw bad("Срок проекта: YYYY-MM-DD"); }
+    if ("area" in patch) { if (patch.area === null || patch.area === "") delete next.area; else if (patch.area === "work" || patch.area === "personal") next.area = patch.area; else throw bad("Сфера: work или personal"); }
+    this.projects = this.projects.filter((p) => p !== cur);
+    if (next.color || next.dueAt || next.area) {
+      if (this.projects.length >= MAX_PROJECTS) throw bad(`Достигнут предел: ${MAX_PROJECTS} проектов`, 409);
+      this.projects.push(next);
+    }
+    await this.save();
+    return { ...next };
+  }
+  listTemplates(): TaskTemplate[] { return this.templates.map((t) => ({ ...t })); }
+  async addTemplate(body: unknown): Promise<TaskTemplate> {
+    const t = text(body, "Шаблон");
+    if (this.templates.some((x) => x.text.toLowerCase() === t.toLowerCase())) throw bad("Такой шаблон уже есть", 409);
+    if (this.templates.length >= MAX_TEMPLATES) throw bad(`Достигнут предел: ${MAX_TEMPLATES} шаблонов`, 409);
+    const tpl = { id: randomUUID(), text: t };
+    this.templates.push(tpl);
+    await this.save();
+    return { ...tpl };
+  }
+  async removeTemplate(id: string) {
+    if (!this.templates.some((t) => t.id === id)) throw bad("Шаблон не найден", 404);
+    this.templates = this.templates.filter((t) => t.id !== id);
+    await this.save();
+  }
+  listDaysOff(): DayOff[] { return this.daysOff.map((d) => ({ ...d })).sort((a, b) => a.from.localeCompare(b.from)); }
+  /** A vacation or sick leave from `from` to `to` (local days, inclusive). Returns it with the open work to-dos due inside it. */
+  async addDayOff(from: unknown, to: unknown, kind: unknown): Promise<{ dayOff: DayOff; clash: string[] }> {
+    if (typeof from !== "string" || !DAY_RE.test(from) || typeof to !== "string" || !DAY_RE.test(to) || !Number.isFinite(Date.parse(from + "T12:00")) || !Number.isFinite(Date.parse(to + "T12:00"))) throw bad("Даты: YYYY-MM-DD");
+    if (to < from) throw bad("Конец раньше начала");
+    if (Date.parse(to + "T12:00") - Date.parse(from + "T12:00") > YEAR) throw bad("Не длиннее года");
+    if (kind !== "vacation" && kind !== "sick") throw bad("Вид: vacation или sick");
+    if (this.daysOff.some((d) => d.from <= to && from <= d.to)) throw bad("Эти дни уже отмечены", 409);
+    if (this.daysOff.length >= MAX_DAYS_OFF) this.daysOff = this.daysOff.slice(1);
+    const d: DayOff = { id: randomUUID(), from, to, kind };
+    this.daysOff.push(d);
+    await this.save();
+    const clash = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && areaOf(n, this.projects) === "work" && localKey(Date.parse(n.dueAt)) >= from && localKey(Date.parse(n.dueAt)) <= to).map((n) => n.id);
+    return { dayOff: { ...d }, clash };
+  }
+  async removeDayOff(id: string) {
+    if (!this.daysOff.some((d) => d.id === id)) throw bad("Не найдено", 404);
+    this.daysOff = this.daysOff.filter((d) => d.id !== id);
+    await this.save();
+  }
+  /** The vacation or sick leave on a local day, if any. */
+  awayOn(key: string): DayOff | undefined { return this.daysOff.find((d) => d.from <= key && key <= d.to); }
+  /** A working day for work to-dos: a working day of the calendar the owner is not away on. */
+  private workDayFor = (d: Date) => this.workday(d) && !this.awayOn(localKey(d.getTime()));
+  private isWork = (n: Note) => areaOf(n, this.projects) === "work";
+
   // ---------- notes and to-dos ----------
   listNotes(): Note[] { return this.notes.map((n) => ({ ...n })); }
   async addNote(kind: unknown, body: unknown): Promise<Note> {
@@ -440,6 +559,35 @@ export class Organizer {
         const base = next.dueAt ? new Date(next.dueAt) : new Date(this.now());
         if (rep === "monthly" || rep === "yearly") next.repeatDay = base.getDate(); else delete next.repeatDay;
       } else { delete next.repeat; delete next.repeatDay; }
+    }
+    if ("area" in patch) {
+      if (patch.area === null || patch.area === "") delete next.area;
+      else if (patch.area === "work" || patch.area === "personal") next.area = patch.area;
+      else throw bad("Сфера: work или personal");
+    }
+    if ("status" in patch) {
+      if (patch.status === null || patch.status === "" || patch.status === "todo") delete next.status;
+      else if (patch.status === "doing" || patch.status === "waiting") next.status = patch.status;
+      else throw bad("Статус: todo, doing или waiting");
+    }
+    if ("waitingFor" in patch) {
+      if (patch.waitingFor === null || patch.waitingFor === "") delete next.waitingFor;
+      else if (typeof patch.waitingFor === "string" && patch.waitingFor.trim() && patch.waitingFor.trim().length <= 80) next.waitingFor = patch.waitingFor.trim();
+      else throw bad("От кого ответ: до 80 символов");
+    }
+    if ("followUpAt" in patch) {
+      if (patch.followUpAt === null || patch.followUpAt === "") delete next.followUpAt;
+      else if (typeof patch.followUpAt === "string" && Number.isFinite(Date.parse(patch.followUpAt))) next.followUpAt = new Date(patch.followUpAt).toISOString();
+      else throw bad("Когда спросить снова: дата и время");
+      if (next.followUpAt !== n.followUpAt) delete next.followedUp;
+    }
+    // asking someone is part of «Жду ответа»: setting who or when puts the to-do there
+    if ((next.waitingFor || next.followUpAt) && !("status" in patch)) next.status = "waiting";
+    if (next.status !== "waiting") { delete next.waitingFor; delete next.followUpAt; delete next.followedUp; }
+    if ("meeting" in patch) {
+      if (patch.meeting === true) next.meeting = true;
+      else if (patch.meeting === false || patch.meeting === null) delete next.meeting;
+      else throw bad("Встреча: true или false");
     }
     if ("parentId" in patch) {
       if (patch.parentId === null || patch.parentId === "") delete next.parentId;
@@ -508,7 +656,8 @@ export class Organizer {
         const streak = onTime ? (n.streak ?? 0) + 1 : 1;
         const copy: Note = { id: randomUUID(), kind: "todo", text: n.text, done: false, createdAt: new Date(now).toISOString(), dueAt: new Date(nextAt).toISOString(), repeat: n.repeat, streak,
           ...(n.repeatDay ? { repeatDay: n.repeatDay } : {}), ...(n.priority ? { priority: n.priority } : {}), ...(n.project ? { project: n.project } : {}),
-          ...(n.estimateMinutes ? { estimateMinutes: n.estimateMinutes } : {}), ...(n.parentId ? { parentId: n.parentId } : {}) };
+          ...(n.estimateMinutes ? { estimateMinutes: n.estimateMinutes } : {}), ...(n.parentId ? { parentId: n.parentId } : {}),
+          ...(n.area ? { area: n.area } : {}), ...(n.meeting ? { meeting: true as const } : {}) };
         this.notes.push(copy);
         n.nextId = copy.id;
       }
@@ -723,10 +872,14 @@ export class Organizer {
     if (a.rollOverdue && this.autoState.rollDay !== today) {
       this.autoState.rollDay = today; changed = true;
       const undo: NonNullable<AutoLogEntry["undo"]>["notes"] = [];
+      const away = this.awayOn(today);
+      // on a vacation day a work to-do goes to the first working day after it instead of today
+      let back = start;
+      if (away) { const b = new Date(start + 12 * 3_600_000); for (let i = 0; i < 400 && !this.workDayFor(b); i++) b.setDate(b.getDate() + 1); back = dayStart(b.getTime()); }
       for (const n of this.notes) {
         if (n.kind !== "todo" || n.done || !n.dueAt || Date.parse(n.dueAt) >= start) continue;
         undo.push({ id: n.id, dueAt: n.dueAt, rolled: n.rolled ?? null });
-        const d = new Date(n.dueAt), t = new Date(start);
+        const d = new Date(n.dueAt), t = new Date(away && this.isWork(n) ? back : start);
         t.setHours(d.getHours(), d.getMinutes(), 0, 0);
         // a time that is already behind us today (rolled at 10:00 for 08:00) becomes the end of today
         const was = n.dueAt;
@@ -753,6 +906,15 @@ export class Organizer {
         fired.push({ ...r });
         this.addLog("remind", "Напомнила о сроке: " + n.text, { reminders: [r.id] });
       }
+    }
+    // «Жду ответа»: one reminder to ask again at the chosen moment
+    if (!this.isQuiet(now)) for (const n of this.notes) {
+      if (n.kind !== "todo" || n.done || n.status !== "waiting" || !n.followUpAt || n.followedUp === n.followUpAt || Date.parse(n.followUpAt) > now) continue;
+      n.followedUp = n.followUpAt; changed = true;
+      const r: Reminder = { id: randomUUID(), text: (`Спросить${n.waitingFor ? " у " + n.waitingFor : ""}: ${n.text}`).slice(0, MAX_TEXT), at: new Date(now).toISOString(), createdAt: new Date(now).toISOString(), status: "due", firedAt: new Date(now).toISOString(), source: n.id };
+      this.reminders.push(r);
+      fired.push({ ...r });
+      this.addLog("remind", "Напомнила спросить ответ: " + n.text, { reminders: [r.id] });
     }
     if (a.rules.length && this.applyRules(now)) changed = true;
     return changed;
@@ -812,7 +974,9 @@ export class Organizer {
     const b = minsOf(this.automation.briefTime), mins = minsNow(now);
     return mins >= b && mins < Math.max(15 * 60, b + 60);
   }
-  private dayKind(key: string): { work: boolean; short: boolean; label: string; note?: string } {
+  private dayKind(key: string): { work: boolean; short: boolean; label: string; note?: string; away?: DayOff } {
+    const off = this.awayOn(key);
+    if (off) return { work: false, short: false, label: (off.kind === "sick" ? "больничный" : "отпуск") + " до " + new Date(off.to + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" }), away: off };
     const pd = prodDay(key);
     const work = pd ? pd.kind === "work" || pd.kind === "short" : weekday(new Date(key + "T12:00"));
     const label = pd ? (pd.kind === "holiday" ? "праздник" : pd.kind === "off" ? "выходной (перенос)" : pd.kind === "weekend" ? "выходной" : pd.kind === "short" ? "сокращённый рабочий день" : "рабочий день") : work ? "рабочий день" : "выходной";
@@ -832,7 +996,22 @@ export class Organizer {
     const important = open.filter((n) => n.priority === "high" && !todays.includes(n)).slice(0, 2);
     const item = (n: Note) => (n.dueAt && !dateOnly(n.dueAt) ? hhmm(Date.parse(n.dueAt)) + " " : "") + n.text;
     const lines = [dayName[0]!.toUpperCase() + dayName.slice(1) + " — " + kind + "."];
-    lines.push(todays.length ? `Дела на сегодня (${todays.length}): ` + todays.slice(0, 5).map(item).join("; ") + (todays.length > 5 ? "…" : ".") : dk.work ? "На сегодня дел со сроком нет." : "Дел на сегодня нет.");
+    // a working day starts with work: meetings, work deadlines and the answers waited for
+    const work = dk.work ? todays.filter(this.isWork) : [];
+    const waiting = dk.work ? open.filter((n) => n.status === "waiting" && this.isWork(n)) : [];
+    if (work.length || waiting.length) {
+      const meet = work.filter((n) => n.meeting && !dateOnly(n.dueAt!));
+      const due = work.filter((n) => !meet.includes(n));
+      const span = (n: Note) => hhmm(Date.parse(n.dueAt!)) + (n.estimateMinutes ? "–" + hhmm(Date.parse(n.dueAt!) + n.estimateMinutes * 60_000) : "");
+      const parts = [
+        meet.length ? "встречи: " + meet.slice(0, 4).map((n) => span(n) + " " + n.text).join("; ") : "",
+        due.length ? "сроки: " + due.slice(0, 4).map(item).join("; ") : "",
+        waiting.length ? `жду ответа: ${waiting.length} (` + waiting.slice(0, 2).map((n) => (n.waitingFor ? n.waitingFor + " — " : "") + n.text).join("; ") + ")" : "",
+      ].filter(Boolean);
+      lines.push("Работа: " + parts.join("; ") + ".");
+    }
+    const rest = work.length ? todays.filter((n) => !work.includes(n)) : todays;
+    if (!work.length || rest.length) lines.push(rest.length ? `${work.length ? "Личные дела" : "Дела"} на сегодня (${rest.length}): ` + rest.slice(0, 5).map(item).join("; ") + (rest.length > 5 ? "…" : ".") : dk.work ? "На сегодня дел со сроком нет." : "Дел на сегодня нет.");
     if (rolled) lines.push(`Из них перенесено со вчера: ${rolled}.`);
     if (overdue.length) lines.push(dk.work ? `Просрочено: ${overdue.length} (${overdue.slice(0, 3).map((n) => n.text).join("; ")}).` : `Просрочено: ${overdue.length}.`);
     if (rems.length) lines.push("Напоминания: " + rems.slice(0, 4).map((r) => hhmm(Date.parse(r.at)) + " " + r.text).join("; ") + ".");
@@ -969,6 +1148,11 @@ export class Organizer {
       const s = open.filter((n) => n.repeat && (n.streak ?? 0) >= 3).sort((x, y) => (y.streak ?? 0) - (x.streak ?? 0))[0];
       if (s) lines.push(`Лучшая серия: «${s.text}» — ${s.streak} подряд.`);
     }
+    const work = todos.filter((n) => this.isWork(n) && n.dueAt && Date.parse(n.dueAt) >= start && Date.parse(n.dueAt) < end);
+    if (work.length) {
+      const mins = (xs: Note[]) => xs.reduce((sum, n) => sum + (n.estimateMinutes ?? 30), 0);
+      lines.push(`Рабочие часы: запланировано ${hoursText(mins(work))}, сделано ${hoursText(mins(work.filter((n) => n.done)))}.`);
+    }
     lines.push(next.length ? `На следующую неделю дел: ${next.length}` + (busiest && busiest[1] > 1 ? `, самый загруженный день — ${busiest[0]} (${busiest[1]})` : "") + "." : "На следующую неделю дел со сроком пока нет.");
     return { text: lines.join("\n"), short: `Сделано за неделю: ${done.length}` + (stuck.length ? `, застряло: ${stuck.length}` : "") };
   }
@@ -1024,7 +1208,7 @@ export class Organizer {
     const dayStartMs = base;
     const reasonOf = (n: Note) => n.dueAt && Date.parse(n.dueAt) < dayStart(now) ? "просрочено" : n.dueAt ? "срок в этот день" : n.priority === "high" ? "важное без срока" : "без срока";
     const order = (n: Note) => (n.dueAt && Date.parse(n.dueAt) < dayStartMs ? 0 : n.dueAt ? 1 : n.priority === "high" ? 2 : n.priority === "low" ? 4 : 3);
-    const cands = open.filter((n) => !this.notes.some((k) => k.parentId === n.id && !k.done) && (
+    const cands = open.filter((n) => !this.notes.some((k) => k.parentId === n.id && !k.done) && !(dk.away && this.isWork(n)) && (
       (n.dueAt && dateOnly(n.dueAt) && localKey(Date.parse(n.dueAt)) === day) ||
       (today && n.dueAt && Date.parse(n.dueAt) < dayStart(now)) ||
       (!n.dueAt && n.priority !== "low")))
@@ -1066,16 +1250,19 @@ export class Organizer {
     if (requestId !== undefined && (typeof requestId !== "string" || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw bad("Некорректный идентификатор операции");
     if (requestId && this.moveRequests.includes(requestId)) throw bad("Этот перенос уже выполнен", 409);
     if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every((x) => typeof x === "string")) throw bad("Список дел: от 1 до 100");
-    if (to !== "tomorrow" && to !== "workday") throw bad("Куда: tomorrow или workday");
+    const toDay = typeof to === "string" && DAY_RE.test(to) && Number.isFinite(Date.parse(to + "T12:00")) ? to : null;
+    if (to !== "tomorrow" && to !== "workday" && !toDay) throw bad("Куда: tomorrow, workday или день YYYY-MM-DD");
     const now = this.now(), undo: NonNullable<AutoLogEntry["undo"]>["notes"] = [], out: Note[] = [];
     for (const id of ids as string[]) {
       const n = this.notes.find((x) => x.id === id && x.kind === "todo" && !x.done);
       if (!n) continue;
       const from = n.dueAt ? new Date(n.dueAt) : new Date(dayStart(now) + (23 * 60 + 59) * 60_000);
-      const d = new Date(Math.max(dayStart(from.getTime()), dayStart(now)));
+      const d = toDay ? new Date(toDay + "T00:00") : new Date(Math.max(dayStart(from.getTime()), dayStart(now)));
       d.setHours(from.getHours(), from.getMinutes(), 0, 0);
-      d.setDate(d.getDate() + 1);
-      if (to === "workday") for (let i = 0; i < 30 && !this.workday(d); i++) d.setDate(d.getDate() + 1);
+      if (!toDay) d.setDate(d.getDate() + 1);
+      // a work to-do never lands on a vacation or sick day
+      const ok = (x: Date) => this.isWork(n) ? this.workDayFor(x) : this.workday(x);
+      if (to === "workday") for (let i = 0; i < 400 && !ok(d); i++) d.setDate(d.getDate() + 1);
       undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
       this.record("move", n, { from: n.dueAt ?? null, to: d.toISOString() });
       n.dueAt = d.toISOString(); delete n.rolled; delete n.remindedFor;
@@ -1083,7 +1270,7 @@ export class Organizer {
       out.push({ ...n });
     }
     if (!out.length) throw bad("Нечего переносить", 409);
-    const where = to === "tomorrow" ? "на завтра" : "на рабочий день";
+    const where = to === "tomorrow" ? "на завтра" : to === "workday" ? "на рабочий день" : "на " + new Date(toDay + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
     this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.names(out.map((n) => n.id)), { notes: undo });
     if (requestId) this.moveRequests = [...this.moveRequests, requestId].slice(-200);
     await this.save();

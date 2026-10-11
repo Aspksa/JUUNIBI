@@ -309,6 +309,12 @@ export class MobileAccess {
       res.end(JSON.stringify({ error: "Управление доступом — только на компьютере" }));
       return true;
     }
+    // passwords never travel over the home Wi-Fi
+    if (p === "/api/vault" || p.startsWith("/api/vault/")) {
+      res.writeHead(403, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify({ error: "Пароли открываются только на компьютере" }));
+      return true;
+    }
     return false;
   }
 }

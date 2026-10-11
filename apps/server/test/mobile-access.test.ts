@@ -86,6 +86,8 @@ describe("LAN access", () => {
     expect(String(paired.headers["set-cookie"])).toMatch(/HttpOnly; SameSite=Lax/);
     expect((await request(lanPort, "/api/status", { cookie })).status).toBe(200);
     expect((await request(lanPort, "/api/mobile", { cookie })).status).toBe(403);
+    // passwords are never served over the home Wi-Fi
+    expect((await request(lanPort, "/api/vault", { cookie })).status).toBe(403);
     expect((await request(lanPort, "/api/mobile/code", { cookie, method: "POST", body: "{}" })).status).toBe(403);
     // A state change from another site is still refused for a paired phone.
     expect((await request(lanPort, "/api/feedback", { cookie, method: "POST", body: "{}", origin: "http://evil.example" })).status).toBe(403);

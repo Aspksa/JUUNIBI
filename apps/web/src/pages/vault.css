@@ -1,0 +1,62 @@
+/* «Пароли»: the gate (create / open), the records as cards, the editor and «Защита и копия». */
+.vault-body{display:flex;flex-direction:column;gap:14px}
+.vault-gate{display:flex;flex-direction:column;align-items:stretch;gap:12px;max-width:440px;width:100%;margin:24px auto;padding:28px;text-align:left}
+.vault-gate h2{margin:0;font-size:var(--fs-lg);text-align:center}
+.vault-gate>p{margin:0;text-align:center}
+.vault-gate-ic{display:grid;place-items:center;width:64px;height:64px;margin:0 auto 4px;border-radius:var(--r-lg);color:var(--brand);background:var(--tint-brand)}
+.vault-gate label{display:flex;flex-direction:column;gap:6px;font-size:var(--fs-sm);color:var(--muted)}
+.vault-gate .btn{justify-content:center;min-height:44px}
+.vault-facts{margin:0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:6px;color:var(--muted);line-height:1.45}
+.vault-pw{position:relative;display:flex;align-items:center}
+.vault-pw .mem-input{flex:1;min-width:0;padding-right:44px;font-family:var(--mono,ui-monospace,monospace)}
+.vault-pw .icon-btn{position:absolute;right:6px}
+.vault-pw-row{display:flex;gap:8px;align-items:center}
+.vault-pw-row .vault-pw{flex:1}
+.vault-meter{display:flex;align-items:center;gap:10px;font-size:var(--fs-xs);color:var(--muted)}
+.vault-meter[hidden]{display:none}
+.vault-meter i{flex:1;max-width:160px;height:4px;border-radius:2px;background:var(--hover-2);position:relative;overflow:hidden}
+.vault-meter i::after{content:"";position:absolute;inset:0 auto 0 0;width:25%;background:var(--danger);border-radius:inherit;transition:width var(--dur),background-color var(--dur)}
+.vault-meter[data-score="1"] i::after{width:50%;background:var(--warn)}
+.vault-meter[data-score="2"] i::after{width:75%;background:color-mix(in srgb,var(--ok) 70%,var(--warn))}
+.vault-meter[data-score="3"] i::after{width:100%;background:var(--ok)}
+
+.vault-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vault-tools .mem-search{width:300px;max-width:100%}
+.vault-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.vault-list>.empty-state{grid-column:1/-1}
+.vault-card{display:flex;flex-direction:column;gap:6px;padding:14px 14px 12px}
+.vault-card-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.vault-avatar{display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:var(--r-md);background:var(--tint-brand);color:var(--brand);font-weight:700}
+.vault-title{display:flex;flex-direction:column;min-width:0}
+.vault-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vault-title a{color:var(--muted);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vault-title a:hover{color:var(--brand);text-decoration:underline}
+.vault-line{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 4px 0 10px;border-radius:var(--r-sm);background:var(--surface-2)}
+.vault-k{flex:none;width:58px;font-size:var(--fs-xs);color:var(--muted)}
+.vault-v{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-md);user-select:all}
+.vault-v.secret{font-family:var(--mono,ui-monospace,monospace);letter-spacing:.04em}
+.vault-note{margin:4px 0 0;color:var(--muted);white-space:pre-wrap;overflow-wrap:anywhere}
+
+.vault-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px;padding:16px}
+.vault-editor label{display:flex;flex-direction:column;gap:5px;font-size:var(--fs-sm);color:var(--muted)}
+.vault-editor .wide{grid-column:1/-1}
+.vault-editor textarea{resize:vertical;min-height:72px;font:inherit}
+
+.pg-card.vault-settings{padding:0}
+.vault-settings>summary{display:flex;align-items:center;gap:8px;padding:12px 16px;cursor:pointer;list-style:none;font-weight:600}
+.vault-settings>summary::-webkit-details-marker{display:none}
+.vault-settings>summary svg{color:var(--muted)}
+.vault-set-rows{display:flex;flex-direction:column;gap:14px;padding:0 16px 16px}
+.vault-set-row{display:flex;align-items:center;gap:12px}
+.vault-set-row.col{flex-direction:column;align-items:stretch;gap:8px}
+.vault-set-row .grow{display:flex;flex-direction:column}
+.vault-set-row small{font-size:var(--fs-xs)}
+.vault-set-fields{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.vault-set-fields .vault-pw{flex:1;min-width:200px}
+.vault-set-fields a.btn{text-decoration:none}
+@media (max-width:600px){
+  .vault-editor{grid-template-columns:minmax(0,1fr)}
+  .vault-list{grid-template-columns:minmax(0,1fr)}
+  .vault-gate{padding:20px;margin:8px auto}
+}
+@media (prefers-reduced-motion:reduce){.vault-meter i::after{transition:none}}
