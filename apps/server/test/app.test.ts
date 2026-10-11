@@ -128,3 +128,24 @@ describe("Brain cognitive HTTP integration", () => {
     } finally { srv.close(); }
   });
 });
+
+describe("Brain Next diagnostics API", () => {
+  it("reports read-only readiness and evidence evaluation without triggering tools", async () => {
+    const brain = new BrainCore(() => true);
+    let toolCalls = 0;
+    const srv = createApp({brain, modules: () => { toolCalls++; return []; }, configured: {model:"m"}});
+    const url = `http://127.0.0.1:${await start(srv)}`;
+    try {
+      const plan = brain.plan("review", ["modules"]);
+      const r = await post(url, "/api/brain/readiness", {planId:plan.id});
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({canResumeReadOnly:true,verifiedCompleted:0});
+      const report = await fetch(url + "/api/brain/evaluation");
+      expect(report.status).toBe(200);
+      expect(await report.json()).toMatchObject({plans:{total:1},security:{writeActionsAvailable:false}});
+      expect(toolCalls).toBe(0);
+      expect((await post(url, "/api/brain/readiness", {planId:""})).status).toBe(400);
+      expect((await post(url, "/api/brain/readiness", {planId:"missing"})).status).toBe(404);
+    } finally { srv.close(); }
+  });
+});
