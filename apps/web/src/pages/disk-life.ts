@@ -1,5 +1,5 @@
 /** 150 uniquely identified disk metrics. Unknown measures must never be fabricated. */
-import type { DiskFile } from "../api";
+import { api, type DiskFile } from "../api";
 import { el } from "../dom";
 import { human } from "./disk-model";
 
@@ -252,6 +252,8 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
   const root = el("aside", { cls: "dk-life", attrs: { "aria-label": "Жизнь документов" } });
   const search = el("input", { cls: "dk-life-search", type: "search", placeholder: "Найти показатель…", attrs: { "aria-label": "Поиск показателей" } }) as HTMLInputElement;
   const grid = el("div", { cls: "dk-life-groups" });
+  let insights = new Map<number,{value:string;detail?:string}>();
+  const insightNote = el("small", {cls:"dk-life-sub",textContent:"Анализ содержания запускается отдельно"});
   const headline = el("small", { cls: "dk-life-sub", textContent: "150 уникальных показателей · только реальные данные" });
   const asMetric = (id: number, files: DiskFile[], folders: string[], trash: DiskFile[]): string | null => {
     const thirty = Date.now() - 30 * 86400000;
@@ -275,7 +277,7 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
       83: () => numeric(files.filter(f => Date.parse(f.uploadedAt) >= thirty).length)
     };
     // Catalogue metadata is not evidence of document content, reading time, revisions or semantic analysis.
-    return values[id]?.() ?? null;
+    return insights.get(id)?.value ?? values[id]?.() ?? null;
   };
   const refresh = () => {
     const files = getFiles(), folders = getFolders(), trash = getTrash();
@@ -305,7 +307,22 @@ export function diskLifePanel(getFiles: () => DiskFile[], getFolders: () => stri
     grid.replaceChildren(...blocks);
   };
   search.addEventListener("input",refresh);
-  root.append(el("header", { cls: "dk-life-header" },el("span",{cls:"dk-life-mark",textContent:"🦊"}),el("div",{},el("strong",{textContent:"Жизнь документов"}),headline)),search,grid);
+  const analyze = el("button", {cls:"btn",type:"button",textContent:"🧠 Анализировать документы"});
+  analyze.addEventListener("click",async()=>{
+    analyze.disabled=true; insightNote.textContent="Читаю документы локально…";
+    try {
+      const result=await api.diskInsights();
+      if(result.ok){ insights=new Map(result.value.metrics.map(m=>[m.id,{value:m.value,detail:m.detail}]));
+        insightNote.textContent=`Проверено ${result.value.analyzed} из ${result.value.eligible} · связей: ${result.value.links.length}`;
+        const findings=result.value.findings.slice(0,3).map(x=>x.text);
+        discoveries.replaceChildren(...findings.map(x=>el("p",{textContent:"🦊 "+x})));
+        if(!findings.length) discoveries.replaceChildren(el("p",{textContent:"Пока нет подтверждённых совпадений между документами."}));
+        refresh();
+      }else insightNote.textContent="Ошибка анализа: "+result.error.message;
+    } finally {analyze.disabled=false;}
+  });
+  const discoveries=el("div",{cls:"dk-life-findings"});
+  root.append(el("header", { cls: "dk-life-header" },el("span",{cls:"dk-life-mark",textContent:"🦊"}),el("div",{},el("strong",{textContent:"Жизнь документов"}),headline)),search,analyze,insightNote,discoveries,grid);
   refresh();
   return {root,refresh};
 }
