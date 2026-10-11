@@ -31,6 +31,10 @@ export function diskPage():HTMLElement {
   const files=el("div",{cls:"disk-files"});
   const tree=el("nav",{cls:"disk-tree",attrs:{"aria-label":"Дерево папок"}});
   const treeExpanded=new Set<string>([""]);
+  let folderStyles:Record<string,{color:string;pinned:boolean;cover:string}>={};
+  let folderSort:"name"|"files"|"pinned"="pinned";
+  let folderQuery="";
+  let treeHidden=false;
   const details=el("aside",{cls:"disk-file-details",attrs:{"aria-label":"Сведения о файле"}});
   const search=el("input",{type:"search",cls:"mem-input",placeholder:"Поиск файлов",attrs:{"aria-label":"Поиск файлов"}});
   const searchContents=el("input",{type:"checkbox",attrs:{"aria-label":"Искать внутри текстовых файлов"}});
@@ -306,7 +310,7 @@ export function diskPage():HTMLElement {
       const parent=full.includes("/")?full.slice(0,full.lastIndexOf("/")):"";
       const list=children.get(parent)??[];list.push(full);children.set(parent,list);
     }
-    for(const list of children.values())list.sort((a,b)=>a.localeCompare(b,"ru"));
+    for(const list of children.values())list.sort((a,b)=>folderSort==="files"?(counts.get(b)??0)-(counts.get(a)??0):folderSort==="pinned"?Number(!!folderStyles[b]?.pinned)-Number(!!folderStyles[a]?.pinned)||a.localeCompare(b,"ru"):a.localeCompare(b,"ru"));
     const openFolder=(folder:string)=>{
       current=folder;viewFilter="all";selected.clear();visibleLimit=100;
       for(let p=folder;p.includes("/");p=p.slice(0,p.lastIndexOf("/")))treeExpanded.add(p.slice(0,p.lastIndexOf("/")));
@@ -322,7 +326,9 @@ export function diskPage():HTMLElement {
       const toggle=el("button",{type:"button",cls:"disk-tree-toggle",textContent:expandable?(expanded?"▾":"▸"):"·",attrs:{"aria-label":expanded?"Свернуть "+label:"Развернуть "+label,"aria-expanded":String(expanded)}});
       toggle.disabled=!expandable;
       toggle.addEventListener("click",()=>{if(treeExpanded.has(folder))treeExpanded.delete(folder);else treeExpanded.add(folder);renderTree();});
-      const select=el("button",{type:"button",cls:"disk-tree-select",attrs:{"aria-current":current===folder&&viewFilter==="all"?"page":"false"}},icon(expanded?"folder-open":"folder",16),el("span",{textContent:label}),el("small",{textContent:String(counts.get(folder)??0)}));
+      const select=el("button",{type:"button",cls:"disk-tree-select",attrs:{"aria-current":current===folder&&viewFilter==="all"?"page":"false"}},icon(expanded?"folder-open":"folder",16),el("span",{textContent:(folderStyles[folder]?.pinned?"★ ":"")+label}),el("small",{textContent:String(counts.get(folder)??0)}));
+      if(folderStyles[folder]?.color)select.style.color=folderStyles[folder]!.color;
+      if(folderStyles[folder]?.cover)select.title="Обложка: "+folderStyles[folder]!.cover;
       select.addEventListener("click",()=>openFolder(folder));
       if(folder){
         const menu=el("details",{cls:"disk-folder-actions"});
@@ -346,22 +352,58 @@ export function diskPage():HTMLElement {
           treeExpanded.add(parent.slice(0,-1));menu.open=false;void refresh();
         });
         menu.addEventListener("toggle",()=>{if(menu.open){field.value=label;feedback.textContent="";}});
-        controls.append(field,submit,rename,feedback);menu.append(summary,controls);
+        const operations=el("div",{cls:"disk-tree-operations"});
+        const parentName=folder.includes("/")?folder.slice(0,folder.lastIndexOf("/")):"";
+        const copy=button("Копировать папку",async()=>{
+          const r=await api.diskFolderCopy(folder,parentName);
+          if(!r.ok)feedback.textContent=r.error.message;else{menu.open=false;void refresh();}
+        });
+        const move=button("Переместить папку",async()=>{
+          const target=prompt("Путь папки назначения (пусто — корень)",parentName);
+          if(target===null)return;
+          const r=await api.diskFolderMove(folder,target.trim());
+          if(!r.ok)feedback.textContent=r.error.message;
+          else{menu.open=false;current="";void refresh();}
+        });
+        const remove=button("Удалить папку",async()=>{
+          if(!confirm("Удалить папку «"+folder+"» и все подпапки? Файлы попадут в корзину, но структура папок пока не восстанавливается."))return;
+          const r=await api.diskFolderTrash(folder);
+          if(!r.ok)feedback.textContent=r.error.message;
+          else{menu.open=false;current="";void refresh();}
+        });
+        const color=el("input",{type:"color",value:folderStyles[folder]?.color??"#b89cff",attrs:{"aria-label":"Цвет папки"}});
+        const pinned=el("input",{type:"checkbox",checked:folderStyles[folder]?.pinned??false});
+        const cover=el("input",{type:"text",cls:"mem-input",value:folderStyles[folder]?.cover??"",placeholder:"Описание обложки",maxLength:100});
+        const style=button("Сохранить оформление",async()=>{
+          const r=await api.diskFolderStyle(folder,color.value,pinned.checked,cover.value);
+          if(!r.ok)feedback.textContent=r.error.message;
+          else{folderStyles[folder]={color:color.value,pinned:pinned.checked,cover:cover.value};menu.open=false;renderTree();}
+        });
+        operations.append(copy,move,remove,color,el("label",{},pinned," Закрепить"),cover,style);
+        controls.append(field,submit,rename,operations,feedback);menu.append(summary,controls);
         line.append(menu);
-        line.addEventListener("dragover",e=>{if(e.dataTransfer?.types.includes("application/x-juunibi-file")){e.preventDefault();line.classList.add("disk-tree-drop");}});
+        line.addEventListener("dragover",e=>{if(e.dataTransfer?.types.includes("application/x-juunibi-file")||e.dataTransfer?.types.includes("application/x-juunibi-folder")){e.preventDefault();line.classList.add("disk-tree-drop");}});
         line.addEventListener("dragleave",()=>line.classList.remove("disk-tree-drop"));
         line.addEventListener("drop",async e=>{
           line.classList.remove("disk-tree-drop");
+          const movedFolder=e.dataTransfer?.getData("application/x-juunibi-folder");
+          if(movedFolder){e.preventDefault();if(movedFolder===folder)return;const r=await api.diskFolderMove(movedFolder,folder);if(!r.ok)showToast(r.error.message);else{current="";void refresh();}return;}
           const id=e.dataTransfer?.getData("application/x-juunibi-file");
           if(!id)return;e.preventDefault();
           const r=await api.diskMove(id,folder);if(!r.ok)showToast(r.error.message);else void refresh();
         });
       }
+      if(folder){select.draggable=true;select.addEventListener("dragstart",e=>e.dataTransfer?.setData("application/x-juunibi-folder",folder));}
       line.append(toggle,select);line.style.paddingLeft=String(Math.min(depth,10)*13)+"px";node.append(line);
-      if(expanded && expandable){const subtree=el("div",{cls:"disk-tree-children"});for(const child of descendants)subtree.append(draw(child,depth+1));node.append(subtree);}
+      if(folderQuery && folder && !folder.toLocaleLowerCase().includes(folderQuery) && ![...allFolders].some(f=>f.startsWith(folder+"/")&&f.toLocaleLowerCase().includes(folderQuery)))return el("span",{});
+      if((expanded||!!folderQuery) && expandable){const subtree=el("div",{cls:"disk-tree-children"});for(const child of descendants)subtree.append(draw(child,depth+1));node.append(subtree);}
       return node;
     };
-    tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),
+    const filter=el("input",{type:"search",cls:"mem-input",placeholder:"Найти папку",value:folderQuery});
+    filter.addEventListener("input",()=>{folderQuery=filter.value;renderTree();});
+    const sort=el("select",{cls:"mem-select"},...(["pinned","name","files"] as const).map(v=>el("option",{value:v,textContent:v==="name"?"По имени":v==="files"?"По файлам":"Закреплённые"})));
+    sort.value=folderSort;sort.addEventListener("change",()=>{folderSort=sort.value as typeof folderSort;renderTree();});
+    tree.replaceChildren(el("div",{cls:"disk-tree-heading"},el("strong",{textContent:"Каталоги"}),el("small",{textContent:allFolders.length+" папок"})),filter,sort,
       draw("",0),
       button("★ Избранное",()=>{viewFilter="favorites";current="";void refresh();}),
       button("Корзина · "+trash.length,()=>{viewFilter="trash";current="";void refresh();}));
@@ -372,6 +414,7 @@ export function diskPage():HTMLElement {
     items=r.value.files;trash=r.value.trash??[];allFolders=r.value.folders;
     const full=await api.diskList();
     treeFiles=full.ok?full.value.files:items;
+    const styles=await api.diskFolderStyles();if(styles.ok)folderStyles=styles.value;
     selected.clear();
     breadcrumb.textContent=viewFilter==="trash"?"Диск / Корзина":viewFilter==="favorites"?"Диск / Избранное":current?"Диск / "+current:"Диск / Все файлы";
     status.textContent="Локальное хранение · До "+human(r.value.maxFileBytes)+" на файл · Данные не передаются в Cloud.ru.";
@@ -448,8 +491,9 @@ export function diskPage():HTMLElement {
   drop.addEventListener("dragover",e=>{e.preventDefault();drop.classList.add("active");});
   drop.addEventListener("dragleave",()=>drop.classList.remove("active"));
   drop.addEventListener("drop",e=>{e.preventDefault();drop.classList.remove("active");if(e.dataTransfer?.files.length)void uploadFiles([...e.dataTransfer.files]);});
+  const hideTree=button("Скрыть / показать дерево",()=>{treeHidden=!treeHidden;tree.hidden=treeHidden;});
   const catalog=el("div",{cls:"disk-catalog"},tree,el("section",{cls:"disk-catalog-content"},el("div",{cls:"disk-controls"},breadcrumb,search,el("label",{},allSearch,"Все папки"),el("label",{},searchContents,"В тексте"),sortSelect,viewButton),drop,bulkBar,files,details));
-  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton),catalog);
+  page.append(el("h1",{textContent:"Диск"}),hero,status,el("div",{cls:"disk-toolbar"},newFolder,create,upload,statsButton,toolsButton,exportButton,hideTree),catalog);
   void refresh();
   return page;
 }
