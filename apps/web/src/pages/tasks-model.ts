@@ -1,5 +1,6 @@
 /** Pure model behind the "Дела" page (tested in test/tasks-model.test.ts). */
-import type { Note, Reminder, Repeat } from "../api";
+import type { DayLoad, Note, Reminder, Repeat } from "../api";
+import { prodDay } from "@juunibi/core";
 
 export type TaskFilter = "all" | "todo" | "note" | "reminder";
 export const REPEAT_LABEL: Record<Repeat, string> = { daily: "каждый день", weekdays: "по будням", weekly: "каждую неделю", monthly: "каждый месяц", every3days: "каждые 3 дня", yearly: "каждый год" };
@@ -229,4 +230,80 @@ export function planWeek(notes: Note[], workdays: string[], dayMinutes = 480): {
     out.push({ id: n.id, text: n.text, day: best });
   }
   return out;
+}
+
+/** Free minutes of a day: the working hours, an hour less on a short day, half of them on a day off (as the server counts). */
+export function dayCapacity(day: string, dayHours: number): number {
+  if (!dayHours) return 0;
+  const pd = prodDay(day);
+  const d = new Date(day + "T12:00");
+  const work = pd ? pd.kind === "work" || pd.kind === "short" : d.getDay() !== 0 && d.getDay() !== 6;
+  return (work ? (pd?.kind === "short" ? Math.max(1, dayHours - 1) : dayHours) : Math.ceil(dayHours / 2)) * 60;
+}
+/**
+ * How full a day is, from the list already on the page (no request): the same numbers as the server's
+ * `/api/organizer/load`, with the to-dos to move off an overloaded day (not the important ones, the cheap moves first).
+ */
+export function dayLoadOf(notes: Note[], day: string, dayHours: number): DayLoad {
+  const capacity = dayCapacity(day, dayHours);
+  const items = notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localDay(n.dueAt) === day);
+  const mins = (n: Note) => n.estimateMinutes ?? 30;
+  const planned = items.reduce((s, n) => s + mins(n), 0);
+  const over = capacity > 0 && planned > capacity;
+  const move: DayLoad["move"] = [];
+  if (over) {
+    const rank = (n: Note) => (n.priority === "low" ? 0 : 1) * 2 + (n.dueAt && isDateOnly(n.dueAt) ? 0 : 1);
+    let rest = planned;
+    for (const n of items.filter((x) => x.priority !== "high").sort((x, y) => rank(x) - rank(y) || mins(y) - mins(x))) {
+      if (rest <= capacity) break;
+      move.push({ id: n.id, text: n.text, minutes: mins(n) });
+      rest -= mins(n);
+    }
+  }
+  const pd = prodDay(day);
+  return { day, capacity, planned, over, count: items.length, work: pd ? pd.kind === "work" || pd.kind === "short" : true, move };
+}
+
+export interface MonthItem { id: string; text: string; at: string; kind: "todo" | "reminder"; done: boolean }
+/** The calendar's month: to-dos by due date and reminders by time, and the overloaded days. Built on the page, no request. */
+export function monthItems(org: { notes: Note[]; reminders: Reminder[] }, month: string, dayHours: number): { items: MonthItem[]; heavyDays: string[] } {
+  const inMonth = (iso: string) => localDay(iso).slice(0, 7) === month;
+  const items: MonthItem[] = [
+    ...org.notes.filter((n) => n.kind === "todo" && n.dueAt && inMonth(n.dueAt)).map((n) => ({ id: n.id, text: n.text, at: n.dueAt!, kind: "todo" as const, done: n.done })),
+    ...org.reminders.filter((r) => inMonth(r.at)).map((r) => ({ id: r.id, text: r.text, at: r.at, kind: "reminder" as const, done: r.status === "done" })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+  const days = [...new Set(items.filter((x) => x.kind === "todo" && !x.done).map((x) => localDay(x.at)))];
+  return { items, heavyDays: dayHours ? days.filter((d) => dayLoadOf(org.notes, d, dayHours).over) : [] };
+}
+
+/** The text cut into pieces, with the places where `query` occurs marked (case does not matter). */
+export function markParts(text: string, query: string): [string, boolean][] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [[text, false]];
+  const out: [string, boolean][] = [];
+  const low = text.toLowerCase();
+  let at = 0;
+  for (let i = low.indexOf(q); i >= 0; i = low.indexOf(q, i + q.length)) {
+    if (i > at) out.push([text.slice(at, i), false]);
+    out.push([text.slice(i, i + q.length), true]);
+    at = i + q.length;
+  }
+  if (at < text.length) out.push([text.slice(at), false]);
+  return out.length ? out : [[text, false]];
+}
+
+/** The days a to-do can be moved to from its row: today, tomorrow, the coming Monday and a week from today. */
+export function moveTargets(now = new Date()): { key: string; label: string }[] {
+  const at = (n: number) => localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + n, 12));
+  const toMonday = ((8 - now.getDay()) % 7) || 7;
+  const all = [{ key: at(0), label: "Сегодня" }, { key: at(1), label: "Завтра" }, { key: at(toMonday), label: "В понедельник" }, { key: at(7), label: "Через неделю" }];
+  // on Sunday Monday is tomorrow, on Monday it is a week from today: each day once
+  return all.filter((x, i) => all.findIndex((y) => y.key === x.key) === i);
+}
+
+/** The open to-dos with a project (or a goal), for the filter chips: name and how many. */
+export function projectCounts(notes: Note[], goalTitle: (id: string) => string | undefined): { id: string; label: string; n: number }[] {
+  const m = new Map<string, number>();
+  for (const n of notes) if (n.kind === "todo" && !n.done && n.project) m.set(n.project, (m.get(n.project) ?? 0) + 1);
+  return [...m].map(([id, n]) => { const g = goalTitle(id); return { id, label: g ? "◎ " + g : "#" + id, n }; }).sort((a, b) => b.n - a.n || a.label.localeCompare(b.label));
 }
