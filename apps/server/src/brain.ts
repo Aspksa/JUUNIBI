@@ -49,6 +49,24 @@ export class BrainCore {
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   recallExperience(query: string) { return recallConfirmedExperience(this.decisions.snapshot(), query); }
   searchConfirmedExperience(query: unknown, taskType?: unknown, limit: unknown = 5) { return this.decisions.searchConfirmed(query, taskType, limit); }
+  /** Grounded planning advisory only: no inferred permissions or automatic tool execution. */
+  previewExperiencePlan(planId: string, taskType?: unknown) {
+    const plan = this.plans.find(p => p.id === planId);
+    if (!plan) throw Object.assign(new Error("План не найден"), { status: 404 });
+    const experience = this.decisions.searchConfirmed(plan.goal, taskType, 5);
+    const readiness = this.executionReadiness(planId);
+    return {
+      planId: plan.id,
+      goal: plan.goal,
+      phase: plan.status,
+      experience,
+      nextStepId: readiness.canResumeReadOnly ? readiness.nextStepId : null,
+      missingEvidence: readiness.missingEvidence,
+      requiresOwnerReview: readiness.requiresOwnerReview,
+      requiresExplicitExecution: true as const,
+      note: "Подтверждённые владельцем решения служат подсказками, не доказательством и не разрешением на действие.",
+    };
+  }
   toolRegistry() { return { tools: [{name:"list_modules",risk:"read",requiresExplicitExecution:true},{name:"search_memory",risk:"read",requiresExplicitExecution:true}], writeEnabled:false, arbitraryToolsEnabled:false } as const; }
   reviewSixCognitiveSkills(input: CognitiveInput) { return reviewSixSkills(input); }
   /** Ground six cognitive checks in saved plan steps and observed tool outcomes.
