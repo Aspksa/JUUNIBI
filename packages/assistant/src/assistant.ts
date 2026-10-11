@@ -1,4 +1,5 @@
 import { Logger } from "@juunibi/core";
+import { guardToolClaims, type ToolEvidence } from "./evidence-guard";
 import { taskExecutionInstructions } from "./task-intent";
 import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
@@ -230,6 +231,7 @@ export class Assistant {
       ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
       ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     const used: string[] = [];
+    const toolEvidence: ToolEvidence[] = [];
     let reply: string | null = null;
     // The automatic brain review already ran for this message, so its tool would only add a model round trip;
     // the other brain tools are offered only when the review says the task needs planning.
@@ -262,6 +264,7 @@ export class Assistant {
         const t0 = Date.now();
         const result = await this.runTool(call.name, call.arguments, signal, opts.ephemeral);
         const elapsedMs = Date.now() - t0;
+        toolEvidence.push({ name: call.name, status: result.status });
         try { this.o.onToolOutcome?.({tool: call.name, status: result.status, risk: this.tools.get(call.name)?.risk ?? "read", elapsedMs}); }
         catch (error) { this.log.warn("tool observer failed", error); }
         opts.onEvent?.({ type: "tool", phase: "end", id: call.id, name: call.name, status: result.status, ms: elapsedMs });
@@ -269,6 +272,7 @@ export class Assistant {
       }
     }
     reply ??= "Не удалось завершить задачу за отведённое число шагов.";
+    reply = guardToolClaims(reply, toolEvidence);
     if (!opts.ephemeral) {
       const sec = (ms: number) => (ms / 1000).toFixed(1);
       this.log.info(`ответ за ${sec(Date.now() - t0)} с: первый текст через ${firstTextAt ? sec(firstTextAt - t0) + " с" : "—"}, ` +
