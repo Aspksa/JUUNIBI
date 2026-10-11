@@ -1,6 +1,7 @@
 export type StreamEvent =
   | { type: "delta"; text: string }
   | { type: "thinking" }
+  | { type: "brain_review"; review: unknown }
   | { type: "tool"; phase: "start"; id: string; name: string; args: string }
   | { type: "tool"; phase: "end"; id: string; name: string; status: "ok" | "error" | "denied"; ms: number }
   | { type: "done"; turnId: string; reply: string; tools: string[]; memory?: string[] } | { type: "error"; message: string };
@@ -21,7 +22,7 @@ export async function streamChat(body: { message: string; history: { role: strin
     if (line.length > MAX_LINE) throw new Error("Ответ помощницы слишком большой");
     let event: unknown;
     try { event = JSON.parse(line); } catch { throw new Error("Некорректное событие ответа помощницы"); }
-    if (!event || typeof event !== "object" || !["delta", "thinking", "tool", "done", "error"].includes(String((event as { type?: unknown }).type))) throw new Error("Некорректное событие ответа помощницы");
+    if (!event || typeof event !== "object" || !["delta", "thinking", "tool", "done", "error", "brain_review"].includes(String((event as { type?: unknown }).type))) throw new Error("Некорректное событие ответа помощницы");
     onEvent(event as StreamEvent);
   };
   for (;;) {
