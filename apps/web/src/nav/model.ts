@@ -7,7 +7,7 @@ import type { Brief, MemoryItem } from "../api";
 import type { IconName } from "../dom";
 import type { Route } from "../state";
 
-export type NavId = "chat" | "tasks" | "brain" | "modules" | "mobile" | "update" | "settings";
+export type NavId = "chat" | "tasks" | "disk" | "brain" | "modules" | "mobile" | "update" | "settings";
 export type NavGroup = "main" | "brain" | "system";
 export interface NavItem { id: NavId; label: string; icon: IconName; group: NavGroup; route?: Route }
 
@@ -15,6 +15,7 @@ export interface NavItem { id: NavId; label: string; icon: IconName; group: NavG
 export const NAV_ITEMS: NavItem[] = [
   { id: "chat", label: "Беседа", icon: "chat", group: "main" },
   { id: "tasks", label: "Дела", icon: "check", group: "main", route: "tasks" },
+  { id: "disk", label: "Диск", icon: "folder", group: "main", route: "disk" },
   { id: "brain", label: "Мозг", icon: "brain", group: "brain", route: "brain" },
   { id: "modules", label: "Модули", icon: "modules", group: "brain", route: "modules" },
   { id: "mobile", label: "Телефон", icon: "phone", group: "system", route: "mobile" },
