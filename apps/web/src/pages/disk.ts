@@ -82,20 +82,30 @@ export function diskPage():HTMLElement {
     const summary=el("div",{cls:"disk-chronicles-hero"},el("span",{cls:"disk-chronicles-orbit",textContent:"✦"}),el("div",{},el("small",{textContent:"ЛИЧНАЯ ВСЕЛЕННАЯ ФАЙЛОВ"}),el("strong",{textContent:data.summary.total+" показателей"}),el("span",{textContent:"Подтверждено: "+data.summary.ready+" · Ожидают данных: "+(data.summary.total-data.summary.ready)})));
     const q=el("input",{type:"search",placeholder:"Поиск показателя",cls:"mem-input",attrs:{"aria-label":"Поиск показателя"}});
     const content=el("div",{cls:"disk-stats-groups"});
+    const sections=data.groups.map((g,i)=>({
+      group:g,metrics:data.metrics.slice(i*9,i===10?100:(i+1)*9)
+    }));
     const render=()=>{
       const text=q.value.toLocaleLowerCase().trim();
-      content.replaceChildren(...data.groups.flatMap(g=>{
-        const metrics=data.metrics.filter(m=>g.id==="g10"?Number(m.id.slice(1))>=91:Number(m.id.slice(1))>data.groups.findIndex(x=>x.id===g.id)*9&&Number(m.id.slice(1))<=(data.groups.findIndex(x=>x.id===g.id)+1)*9).filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
-        if(!metrics.length)return [];
+      const nodes=sections.flatMap(({group,metrics})=>{
+        const found=metrics.filter(m=>!text||m.title.toLocaleLowerCase().includes(text));
+        if(!found.length)return [];
         const section=el("details",{cls:"disk-stats-group",open:!!text});
-        section.append(el("summary",{textContent:g.title+" · "+metrics.length}));
-        section.append(el("div",{cls:"disk-stats-tiles"},...metrics.map(m=>{
-          const tile=el("div",{cls:"disk-stats-tile"+(m.ready?" is-ready":" is-pending")});
-          tile.append(el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),el("strong",{textContent:m.value}),el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}));
-          return tile;
-        })));
+        section.append(el("summary",{textContent:group.title+" · "+found.length}));
+        const tiles=el("div",{cls:"disk-stats-tiles"});
+        const draw=()=>{
+          if(tiles.childElementCount)return;
+          tiles.append(...found.map(m=>el("div",{cls:"disk-stats-tile"+(m.ready?" is-ready":" is-pending")},
+            el("small",{cls:"muted",textContent:m.id.slice(1)+" · "+m.title}),
+            el("strong",{textContent:m.value}),
+            el("small",{cls:"muted",textContent:m.ready?"По данным Диска":m.reason??"Нет данных"}))));
+        };
+        section.addEventListener("toggle",()=>{if(section.open)draw();});
+        if(text)draw();
+        section.append(tiles);
         return [section];
-      }));
+      });
+      content.replaceChildren(...nodes);
     };
     q.addEventListener("input",render);render();
     statistics.replaceChildren(toolbar,summary,q,content);
