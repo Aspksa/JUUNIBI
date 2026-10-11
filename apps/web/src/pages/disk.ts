@@ -177,12 +177,12 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   const uploadBtn = btn("Загрузить", chooseFiles, { primary: true, icon: "download" });
   uploadBtn.classList.add("dk-upload-btn");
   uploadBtn.querySelector("svg")?.replaceWith(dIcon("upload", 17));
-  const newFolderBtn = btn("Новая папка", () => void createFolder(current), {});
+  const newFolderBtn = btn("Новая папка", () => void createFolder(uploadFolder()), {});
   newFolderBtn.classList.add("dk-newfolder-btn");
   newFolderBtn.prepend(dIcon("folderPlus", 17));
   const moreBtn = el("button", { type: "button", cls: "icon-btn dk-more-btn", attrs: { "aria-label": "Ещё", "aria-haspopup": "menu", "aria-expanded": "false", title: "Ещё" } }, dIcon("more", 19));
   moreBtn.addEventListener("click", () => openMenu(moreBtn, [
-    { icon: "folderPlus", label: "Новая папка", run: () => void createFolder(current) },
+    { icon: "folderPlus", label: "Новая папка", run: () => void createFolder(uploadFolder()) },
     { icon: "chronicle", label: "Хроники Диска", run: () => void openChronicles() },
     { icon: "audit", label: "Проверка файлов", run: () => void openAudit() },
     { icon: "history", label: "История", run: () => void openHistory() },
@@ -364,7 +364,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     const up = btn("Загрузить файлы", chooseFiles, { primary: true });
     up.prepend(dIcon("upload", 17));
     return emptyState("folder", current ? "В папке «" + folderName(current) + "» пусто" : "На Диске пока нет файлов", "Перетащите файлы в это окно или нажмите «Загрузить». Можно сразу несколько.",
-      el("div", { cls: "dk-empty-actions" }, up, btn("Новая папка", () => void createFolder(current), { icon: "plus" })));
+      el("div", { cls: "dk-empty-actions" }, up, btn("Новая папка", () => void createFolder(uploadFolder()), { icon: "plus" })));
   };
   const renderFiles = () => {
     filesBox.className = "dk-files mode-" + mode;
@@ -540,8 +540,12 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     showToast((ids.length === 1 ? "«" + before[0]!.name + "»" : filesWord(ids.length)) + " → " + (target || "Корень Диска"), {
       actions: [
         { label: "Отменить", run: () => void (async () => {
-          for (const [folder, list] of moveBack(before)) { const u = list.length === 1 ? await api.diskMove(list[0]!, folder) : await api.diskBulk(list, "move", folder); if (!u.ok) { showToast(u.error.message); break; } }
-          for (const f of before) replace(f);
+          for (const [folder, list] of moveBack(before)) {
+            const u = list.length === 1 ? await api.diskMove(list[0]!, folder) : await api.diskBulk(list, "move", folder);
+            // the server is the truth after a partial undo
+            if (!u.ok) { showToast(u.error.message); await loadCatalog(false); return; }
+            for (const id of list) { const f = before.find((x) => x.id === id); if (f) replace(f); }
+          }
           redraw();
         })() },
         { label: "Открыть папку", run: () => go({ folder: target }) },
@@ -592,7 +596,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     const r = await api.diskFolder(parent ? parent + "/" + name : name);
     if (!r.ok) { showToast(r.error.message); return; }
     if (parent) expanded.add(parent);
-    await loadCatalog(false);
+    await loadCatalog();
     go({ folder: r.value.name });
   }
   const folderMenu = (folder: string): MenuItem[] => [
@@ -604,7 +608,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       const r = await api.diskRenameFolder(folder, next);
       if (!r.ok) { showToast(r.error.message); return; }
       if (current === folder || current.startsWith(folder + "/")) current = next + current.slice(folder.length);
-      void loadCatalog(false);
+      void loadCatalog();
     })() },
     { icon: "move", label: "Переместить папку", run: () => void (async () => {
       const dest = await pickFolder({ folders, title: "Переместить папку «" + folderName(folder) + "»", ok: "Переместить сюда", start: parentOf(folder), moving: folder });
@@ -613,13 +617,13 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       if (!r.ok) { showToast(r.error.message); return; }
       if (current === folder || current.startsWith(folder + "/")) current = r.value.name + current.slice(folder.length);
       if (dest) expanded.add(dest);
-      void loadCatalog(false);
+      void loadCatalog();
       showToast("Папка перемещена в «" + (dest || "Корень Диска") + "»");
     })() },
     { icon: "copy", label: "Копировать папку", run: () => void (async () => {
       const r = await api.diskFolderCopy(folder, parentOf(folder));
       if (!r.ok) { showToast(r.error.message); return; }
-      void loadCatalog(false);
+      void loadCatalog();
       showToast("Создана копия «" + folderName(r.value.name) + "»: " + filesWord(r.value.files));
     })() },
     { icon: "refresh", label: "Синхронизировать в…", run: () => void syncFolder(folder) },
@@ -631,8 +635,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       const r = await api.diskFolderTrash(folder);
       if (!r.ok) { showToast(r.error.message); return; }
       if (current === folder || current.startsWith(folder + "/")) current = parentOf(folder);
-      void loadCatalog(false);
-      showToast("Папка «" + folderName(folder) + "» в корзине", { action: { label: "Отменить", run: () => void api.diskFolderRestore(folder).then((x) => { if (!x.ok) showToast(x.error.message); void loadCatalog(false); }) } });
+      void loadCatalog();
+      showToast("Папка «" + folderName(folder) + "» в корзине", { action: { label: "Отменить", run: () => void api.diskFolderRestore(folder).then((x) => { if (!x.ok) showToast(x.error.message); void loadCatalog(); }) } });
     })() },
   ];
   async function syncFolder(folder: string) {
@@ -646,7 +650,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     if (!(await askConfirm({ title: "Синхронизировать?", text: "В «" + (dest || "Корень Диска") + "» скопируется " + filesWord(p.pending) + ", одинаковых уже " + p.unchanged + ". Существующие файлы не перезаписываются.", ok: "Синхронизировать", icon: "refresh" }))) return;
     const r = await api.diskFolderSync(folder, dest, true);
     if (!r.ok) { showToast(r.error.message); return; }
-    void loadCatalog(false);
+    void loadCatalog();
     showToast("Синхронизировано: " + filesWord(r.value.copied));
   }
   function folderLook(folder: string) {
@@ -712,7 +716,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       if (folder === TRASH_DROP) { if (ids) void trashFiles(JSON.parse(ids) as string[]); else if (moving) showToast("Папку удаляют из её меню «⋯»"); return; }
       if (moving) {
         if (moving === folder || folder.startsWith(moving + "/") || parentOf(moving) === folder) return;
-        void api.diskFolderMove(moving, folder).then((r) => { if (!r.ok) showToast(r.error.message); else { if (current === moving || current.startsWith(moving + "/")) current = r.value.name + current.slice(moving.length); void loadCatalog(false); } });
+        void api.diskFolderMove(moving, folder).then((r) => { if (!r.ok) showToast(r.error.message); else { if (current === moving || current.startsWith(moving + "/")) current = r.value.name + current.slice(moving.length); void loadCatalog(); } });
       } else void moveFiles(JSON.parse(ids!) as string[], folder);
     });
   };
@@ -830,7 +834,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       const res = await fetch("/api/disk/files/" + encodeURIComponent(f.id) + "/versions/binary?expected=" + encodeURIComponent(f.sha256), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
       const body = (await res.json().catch(() => ({}))) as DiskFile & { error?: string };
       if (!res.ok) { showToast(body.error ?? "Не удалось сохранить версию"); return; }
-      replace(body); redraw(); openInfo(f.id); showToast("Сохранена новая версия «" + f.name + "»");
+      replace(body); used += body.size; redraw(); openInfo(f.id); showToast("Сохранена новая версия «" + f.name + "»");
     });
     void api.diskVersions(f.id).then((r) => {
       if (!r.ok || infoId !== f.id) return;
@@ -842,7 +846,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
             if (!(await askConfirm({ title: "Вернуть версию " + v.revision + "?", text: "Текущая версия «" + f.name + "» останется в истории.", ok: "Вернуть", icon: "undo" }))) return;
             const x = await api.diskRestoreVersion(f.id, v.revision);
             if (!x.ok) { showToast(x.error.message); return; }
-            replace(x.value); redraw(); openInfo(f.id); showToast("Возвращена версия " + v.revision);
+            replace(x.value); redraw(); openInfo(f.id); void loadCatalog(false); showToast("Возвращена версия " + v.revision);
           }, { small: true }))),
         btn("Загрузить новую версию", () => newVersion.click(), { small: true, icon: "plus" }), newVersion);
     });
@@ -1034,7 +1038,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     const body = r.value.folders.length ? el("div", { cls: "dk-history" }, ...r.value.folders.map((x) => {
       const row = el("div", { cls: "dk-history-row" }, el("span", { cls: "dk-history-ic" }, dIcon("folder", 16)),
         el("span", { cls: "dk-history-text" }, el("b", { textContent: x.root }), el("small", { cls: "muted", textContent: plural(x.count, "папка", "папки", "папок") + " · " + fmtTime(x.at) })),
-        btn("Восстановить", async () => { const y = await api.diskFolderRestore(x.root); if (!y.ok) { showToast(y.error.message); return; } row.remove(); void loadCatalog(false); showToast("Папка «" + x.root + "» восстановлена: " + filesWord(y.value.files)); }, { small: true }));
+        btn("Восстановить", async () => { const y = await api.diskFolderRestore(x.root); if (!y.ok) { showToast(y.error.message); return; } row.remove(); void loadCatalog(); showToast("Папка «" + x.root + "» восстановлена: " + filesWord(y.value.files)); }, { small: true }));
       return row;
     })) : emptyState("folder", "Удалённых папок нет", "Папки, удалённые в корзину, появятся здесь.");
     openSheet({ title: "Удалённые папки", icon: "folder", content: body });
@@ -1060,7 +1064,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       const res = await fetch("/api/disk/backup/restore", { method: "POST", headers: { "Content-Type": "application/x-ndjson" }, body: file });
       const out = (await res.json()) as { files?: number; error?: string };
       if (!res.ok) throw new Error(out.error ?? "Восстановление невозможно");
-      showToast("Восстановлено: " + filesWord(out.files ?? 0)); void loadCatalog(false);
+      showToast("Восстановлено: " + filesWord(out.files ?? 0)); void loadCatalog();
     } catch (e) { showToast(e instanceof Error ? e.message : "Ошибка восстановления"); }
   });
 

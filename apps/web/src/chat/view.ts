@@ -139,7 +139,14 @@ export class ChatView {
   /** A fresh chat, as Ctrl+Shift+O does inside the window. */
   startNew() { this.newChat(); }
   /** «Спросить JUUNIBI о файле» from the Disk: a fresh chat with the file's text attached and the question sent. */
-  askAbout(name: string, text: string, question: string) { this.newChat(); return this.sendText(question, [{ name, size: new Blob([text]).size, text }]); }
+  askAbout(name: string, text: string, question: string): string | null {
+    // check first: a busy or unconfigured chat would otherwise open empty and drop the question
+    if (this.ctl.busy) return "JUUNIBI ещё отвечает. Дождитесь ответа и спросите снова";
+    if (!app.get().status?.assistant) return "Чат пока не подключён: настройте модель в «Настройках»";
+    this.newChat();
+    void this.sendText(question, [{ name, size: new Blob([text]).size, text }]);
+    return null;
+  }
   resetPosition() { this.frame.reset(); }
   /** Esc: close the innermost transient thing first; "close" means nothing was open. */
   escape(): "handled" | "close" {

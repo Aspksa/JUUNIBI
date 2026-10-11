@@ -2,6 +2,7 @@ import type { LocalDisk } from "./local-disk";
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
@@ -158,11 +159,25 @@ const INLINE_TYPES: Record<string, string> = {
  * Streams one stored file: thumbnails, previews and downloads use a plain URL instead of base64 JSON.
  * The sha256 is the ETag, so a picture is fetched once; Range requests let video and audio seek.
  */
+/** Objects already checked, by path; re-checked whenever the file's size or time changes. */
+const verified = new Map<string, string>();
+async function verifiedObject(file: string, info: { size: number; mtimeMs: number }, entry: { size: number; sha256: string }) {
+  if (info.size !== entry.size) return false;
+  const key = info.size + ":" + info.mtimeMs + ":" + entry.sha256;
+  if (verified.get(file) === key) return true;
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(file, { highWaterMark: 256 * 1024 })) hash.update(chunk as Buffer);
+  if (hash.digest("hex") !== entry.sha256) return false;
+  if (verified.size > 2000) verified.clear();
+  verified.set(file, key);
+  return true;
+}
 async function sendRaw(req: http.IncomingMessage, res: http.ServerResponse, disk: LocalDisk, id: string, download: boolean) {
   const { entry, path: file } = disk.rawFile(id);
   const ext = entry.name.toLowerCase().split(".").pop() ?? "";
   const type = (!download && INLINE_TYPES[ext]) || "application/octet-stream";
-  const etag = `"${entry.sha256}"`;
+  // the name decides the type and the download name, so a rename must not reuse a cached response
+  const etag = `"${entry.sha256}-${createHash("sha256").update(entry.name).digest("hex").slice(0, 12)}"`;
   const headers: Record<string, string> = {
     "content-type": type, etag, "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff", "accept-ranges": "bytes",
     "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; sandbox",
@@ -170,7 +185,10 @@ async function sendRaw(req: http.IncomingMessage, res: http.ServerResponse, disk
   };
   if (ext === "pdf") delete headers["content-security-policy"]; // the browser's own PDF viewer needs its scripts
   if (req.headers["if-none-match"] === etag) { res.writeHead(304, headers); res.end(); return; }
-  const size = (await stat(file)).size;
+  const info = await stat(file);
+  const size = info.size;
+  // never serve (or let the browser cache) bytes that no longer match the checksum
+  if (!(await verifiedObject(file, info, entry))) { res.writeHead(409, { "content-type": "application/json", "cache-control": "no-store" }); res.end(JSON.stringify({ error: "Файл изменён или повреждён на диске" })); return; }
   const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
   let start = 0, end = size - 1;
   if (range && (range[1] || range[2])) {

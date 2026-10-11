@@ -65,7 +65,8 @@ export class LocalDisk {
       versions:JSON.parse(JSON.stringify(this.versions)) as Record<string,DiskRevision[]>,
       folders:[...this.folders],folderStyles:{...this.folderStyles},
       deletedFolders:this.deletedFolders.map(d=>({...d})),
-      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a}))
+      folderActions:this.folderActions.map(a=>({...a})),fileActions:this.fileActions.map(a=>({...a})),
+      trashDays:this.trashDays
     };
     yield JSON.stringify({type:"manifest",format:1,state})+"\n";
     const objects=new Map<string,{size:number;sha256:string}>();
@@ -155,6 +156,7 @@ export class LocalDisk {
       this.deletedFolders=Array.isArray(state.deletedFolders)?state.deletedFolders as typeof this.deletedFolders:[];
       this.folderActions=Array.isArray(state.folderActions)?state.folderActions as typeof this.folderActions:[];
       this.fileActions=Array.isArray(state.fileActions)?state.fileActions as typeof this.fileActions:[];
+      if(Number.isInteger(state.trashDays)&&(state.trashDays as number)>=0&&(state.trashDays as number)<=365)this.trashDays=state.trashDays as number;
       await this.save();committed=true;
       return {files:entries.length,folders:folders.length,objects:count};
     }catch(e){
@@ -208,7 +210,7 @@ export class LocalDisk {
     if(typeof color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(color))throw bad("Неверный цвет");
     if(typeof pinned!=="boolean")throw bad("Неверное значение закрепления");
     if(typeof cover!=="string"||cover.length>100)throw bad("Неверная обложка");
-    if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
+    if(cover&&!this.entries.some(e=>e.id===cover&&!e.deletedAt&&e.folder===folder&&/\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(e.name)))throw bad("Выберите изображение из этой папки",400);
     this.folderStyles[folder]={color,pinned,cover,...(this.folderStyles[folder]?.createdAt?{createdAt:this.folderStyles[folder]!.createdAt}:{})};
     this.logFolder("style",folder);await this.save();return {name:folder,...this.folderStyles[folder]};
   }
@@ -382,8 +384,8 @@ export class LocalDisk {
       e.tags=[...new Set((input.tags as string[]).map(t=>t.trim()))];
     }
     if(input.color!==undefined){
-      if(typeof input.color!=="string"||!/^#[0-9a-fA-F]{6}$/.test(input.color))throw bad("Недопустимый цвет");
-      e.color=input.color;
+      if(typeof input.color!=="string"||(input.color&&!/^#[0-9a-fA-F]{6}$/.test(input.color)))throw bad("Недопустимый цвет");
+      if(input.color)e.color=input.color;else delete e.color;
     }
     if(input.note!==undefined){
       if(typeof input.note!=="string"||input.note.length>2000)throw bad("Описание слишком длинное");
@@ -609,7 +611,8 @@ export class LocalDisk {
   /** Removes trashed files for good: all of them, or only those older than `olderThanMs`. */
   async emptyTrash(olderThanMs?:number,now=Date.now()){
     const doomed=this.entries.filter(e=>e.deletedAt&&(olderThanMs===undefined||now-new Date(e.deletedAt).getTime()>=olderThanMs));
-    if(!doomed.length)return {purged:0,bytes:0};
+    const staleFolders=this.deletedFolders.some(d=>olderThanMs===undefined||now-new Date(d.at).getTime()>=olderThanMs);
+    if(!doomed.length&&!staleFolders)return {purged:0,bytes:0};
     let bytes=0;
     for(const e of doomed){
       await rm(this.file(e.id),{force:true});
@@ -618,6 +621,8 @@ export class LocalDisk {
     }
     const gone=new Set(doomed.map(e=>e.id));
     this.entries=this.entries.filter(e=>!gone.has(e.id));
+    // a trashed folder whose files are gone for good can no longer be restored
+    this.deletedFolders=this.deletedFolders.filter(d=>(olderThanMs!==undefined&&now-new Date(d.at).getTime()<olderThanMs)||this.entries.some(e=>e.deletedAt&&(e.folder===d.root||e.folder.startsWith(d.root+"/"))));
     await this.save();
     return {purged:doomed.length,bytes};
   }
@@ -642,9 +647,12 @@ export class LocalDisk {
  * Text from a PDF without a library: inflate content streams and read the strings shown by Tj/TJ.
  * Works for ordinary text PDFs; scans and fonts with private encodings give no readable text.
  */
+/** A small PDF can unpack into gigabytes; reading text never needs more than this in total. */
+const PDF_INFLATE_BUDGET=16*1024*1024;
 export function pdfText(data:Buffer):string{
   const src=data.toString("latin1");
   const chunks:string[]=[];
+  let budget=PDF_INFLATE_BUDGET;
   const stream=/stream\r?\n/g;let m:RegExpExecArray|null;
   while((m=stream.exec(src))){
     const start=m.index+m[0].length,end=src.indexOf("endstream",start);
@@ -652,7 +660,9 @@ export function pdfText(data:Buffer):string{
     const dict=src.slice(Math.max(0,m.index-400),m.index);
     let body:Buffer=data.subarray(start,end);
     if(/FlateDecode/.test(dict.slice(dict.lastIndexOf("<<")))){
-      try{body=inflateSync(body);}catch{stream.lastIndex=end;continue;}
+      if(budget<=0)break;
+      try{body=inflateSync(body,{maxOutputLength:budget});}catch{stream.lastIndex=end;continue;}
+      budget-=body.length;
     }
     const content=body.toString("latin1");
     if(/\bBT\b/.test(content))chunks.push(showText(content));
