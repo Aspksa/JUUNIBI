@@ -135,6 +135,12 @@ describe("Local Disk",()=>{
      const removed=await disk.trashFolder("Главная/Внутри/Главная - копия");
      expect(removed.files).toBe(1);
      expect(disk.list().trash).toHaveLength(1);
+     expect(disk.listDeletedFolders()).toHaveLength(1);
+     const loaded=new LocalDisk(dir);await loaded.load();
+     expect(loaded.listDeletedFolders()[0]?.root).toBe("Главная/Внутри/Главная - копия");
+     const restored=await loaded.restoreFolder("Главная/Внутри/Главная - копия");
+     expect(restored.files).toBe(1);
+     expect(loaded.list("Главная/Внутри/Главная - копия/Внутри").files).toHaveLength(1);
      expect(Buffer.from((await disk.download(a.id)).base64,"base64").toString()).toBe("hello");
    }finally{await rm(dir,{recursive:true,force:true});}
  });
