@@ -254,7 +254,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
   ].join("\n");
   currentPersona = persona;
   assistant = new Assistant({ persona, instructions: () => instructionsPrompt(settings.get()), llm, memory, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
-  for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable })) assistant.tools.register(tool);
+  for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable, disk })) assistant.tools.register(tool);
   assistant.tools.register({
     name: "functional_health_check", risk: "read",
     description: "Безопасная функциональная диагностика семи модулей: PASS/FAIL/SKIPPED с источниками. Без записи, перезапуска и внешних запросов.",

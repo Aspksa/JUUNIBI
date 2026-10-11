@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@juunibi/core": "*"
+    "@juunibi/core": "*",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

@@ -4,18 +4,21 @@
  * Actions change the list in place and answer with a toast that can undo them; only folder
  * operations fetch the catalogue again. Pictures are plain lazy <img> links to the raw file.
  */
-import { api, diskRawUrl, type DiskFile, type DiskUploaded } from "../api";
+import { api, diskRawUrl, diskThumbUrl, type DiskFile, type DiskPreview, type DiskUploaded, type Note } from "../api";
+import { renderMarkdown } from "../markdown";
+import { thumbReady, wantThumb } from "./disk-thumbs";
+import { DISK_DRAG, takeDiskLink } from "./disk-link";
 import { el, iconButton } from "../dom";
 import { showToast } from "../toast";
 import { diskLifePanel } from "./disk-life";
-import { askConfirm, askText, pickFolder } from "./disk-dialogs";
+import { askConfirm, askText, pickFolder, pickTask } from "./disk-dialogs";
 import { dIcon, fileBadge, KIND_COLOR, type DiskIconName } from "./disk-icons";
 import {
   askable, daysLeft, duplicateNote, filterFiles, folderChildren, folderName, folderTotals, groupLabel, hasThumb, human,
-  kindOf, matchesVirtual, moveBack, parentOf, plural, previewKind, files as filesWord,
+  folderPlan, kindOf, madeThumb, matchesVirtual, moveBack, parentOf, parseCsv, plural, previewKind, files as filesWord,
   type GroupKey, type SortKey, type Virtual,
 } from "./disk-model";
-import { createUploader } from "./disk-upload";
+import { createUploader, readDropped } from "./disk-upload";
 import { btn, emptyState } from "./kit";
 import { openSheet } from "./sheet";
 import "./disk.css";
@@ -23,6 +26,8 @@ import "./disk.css";
 export interface DiskDeps {
   /** Opens a fresh chat with the file attached as text and sends the question. */
   ask?: (name: string, text: string, question: string) => void;
+  /** Attaches files' text to the chat composer and opens the chat; returns why it could not. */
+  attach?: (files: { name: string; size: number; text: string }[]) => string | null;
 }
 type View = "all" | "favorites" | "trash";
 type Mode = "tiles" | "large" | "list" | "table";
@@ -107,7 +112,7 @@ function openMenu(anchor: HTMLElement | { x: number; y: number }, items: MenuIte
 
 export function diskPage(deps: DiskDeps = {}): HTMLElement {
   /* ---------------------------------------------------------------- state */
-  let folders: string[] = [], all: DiskFile[] = [], trash: DiskFile[] = [], used = 0, maxBytes = 50 * 1024 * 1024;
+  let folders: string[] = [], all: DiskFile[] = [], trash: DiskFile[] = [], used = 0, maxBytes = 500 * 1024 * 1024;
   let styles: Record<string, Style> = {};
   let keepDays = 30, loaded = false;
   let current = "", view: View = "all", virtual: Virtual = "none", everywhere = false;
@@ -132,6 +137,37 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   const picker = el("input", { type: "file", multiple: true, hidden: true, attrs: { "aria-hidden": "true", tabindex: "-1" } });
   picker.addEventListener("change", () => { uploader.add([...(picker.files ?? [])], uploadFolder()); picker.value = ""; });
   const chooseFiles = () => picker.click();
+  /** «Загрузить папку»: the browser hands over every file with its path inside the chosen folder. */
+  const folderPicker = el("input", { type: "file", multiple: true, hidden: true, attrs: { "aria-hidden": "true", tabindex: "-1", webkitdirectory: "", directory: "" } });
+  folderPicker.addEventListener("change", () => {
+    const list = [...(folderPicker.files ?? [])];
+    folderPicker.value = "";
+    void uploadTree(list.map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+  });
+  const chooseFolder = () => folderPicker.click();
+  /** A dropped or chosen folder: its subfolders are made on the Disk first, then the files go into them. */
+  async function uploadTree(items: { file: File; path: string }[]) {
+    if (!items.length) return;
+    // Better to refuse up front than to copy part of a folder and look finished.
+    const room = 10000 - all.length - trash.length; // the trash counts toward the limit on the server too
+    if (items.length > room) { showToast(items.length > 10000 ? "В папке больше 10 000 файлов: столько на Диск не поместится" : "Не хватит места: на Диске до 10 000 файлов, свободно " + Math.max(0, room)); return; }
+    if (!items.some((x) => x.path.includes("/"))) { uploader.add(items.map((x) => x.file), uploadFolder()); return; }
+    const base = uploadFolder();
+    const plan = folderPlan(items.map((x) => x.path), base);
+    const missing = plan.folders.filter((f) => !folders.includes(f) && f !== base);
+    if (folders.length + missing.length > 500) { showToast("Столько папок не поместится: на Диске до 500 папок"); return; }
+    if (missing.length) showToast("Создаю папки: " + missing.length);
+    for (const f of missing) {
+      const r = await api.diskFolder(f);
+      if (!r.ok && !/уже есть/i.test(r.error.message)) { showToast("Папка «" + f + "»: " + r.error.message); return; }
+    }
+    if (missing.length) { for (const f of missing) expanded.add(parentOf(f)); saveOpen(); await loadCatalog(); }
+    uploader.addMany(plan.files.map((x) => ({ file: items[x.index]!.file, folder: x.folder })));
+    const byFolder = new Set(plan.files.map((x) => x.folder));
+    const top = plan.folders.find((f) => f !== base && parentOf(f) === base);
+    showToast("Загружаю " + filesWord(plan.files.length) + " в " + plural(missing.length || byFolder.size, "папку", "папки", "папок") + (plan.skipped ? ", служебных файлов пропущено: " + plan.skipped : ""),
+      top ? { action: { label: "Открыть папку", run: () => go({ folder: top }) } } : undefined);
+  }
   const uploader = createUploader({
     onUploaded: (f: DiskUploaded) => {
       const { duplicates, ...entry } = f;
@@ -161,6 +197,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   const moreBtn = el("button", { type: "button", cls: "icon-btn dk-more-btn", attrs: { "aria-label": "Ещё", "aria-haspopup": "menu", "aria-expanded": "false", title: "Ещё" } }, dIcon("more", 19));
   moreBtn.addEventListener("click", () => openMenu(moreBtn, [
     { icon: "folderPlus", label: "Новая папка", run: () => void createFolder(uploadFolder()) },
+    { icon: "folderUp", label: "Загрузить папку…", run: chooseFolder },
+    { icon: "zipDown", label: current && view === "all" && virtual === "none" ? "Скачать папку ZIP-архивом" : "Скачать весь Диск ZIP-архивом", run: () => void downloadZip({ folder: view === "all" && virtual === "none" ? current : "" }) },
     { icon: "chronicle", label: "Жизнь документов", run: () => life.reveal() },
     { icon: "audit", label: "Проверка файлов", run: () => void openAudit() },
     { icon: "history", label: "История", run: () => void openHistory() },
@@ -266,6 +304,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
           act("cut", "Вырезать", () => { clipboard = { ids, cut: true }; showToast("Вырезано: " + filesWord(ids.length) + ". Откройте папку и нажмите «Вставить» или Ctrl+V."); renderSelBar(); }),
           act("move", "Переместить", () => void moveFiles(ids)),
           act("star", ids.every((id) => byId(id)?.favorite) ? "Убрать из избранного" : "В избранное", () => void favoriteFiles(ids)),
+          act("zipDown", "Скачать ZIP", () => void downloadZip({ ids })),
+          ...(deps.attach && ids.some((id) => askable(byId(id)?.name ?? "")) ? [act("chatIn", "В беседу", () => void attachToChat(ids))] : []),
           act("trash", "В корзину", () => void trashFiles(ids), true),
         ]),
       ...(clipboard && view !== "trash" ? [act("paste", "Вставить", () => void paste())] : []),
@@ -291,21 +331,32 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
 
   /* ---------------------------------------------------------------- files */
   const filesBox = el("div", { cls: "dk-files", attrs: { "aria-label": "Файлы" } });
-  const dropzone = el("div", { cls: "dk-dropzone", attrs: { "aria-hidden": "true" } }, dIcon("upload", 34), el("strong"), el("span", { textContent: "До 50 МБ на файл" }));
+  const dropzone = el("div", { cls: "dk-dropzone", attrs: { "aria-hidden": "true" } }, dIcon("upload", 34), el("strong"), el("span", { textContent: "До 500 МБ на файл, можно целые папки" }));
   const main = el("section", { cls: "dk-main" }, head, selBar, trashBar, filesBox, dropzone);
   const sourceList = () => view === "trash" ? trash
     : all.filter((f) => (view !== "favorites" || f.favorite) && matchesVirtual(f, virtual) && (view !== "all" || virtual !== "none" || everywhere || f.folder === current));
   const thumbFor = (f: DiskFile, size: number) => {
     const box = el("span", { cls: "dk-thumb" });
     if (f.color) box.style.setProperty("--tag", f.color);
-    if (hasThumb(f) && view !== "trash") {
+    const picture = (src: string, made: boolean) => {
       box.classList.add("loading");
+      if (made) box.classList.add("made", "kind-" + madeThumb(f));
       const img = el("img", { alt: "", loading: "lazy", decoding: "async", draggable: false });
       img.addEventListener("load", () => box.classList.remove("loading"), { once: true });
-      img.addEventListener("error", () => { box.classList.remove("loading"); img.replaceWith(fileBadge(f.name, size)); }, { once: true });
-      img.src = diskRawUrl(f);
-      box.append(img);
-    } else box.append(fileBadge(f.name, size));
+      img.addEventListener("error", () => { box.classList.remove("loading", "made"); img.replaceWith(fileBadge(f.name, size)); }, { once: true });
+      img.src = src;
+      return img;
+    };
+    if (view === "trash") box.append(fileBadge(f.name, size));
+    else if (hasThumb(f)) box.append(picture(diskRawUrl(f), false));
+    else if (madeThumb(f) && thumbReady(f)) box.append(picture(diskThumbUrl(f), true));
+    else {
+      const badge = fileBadge(f.name, size);
+      box.append(badge);
+      // PDFs and videos get a real picture: drawn once when the tile shows up, then kept by the server
+      if (madeThumb(f)) wantThumb(box, f, (ok) => { if (ok && badge.isConnected) badge.replaceWith(picture(diskThumbUrl(f), true)); });
+    }
+    if (madeThumb(f) === "video" && view !== "trash") box.append(el("span", { cls: "dk-play", attrs: { "aria-hidden": "true" } }));
     return box;
   };
   const card = (f: DiskFile) => {
@@ -341,8 +392,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     if (virtual !== "none") return emptyState("search", "Здесь пусто", "Таких файлов на Диске пока нет.");
     const up = btn("Загрузить файлы", chooseFiles, { primary: true });
     up.prepend(dIcon("upload", 17));
-    return emptyState("folder", current ? "В папке «" + folderName(current) + "» пусто" : "На Диске пока нет файлов", "Перетащите файлы в это окно или нажмите «Загрузить». Можно сразу несколько.",
-      el("div", { cls: "dk-empty-actions" }, up, btn("Новая папка", () => void createFolder(uploadFolder()), { icon: "plus" })));
+    return emptyState("folder", current ? "В папке «" + folderName(current) + "» пусто" : "На Диске пока нет файлов", "Перетащите файлы или целую папку в это окно или нажмите «Загрузить». Можно сразу несколько.",
+      el("div", { cls: "dk-empty-actions" }, up, btn("Загрузить папку", chooseFolder, {}), btn("Новая папка", () => void createFolder(uploadFolder()), { icon: "plus" })));
   };
   const renderFiles = () => {
     filesBox.className = "dk-files mode-" + mode;
@@ -412,8 +463,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   filesBox.addEventListener("dragstart", (e) => {
     const c = (e.target as HTMLElement).closest<HTMLElement>(".dk-file"); if (!c || !e.dataTransfer) return;
     const ids = selected.has(c.dataset.id!) ? [...selected] : [c.dataset.id!];
-    e.dataTransfer.setData("application/x-juunibi-files", JSON.stringify(ids));
-    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData(DISK_DRAG, JSON.stringify(ids));
+    e.dataTransfer.effectAllowed = "copyMove";
     page.classList.add("dk-dragging");
   });
   filesBox.addEventListener("dragend", () => page.classList.remove("dk-dragging"));
@@ -426,7 +477,9 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     { icon: "eye", label: "Открыть", run: () => openViewer(f), hint: "Enter" },
     { icon: "info", label: "Сведения", run: () => openInfo(f.id) },
     ...(deps.ask && askable(f.name) ? [{ icon: "ask", label: "Спросить JUUNIBI о файле", run: () => askAbout(f) } as MenuItem] : []),
+    ...(deps.attach && askable(f.name) ? [{ icon: "chatIn", label: "Прикрепить к беседе", run: () => void attachToChat([f.id]) } as MenuItem] : []),
     { icon: "download", label: "Скачать", run: () => download(f) },
+    { icon: "attach", label: "Прикрепить к делу…", run: () => void attachToTask([f.id]) },
     "-",
     { icon: "star", label: f.favorite ? "Убрать из избранного" : "В избранное", run: () => void favoriteFiles([f.id]) },
     { icon: "rename", label: "Переименовать", run: () => void renameFile(f), hint: "F2" },
@@ -567,6 +620,56 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     showToast("Отменено: «" + r.value.name + "» снова в папке «" + (r.value.folder || "Корень") + "»");
   }
 
+  /** «Скачать ZIP»: the server packs the files on the fly; the browser downloads it like any file. */
+  async function downloadZip(req: { ids: string[] } | { folder: string }) {
+    const r = await api.diskZip(req);
+    if (!r.ok) { showToast(r.error.message); return; }
+    const a = el("a", { href: r.value.url, attrs: { download: r.value.name } });
+    document.body.append(a); a.click(); a.remove();
+    showToast("Скачивается «" + r.value.name + "»: " + filesWord(r.value.files) + ", " + human(r.value.bytes));
+  }
+  /** «В беседу»: the text of up to 5 files goes to the chat composer, ready for a question. */
+  async function attachToChat(ids: string[]) {
+    if (!deps.attach) return;
+    const picked = ids.map(byId).filter((f): f is DiskFile => !!f && askable(f.name)).slice(0, 5);
+    if (!picked.length) { showToast("JUUNIBI читает текстовые файлы, PDF, Word, Excel и PowerPoint"); return; }
+    showToast(picked.length === 1 ? "Читаю «" + picked[0]!.name + "»…" : "Читаю файлы: " + picked.length + "…");
+    const out: { name: string; size: number; text: string }[] = [], failed: string[] = [];
+    for (const f of picked) {
+      const r = await api.diskText(f.id);
+      if (!r.ok) { failed.push(f.name + ": " + r.error.message); continue; }
+      // the chat takes up to 100 КБ a file: Cyrillic is two bytes a letter
+      const text = r.value.text.length > 45000 ? r.value.text.slice(0, 45000) + "\n\n[… дальше файл обрезан]" : r.value.text;
+      out.push({ name: /\.(txt|md|csv|json|log)$/i.test(f.name) ? f.name : f.name.replace(/\.[^.]+$/, "") + ".txt", size: new Blob([text]).size, text });
+    }
+    if (!out.length) { showToast(failed.join("; ")); return; }
+    const why = deps.attach(out);
+    showToast(why ?? ("В беседе: " + filesWord(out.length) + ". Напишите вопрос." + (failed.length ? " Не прочитались: " + failed.join("; ") : "")));
+  }
+  /** «Прикрепить к делу»: the file shows up on a to-do or a project in «Дела», and the to-do opens it in one click. */
+  async function attachToTask(ids: string[]) {
+    const files = ids.map(byId).filter((f): f is DiskFile => !!f);
+    if (!files.length) return;
+    const org = await api.organizer();
+    if (!org.ok) { showToast(org.error.message); return; }
+    const target = await pickTask({ notes: org.value.notes, projects: org.value.projects ?? [], title: files.length === 1 ? "Прикрепить «" + files[0]!.name + "»" : "Прикрепить " + filesWord(files.length) });
+    if (!target) return;
+    const add = files.map((f) => ({ id: f.id, name: f.name }));
+    const merge = (cur: { id: string; name: string }[] = []) => [...cur.filter((x) => !add.some((a) => a.id === x.id)), ...add].slice(-20);
+    if (target.kind === "task") {
+      const n = org.value.notes.find((x) => x.id === target.id);
+      const r = await api.updateTask(target.id, { files: merge(n?.files) });
+      if (!r.ok) { showToast(r.error.message); return; }
+      showToast("Прикреплено к делу «" + r.value.text.slice(0, 60) + "»", { action: { label: "Открыть дела", run: () => { location.hash = "#/tasks"; } } });
+    } else {
+      const p = (org.value.projects ?? []).find((x) => x.name.toLowerCase() === target.name.toLowerCase());
+      const r = await api.setProject(target.name, { files: merge(p?.files) });
+      if (!r.ok) { showToast(r.error.message); return; }
+      showToast("Прикреплено к проекту «" + target.name + "»", { action: { label: "Открыть дела", run: () => { location.hash = "#/tasks"; } } });
+    }
+    if (infoId && ids.includes(infoId)) openInfo(infoId);
+  }
+
   /* ---------------------------------------------------------------- folders */
   async function createFolder(parent: string) {
     const name = await askText({ title: parent ? "Новая папка в «" + folderName(parent) + "»" : "Новая папка", label: "Название папки", ok: "Создать", icon: "folder" });
@@ -604,6 +707,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       void loadCatalog();
       showToast("Создана копия «" + folderName(r.value.name) + "»: " + filesWord(r.value.files));
     })() },
+    { icon: "folderUp", label: "Загрузить сюда папку…", run: () => { go({ folder }); chooseFolder(); } },
+    { icon: "zipDown", label: "Скачать ZIP-архивом", run: () => void downloadZip({ folder }) },
     { icon: "refresh", label: "Синхронизировать в…", run: () => void syncFolder(folder) },
     { icon: "palette", label: "Цвет и обложка", run: () => folderLook(folder) },
     "-",
@@ -682,7 +787,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   const dropFiles = (target: HTMLElement, folder: string) => {
     target.addEventListener("dragover", (e) => {
       const types = e.dataTransfer?.types ?? [];
-      if (types.includes("application/x-juunibi-files") || types.includes("application/x-juunibi-folder")) { e.preventDefault(); target.classList.add("drop"); }
+      if (types.includes("application/x-juunibi-files") || types.includes("application/x-juunibi-folder")) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; target.classList.add("drop"); }
     });
     target.addEventListener("dragleave", () => target.classList.remove("drop"));
     target.addEventListener("drop", (e) => {
@@ -808,7 +913,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     newVersion.addEventListener("change", async () => {
       const file = newVersion.files?.[0]; newVersion.value = "";
       if (!file) return;
-      if (!file.size || file.size > maxBytes) { showToast("Новая версия: от 1 байта до 50 МБ"); return; }
+      if (!file.size || file.size > maxBytes) { showToast("Новая версия: от 1 байта до " + human(maxBytes)); return; }
       const res = await fetch("/api/disk/files/" + encodeURIComponent(f.id) + "/versions/binary?expected=" + encodeURIComponent(f.sha256), { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file });
       const body = (await res.json().catch(() => ({}))) as DiskFile & { error?: string };
       if (!res.ok) { showToast(body.error ?? "Не удалось сохранить версию"); return; }
@@ -832,6 +937,26 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       ...(previewKind(f.name) && !f.deletedAt ? [btn("Открыть", () => openViewer(f), { small: true, icon: "eye" })] : []),
       ...(!f.deletedAt ? [btn("Скачать", () => download(f), { small: true, icon: "download" })] : []),
       ...(deps.ask && askable(f.name) && !f.deletedAt ? [btn("Спросить JUUNIBI", () => askAbout(f), { small: true, icon: "sparkle" })] : []));
+    // «В делах»: to-dos and projects this file is attached to
+    const linked = el("section", { cls: "dk-info-block dk-linked", hidden: true });
+    if (!f.deletedAt) void api.organizer().then((r) => {
+      if (!r.ok || infoId !== f.id) return;
+      const tasks = r.value.notes.filter((n) => n.files?.some((x) => x.id === f.id));
+      const projs = (r.value.projects ?? []).filter((p) => p.files?.some((x) => x.id === f.id));
+      const detach = async (kind: "task" | "project", key: string, cur: { id: string; name: string }[]) => {
+        const rest = cur.filter((x) => x.id !== f.id);
+        const u = kind === "task" ? await api.updateTask(key, { files: rest.length ? rest : null }) : await api.setProject(key, { files: rest.length ? rest : null });
+        if (!u.ok) { showToast(u.error.message); return; }
+        showToast("Файл откреплён"); openInfo(f.id);
+      };
+      const row = (ic: DiskIconName, label: string, done: boolean, run: () => void) => el("div", { cls: "dk-linked-row" + (done ? " done" : "") }, dIcon(ic, 16),
+        el("span", { cls: "dk-linked-text", textContent: label }), iconButton("x", "Открепить", run, "icon-btn sm"));
+      linked.replaceChildren(el("h4", { textContent: "В делах" }),
+        ...tasks.map((n: Note) => row("check", n.text, n.done, () => void detach("task", n.id, n.files ?? []))),
+        ...projs.map((p) => row("folder", "#" + p.name, false, () => void detach("project", p.name, p.files ?? []))),
+        btn("Прикрепить к делу", () => void attachToTask([f.id]), { small: true, icon: "plus" }));
+      linked.hidden = false;
+    });
     info.replaceChildren(
       el("header", { cls: "dk-info-head" }, el("strong", { textContent: "Сведения" }), iconButton("x", "Закрыть сведения", closeInfo, "icon-btn sm")),
       big, el("h3", { cls: "dk-info-name", textContent: f.name }), actions,
@@ -840,6 +965,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       ...(!f.deletedAt ? [
         el("section", { cls: "dk-info-block" }, el("h4", { textContent: "Метки и цвет" }), tags, sw, note, saveMeta),
         el("section", { cls: "dk-info-block" }, el("h4", { textContent: "Версии" }), versions),
+        linked,
       ] : []));
     info.hidden = false;
     layout.classList.add("with-info");
@@ -859,11 +985,13 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     const dl = ib("download", "Скачать", () => download(list[index]!));
     const infoB = ib("info", "Сведения", () => { const id = list[index]!.id; close(); openInfo(id); });
     const askB = ib("ask", "Спросить JUUNIBI о файле", () => { const x = list[index]!; close(); askAbout(x); });
+    let rawMd = store.get("juunibi.disk.mdRaw") === "1";
+    const mdB = ib("markdown", "Оформление или исходный текст", () => { rawMd = !rawMd; store.set("juunibi.disk.mdRaw", rawMd ? "1" : ""); show(); });
     const prev = el("button", { type: "button", cls: "dk-view-nav prev", attrs: { "aria-label": "Предыдущий файл (←)" } }, dIcon("chevronLeft", 26));
     const next = el("button", { type: "button", cls: "dk-view-nav next", attrs: { "aria-label": "Следующий файл (→)" } }, dIcon("chevronRight", 26));
     const closeB = iconButton("x", "Закрыть (Esc)", () => close(), "icon-btn");
     const overlay = el("div", { cls: "dk-view", attrs: { role: "dialog", "aria-modal": "true", "aria-label": "Просмотр файла" } },
-      el("header", { cls: "dk-view-bar" }, el("div", { cls: "dk-view-title" }, title, counter), zoomOut, zoomIn, askB, infoB, dl, closeB),
+      el("header", { cls: "dk-view-bar" }, el("div", { cls: "dk-view-title" }, title, counter), zoomOut, zoomIn, mdB, askB, infoB, dl, closeB),
       stage, prev, next);
     let textGen = 0;
     const setZoom = (z: number) => {
@@ -878,6 +1006,8 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       counter.textContent = list.length > 1 ? index + 1 + " из " + list.length + " · " + human(x.size) : human(x.size);
       const kind = previewKind(x.name);
       zoomIn.hidden = zoomOut.hidden = kind !== "image";
+      mdB.hidden = kind !== "markdown";
+      mdB.setAttribute("aria-pressed", String(!rawMd));
       askB.hidden = !(deps.ask && askable(x.name));
       prev.hidden = next.hidden = list.length < 2;
       const url = diskRawUrl(x);
@@ -890,12 +1020,28 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
       } else if (kind === "video") body = el("video", { src: url, controls: true, preload: "metadata", attrs: { playsinline: "" } });
       else if (kind === "audio") body = el("div", { cls: "dk-view-audio" }, fileBadge(x.name, 96), el("audio", { src: url, controls: true, preload: "metadata" }));
       else if (kind === "pdf") body = el("iframe", { src: url, title: x.name });
-      else if (kind === "text") {
-        const pre = el("pre", { cls: "dk-view-text", textContent: "Загрузка…" });
+      else if (kind === "text" || kind === "markdown" || kind === "table") {
+        const box = el("div", { cls: "dk-view-doc" + (kind === "markdown" && !rawMd ? " md" : "") }, el("p", { cls: "muted", textContent: "Загрузка…" }));
         const gen = ++textGen;
-        void fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error()))).then((t) => { if (gen === textGen) pre.textContent = t.length > 400000 ? t.slice(0, 400000) + "\n\n… (показано начало файла)" : t; })
-          .catch(() => { if (gen === textGen) pre.textContent = "Не удалось прочитать файл."; });
-        body = pre;
+        void fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error()))).then((t) => {
+          if (gen !== textGen) return;
+          const cut = t.length > 400000;
+          const text = cut ? t.slice(0, 400000) : t;
+          const tail = cut ? [el("p", { cls: "dk-view-cut", textContent: "Показано начало файла" })] : [];
+          if (kind === "markdown" && !rawMd) box.replaceChildren(el("article", { cls: "prose dk-md" }, renderMarkdown(text)), ...tail);
+          else if (kind === "table") box.replaceChildren(tableOf(parseCsv(text)), ...tail);
+          else box.replaceChildren(el("pre", { cls: "dk-view-text", textContent: text }), ...tail);
+        }).catch(() => { if (gen === textGen) box.replaceChildren(el("p", { textContent: "Не удалось прочитать файл." })); });
+        body = box;
+      } else if (kind === "office") {
+        const box = el("div", { cls: "dk-view-doc" }, el("p", { cls: "muted", textContent: "Открываю…" }));
+        const gen = ++textGen;
+        void api.diskPreview(x.id).then((r) => {
+          if (gen !== textGen) return;
+          if (!r.ok) { box.replaceChildren(el("div", { cls: "dk-view-none" }, fileBadge(x.name, 96), el("p", { textContent: r.error.message }), btn("Скачать файл", () => download(x), { primary: true, icon: "download" }))); return; }
+          box.replaceChildren(officeView(r.value));
+        });
+        body = box;
       } else {
         const get = btn("Скачать файл", () => download(x), { primary: true, icon: "download" });
         body = el("div", { cls: "dk-view-none" }, fileBadge(x.name, 110), el("p", { textContent: "Этот формат нельзя посмотреть в JUUNIBI. Скачайте файл и откройте его в своей программе." }), get);
@@ -928,6 +1074,57 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     document.body.append(overlay);
     show();
     closeB.focus();
+  }
+
+  /** Rows as a table; the first row is the header when it looks like one (no numbers). */
+  function tableOf(rows: string[][], limit = 500): HTMLElement {
+    if (!rows.length) return el("p", { cls: "muted", textContent: "Пустая таблица." });
+    const width = Math.max(...rows.map((r) => r.length));
+    const headLike = rows.length > 1 && rows[0]!.every((c) => !/^-?[\d\s.,]+$/.test(c.trim()) || !c.trim());
+    const cells = (r: string[], tag: "th" | "td") => el("tr", {}, ...Array.from({ length: width }, (_, i) => el(tag, { textContent: r[i] ?? "" })));
+    return el("div", { cls: "dk-table-wrap" }, el("table", { cls: "dk-table" },
+      ...(headLike ? [el("thead", {}, cells(rows[0]!, "th"))] : []),
+      el("tbody", {}, ...rows.slice(headLike ? 1 : 0, limit).map((r) => cells(r, "td")))),
+      ...(rows.length > limit ? [el("p", { cls: "dk-view-cut", textContent: "Показаны первые " + limit + " строк" })] : []));
+  }
+  /** Word, Excel, PowerPoint and ZIP as the server read them. */
+  function officeView(p: DiskPreview): HTMLElement {
+    const runs = (rs: { t: string; b?: true; i?: true }[]) => rs.map((r) => r.b || r.i ? el(r.b ? "strong" : "em", { textContent: r.t }) : document.createTextNode(r.t));
+    if (p.kind === "doc") {
+      const out: HTMLElement[] = [];
+      let ul: HTMLElement | null = null;
+      for (const b of p.blocks) {
+        if (b.k === "li") { if (!ul) { ul = el("ul"); out.push(ul); } ul.append(el("li", {}, ...runs(b.runs))); continue; }
+        ul = null;
+        if (b.k === "h") out.push(el(("h" + Math.min(4, b.level + 1)) as "h2", {}, ...runs(b.runs)));
+        else if (b.k === "table") out.push(tableOf(b.rows));
+        else out.push(b.runs.length ? el("p", {}, ...runs(b.runs)) : el("p", { cls: "dk-gap" }));
+      }
+      return el("article", { cls: "prose dk-md dk-word" }, ...out, ...(p.truncated ? [el("p", { cls: "dk-view-cut", textContent: "Документ длинный: показано начало" })] : []));
+    }
+    if (p.kind === "sheet") {
+      const host = el("div", { cls: "dk-sheet" });
+      const tabs = el("div", { cls: "dk-sheet-tabs", attrs: { role: "tablist" } });
+      const pick = (i: number) => {
+        for (const [j, t] of [...tabs.children].entries()) t.setAttribute("aria-selected", String(j === i));
+        const s = p.sheets[i]!;
+        host.replaceChildren(s.rows.length ? tableOf(s.rows, 300) : el("p", { cls: "muted", textContent: "Лист пустой." }), ...(s.truncated ? [el("p", { cls: "dk-view-cut", textContent: "Показана часть листа" })] : []));
+      };
+      p.sheets.forEach((s, i) => { const t = el("button", { type: "button", cls: "chip", textContent: s.name, attrs: { role: "tab" } }); t.addEventListener("click", () => pick(i)); tabs.append(t); });
+      pick(0);
+      return el("div", { cls: "dk-sheet-view" }, ...(p.sheets.length > 1 ? [tabs] : []), host);
+    }
+    if (p.kind === "slides") return el("div", { cls: "dk-slides" }, ...p.slides.map((s, i) => el("section", { cls: "dk-slide" },
+      el("small", { cls: "dk-slide-n", textContent: String(i + 1) }), el("h3", { textContent: s.title || "Слайд " + (i + 1) }),
+      ...(s.lines.length ? [el("ul", {}, ...s.lines.map((l) => el("li", { textContent: l })))] : [el("p", { cls: "muted", textContent: "Без текста" })]))));
+    const head = el("div", { cls: "dk-zip-head" }, dIcon("archive", 22), el("strong", { textContent: filesWord(p.total) }), el("small", { cls: "muted", textContent: human(p.bytes) + " после распаковки" }));
+    return el("div", { cls: "dk-zip" }, head, el("div", { cls: "dk-zip-list" }, ...p.entries.map((e) => {
+      const depth = e.name.replace(/\/$/, "").split("/").length - 1;
+      const row = el("div", { cls: "dk-zip-row" + (e.dir ? " dir" : "") }, e.dir ? dIcon("folder", 16) : fileBadge(e.name.split("/").pop() ?? e.name, 20),
+        el("span", { cls: "dk-zip-name", textContent: e.name.replace(/\/$/, "").split("/").pop() ?? e.name }), el("small", { cls: "muted", textContent: e.dir ? "" : human(e.size) }));
+      row.style.setProperty("--depth", String(depth));
+      return row;
+    })), ...(p.truncated ? [el("p", { cls: "dk-view-cut", textContent: "Показаны первые 2000 строк" })] : []));
   }
 
   /* ---------------------------------------------------------------- «Спросить JUUNIBI о файле» */
@@ -1094,7 +1291,18 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
     if (current && !folders.includes(current)) current = "";
     loaded = true;
     redraw();
+    showLinked();
   }
+  /** A file opened from «Дела»: its folder, the file flashed, and the preview or «Сведения». */
+  function showLinked() {
+    const id = takeDiskLink(); if (!id) return;
+    const f = all.find((x) => x.id === id);
+    if (!f) { showToast(trash.some((x) => x.id === id) ? "Этот файл в корзине" : "Файла больше нет на Диске"); return; }
+    go({ folder: f.folder }); reveal(f.id);
+    if (previewKind(f.name)) openViewer(f); else openInfo(f.id);
+  }
+  const onLink = () => { if (!page.isConnected) { removeEventListener("juunibi:disk-link", onLink); return; } if (loaded) showLinked(); };
+  addEventListener("juunibi:disk-link", onLink);
 
   /* ---------------------------------------------------------------- keyboard */
   page.addEventListener("keydown", (e) => {
@@ -1137,13 +1345,29 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   page.addEventListener("drop", (e) => {
     if (!hasFiles(e)) return;
     e.preventDefault(); dragDepth = 0; page.classList.remove("dk-file-over");
-    uploader.add([...(e.dataTransfer?.files ?? [])], uploadFolder());
+    // a dropped folder arrives as an entry tree; plain files keep the quick path
+    const items = [...(e.dataTransfer?.items ?? [])];
+    if (items.some((it) => it.webkitGetAsEntry?.()?.isDirectory)) void readDropped(items).then((list) => uploadTree(list)).catch(() => showToast("Не удалось прочитать папку"));
+    else uploader.add([...(e.dataTransfer?.files ?? [])], uploadFolder());
   });
+
+  /* ---------------------------------------------------------------- drag files into the chat */
+  const chatDrop = el("div", { cls: "dk-chatdrop", attrs: { "aria-hidden": "true" } }, dIcon("chatIn", 22), el("span", { textContent: "В беседу" }));
+  if (deps.attach) {
+    chatDrop.addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes(DISK_DRAG)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; chatDrop.classList.add("drop"); } });
+    chatDrop.addEventListener("dragleave", () => chatDrop.classList.remove("drop"));
+    chatDrop.addEventListener("drop", (e) => {
+      chatDrop.classList.remove("drop"); page.classList.remove("dk-dragging");
+      const ids = e.dataTransfer?.getData(DISK_DRAG); if (!ids) return;
+      e.preventDefault(); e.stopPropagation();
+      void attachToChat(JSON.parse(ids) as string[]);
+    });
+  } else chatDrop.hidden = true;
 
   /* ---------------------------------------------------------------- assemble */
   const life = diskLifePanel();
   const layout = el("div", { cls: "dk-layout" + (treeHidden ? " no-tree" : "") }, side, main, life.root, info);
-  page.append(el("h1", { cls: "sr-only", textContent: "Диск" }), bar, layout, scrim, uploader.root, picker, restorePicker);
+  page.append(el("h1", { cls: "sr-only", textContent: "Диск" }), bar, layout, scrim, uploader.root, picker, folderPicker, restorePicker, chatDrop);
   renderFiles();
   void loadCatalog();
   return page;

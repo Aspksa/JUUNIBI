@@ -493,3 +493,67 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
   .dkl-hl-card,.dkl-tile,.dkl-skeleton i{animation:none}
   .dkl-ic,.dkl-tile,.dkl-hl-card,.dkl-tab{transition:none}
 }
+
+/* ---------------- PDF and video pictures ---------------- */
+.dk-thumb.made{background:#fff}
+.dk-thumb.made.kind-pdf img{object-fit:cover;object-position:top}
+.dk-thumb.made.kind-pdf::before{content:"PDF";position:absolute;left:3px;bottom:3px;z-index:1;padding:1px 4px;border-radius:4px;background:var(--k);color:#fff;font-size:9px;font-weight:700;letter-spacing:.03em}
+.mode-table .dk-thumb.made.kind-pdf::before,.mode-list .dk-thumb.made.kind-pdf::before{display:none}
+.dk-play{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.dk-play::after{content:"";width:0;height:0;margin-left:3px;border-style:solid;border-width:7px 0 7px 11px;border-color:transparent transparent transparent #fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,.55))}
+.mode-large .dk-play::after{border-width:12px 0 12px 19px}
+.mode-large .dk-play{background:radial-gradient(circle at center,rgba(0,0,0,.28) 0 26px,transparent 27px)}
+
+/* ---------------- documents in the viewer: Markdown, tables, Word, Excel, PowerPoint, ZIP ---------------- */
+.dk-view-doc{width:min(980px,100%);max-height:100%;overflow:auto;border-radius:var(--r-lg);background:var(--bg);color:var(--fg);box-shadow:0 20px 60px rgba(0,0,0,.45)}
+.dk-view-doc>.muted,.dk-view-doc>p{margin:0;padding:22px}
+.dk-view-doc .dk-view-text{width:auto;max-height:none;border-radius:0;box-shadow:none}
+.dk-md{padding:30px clamp(18px,5vw,56px) 36px;font-size:var(--fs-md)}
+.dk-md h1,.dk-md h2{font-size:var(--fs-xl);margin-top:1.4em}
+.dk-md h3{font-size:var(--fs-lg)}
+.dk-md>:first-child{margin-top:0}
+.dk-word .dk-gap{height:.4em;margin:0}
+.dk-view-cut{margin:0;padding:10px 22px 18px;color:var(--muted);font-size:var(--fs-sm)}
+.dk-table-wrap{overflow:auto;max-width:100%}
+.dk-md .dk-table-wrap{margin:0 0 1em;border:1px solid var(--line);border-radius:var(--r-md)}
+.dk-table{border-collapse:collapse;min-width:100%;font-size:var(--fs-sm);font-variant-numeric:tabular-nums}
+.dk-table th,.dk-table td{padding:7px 12px;border-bottom:1px solid var(--line);border-right:1px solid color-mix(in srgb,var(--line) 60%,transparent);text-align:left;vertical-align:top;white-space:pre-wrap;max-width:420px}
+.dk-table th{position:sticky;top:0;background:color-mix(in srgb,var(--k,var(--brand)) 10%,var(--surface));font-weight:650}
+.dk-table tbody tr:nth-child(even){background:color-mix(in srgb,var(--hover) 55%,transparent)}
+.dk-table tbody tr:hover{background:var(--hover)}
+.dk-sheet-view{display:grid;grid-template-rows:auto minmax(0,1fr);max-height:100%}
+.dk-sheet-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.dk-sheet-tabs .chip[aria-selected="true"]{background:color-mix(in srgb,#1b9a52 16%,transparent);border-color:#1b9a52;font-weight:600}
+.dk-sheet{overflow:auto}
+.dk-sheet .dk-table th{background:color-mix(in srgb,#1b9a52 12%,var(--surface))}
+.dk-slides{display:grid;gap:14px;padding:18px}
+.dk-slide{position:relative;display:grid;gap:8px;aspect-ratio:16/9;max-height:none;padding:26px 30px;border:1px solid var(--line);border-radius:var(--r-lg);background:linear-gradient(160deg,color-mix(in srgb,#e27a2c 7%,var(--surface)),var(--surface));overflow:auto}
+.dk-slide h3{margin:0;font-size:var(--fs-xl)}
+.dk-slide ul{margin:0;padding-left:1.3em;line-height:1.55}
+.dk-slide-n{position:absolute;right:14px;top:10px;color:var(--muted);font-size:var(--fs-xs)}
+.dk-zip{display:grid;gap:4px;padding:16px 18px}
+.dk-zip-head{display:flex;align-items:center;gap:10px;padding:4px 4px 12px;border-bottom:1px solid var(--line);color:var(--fg)}
+.dk-zip-head svg{color:#b07d1c}
+.dk-zip-list{display:grid}
+.dk-zip-row{display:flex;align-items:center;gap:9px;padding:5px 6px 5px calc(6px + var(--depth,0) * 18px);border-radius:var(--r-sm);font-size:var(--fs-sm)}
+.dk-zip-row:hover{background:var(--hover)}
+.dk-zip-row.dir{font-weight:600}
+.dk-zip-row.dir svg{color:color-mix(in srgb,var(--brand) 80%,var(--fg))}
+.dk-zip-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------------- «В делах» in «Сведения», task picker ---------------- */
+.dk-linked-row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:var(--r-sm);background:var(--hover);font-size:var(--fs-sm)}
+.dk-linked-row svg{flex:none;color:var(--brand)}
+.dk-linked-row.done .dk-linked-text{text-decoration:line-through;color:var(--muted)}
+.dk-linked-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dk-dest-sep{padding:8px 10px 4px;color:var(--muted);font-size:var(--fs-xs);font-weight:650;text-transform:uppercase;letter-spacing:.05em}
+.dk-dest-task .dk-dest-text{display:grid;gap:1px;min-width:0}
+.dk-dest-task .dk-dest-text>*{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dk-dest-task:disabled{opacity:.5;cursor:default}
+
+/* ---------------- drag files into the chat ---------------- */
+.dk-chatdrop{position:fixed;right:28px;bottom:28px;z-index:60;display:none;align-items:center;gap:10px;padding:16px 22px;border:2px dashed color-mix(in srgb,var(--brand) 60%,transparent);border-radius:var(--r-xl);background:color-mix(in srgb,var(--brand) 12%,var(--surface));color:var(--fg);font-weight:650;box-shadow:0 18px 40px -18px rgba(0,0,0,.5);animation:dk-fade .16s ease}
+.dk-chatdrop svg{color:var(--brand)}
+.disk-page.dk-dragging .dk-chatdrop:not([hidden]){display:flex}
+.dk-chatdrop.drop{transform:scale(1.05);border-style:solid;background:color-mix(in srgb,var(--brand) 22%,var(--surface))}
+@media (max-width:640px){ .dk-chatdrop{display:none!important} }

@@ -1,13 +1,30 @@
-import { mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { inflateSync } from "node:zlib";
 import { randomUUID, createHash } from "node:crypto";
 import path from "node:path";
 import { docxText } from "./docx-text";
+import { uniqueNames, ZIP_MAX_BYTES, ZIP_MAX_FILES, type ZipSource } from "./zip-write";
+import { officePreview, previewable, previewText, previewTruncated, pptxPreview, xlsxPreview } from "./office-preview";
 
 /** Local, owner-controlled vault. Files are never sent to a cloud service. */
 export type DiskEntry = { id:string; name:string; folder:string; size:number; uploadedAt:string; sha256:string; favorite?:boolean; deletedAt?:string; tags?:string[]; color?:string; note?:string; objectId?:string; revision?:number };
-const LIMIT = 50 * 1024 * 1024;
+/** Per-file size and catalogue limits (raised from 50 МБ / 1000 files / 100 folders). */
+export const LIMIT = 500 * 1024 * 1024;
+export const MAX_FILES = 10000, MAX_FOLDERS = 500;
+const LIMIT_TEXT = "500 МБ";
+/** Size and SHA-256 of a stored object, read as a stream so a big file never sits in memory whole. */
+export async function hashFile(file:string):Promise<{size:number;sha256:string}>{
+  const hash=createHash("sha256");let size=0;
+  for await(const chunk of createReadStream(file)){size+=(chunk as Buffer).length;hash.update(chunk as Buffer);}
+  return {size,sha256:hash.digest("hex")};
+}
+/** Copies a stored object and checks the copy against the expected checksum; a mismatch leaves nothing behind. */
+async function copyVerified(from:string,to:string,expect:{size:number;sha256:string},message:string){
+  await copyFile(from,to,0x1 /* COPYFILE_EXCL */);
+  const got=await hashFile(to).catch(()=>null);
+  if(!got||got.size!==expect.size||got.sha256!==expect.sha256){await rm(to,{force:true});throw bad(message,409);}
+}
 const bad = (message:string,status=400)=>Object.assign(new Error(message),{status});
 const validFolder = (name:unknown) => {
   if (typeof name!=="string" || name.length>240 || (name!=="" && name.split("/").some(part=>!part || part.length>80 || !/^[a-zA-Zа-яА-ЯёЁ0-9 _.-]+$/.test(part) || part==="." || part==="..")) || name.includes("\\")) throw bad("Имя папки: до 80 букв или цифр, без пути");
@@ -79,7 +96,30 @@ export class LocalDisk {
   private get index(){return path.join(this.root,"index.json");}
   private objectPath(id:string){return path.join(this.root,"objects",id);}
   private file(id:string){const entry=this.entries.find(e=>e.id===id);return this.objectPath(entry?.objectId??id);}
+  /** Picture previews of PDFs and videos, drawn once by the page and kept by content (thumbs/<sha256>.webp|jpg|png). */
+  private thumbs=new Map<string,string>();
+  private thumbFile(sha:string,ext:string){return path.join(this.root,"thumbs",sha+"."+ext);}
+  async saveThumb(id:string,data:Buffer){
+    const {entry}=this.rawFile(id);
+    const ext=data.subarray(0,4).toString("latin1")==="RIFF"&&data.subarray(8,12).toString("latin1")==="WEBP"?"webp"
+      :data[0]===0xff&&data[1]===0xd8?"jpg":data.subarray(0,8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))?"png":"";
+    if(!ext)throw bad("Миниатюра: только WebP, JPEG или PNG",415);
+    if(!data.length||data.length>400*1024)throw bad("Миниатюра больше 400 КБ",413);
+    await mkdir(path.join(this.root,"thumbs"),{recursive:true});
+    const old=this.thumbs.get(entry.sha256);
+    await writeFile(this.thumbFile(entry.sha256,ext),data,{mode:0o600});
+    if(old&&old!==ext)await rm(this.thumbFile(entry.sha256,old),{force:true}).catch(()=>{});
+    this.thumbs.set(entry.sha256,ext);
+    return {ok:true};
+  }
+  thumbOf(id:string){
+    const {entry}=this.rawFile(id);
+    const ext=this.thumbs.get(entry.sha256);
+    if(!ext)throw bad("Миниатюры нет",404);
+    return {path:this.thumbFile(entry.sha256,ext),type:ext==="jpg"?"image/jpeg":"image/"+ext,etag:'"t-'+entry.sha256.slice(0,24)+'"'};
+  }
   async load(){
+    try{for(const f of await readdir(path.join(this.root,"thumbs"))){const m=/^([a-f0-9]{64})\.(webp|jpg|png)$/.exec(f);if(m)this.thumbs.set(m[1]!,m[2]!);}}catch{/* no previews yet */}
     const before=this.state();
     try {
       const raw=JSON.parse(await readFile(this.index,"utf8")) as {versions?:Record<string,DiskRevision[]>;entries?:DiskEntry[];folders?:string[];folderStyles?:Record<string,{color:string;pinned:boolean;cover:string}>;folderActions?:{at:string;action:string;folder:string;destination?:string;files?:number}[];fileActions?:{id:string;before:{name:string;folder:string};after:{name:string;folder:string};at:string}[];deletedFolders?:{root:string;paths:string[];at:string;styles:Record<string,{color:string;pinned:boolean;cover:string}>}[];trashDays?:number};
@@ -191,7 +231,7 @@ export class LocalDisk {
       if(!complete||active)throw bad("Неполная резервная копия",409);
       const state=manifest as Record<string,unknown>;
       if(!Array.isArray(state.entries)||!Array.isArray(state.folders)||typeof state.versions!=="object"||!state.versions)throw bad("Неверный индекс архива");
-      if(state.entries.length>1000||state.folders.length>100)throw bad("Архив превышает лимиты хранилища",409);
+      if(state.entries.length>MAX_FILES||state.folders.length>MAX_FOLDERS)throw bad("Архив превышает лимиты хранилища",409);
       const entries=state.entries as DiskEntry[];
       const versions=state.versions as Record<string,DiskRevision[]>;
       const folders=state.folders as string[];
@@ -254,7 +294,7 @@ export class LocalDisk {
   }
   list(folder?:string){
     const f=folder===undefined?undefined:validFolder(folder);
-    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map(e=>({...e})).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0),maxFileBytes:LIMIT};
+    return {folders:[...this.folders].sort(),files:this.entries.filter(e=>!e.deletedAt&&(f===undefined||e.folder===f)).map((e):DiskEntry&{thumb?:true}=>this.thumbs.has(e.sha256)?{...e,thumb:true}:{...e}).sort((a,b)=>b.uploadedAt.localeCompare(a.uploadedAt)),trash:this.entries.filter(e=>!!e.deletedAt).map(e=>({...e})).sort((a,b)=>(b.deletedAt??"").localeCompare(a.deletedAt??"")),usedBytes:this.entries.reduce((n,e)=>n+e.size,0)+Object.values(this.versions).flat().reduce((n,v)=>n+v.size,0),maxFileBytes:LIMIT};
   }
   private async createFolderUnlocked(name:unknown){
     const f=validFolder(name);
@@ -262,7 +302,7 @@ export class LocalDisk {
     if(this.folders.includes(f))throw bad("Такая папка уже есть",409);
     const parent=f.includes("/")?f.slice(0,f.lastIndexOf("/")):"";
     if(parent&&!this.folders.includes(parent))throw bad("Сначала создайте родительскую папку",404);
-    if(this.folders.length>=100)throw bad("Слишком много папок",409);
+    if(this.folders.length>=MAX_FOLDERS)throw bad("Слишком много папок (до "+MAX_FOLDERS+")",409);
     this.folders.push(f);this.folderStyles[f]={color:"#b89cff",pinned:false,cover:"",createdAt:new Date().toISOString()};this.logFolder("create",f);await this.save();return {name:f};
   }
   private async renameFolderUnlocked(oldName:unknown,newName:unknown){
@@ -310,13 +350,12 @@ export class LocalDisk {
     const folders=this.folders.filter(f=>f===from||f.startsWith(from+"/"));
     for(const folder of folders)validFolder(target+folder.slice(from.length));
     const entries=this.entries.filter(e=>!e.deletedAt&&(e.folder===from||e.folder.startsWith(from+"/")));
-    if(this.folders.length+folders.length>100||this.entries.length+entries.length>1000)throw bad("Превышен лимит хранилища",409);
+    if(this.folders.length+folders.length>MAX_FOLDERS||this.entries.length+entries.length>MAX_FILES)throw bad("Превышен лимит хранилища",409);
     const copied:string[]=[];
     try{
       for(const e of entries){
-        const bytes=await readFile(this.file(e.id));
-        if(createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Повреждён исходный файл",409);
-        const id=randomUUID();await writeFile(this.objectPath(id),bytes,{flag:"wx",mode:0o600});
+        const id=randomUUID();
+        await copyVerified(this.file(e.id),this.objectPath(id),e,"Повреждён исходный файл");
         copied.push(id);
       }
     }catch(e){for(const id of copied)await rm(this.file(id),{force:true});throw e;}
@@ -336,7 +375,7 @@ export class LocalDisk {
     const item=this.deletedFolders[index]!;
     const parent=root.includes("/")?root.slice(0,root.lastIndexOf("/")):"";
     if(parent&&!this.folders.includes(parent))throw bad("Сначала восстановите родительскую папку",409);
-    if(item.paths.some(p=>this.folders.includes(p))||this.folders.length+item.paths.length>100)throw bad("Пути папок заняты или превышен лимит",409);
+    if(item.paths.some(p=>this.folders.includes(p))||this.folders.length+item.paths.length>MAX_FOLDERS)throw bad("Пути папок заняты или превышен лимит",409);
     this.folders.push(...item.paths);
     Object.assign(this.folderStyles,item.styles);
     for(const e of this.entries)if(e.deletedAt===item.at&&(e.folder===root||e.folder.startsWith(root+"/")))delete e.deletedAt;
@@ -359,10 +398,10 @@ export class LocalDisk {
   private async uploadUnlocked(name:unknown,folder:unknown,data:unknown){
     const filename=validName(name), f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
-    if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит 50 МБ",413);
+    if(typeof data!=="string"||data.length>Math.ceil(LIMIT*4/3)+8||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))throw bad("Некорректный файл или превышен лимит "+LIMIT_TEXT,413);
     const buf=Buffer.from(data,"base64");
-    if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 10 МБ",413);
-    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до "+LIMIT_TEXT,413);
+    if(this.entries.length>=MAX_FILES)throw bad("Достигнут лимит "+MAX_FILES+" файлов",409);
     const entry:DiskEntry={id:randomUUID(),name:filename,folder:f,size:buf.length,uploadedAt:new Date().toISOString(),sha256:createHash("sha256").update(buf).digest("hex")};
     await mkdir(path.join(this.root,"objects"),{recursive:true});
     await writeFile(this.file(entry.id),buf,{flag:"wx",mode:0o600});
@@ -370,25 +409,58 @@ export class LocalDisk {
     try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==entry.id);await rm(this.file(entry.id),{force:true});throw e;}
     return {...entry};
   }
-  /** Search small text documents on disk; never sends their contents to a model. */
+  /** Text of documents by content, so a second search does not unpack the same PDF or Word file again. */
+  private textCache=new Map<string,string>();
+  private textCacheChars=0;
+  /** Search inside text files and documents (PDF, Word, Excel, PowerPoint up to 20 МБ); never sends their contents to a model. */
   async searchContent(query:string):Promise<string[]>{
     const q=query.trim().toLocaleLowerCase();
     if(q.length<2||q.length>160)throw bad("Поиск: от 2 до 160 символов");
     const ids:string[]=[];
     for(const entry of this.entries){
-      if(entry.deletedAt || !/\.(txt|md|csv|json|log|ts|tsx|js|mjs|css|html)$/i.test(entry.name) || entry.size>1024*1024)continue;
-      try {
-        const buf=await readFile(this.file(entry.id));
-        if(createHash("sha256").update(buf).digest("hex")===entry.sha256 && buf.toString("utf8").toLocaleLowerCase().includes(q))ids.push(entry.id);
-      } catch { /* An unreadable file is never reported as a match. */ }
+      if(entry.deletedAt)continue;
+      const plain=/\.(txt|md|csv|json|log|ts|tsx|js|mjs|css|html)$/i.test(entry.name)&&entry.size<=1024*1024;
+      const office=/\.(pdf|docx|xlsx|pptx)$/i.test(entry.name)&&entry.size<=20*1024*1024;
+      if(!plain&&!office)continue;
+      let text=this.textCache.get(entry.sha256);
+      if(text===undefined){
+        try {
+          if(plain){
+            const buf=await readFile(this.file(entry.id));
+            text=createHash("sha256").update(buf).digest("hex")===entry.sha256?buf.toString("utf8").toLocaleLowerCase():"";
+          }else text=(await this.readText(entry.id,1024*1024)).text.toLocaleLowerCase();
+        } catch { text=""; /* An unreadable file is never reported as a match. */ }
+        this.textCache.set(entry.sha256,text);this.textCacheChars+=text.length;
+        while(this.textCacheChars>40_000_000&&this.textCache.size){const [k,v]=this.textCache.entries().next().value!;this.textCache.delete(k);this.textCacheChars-=v.length;}
+      }
+      if(text.includes(q))ids.push(entry.id);
     }
     return ids;
+  }
+  /** «Сохрани это на Диск» from the chat: a text file in a folder (made if missing); the same name again becomes a new version. */
+  saveText(name:unknown,folder:unknown,content:unknown){return this.mutate(()=>this.saveTextUnlocked(name,folder,content));}
+  private async saveTextUnlocked(name:unknown,folder:unknown,content:unknown){
+    let filename=validName(name);
+    if(!/\.(md|txt)$/i.test(filename))filename=filename.replace(/\.[^.]*$/,"")+".md";
+    if(typeof content!=="string"||!content.trim())throw bad("Пустой текст не сохраняется");
+    const buf=Buffer.from(content,"utf8");
+    if(buf.length>1024*1024)throw bad("Текст больше 1 МБ",413);
+    const f=validFolder(typeof folder==="string"?folder.trim().replace(/^\/+|\/+$/g,""):"");
+    const parts=f?f.split("/"):[];
+    const missing=parts.map((_,i)=>parts.slice(0,i+1).join("/")).filter(sub=>!this.folders.includes(sub));
+    const same=this.entries.find(e=>!e.deletedAt&&e.folder===f&&e.name.toLocaleLowerCase()===filename.toLocaleLowerCase());
+    // Room is checked before anything is made, so a refused save leaves no empty folders behind.
+    if(this.folders.length+missing.length>MAX_FOLDERS)throw bad("Достигнут лимит "+MAX_FOLDERS+" папок",409);
+    if(!same&&this.entries.length>=MAX_FILES)throw bad("Достигнут лимит "+MAX_FILES+" файлов",409);
+    for(const sub of missing)await this.createFolderUnlocked(sub);
+    if(same){const next=await this.replaceStreamUnlocked(same.id,(async function*(){yield buf;})(),same.sha256);return {...next,savedAs:"version" as const};}
+    return {...await this.uploadBytesUnlocked(filename,f,buf),savedAs:"new" as const};
   }
   /** Bounded streaming write: bytes are never assembled into one large request buffer. */
   private async uploadStreamUnlocked(name:unknown,folder:unknown,stream:AsyncIterable<Buffer>){
     const filename=validName(name),f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
-    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    if(this.entries.length>=MAX_FILES)throw bad("Достигнут лимит "+MAX_FILES+" файлов",409);
     await mkdir(path.join(this.root,"objects"),{recursive:true});
     const id=randomUUID(),temp=this.file(id)+".part";
     const handle=await open(temp,"wx",0o600);
@@ -396,7 +468,7 @@ export class LocalDisk {
     try{
       for await(const chunk of stream){
         size+=chunk.length;
-        if(size>LIMIT)throw bad("Файл превышает 50 МБ",413);
+        if(size>LIMIT)throw bad("Файл превышает "+LIMIT_TEXT,413);
         hash.update(chunk);
         let offset=0;
         while(offset<chunk.length){
@@ -418,8 +490,8 @@ export class LocalDisk {
   private async uploadBytesUnlocked(name:unknown,folder:unknown,buf:Buffer){
     const filename=validName(name),f=validFolder(folder);
     if(f&&!this.folders.includes(f))throw bad("Папка не найдена",404);
-    if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до 50 МБ",413);
-    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
+    if(!buf.length||buf.length>LIMIT)throw bad("Файл должен быть от 1 байта до "+LIMIT_TEXT,413);
+    if(this.entries.length>=MAX_FILES)throw bad("Достигнут лимит "+MAX_FILES+" файлов",409);
     const entry:DiskEntry={id:randomUUID(),name:filename,folder:f,size:buf.length,uploadedAt:new Date().toISOString(),sha256:createHash("sha256").update(buf).digest("hex")};
     await mkdir(path.join(this.root,"objects"),{recursive:true});
     await writeFile(this.file(entry.id),buf,{flag:"wx",mode:0o600});
@@ -430,6 +502,7 @@ export class LocalDisk {
   async download(id:string){
     const entry=this.entries.find(x=>x.id===id);
     if(!entry || entry.deletedAt)throw bad("Файл не найден",404);
+    if(entry.size>64*1024*1024)throw bad("Файл большой: скачайте его обычной ссылкой",413);
     const data=await readFile(this.file(entry.id));
     if(createHash("sha256").update(data).digest("hex")!==entry.sha256)throw bad("Файл повреждён: контрольная сумма не совпадает",409);
     return {entry:{...entry},base64:data.toString("base64")};
@@ -439,8 +512,8 @@ export class LocalDisk {
     const results:{id:string;name:string;status:"ok"|"missing"|"corrupt"}[]=[];
     for(const e of this.entries){
       try{
-        const bytes=await readFile(this.file(e.id));
-        const valid=bytes.length===e.size&&createHash("sha256").update(bytes).digest("hex")===e.sha256;
+        const got=await hashFile(this.file(e.id));
+        const valid=got.size===e.size&&got.sha256===e.sha256;
         results.push({id:e.id,name:e.name,status:valid?"ok":"corrupt"});
       }catch{results.push({id:e.id,name:e.name,status:"missing"});}
     }
@@ -450,8 +523,8 @@ export class LocalDisk {
       for(const v of history){
         revisionsChecked++;
         try{
-          const bytes=await readFile(this.objectPath(v.objectId));
-          if(bytes.length!==v.size||createHash("sha256").update(bytes).digest("hex")!==v.sha256)
+          const got=await hashFile(this.objectPath(v.objectId));
+          if(got.size!==v.size||got.sha256!==v.sha256)
             revisionIssues.push({fileId,revision:v.revision,status:"corrupt"});
         }catch{revisionIssues.push({fileId,revision:v.revision,status:"missing"});}
       }
@@ -509,14 +582,12 @@ export class LocalDisk {
     }
     if(!apply)return {copied:0,pending:candidate.length,unchanged,conflicts};
     if(conflicts.length)throw bad("Обнаружены конфликты. Синхронизация отменена",409);
-    if(this.entries.length+candidate.length>1000)throw bad("Недостаточно свободных слотов в хранилище",409);
+    if(this.entries.length+candidate.length>MAX_FILES)throw bad("Недостаточно свободных слотов в хранилище",409);
     const written:string[]=[];const copied:DiskEntry[]=[];
     try{
       for(const e of candidate){
-        const bytes=await readFile(this.file(e.id));
-        if(bytes.length!==e.size||createHash("sha256").update(bytes).digest("hex")!==e.sha256)throw bad("Исходный файл повреждён",409);
         const id=randomUUID();
-        await writeFile(this.objectPath(id),bytes,{flag:"wx",mode:0o600});
+        await copyVerified(this.file(e.id),this.objectPath(id),e,"Исходный файл повреждён");
         written.push(id);
         const copy:DiskEntry={...e,id,folder:target,revision:1,uploadedAt:new Date().toISOString()};
         delete copy.objectId;delete copy.deletedAt;
@@ -536,14 +607,12 @@ export class LocalDisk {
     if(!original)throw bad("Файл не найден",404);
     const target=validFolder(folder);
     if(target&&!this.folders.includes(target))throw bad("Папка назначения не найдена",404);
-    if(this.entries.length>=1000)throw bad("Достигнут лимит 1000 файлов",409);
-    const bytes=await readFile(this.file(id));
-    if(bytes.length!==original.size||createHash("sha256").update(bytes).digest("hex")!==original.sha256)throw bad("Файл повреждён",409);
+    if(this.entries.length>=MAX_FILES)throw bad("Достигнут лимит "+MAX_FILES+" файлов",409);
     const copied:DiskEntry={...original,id:randomUUID(),name:original.name,folder:target,uploadedAt:new Date().toISOString()};
     delete copied.deletedAt;
     delete copied.objectId;
     copied.revision=1;
-    await writeFile(this.file(copied.id),bytes,{flag:"wx",mode:0o600});
+    await copyVerified(this.file(id),this.file(copied.id),original,"Файл повреждён");
     this.entries.push(copied);
     try{await this.save();}catch(e){this.entries=this.entries.filter(x=>x.id!==copied.id);await rm(this.file(copied.id),{force:true});throw e;}
     return {...copied};
@@ -581,7 +650,7 @@ export class LocalDisk {
     let size=0;const hash=createHash("sha256");
     try{
       for await(const chunk of stream){
-        size+=chunk.length;if(size>LIMIT)throw bad("Превышен лимит 50 МБ",413);
+        size+=chunk.length;if(size>LIMIT)throw bad("Превышен лимит "+LIMIT_TEXT,413);
         hash.update(chunk);let off=0;
         while(off<chunk.length){const wrote=await handle.write(chunk,off,chunk.length-off,null);if(!wrote.bytesWritten)throw new Error("Невозможно записать файл");off+=wrote.bytesWritten;}
       }
@@ -603,9 +672,9 @@ export class LocalDisk {
     if(!Number.isSafeInteger(revision))throw bad("Недопустимый номер редакции");
     const past=(this.versions[id]??[]).find(v=>v.revision===revision);
     if(!past)throw bad("Редакция не найдена",404);
-    const data=await readFile(this.objectPath(past.objectId));
-    if(data.length!==past.size||createHash("sha256").update(data).digest("hex")!==past.sha256)throw bad("Архивная редакция повреждена",409);
-    return this.replaceStreamUnlocked(id,(async function*(){yield data;})(),entry.sha256);
+    const got=await hashFile(this.objectPath(past.objectId)).catch(()=>null);
+    if(!got||got.size!==past.size||got.sha256!==past.sha256)throw bad("Архивная редакция повреждена",409);
+    return this.replaceStreamUnlocked(id,createReadStream(this.objectPath(past.objectId)),entry.sha256);
   }
   private async renameFileUnlocked(id:string,name:unknown){
     const entry=this.entries.find(x=>x.id===id);
@@ -650,7 +719,7 @@ export class LocalDisk {
   }
   /** Validate every target first, then persist one batch mutation. */
   private async bulkUnlocked(ids:unknown, action:unknown, folder?:unknown){
-    if(!Array.isArray(ids)||!ids.length||ids.length>100||!ids.every(x=>typeof x==="string")||new Set(ids).size!==ids.length)
+    if(!Array.isArray(ids)||!ids.length||ids.length>1000||!ids.every(x=>typeof x==="string")||new Set(ids).size!==ids.length)
       throw bad("Выберите от 1 до 100 уникальных файлов");
     if(action!=="trash"&&action!=="restore"&&action!=="move"&&action!=="favorite"&&action!=="unfavorite")
       throw bad("Неизвестная пакетная операция");
@@ -722,6 +791,39 @@ export class LocalDisk {
   }
   /** Auto-clean on the owner's schedule; cheap when nothing is due. */
   purgeExpired(now=Date.now()){return this.mutate(() => this.trashDays?this.emptyTrashUnlocked(this.trashDays*86400000,now):Promise.resolve({purged:0,bytes:0}));}
+  /** What goes into «Скачать ZIP-архивом»: a folder with its subfolders, or chosen files. */
+  zipPlan(input:{ids?:unknown;folder?:unknown}):{name:string;files:ZipSource[]}{
+    const safe=(n:string)=>n.replace(/[:*?"<>|]/g,"_");
+    let picked:{e:DiskEntry;name:string}[];let name:string;
+    if(input.folder!==undefined&&input.folder!==null){
+      const folder=validFolder(input.folder);
+      if(folder&&!this.folders.includes(folder))throw bad("Папка не найдена",404);
+      const base=folder?folder.split("/").pop()!:"Диск";
+      const inside=this.entries.filter(e=>!e.deletedAt&&(!folder||e.folder===folder||e.folder.startsWith(folder+"/")));
+      picked=inside.map(e=>{const rel=e.folder===folder?"":folder?e.folder.slice(folder.length+1):e.folder;return {e,name:base+"/"+(rel?rel+"/":"")+e.name};});
+      name=base;
+    }else{
+      if(!Array.isArray(input.ids)||!input.ids.length||input.ids.length>MAX_FILES||!input.ids.every(x=>typeof x==="string"))throw bad("Выберите файлы");
+      const ids=new Set(input.ids as string[]);
+      const chosen=this.entries.filter(e=>!e.deletedAt&&ids.has(e.id));
+      if(!chosen.length)throw bad("Файлы не найдены",404);
+      const oneFolder=chosen.every(e=>e.folder===chosen[0]!.folder);
+      picked=chosen.map(e=>({e,name:oneFolder||!e.folder?e.name:e.folder+"/"+e.name}));
+      name=oneFolder&&chosen[0]!.folder?chosen[0]!.folder.split("/").pop()!:"Файлы с Диска";
+    }
+    if(!picked.length)throw bad("В папке нет файлов",409);
+    if(picked.length>ZIP_MAX_FILES)throw bad("Слишком много файлов для одного архива",413);
+    if(picked.reduce((n,x)=>n+x.e.size,0)>ZIP_MAX_BYTES)throw bad("Архив вышел бы больше 4 ГБ: выберите часть файлов",413);
+    const names=uniqueNames(picked.map(x=>safe(x.name)));
+    return {name:safe(name),files:picked.map((x,i)=>({name:names[i]!,path:this.file(x.e.id),size:x.e.size,sha256:x.e.sha256,modified:x.e.uploadedAt}))};
+  }
+  /** What «Просмотр» shows for Word, Excel, PowerPoint and ZIP files. */
+  async preview(id:string){
+    const {entry,path:file}=this.rawFile(id);
+    const ext=entry.name.toLowerCase().split(".").pop()??"";
+    if(!previewable(ext))throw bad("Этот формат не показывается",415);
+    return officePreview(file,ext,entry.size);
+  }
   /** Plain text of a text file or a simple PDF, so JUUNIBI can answer questions about it. */
   async readText(id:string,max=100*1024){
     if(!Number.isSafeInteger(max)||max<1||max>1024*1024)throw bad("Ограничение текста: от 1 байта до 1 МБ");
@@ -729,17 +831,22 @@ export class LocalDisk {
     const ext=entry.name.toLowerCase().split(".").pop()??"";
     // Text files can be decoded from a bounded prefix; PDF/DOCX require the complete container.
     const plain=/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext);
+    if(!plain&&entry.size>64*1024*1024)throw bad("Файл слишком большой, чтобы прочитать из него текст (до 64 МБ)",413);
     const data=plain&&entry.size>Math.max(max*4,256*1024)
       ?await (async()=>{const h=await open(file,"r");try{const out=Buffer.alloc(Math.min(entry.size,Math.max(max*4,256*1024)));const {bytesRead}=await h.read(out,0,out.length,0);return out.subarray(0,bytesRead);}finally{await h.close();}})()
       :await readFile(file);
-    let text:string;
+    let text:string,cut=false;
     if(ext==="pdf")text=pdfText(data);
     else if(ext==="docx")text=docxText(data);
+    else if(ext==="xlsx"||ext==="pptx"){
+      try{const p=ext==="xlsx"?xlsxPreview(data):pptxPreview(data);text=previewText(p);cut=previewTruncated(p);}
+      catch(e){throw (e as {status?:number}).status?e:bad(e instanceof Error?e.message:"Не удалось прочитать файл",422);}
+    }
     else if(/^(txt|md|csv|json|log|ts|tsx|js|mjs|css|html|xml|yml|yaml|ini|py)$/.test(ext))text=new TextDecoder().decode(data);
-    else throw bad("JUUNIBI читает только текстовые файлы, PDF и DOCX",415);
+    else throw bad("JUUNIBI читает только текстовые файлы, PDF, Word, Excel и PowerPoint",415);
     text=text.replace(/\r\n?/g,"\n").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
     if(!text)throw bad(ext==="pdf"?"В этом PDF нет текстового слоя (скан или картинки)":"Файл пустой",422);
-    return {name:entry.name,text:text.slice(0,max),truncated:text.length>max||data.length<entry.size};
+    return {name:entry.name,text:text.slice(0,max),truncated:cut||text.length>max||data.length<entry.size};
   }
 }
 

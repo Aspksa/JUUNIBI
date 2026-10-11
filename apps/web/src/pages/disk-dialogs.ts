@@ -1,6 +1,7 @@
 /** Small windows of the Disk instead of the browser's prompt() and confirm(): a name, a yes/no, a folder. */
 import { el } from "../dom";
-import { dIcon } from "./disk-icons";
+import type { DiskFile, Note, ProjectMeta } from "../api";
+import { dIcon, fileBadge } from "./disk-icons";
 import { btn } from "./kit";
 import { openSheet } from "./sheet";
 import type { IconName } from "../dom";
@@ -73,6 +74,73 @@ export function pickFolder(o: { folders: string[]; title: string; ok: string; st
     const body = el("div", { cls: "dk-form disk-destination-dialog" }, search, list,
       el("div", { cls: "dk-form-actions" }, btn("Отмена", () => finish(null)), okBtn));
     const sheet = openSheet({ title: o.title, icon: "folder", content: body, onClose: () => { if (!done) { done = true; resolve(null); } } });
+    body.closest(".mod-sheet")?.classList.add("dk-small-sheet");
+    requestAnimationFrame(() => search.focus());
+  });
+}
+
+/** Which to-do or project a file goes to: open to-dos first by due date, then projects; a search narrows both. */
+export function pickTask(o: { notes: Note[]; projects: ProjectMeta[]; title: string }): Promise<{ kind: "task"; id: string } | { kind: "project"; name: string } | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const open = o.notes.filter((n) => n.kind === "todo" && !n.done && !n.auto)
+      .sort((a, b) => (a.dueAt ?? "9999").localeCompare(b.dueAt ?? "9999"));
+    const names = new Map<string, string>();
+    for (const p of o.projects) names.set(p.name.toLowerCase(), p.name);
+    for (const n of o.notes) if (n.project && !/^[0-9a-f-]{36}$/.test(n.project)) names.set(n.project.toLowerCase(), names.get(n.project.toLowerCase()) ?? n.project);
+    const projects = [...names.values()].sort((a, b) => a.localeCompare(b, "ru"));
+    const search = el("input", { type: "search", cls: "mem-input", placeholder: "Найти дело или проект", attrs: { "aria-label": "Найти дело или проект" } });
+    const list = el("div", { cls: "dk-dest-list", attrs: { role: "listbox", "aria-label": "Дела и проекты" } });
+    const finish = (v: Parameters<typeof resolve>[0]) => { if (done) return; done = true; sheet.close(); resolve(v); };
+    const item = (ic: Parameters<typeof dIcon>[0], label: string, sub: string, run: () => void) => {
+      const b = el("button", { type: "button", cls: "dk-dest dk-dest-task", attrs: { role: "option", "aria-selected": "false" } }, dIcon(ic, 17),
+        el("span", { cls: "dk-dest-text" }, el("span", { textContent: label }), sub ? el("small", { cls: "muted", textContent: sub }) : null));
+      b.addEventListener("click", run);
+      return b;
+    };
+    const draw = () => {
+      const q = search.value.trim().toLocaleLowerCase();
+      const tasks = open.filter((n) => !q || n.text.toLocaleLowerCase().includes(q) || (n.project ?? "").toLocaleLowerCase().includes(q)).slice(0, 60);
+      const projs = projects.filter((p) => !q || p.toLocaleLowerCase().includes(q));
+      list.replaceChildren(
+        ...(tasks.length ? [el("div", { cls: "dk-dest-sep", textContent: "Дела" })] : []),
+        ...tasks.map((n) => item("check", n.text, [n.dueAt ? "срок " + new Date(n.dueAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "", n.project && !/^[0-9a-f-]{36}$/.test(n.project) ? "#" + n.project : "", n.files?.length ? "файлов: " + n.files.length : ""].filter(Boolean).join(" · "), () => finish({ kind: "task", id: n.id }))),
+        ...(projs.length ? [el("div", { cls: "dk-dest-sep", textContent: "Проекты" })] : []),
+        ...projs.map((p) => item("folder", "#" + p, (() => { const m = o.projects.find((x) => x.name.toLowerCase() === p.toLowerCase()); return m?.files?.length ? "файлов: " + m.files.length : ""; })(), () => finish({ kind: "project", name: p }))),
+        ...(!tasks.length && !projs.length ? [el("p", { cls: "muted small", textContent: q ? "Ничего не нашлось." : "Открытых дел и проектов пока нет." })] : []));
+    };
+    search.addEventListener("input", draw);
+    draw();
+    const body = el("div", { cls: "dk-form" }, search, list, el("div", { cls: "dk-form-actions" }, btn("Отмена", () => finish(null))));
+    const sheet = openSheet({ title: o.title, icon: "check", content: body, onClose: () => { if (!done) { done = true; resolve(null); } } });
+    body.closest(".mod-sheet")?.classList.add("dk-small-sheet");
+    requestAnimationFrame(() => search.focus());
+  });
+}
+
+/** A file from «Диск» to attach somewhere else (a to-do, a project): searchable, newest first. */
+export function pickDiskFile(o: { files: DiskFile[]; title: string; have?: string[] }): Promise<DiskFile | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const search = el("input", { type: "search", cls: "mem-input", placeholder: "Найти файл", attrs: { "aria-label": "Найти файл" } });
+    const list = el("div", { cls: "dk-dest-list", attrs: { role: "listbox", "aria-label": "Файлы" } });
+    const finish = (v: DiskFile | null) => { if (done) return; done = true; sheet.close(); resolve(v); };
+    const sorted = [...o.files].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    const draw = () => {
+      const q = search.value.trim().toLocaleLowerCase();
+      const shown = sorted.filter((f) => !q || (f.name + " " + f.folder + " " + (f.tags ?? []).join(" ")).toLocaleLowerCase().includes(q)).slice(0, 80);
+      list.replaceChildren(...shown.map((f) => {
+        const have = o.have?.includes(f.id);
+        const b = el("button", { type: "button", cls: "dk-dest dk-dest-task", disabled: !!have, attrs: { role: "option", "aria-selected": "false" } }, fileBadge(f.name, 24),
+          el("span", { cls: "dk-dest-text" }, el("span", { textContent: f.name }), el("small", { cls: "muted", textContent: (f.folder || "Корень") + (have ? " · уже прикреплён" : "") })));
+        b.addEventListener("click", () => finish(f));
+        return b;
+      }), ...(!shown.length ? [el("p", { cls: "muted small", textContent: o.files.length ? "Ничего не нашлось." : "На Диске пока нет файлов." })] : []));
+    };
+    search.addEventListener("input", draw);
+    draw();
+    const body = el("div", { cls: "dk-form" }, search, list, el("div", { cls: "dk-form-actions" }, btn("Отмена", () => finish(null))));
+    const sheet = openSheet({ title: o.title, icon: "file", content: body, onClose: () => { if (!done) { done = true; resolve(null); } } });
     body.closest(".mod-sheet")?.classList.add("dk-small-sheet");
     requestAnimationFrame(() => search.focus());
   });

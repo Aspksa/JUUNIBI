@@ -4,10 +4,13 @@ import { app, decideApproval, persistPrefs, type Route } from "../state";
 import { groupLabel, type Chats, type ChatMsg, type Conversation } from "./chats";
 import { Composer } from "./composer";
 import type { ChatController } from "./controller";
-import { BRIEF_PROMPT, COMMANDS, fillPlaceholders, quickToCommands, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command } from "./helpers";
+import { BRIEF_PROMPT, COMMANDS, fillPlaceholders, quickToCommands, chatToMarkdown, dayLabel, previewOf, relTime, safeFileName, sameDay, speechText, stepLabel, type Command, MAX_FILES, type Attachment } from "./helpers";
 import { fillMessage, msgSignature } from "./message";
 import { isSpeaking, speak, speechSupported, stopSpeaking } from "./voice";
 import { WindowFrame } from "./window";
+import { api } from "../api";
+import { showToast } from "../toast";
+import { DISK_DRAG } from "../pages/disk-link";
 
 interface Row { root: HTMLElement; sig: string }
 interface Suggestion { title: string; sub: string; icon: IconName; text?: string; go?: Route }
@@ -115,6 +118,18 @@ export class ChatView {
     this.root.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
     this.root.addEventListener("dragleave", (e) => { if (hasFiles(e) && --depth <= 0) { depth = 0; this.drop.hidden = true; } });
     this.root.addEventListener("drop", (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth = 0; this.drop.hidden = true; void this.composer.addFiles(e.dataTransfer!.files); });
+    // files dragged from «Диск» (the chat window floats over the page): their text is attached
+    const fromDisk = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes(DISK_DRAG);
+    let diskDepth = 0;
+    this.root.addEventListener("dragenter", (e) => { if (fromDisk(e)) { diskDepth++; this.drop.textContent = "Отпустите, чтобы прикрепить файлы с Диска"; this.drop.hidden = false; } });
+    this.root.addEventListener("dragover", (e) => { if (fromDisk(e)) { e.preventDefault(); e.dataTransfer!.dropEffect = "copy"; } });
+    this.root.addEventListener("dragleave", (e) => { if (fromDisk(e) && --diskDepth <= 0) { diskDepth = 0; this.drop.hidden = true; } });
+    this.root.addEventListener("drop", (e) => {
+      if (!fromDisk(e)) return;
+      e.preventDefault(); e.stopPropagation(); diskDepth = 0; this.drop.hidden = true;
+      this.drop.textContent = "Отпустите, чтобы прикрепить текстовые файлы";
+      try { void this.attachDisk(JSON.parse(e.dataTransfer!.getData(DISK_DRAG)) as string[]); } catch { /* not ours */ }
+    });
 
     this.frame = new WindowFrame(this.root, head, () => this.toggleMax());
     chats.store.subscribe(() => this.schedule());
@@ -146,6 +161,28 @@ export class ChatView {
     this.newChat();
     void this.sendText(question, [{ name, size: new Blob([text]).size, text }]);
     return null;
+  }
+  /** Text from «Диск» for the composer (a menu item or a drop on the window); returns why it could not. */
+  attachTexts(list: Attachment[]): string | null {
+    if (!app.get().status?.assistant) return "Чат пока не подключён: настройте модель в «Настройках»";
+    // attach to the chat that will be on screen: switching to it later would clear the composer
+    if (!this.chats.active()) this.chats.create();
+    this.composer.loadDraft(this.chats.active()?.id ?? null);
+    const rejected = this.composer.addTexts(list);
+    return rejected.length === list.length ? "Не прикреплено: " + rejected.join("; ") : null;
+  }
+  /** Reads files of «Диск» by id (text, PDF, Word, Excel, PowerPoint) and attaches them. */
+  async attachDisk(ids: string[]) {
+    const out: Attachment[] = [], failed: string[] = [];
+    for (const id of ids.slice(0, MAX_FILES)) {
+      const r = await api.diskText(id);
+      if (!r.ok) { failed.push(r.error.message); continue; }
+      const text = r.value.text.length > 45000 ? r.value.text.slice(0, 45000) + "\n\n[… дальше файл обрезан]" : r.value.text;
+      out.push({ name: /\.(txt|md|csv|json|log)$/i.test(r.value.name) ? r.value.name : r.value.name.replace(/\.[^.]+$/, "") + ".txt", size: new Blob([text]).size, text });
+    }
+    const why = out.length ? this.attachTexts(out) : failed[0] ?? "Файлы не прочитались";
+    if (why) showToast(why);
+    else if (failed.length) showToast("Не прочитались: " + failed.join("; "));
   }
   resetPosition() { this.frame.reset(); }
   /** Esc: close the innermost transient thing first; "close" means nothing was open. */

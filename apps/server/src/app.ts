@@ -1,10 +1,12 @@
 import { foxWifiSnapshot } from "./fox-network";
-import type { LocalDisk } from "./local-disk";
+import { LIMIT as DISK_LIMIT, type LocalDisk } from "./local-disk";
+import { zipLength, zipStream, type ZipSource } from "./zip-write";
 import { collectLife } from "./disk-life";
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import path from "node:path";
 import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
@@ -109,7 +111,7 @@ const MAX_BODY = 64 * 1024;
 const MAX_CHAT_BODY = 700 * 1024; // chat requests may carry attached text files and long history
 const MAX_CHAT_MESSAGE = 100_000;
 const TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
+  ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".map": "application/json",
   ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".webp": "image/webp", ".ico": "image/x-icon",
 };
 
@@ -219,6 +221,8 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
 
   let chatsInFlight = 0;
   let lastTrashSweep = 0;
+  /** «Скачать ZIP»: a short-lived link per archive, so the browser downloads it like any file. */
+  const zipTokens = new Map<string, { name: string; files: ZipSource[]; until: number }>();
   /** What a restart would interrupt right now. */
   const interruptions = (): string[] => [
     ...(chatsInFlight ? ["идёт ответ помощницы"] : []),
@@ -280,6 +284,39 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if((req.method==="GET"||req.method==="HEAD")&&rawMatch)return sendRaw(req,res,disk,rawMatch[1]!,url.searchParams.has("download"));
           const textMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/text$/.exec(p);
           if(req.method==="GET"&&textMatch)return send(res,200,await disk.readText(textMatch[1]!));
+          if(req.method==="POST"&&p==="/api/disk/zip"){
+            const plan=disk.zipPlan(await readJson(req,512*1024)); // room for 10 000 file ids
+            const token=randomUUID();
+            zipTokens.set(token,{...plan,until:Date.now()+10*60_000});
+            for(const [k,v] of zipTokens)if(v.until<Date.now())zipTokens.delete(k);
+            return send(res,200,{url:"/api/disk/zip/"+token,name:plan.name+".zip",files:plan.files.length,bytes:plan.files.reduce((n,f)=>n+f.size,0)});
+          }
+          const zipMatch=/^\/api\/disk\/zip\/([0-9a-f-]{36})$/.exec(p);
+          if(req.method==="GET"&&zipMatch){
+            const plan=zipTokens.get(zipMatch[1]!);
+            if(!plan||plan.until<Date.now())return send(res,404,{error:"Ссылка на архив устарела. Нажмите «Скачать ZIP» ещё раз"});
+            res.writeHead(200,{"content-type":"application/zip","content-length":String(zipLength(plan.files)),"cache-control":"no-store","x-content-type-options":"nosniff",
+              "content-disposition":`attachment; filename*=UTF-8''${encodeURIComponent(plan.name+".zip")}`});
+            const out=Readable.from(zipStream(plan.files));
+            out.on("error",(e)=>res.destroy(e));
+            out.pipe(res);
+            return;
+          }
+          const thumbMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/thumb$/.exec(p);
+          if(thumbMatch&&req.method==="POST"){
+            const chunks:Buffer[]=[];let n=0;
+            for await(const c of req){n+=(c as Buffer).length;if(n>400*1024)return send(res,413,{error:"Миниатюра больше 400 КБ"});chunks.push(c as Buffer);}
+            return send(res,200,await disk.saveThumb(thumbMatch[1]!,Buffer.concat(chunks)));
+          }
+          if(thumbMatch&&req.method==="GET"){
+            const t=disk.thumbOf(thumbMatch[1]!);
+            if(req.headers["if-none-match"]===t.etag){res.writeHead(304,{etag:t.etag});res.end();return;}
+            const body=await readFile(t.path);
+            res.writeHead(200,{"content-type":t.type,etag:t.etag,"cache-control":"private, max-age=86400","x-content-type-options":"nosniff","content-length":String(body.length)});
+            res.end(body);return;
+          }
+          const previewMatch=/^\/api\/disk\/files\/([0-9a-f-]{36})\/preview$/.exec(p);
+          if(req.method==="GET"&&previewMatch)return send(res,200,await disk.preview(previewMatch[1]!));
           if(req.method==="GET"&&p==="/api/disk/audit")return send(res,200,await disk.audit());
           if(req.method==="GET"&&p==="/api/disk/duplicates")return send(res,200,{groups:disk.duplicates()});
           if(req.method==="GET"&&p==="/api/disk/files/history")return send(res,200,{actions:disk.fileHistory()});
@@ -341,14 +378,13 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(req.method==="POST"&&restoreMatch){const b=await readJson(req);return send(res,200,await disk.restoreFileVersion(restoreMatch[1]!,b.revision));}
           if(req.method==="POST"&&replaceMatch){
             const declared=Number(req.headers["content-length"]??0);
-            if(declared>50*1024*1024)return send(res,413,{error:"Редакция превышает 50 МБ"});
+            if(declared>DISK_LIMIT)return send(res,413,{error:"Редакция превышает 500 МБ"});
             return send(res,200,await disk.replaceStream(replaceMatch[1]!,req,url.searchParams.get("expected")));
           }
           if(req.method==="POST"&&p==="/api/disk/files/binary"){
             const name=url.searchParams.get("name"),folder=url.searchParams.get("folder")??"";
-            const limit=50*1024*1024;
             const declared=Number(req.headers["content-length"]??0);
-            if(declared>limit)return send(res,413,{error:"Файл превышает 50 МБ"});
+            if(declared>DISK_LIMIT)return send(res,413,{error:"Файл превышает 500 МБ"});
             const entry=await disk.uploadStream(name,folder,req);
             return send(res,201,{...entry,duplicates:disk.sameContent(entry.id)});
           }

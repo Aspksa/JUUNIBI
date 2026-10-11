@@ -46,11 +46,15 @@ export interface Note { id: string; kind: "note" | "todo"; text: string; done: b
   /** Work or personal (unset: from the project, see tasks-model areaOf); «В работе» / «Жду ответа»; a meeting (dueAt + estimateMinutes). */
   area?: Area; status?: TaskStatus; waitingFor?: string; followUpAt?: string; meeting?: boolean;
   /** When the status last changed; the place on the board within its column (see api.orderTasks). */
-  statusAt?: string; rank?: number }
+  statusAt?: string; rank?: number;
+  /** Files from «Диск» attached to the to-do. */
+  files?: FileLink[] }
+/** A file from «Диск» attached to a to-do or a project: its id and its name when attached. */
+export interface FileLink { id: string; name: string }
 export type Area = "work" | "personal";
 export type TaskStatus = "doing" | "waiting";
 /** A project's colour, deadline (YYYY-MM-DD) and sphere (server: ProjectMeta). */
-export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area }
+export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area; files?: FileLink[] }
 export interface TaskTemplate { id: string; text: string }
 export interface DayOff { id: string; from: string; to: string; kind: "vacation" | "sick" }
 export interface Organizer { notes: Note[]; reminders: Reminder[]; projects?: ProjectMeta[]; templates?: TaskTemplate[]; daysOff?: DayOff[] }
@@ -175,7 +179,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 const post = (body: unknown): RequestInit => ({ method: "POST", body: JSON.stringify(body) });
 
-export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string;revision?:number}
+export interface DiskFile {id:string;name:string;folder:string;size:number;uploadedAt:string;sha256:string;favorite?:boolean;deletedAt?:string;tags?:string[];color?:string;note?:string;revision?:number;thumb?:true}
 /** «Жизнь документов»: 150 figures counted on this computer (apps/server/src/disk-life.ts). */
 export interface DiskLifeMetric {id:string;group:string;icon:string;title:string;hint:string;value:string;detail?:string;kind?:string;series?:number[];labels?:string[];list?:string[];ring?:number;empty?:boolean}
 export interface DiskLife {generatedAt:string;groups:{id:string;title:string;icon:string;color:string;note:string}[];metrics:DiskLifeMetric[];highlights:string[];analysis:{documents:number;read:number;scans:number;unreadable:number;images:number;measured:number}}
@@ -183,6 +187,15 @@ export interface DiskLife {generatedAt:string;groups:{id:string;title:string;ico
 /** The name is part of the cache key: a rename changes the type and the download name. */
 const nameKey=(name:string)=>{let h=0;for(let i=0;i<name.length;i++)h=Math.imul(h^name.charCodeAt(i),16777619);return (h>>>0).toString(36);};
 export const diskRawUrl=(f:{id:string;sha256:string;name:string},download=false)=>"/api/disk/files/"+encodeURIComponent(f.id)+"/raw?v="+f.sha256.slice(0,12)+"-"+nameKey(f.name)+(download?"&download=1":"");
+/** «Просмотр» of Word, Excel, PowerPoint and ZIP (server: office-preview.ts). */
+export type DiskRun = { t: string; b?: true; i?: true };
+export type DiskPreview =
+  | { kind: "doc"; blocks: ({ k: "h"; level: number; runs: DiskRun[] } | { k: "p" | "li"; runs: DiskRun[] } | { k: "table"; rows: string[][] })[]; truncated: boolean }
+  | { kind: "sheet"; sheets: { name: string; rows: string[][]; truncated: boolean }[]; truncated: boolean }
+  | { kind: "slides"; slides: { title: string; lines: string[] }[]; truncated: boolean }
+  | { kind: "zip"; entries: { name: string; size: number; compressed: number; dir: boolean; modified?: string }[]; total: number; bytes: number; truncated: boolean };
+/** A picture preview drawn by the page (PDF first page, video frame) and kept by the server. */
+export const diskThumbUrl=(f:{id:string;sha256:string})=>"/api/disk/files/"+encodeURIComponent(f.id)+"/thumb?v="+f.sha256.slice(0,12);
 export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:string;folder:string}[]}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
 export interface FoxWifiSnapshot { supported: boolean; checkedAt: string; interfaces: string; networks: string; meshNote: string; error?: string }
@@ -221,6 +234,8 @@ export const api = {
   diskTrash: () => attemptAsync(()=>call<{days:number}>("/api/disk/trash")),
   diskTrashDays: (days:number) => attemptAsync(()=>call<{days:number}>("/api/disk/trash",post({days}))),
   diskEmptyTrash: () => attemptAsync(()=>call<{purged:number;bytes:number}>("/api/disk/trash/empty",post({}))),
+  diskPreview: (id:string) => attemptAsync(()=>call<DiskPreview>("/api/disk/files/"+encodeURIComponent(id)+"/preview")),
+  diskZip: (req:{ids:string[]}|{folder:string}) => attemptAsync(()=>call<{url:string;name:string;files:number;bytes:number}>("/api/disk/zip",post(req))),
   diskText: (id:string) => attemptAsync(()=>call<{name:string;text:string;truncated:boolean}>("/api/disk/files/"+encodeURIComponent(id)+"/text")),
   diskDelete: (id:string) => attemptAsync(()=>call<{ok:boolean}>("/api/disk/files/"+encodeURIComponent(id),{method:"DELETE"})),
   mobile: () => attemptAsync(() => call<MobileStatus>("/api/mobile")),
@@ -280,7 +295,7 @@ export const api = {
   addMissionStage: (id:string,text:string) => attemptAsync(() => call<Note>(`/api/organizer/missions/${encodeURIComponent(id)}/stages`,post({text}))),
   changeMissionStatus: (id:string,status:"active"|"paused"|"complete") => attemptAsync(() => call<{id:string;status:string}>(`/api/organizer/missions/${encodeURIComponent(id)}`,{method:"PATCH",body:JSON.stringify({status})})),
   organizer: () => attemptAsync(() => call<Organizer>("/api/organizer")),
-  setProject: (name: string, patch: { color?: string | null; dueAt?: string | null; area?: Area | null }) => attemptAsync(() => call<ProjectMeta>("/api/organizer/projects", post({ name, ...patch }))),
+  setProject: (name: string, patch: { color?: string | null; dueAt?: string | null; area?: Area | null; files?: FileLink[] | null }) => attemptAsync(() => call<ProjectMeta>("/api/organizer/projects", post({ name, ...patch }))),
   addTemplate: (text: string) => attemptAsync(() => call<TaskTemplate>("/api/organizer/templates", post({ text }))),
   removeTemplate: (id: string) => attemptAsync(() => call<{ ok: boolean }>(`/api/organizer/templates/${encodeURIComponent(id)}`, { method: "DELETE" })),
   addDayOff: (from: string, to: string, kind: DayOff["kind"]) => attemptAsync(() => call<{ dayOff: DayOff; clash: string[] }>("/api/organizer/days-off", post({ from, to, kind }))),
@@ -320,7 +335,7 @@ export const api = {
   runWeek: () => attemptAsync(() => call<Note>("/api/organizer/week", post({}))),
   snoozeReminder: (id:string,minutes:number|"tomorrow") => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
-  updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none";area?:Area|null;status?:TaskStatus|"todo"|null;waitingFor?:string|null;followUpAt?:string|null;meeting?:boolean}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
+  updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none";area?:Area|null;status?:TaskStatus|"todo"|null;waitingFor?:string|null;followUpAt?:string|null;meeting?:boolean;files?:FileLink[]|null}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
   automation: () => attemptAsync(() => call<Automation>("/api/organizer/automation")),
   setAutomation: (patch: Partial<Automation>) => attemptAsync(() => call<Automation>("/api/organizer/automation", post(patch))),
   runBrief: () => attemptAsync(() => call<Note>("/api/organizer/brief", post({}))),

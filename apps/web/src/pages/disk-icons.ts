@@ -42,6 +42,11 @@ const PATHS = {
   zoomOut: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3M8 11h6",
   vault: "M4 6h16v13H4zM4 10h16M9 14.5h6M12 6V4",
   disk: "M3 12h18v6H3zM5.5 12 8 6h8l2.5 6M16.5 15h.01M13.5 15h.01",
+  zipDown: "M6 3h9l4 4v14H6zM11 3v2M11 7v2M11 11v2M9.5 15h3v3h-3zM15 3v4h4",
+  folderUp: "M3 6h6l2 2h10v11H3zM12 17v-6m0 0-2.5 2.5M12 11l2.5 2.5",
+  attach: "M20 11.5 12.2 19.3a5 5 0 0 1-7.1-7.1l8-8a3.3 3.3 0 0 1 4.7 4.7l-8 8a1.7 1.7 0 0 1-2.4-2.4l7.3-7.3",
+  chatIn: "M4 5h16v11H9l-5 4zM12 7.5v6m0 0-2.5-2.5M12 13.5l2.5-2.5",
+  markdown: "M3 6h18v12H3zM6.5 15V9l2.5 3 2.5-3v6M15.5 9v6m0 0-2-2m2 2 2-2",
 } as const;
 export type DiskIconName = keyof typeof PATHS | IconName;
 const FILLED = new Set<string>(["ask"]);

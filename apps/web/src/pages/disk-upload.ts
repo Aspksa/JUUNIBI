@@ -4,12 +4,14 @@ import { el, iconButton } from "../dom";
 import { fileBadge } from "./disk-icons";
 import { human } from "./disk-model";
 
-const LIMIT = 50 * 1024 * 1024;
+const LIMIT = 500 * 1024 * 1024;
 type Row = { file: File; folder: string; root: HTMLElement; bar: HTMLElement; note: HTMLElement; state: "wait" | "run" | "ok" | "fail" | "off"; xhr?: XMLHttpRequest };
 
 export interface Uploader {
   readonly root: HTMLElement;
   add(files: File[], folder: string): void;
+  /** One batch with a folder per file (a dropped folder tree). */
+  addMany(items: { file: File; folder: string }[]): void;
   readonly busy: boolean;
 }
 export function createUploader(o: { onUploaded: (f: DiskUploaded) => void; onIdle: () => void }): Uploader {
@@ -79,19 +81,20 @@ export function createUploader(o: { onUploaded: (f: DiskUploaded) => void; onIdl
   return {
     root,
     get busy() { return running(); },
-    add(files, folder) {
-      if (!files.length) return;
+    add(files, folder) { this.addMany(files.map((file) => ({ file, folder }))); },
+    addMany(items) {
+      if (!items.length) return;
       if (!running()) { rows.length = 0; list.replaceChildren(); }
-      for (const file of files) {
+      for (const { file, folder } of items) {
         const bar = el("i");
         const note = el("small", { cls: "muted" });
         const row: Row = { file, folder, bar, note, state: "wait", root: el("div", { cls: "dk-up-row wait" }) };
         const x = iconButton("x", "Отменить " + file.name, () => stop(row), "icon-btn sm dk-up-stop");
         row.root.append(fileBadge(file.name, 28), el("div", { cls: "dk-up-info" },
-          el("span", { cls: "dk-up-name", textContent: file.name, title: file.name }), el("span", { cls: "dk-up-bar" }, bar), note), x);
+          el("span", { cls: "dk-up-name", textContent: file.name, title: (folder ? folder + "/" : "") + file.name }), el("span", { cls: "dk-up-bar" }, bar), note), x);
         rows.push(row); list.append(row.root);
         if (!file.size) mark(row, "fail", "Пустой файл");
-        else if (file.size > LIMIT) mark(row, "fail", "Больше 50 МБ");
+        else if (file.size > LIMIT) mark(row, "fail", "Больше 500 МБ");
         else note.textContent = "В очереди";
       }
       root.hidden = false;
@@ -99,4 +102,27 @@ export function createUploader(o: { onUploaded: (f: DiskUploaded) => void; onIdl
       void pump();
     },
   };
+}
+
+/** Every file of dropped folders with its path inside them («Фото/2024/a.jpg»); stops after `max` files, so a caller seeing `max` knows the folder is bigger. */
+export async function readDropped(items: DataTransferItem[], max = 10001): Promise<{ file: File; path: string }[]> {
+  const out: { file: File; path: string }[] = [];
+  const entries = items.map((it) => it.webkitGetAsEntry?.()).filter((x): x is FileSystemEntry => !!x);
+  const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
+    if (out.length >= max) return;
+    if (entry.isFile) {
+      const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+      out.push({ file, path: prefix + file.name });
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      // readEntries hands out a batch at a time (100 in Chrome) until it returns none
+      for (;;) {
+        const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, prefix + entry.name + "/");
+      }
+    }
+  };
+  for (const e of entries) await walk(e, "");
+  return out;
 }
