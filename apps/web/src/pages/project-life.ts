@@ -4,11 +4,11 @@
  * The element is built once and kept, because the update page is rebuilt on every status change.
  */
 import { api, type ProjectMetric, type ProjectStatsData } from "../api";
-import { el, icon, iconButton } from "../dom";
+import { el, icon, iconButton, type IconName } from "../dom";
 import { barChart, miniChart, ringChart } from "./life-charts";
 
 const OPEN_KEY = "juunibi.life.open";
-const GROUP_ICON: Record<string, string> = { anatomy: "🧬", mind: "🧠", life: "🌿", care: "🛡️", fun: "🎲", code: "🔬" };
+const GROUP_ICON: Record<string, IconName> = { anatomy: "file", mind: "brain", life: "pulse", care: "shield", fun: "puzzle", code: "search" };
 const HIGHLIGHTS = ["age", "words_added", "tests", "experiments"];
 const HOURS_LABEL = ["0", "6", "12", "18", "23"];
 
@@ -74,7 +74,7 @@ function render() {
     refresh);
   if (!data) {
     host.replaceChildren(head, error
-      ? el("div", { cls: "life-empty" }, el("span", { textContent: "🛰️" }), el("p", { textContent: error }))
+      ? el("div", { cls: "life-empty" }, el("span", {}, icon("cloud", 28)), el("p", { textContent: error }))
       : el("div", { cls: "life-skeleton", attrs: { "aria-label": "Загрузка показателей" } }, ...Array.from({ length: 6 }, () => el("i"))));
     return;
   }
@@ -84,7 +84,7 @@ function render() {
   const groups = data.groups.map((g) => {
     const items = data!.metrics.filter((m) => m.group === g.id);
     const d = el("details", { cls: "life-group g-" + g.id, open: open.has(g.id) },
-      el("summary", {}, el("span", { cls: "life-group-ic", attrs: { "aria-hidden": "true" }, textContent: GROUP_ICON[g.id] ?? "✨" }),
+      el("summary", {}, el("span", { cls: "life-group-ic", attrs: { "aria-hidden": "true" } }, icon(GROUP_ICON[g.id] ?? "sparkle", 16)),
         el("span", { cls: "grow", textContent: g.title }), el("span", { cls: "life-count", textContent: String(items.length) }), icon("chevron", 16)),
       el("div", { cls: "life-grid" }, ...items.map(tile)));
     d.addEventListener("toggle", () => { const s = readOpen(); if (d.open) s.add(g.id); else s.delete(g.id); saveOpen(s); });

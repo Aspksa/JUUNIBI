@@ -76,7 +76,7 @@ export class Composer {
     this.configured = o.configured; this.busy = o.busy;
     this.input.disabled = !o.configured;
     this.attach.disabled = !o.configured;
-    this.input.placeholder = o.configured ? "Напишите сообщение JUUNIBI" : "Сначала добавьте ключ Cloud.ru в настройках";
+    this.input.placeholder = "Напишите сообщение JUUNIBI";
     this.syncSend();
   }
   focus() { this.input.focus(); }

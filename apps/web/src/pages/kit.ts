@@ -3,7 +3,8 @@ import { el, icon, type IconName } from "../dom";
 
 export function pageHead(ic: IconName, title: string, lead?: string, right?: Node | null): HTMLElement {
   return el("header", { cls: "pg-head" }, el("span", { cls: "pg-head-icon" }, icon(ic, 22)),
-    el("div", { cls: "pg-head-text" }, el("h1", { textContent: title }), lead ? el("p", { cls: "muted", textContent: lead }) : null), right ?? null);
+    el("div", { cls: "pg-head-text" }, el("h1", { textContent: title }), lead ? el("p", { cls: "muted", textContent: lead }) : null),
+    right ? el("div", { cls: "pg-head-actions" }, right) : null);
 }
 export interface BtnOpts { primary?: boolean; danger?: boolean; icon?: IconName; disabled?: boolean; small?: boolean; title?: string }
 export function btn(label: string, run: (e: MouseEvent) => void, o: BtnOpts = {}): HTMLButtonElement {

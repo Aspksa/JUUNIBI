@@ -1,0 +1,83 @@
+/* One look for the whole app: scales, page widths, the page header, buttons and selects.
+   Loaded last, so these rules win over the older per-page ones. */
+:root{
+  /* type scale: 12 / 13 / 14 / 16 / 20 / 28 / 36 px */
+  --fs-xs:.75rem;--fs-sm:.8125rem;--fs-md:.875rem;--fs-base:1rem;--fs-lg:1.25rem;--fs-xl:1.75rem;--fs-2xl:2.25rem;
+  /* corner scale */
+  --r-sm:8px;--r-md:12px;--r-lg:16px;--r-xl:24px;
+  /* page widths: working pages and reading pages */
+  --page-wide:1440px;--page-narrow:980px;
+  --brand-fg:#1a1306;
+  /* soft tinted surfaces that follow the theme instead of fixed light colours */
+  --tint-brand:color-mix(in srgb,var(--brand) 10%,var(--surface));
+  --tint-violet:color-mix(in srgb,var(--violet) 10%,var(--surface));
+  --tint-ok:color-mix(in srgb,var(--ok) 10%,var(--surface));
+  --tint-danger:color-mix(in srgb,var(--danger) 9%,var(--surface));
+  --line-brand:color-mix(in srgb,var(--brand) 32%,var(--line));
+  --line-violet:color-mix(in srgb,var(--violet) 35%,var(--line));
+  --dur-fast:.15s;--dur:.25s;
+  /* named colours for what used to be loose hex values */
+  --warn:#c77d12;--violet:#7c5cf0;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--warn:#f0a030;--violet:#a78bfa}}
+:root[data-theme=dark]{--warn:#f0a030;--violet:#a78bfa}
+
+/* ---------- 1. page widths: two sizes only ---------- */
+.content-main,
+.content-main:has(.settings-page),.content-main:has(.tasks-page),.content-main:has(.page.upd),
+.content-main:has(.ach-page),.content-main:has(.disk-page),.content-main:has(.page){max-width:var(--page-wide)}
+.content-main:has(.mob-page){max-width:var(--page-narrow)}
+.page,.page.upd,.page.disk-page,.page.ach-page,.page.tasks-page,.settings-page{max-width:none}
+
+/* ---------- 2. one primary button: flat brand colour; disabled stays a pale brand, not grey ---------- */
+.btn{transition:background-color var(--dur-fast),border-color var(--dur-fast),opacity var(--dur-fast)}
+.btn.primary,.upd-actions .btn.primary{background:var(--brand);color:var(--brand-fg);border-color:transparent;box-shadow:none;font-weight:600}
+.btn.primary:hover:not(:disabled),.upd-actions .btn.primary:hover:not(:disabled){background:color-mix(in srgb,var(--brand) 88%,var(--fg));opacity:1}
+.btn.primary:disabled{opacity:1;background:color-mix(in srgb,var(--brand) 30%,var(--bg));color:color-mix(in srgb,var(--brand-fg) 55%,var(--bg))}
+.btn:disabled:not(.primary){opacity:.5}
+.btn.danger.primary,.btn.primary.danger{background:var(--danger);color:#fff}
+.send-btn{background:var(--brand);color:var(--brand-fg);box-shadow:none}
+.tasks-calendar-day.selected{background:var(--brand);color:var(--brand-fg);border-color:var(--brand)}
+
+/* ---------- 3. one page header ---------- */
+.pg-head{display:flex;align-items:center;gap:16px;margin:0 0 22px;flex-wrap:wrap}
+.pg-head-icon{width:48px;height:48px;border-radius:var(--r-lg)}
+.pg-head-text h1{margin:0 0 2px;font-size:var(--fs-xl);line-height:1.2;letter-spacing:-.015em}
+.pg-head-text p{margin:0;font-size:var(--fs-md);max-width:70ch}
+.pg-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-left:auto}
+.pg-head .set-pill{margin-left:auto}
+@media (max-width:760px){.pg-head-actions,.pg-head .set-pill{margin-left:64px}}
+
+/* ---------- 5. «Настройки»: one quiet colour for section icons, brand on the chosen one ---------- */
+.settings-page [class*="tone-"]{--tone:var(--muted)}
+.settings-page .set-checks li.ok .set-ic{--tone:var(--ok)}.settings-page .set-checks li.fail .set-ic{--tone:var(--danger)}
+.settings-page .set-toc-link.active svg,.settings-page .set-toc-link.active{--tone:var(--brand)}
+.settings-page .set-card-icon{background:var(--surface-2);box-shadow:none}
+.set-card::before{display:none}
+
+/* ---------- 6. line icons where emoji used to be (awards and tails keep their emoji) ---------- */
+.ach-stat-ic,.ach-tab-ic,.ach-surprise-ic,.ach-quest-ic,.ach-panel-surprise-ic,.ach-panel-quest-ic{display:inline-grid;place-items:center;color:var(--brand);line-height:1}
+.ach-step-ic,.life-group-ic{color:var(--brand)}
+.ach-quest-ic,.ach-panel-quest-ic{color:color-mix(in srgb,var(--violet) 70%,var(--fg))}
+.life-group-ic{color:var(--g,var(--brand))}
+.life-empty span{color:var(--muted)}
+
+/* ---------- 10. one select: same field, own chevron, never clipped ---------- */
+select{appearance:none;-webkit-appearance:none;min-height:38px;padding:7px 34px 7px 12px;border:1px solid var(--line);border-radius:var(--r-md);
+  background-color:var(--bg);
+  color:var(--fg);font:inherit;font-size:var(--fs-md);text-overflow:ellipsis;cursor:pointer;transition:border-color var(--dur-fast)}
+/* page styles set their own background and padding on selects; the chevron and its room must survive that */
+select:not([multiple]){appearance:none!important;-webkit-appearance:none!important;padding-right:34px!important;
+  /* a chevron drawn with gradients: the page's CSP does not allow data: images */
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%)!important;
+  background-size:5px 5px,5px 5px!important;background-repeat:no-repeat!important;
+  background-position:calc(100% - 18px) 52%,calc(100% - 13px) 52%!important}
+select:hover{border-color:color-mix(in srgb,var(--fg) 25%,var(--line))}
+select:focus-visible{outline:2px solid var(--brand);outline-offset:1px;border-color:var(--brand)}
+select:disabled{opacity:.5;cursor:not-allowed}
+select option{background:var(--bg);color:var(--fg)}
+.upd-field select{max-width:none;width:auto;min-width:220px}
+.tasks-add-row .tasks-kind{max-width:none;width:auto;padding-right:34px}
+
+/* ---------- motion ---------- */
+@media (prefers-reduced-motion:reduce){.btn,select{transition:none}}
