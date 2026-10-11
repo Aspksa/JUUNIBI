@@ -1798,3 +1798,18 @@ html[data-radius=round] :is(.nav-item,.set-toc-link,.icon-btn,.set-card-icon){bo
 .disk-file-details:empty{display:none}
 .disk-file-details p{margin:6px 0;font-size:13px}
 .disk-file-details small{opacity:.7}
+
+
+/* Disk inline folder menu: no browser prompt, keyboard-accessible disclosure. */
+.disk-folder-actions{position:relative;flex:0 0 auto}
+.disk-folder-actions>summary{list-style:none;cursor:pointer;padding:5px 9px;border-radius:8px}
+.disk-folder-actions>summary::-webkit-details-marker{display:none}
+.disk-folder-actions[open]>summary{background:rgba(185,150,88,.16)}
+.disk-folder-popover{position:absolute;z-index:25;right:0;top:100%;width:min(260px,75vw);padding:12px;display:grid;gap:8px;border:1px solid var(--line,rgba(155,140,112,.3));border-radius:14px;background:var(--card,#27252d);box-shadow:0 14px 40px rgba(0,0,0,.22)}
+.disk-folder-popover .mem-btn{width:100%;text-align:left}
+.disk-folder-feedback{color:var(--danger,#ef9696)}
+.disk-tree-node{position:relative}
+.disk-tree-line{position:relative}
+.disk-tree-select svg{flex-shrink:0}
+.disk-folder-actions:focus-within{z-index:30}
+@media(max-width:800px){.disk-folder-popover{right:0}}
