@@ -259,4 +259,21 @@ describe("Local Disk",()=>{
    }finally{await rm(dir,{recursive:true,force:true});}
  });
 
+ it("exports full content including immutable revisions with matching fingerprints",async()=>{
+   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-backup-"));
+   try{
+     const disk=new LocalDisk(dir);await disk.createFolder("Архив");
+     const a=await disk.uploadBytes("a.txt","Архив",Buffer.from("before"));
+     await disk.replaceStream(a.id,(async function*(){yield Buffer.from("after");})(),a.sha256);
+     const exported=await disk.exportBackup();
+     const bytes=Buffer.from(exported.base64,"base64");
+     expect(createHash("sha256").update(bytes).digest("hex")).toBe(exported.sha256);
+     const backup=JSON.parse(bytes.toString("utf8")) as {format:string;objects:Record<string,string>;entries:{objectId?:string;id:string}[];versions:Record<string,{objectId:string}[]>};
+     expect(backup.format).toBe("juunibi-disk-backup-v1");
+     expect(exported.objects).toBe(2);
+     expect(Buffer.from(backup.objects[backup.entries[0]!.objectId!]!,"base64").toString()).toBe("after");
+     expect(Buffer.from(backup.objects[backup.versions[a.id]![0]!.objectId]!,"base64").toString()).toBe("before");
+   }finally{await rm(dir,{recursive:true,force:true});}
+ });
+
 });
