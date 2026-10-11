@@ -1,5 +1,5 @@
 import path from "node:path";
-import { computerSnapshot } from "./windows-bridge";
+import { computerSnapshot, listWindowsProcesses } from "./windows-bridge";
 import type { Tool } from "@juunibi/assistant";
 import type { AssistantSettings } from "./assistant-settings";
 import type { Brief, Note, Organizer } from "./organizer";
@@ -36,6 +36,8 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
   const openable = d.openable ?? new OpenableUrls();
   const web = d.web ?? { search: webSearch, read: readPage };
   return [
+    { name: "computer_processes", risk: "read", description: "Показать ограниченный список имён запущенных приложений и PID в Windows, без путей, командных строк и возможности управлять процессами.",
+      parameters: { type: "object", properties: {} }, run: () => listWindowsProcesses() },
     { name: "computer_status", risk: "read", description: "Прочитать безопасную диагностику компьютера: версия ОС, загрузка памяти, процессор и время работы. Команды, запуск программ и чтение файлов не выполняются.",
       parameters: { type: "object", properties: {} }, run: () => computerSnapshot() },
     { name: "list_files", risk: "read", description: "Показать содержимое папки в разрешённой владельцем папке." + DATA,
