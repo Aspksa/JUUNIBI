@@ -6,7 +6,8 @@ describe("Disk Chronicles",()=>{
  it("has exactly ninety unique metrics in ten nonoverlapping categories",()=>{
   expect(DISK_GROUPS).toHaveLength(10);
   expect(DISK_GROUPS.every(x=>x.metrics.length===9)).toBe(true);
-  const all=DISK_GROUPS.flatMap(x=>x.metrics);
+  const all:{id:string;title:string}[]=[];
+  for(const group of DISK_GROUPS)for(const metric of group.metrics)all.push(metric);
   expect(all).toHaveLength(90);
   expect(new Set(all.map(x=>x.id)).size).toBe(90);
   expect(new Set(all.map(x=>x.title)).size).toBe(90);
