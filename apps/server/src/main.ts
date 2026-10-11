@@ -28,6 +28,7 @@ import { Achievements } from "./achievements";
 import { OpenableUrls, webSearch } from "./web-access";
 import { runSelfTest } from "./self-test";
 import { functionalHealthCheck } from "./functional-health";
+import { runIsolatedHealthChecks } from "./functional-health-v5";
 import { EvalHistory, EvalService } from "./evals";
 import { buildExtraTools, defaultBackupDir, toolEnabled } from "./assistant-tools";
 import { composeBrief, splitIntoSteps } from "./task-helpers";
@@ -268,7 +269,8 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
         { module: "updater", check: async () => { const x = updater.status(); const events = await updater.events(); const last = events.slice(-3).map((e: { type?: string; timestamp?: string; status?: string }) => [e.timestamp ?? "время неизвестно", e.type ?? "событие неизвестно", e.status ?? ""].join(" ")).join("; "); const info = "Текущий этап: " + x.phase + ". Последние события: " + (last || "журнал пуст; причина смены этапа неизвестна"); return x.phase === "error" ? { status: "FAIL", detail: (x.error ?? "Ошибка обновлений") + ". " + info } : x.phase === "testing" || x.phase === "downloading" ? { status: "SKIPPED", detail: "Обновление выполняется. " + info } : { detail: info }; } },
         { module: "mobile", check: () => { const x = mobile.status(); return x.error ? { status: "FAIL", detail: x.error } : !x.running ? { status: "SKIPPED", detail: "Wi-Fi доступ выключен владельцем; включение не выполнялось" } : { detail: "Мобильный сервис активен, порт " + x.port }; } },
       ]);
-      return { checkedAt: new Date().toISOString(), results, summary: { passed: results.filter(x=>x.status==="PASS").length, failed: results.filter(x=>x.status==="FAIL").length, skipped: results.filter(x=>x.status==="SKIPPED").length }, note: "PASS означает прохождение указанной безопасной проверки, а не полную исправность модуля. Причины переходов updater можно утверждать только при подтверждении событиями журнала." };
+      const isolatedChecks = await runIsolatedHealthChecks();
+      return { checkedAt: new Date().toISOString(), results, isolatedChecks, summary: { passed: results.filter(x=>x.status==="PASS").length, failed: results.filter(x=>x.status==="FAIL").length, skipped: results.filter(x=>x.status==="SKIPPED").length }, note: "PASS означает прохождение указанной безопасной проверки, а не полную исправность модуля. Изолированные тесты используют только временные объекты или синтетические сценарии, не проверяют реальный цикл разрешений, сеть Cloud.ru или установку обновлений." };
     },
   });
 
