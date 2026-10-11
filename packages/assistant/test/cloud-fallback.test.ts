@@ -20,19 +20,16 @@ describe("Cloud.ru diagnostics and fallback", () => {
     expect(e.detail).not.toContain("SECRET");
   });
 
-  it("tries the fallback model once when the main one keeps failing", async () => {
+  it("retries the selected model and never switches models during HTTP 503", async () => {
     const models: string[] = [];
     const f = vi.fn(async (_u: string, init: RequestInit) => {
       const model = JSON.parse(String(init.body)).model;
       models.push(model);
-      return model === "main" ? new Response("<html>Service Unavailable</html>", { status: 503 }) : ok("запасной ответ");
+      return new Response("Service Unavailable", { status: 503 });
     });
     const p = new CloudRuProvider({ apiKey: "k", model: "main", fallbackModel: "backup", fetch: f as never });
-    const r = await p.chat([], { retries: 1 });
-    expect(r.content).toBe("запасной ответ");
-    expect(r.model).toBe("backup");
-    expect(models).toEqual(["main", "main", "backup"]);
-    expect(p.lastModel).toBe("backup");
+    await expect(p.chat([], { retries: 1 })).rejects.toMatchObject({ status: 503 });
+    expect(models).toEqual(["main", "main"]);
   });
 
   it("does not fall back on a client error such as a wrong key", async () => {
