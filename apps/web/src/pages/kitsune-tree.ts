@@ -10,7 +10,7 @@ import {growthEvents,type GrowthEvent} from "./kitsune-growth";
 import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
 import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
-import { el, icon } from "../dom";
+import { el, icon, type IconName } from "../dom";
 import { openSheet } from "./sheet";
 import { RAIL, SEARCHABLE, activeItem, type FoxView, type TreeMode } from "./kitsune-sections";
 import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
@@ -19,7 +19,6 @@ import { buildAtlas, countLeaves, allNodes, type AtlasInput, type AtlasNode } fr
 import { mindView, newMindState } from "./kitsune-mindmap";
 import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
-import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
@@ -105,7 +104,7 @@ export function kitsuneTreePage():HTMLElement {
  const notice=el("p",{cls:"kt-notice",attrs:{role:"status"}});
  notice.hidden=true;
  const main=el("div",{cls:"kt-main"},controls,status,body);
- const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","Живая карта JUUNIBI: модули, показатели и награды в одном дереве"),notice,el("div",{cls:"kt-shell"},rail,main));
+ const root=el("div",{cls:"page kitsune-tree"},notice,el("div",{cls:"kt-shell"},rail,main));
  const nodesOf=():EvolutionNode[]=>((dynamicNodes??TREE_NODES) as EvolutionNode[]).map(withRuTitle);
  /** Идентификатор ветви манифеста на карте-схеме: ядро — корень, остальные — с приставкой. */
  const mindId=(id:string)=>id==="core"?"root":"m:"+id;
@@ -399,16 +398,20 @@ export function kitsuneTreePage():HTMLElement {
    reportBtn.addEventListener("click",()=>openReport(metrics,medals));
    const brain=el("button",{type:"button",cls:"kt-chip kt-mini",textContent:"🧠 Разобрать показатели"});
    brain.addEventListener("click",()=>openBrainReport(metrics));
+   const diary=el("details",{cls:"kt-diary"},
+     el("summary",{},icon("bell",16),el("span",{textContent:"Дневник леса"}),unread.length?el("b",{cls:"kt-dot",textContent:String(unread.length)}):null),
+     el("div",{cls:"kt-diary-body"},
+       el("small",{cls:"muted",textContent:unread.length?unread.slice(-1).map(e=>e.title).join(""):"лесной дневник спокоен"}),
+       acknowledge,
+       foxReaction?el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}):null,
+       recent.length?el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))):el("p",{cls:"muted kt-today-story",textContent:forestStory(foxEvents,metrics)}),
+       el("div",{cls:"kt-chip-row"},reportBtn,brain)));
    const today=el("section",{cls:"kt-today",attrs:{"aria-label":"Сегодня"}},
      el("div",{cls:"kt-rail-title"},el("h2",{textContent:"Сегодня"}),help),
      foxCompanion(mood),
      el("div",{cls:"kt-today-count"},miniRing(availability/100,String(availability)),el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
      nextMedalTile(medals),
-     el("div",{cls:"kt-today-news"},el("strong",{textContent:unread.length?"Новых вестей: "+unread.length:"Новых вестей нет"}),
-       el("small",{cls:"muted",textContent:unread.length?unread.slice(-1).map(e=>e.title).join(""):"лесной дневник спокоен"}),acknowledge),
-     foxReaction?el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}):null,
-     recent.length?el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))):el("p",{cls:"muted kt-today-story",textContent:forestStory(foxEvents,metrics)}),
-     el("div",{cls:"kt-chip-row"},reportBtn,brain));
+     diary);
    const current=activeItem(mode,foxView);
    const badge=(id:string)=>id==="awards"?String(medals.filter(m=>m.earned).length):id==="metrics"?String(availability):"";
    const nav=el("nav",{cls:"kt-rail-nav",attrs:{"aria-label":"Разделы дерева"}},...RAIL.map(group=>el("div",{cls:"kt-rail-group"},
@@ -417,7 +420,8 @@ export function kitsuneTreePage():HTMLElement {
        const on=current?.id===item.id;
        const count=badge(item.id);
        const b=el("button",{type:"button",cls:"kt-rail-item"+(on?" is-active":""),attrs:on?{"aria-current":"page",title:item.hint}:{title:item.hint}},
-         el("span",{cls:"ri-text"},el("strong",{textContent:item.label}),el("small",{textContent:item.hint})),
+         el("span",{cls:"ri-ico",attrs:{"aria-hidden":"true"}},icon(RAIL_ICON[item.id]??"spark",18)),
+         el("span",{cls:"ri-text"},el("strong",{textContent:item.label})),
          count?el("span",{cls:"ri-count",textContent:count}):null);
        b.addEventListener("click",()=>{
          mode=item.mode;if(item.foxView)foxView=item.foxView;
@@ -428,6 +432,7 @@ export function kitsuneTreePage():HTMLElement {
      }))));
    rail.replaceChildren(today,nav);
  }
+ const RAIL_ICON:Record<string,IconName>={mindmap:"modules",metrics:"pulse",awards:"trophy",branches:"flame",updates:"download",history:"clock",versions:"archive",comparison:"rows",growth:"spark",discovery:"search",architect:"wand","brain-chat":"brain"};
  function foxCompanion(mood:{emoji:string;label:string;detail:string}){
    const state=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";
    return el("div",{cls:"kt-companion state-"+state,attrs:{role:"status","aria-label":"Настроение лисички: "+mood.label}},
@@ -499,8 +504,9 @@ export function kitsuneTreePage():HTMLElement {
        b.addEventListener("click",()=>openMedal(m));return b;})):el("p",{cls:"muted",textContent:"Полученных наград пока нет: они откроются, когда появятся подтверждённые данные."}),
      more);
    body.replaceChildren(el("div",{cls:"kt-map"},
-     el("header",{cls:"kt-map-head"},el("h2",{textContent:"Карта-схема"}),el("p",{textContent:`${countLeaves(tree)} реальных узлов: корень JUUNIBI слева, ветви раскрываются вправо.`})),
-     mindView({tree,state:mindState,onOpen:open,deps,stages}),timeControl(frames,index),fruits));
+     el("header",{cls:"kt-map-head km-head"},el("h2",{textContent:"Карта проекта"}),el("span",{cls:"km-count",textContent:countLeaves(tree)+" узлов"})),
+     mindView({tree,state:mindState,onOpen:open,deps,stages}),
+     el("div",{cls:"km-below"},timeControl(frames,index),fruits)));
    status.textContent="";
  }
  function infoSheet(title:string,sub:string,lines:string[],actions:[string,()=>void][]=[],tone:"ok"|"warn"|"off"|"bad"="ok"){
