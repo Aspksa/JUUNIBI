@@ -29,8 +29,9 @@ export function readPositions(nodes:EvolutionNode[]):Positions {
 export function savePositions(p:Positions):void {
  try{localStorage.setItem(KEY,JSON.stringify(p));}catch{/* private storage disabled */}
 }
-export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set()):HTMLElement {
+export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set(),motion:"bloom"|"pulse"|"recovery"|"none"="none"):HTMLElement {
  const positions=readPositions(nodes);
+ const moving=motion!=="none"&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
  const viewport=document.createElement("div");viewport.className="kt-canvas-viewport";
  viewport.setAttribute("aria-label","Интерактивная карта связей JUUNIBI");
  const canvas=document.createElement("div");canvas.className="kt-canvas";
@@ -48,7 +49,11 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
      const line=document.createElementNS(ns,"path");
      line.setAttribute("d",`M ${a.x+178} ${a.y+35} C ${a.x+215} ${a.y+35}, ${b.x-35} ${b.y+35}, ${b.x} ${b.y+35}`);
      line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width",id===selected||n.id===selected?"2.6":"1.3");
-     line.setAttribute("opacity",id===selected||n.id===selected?".9":".27");svg.append(line);
+     line.setAttribute("opacity",id===selected||n.id===selected?".9":".27");
+     if(moving&&motion==="bloom"&&newIds.has(n.id))line.setAttribute("class","kt-branch-bloom");
+     if(moving&&motion==="pulse"&&(id===selected||n.id===selected))line.setAttribute("class","kt-neural-pulse");
+     if(moving&&motion==="recovery")line.setAttribute("class","kt-recovery-path");
+     svg.append(line);
    }
  }
  lines();canvas.append(svg);
