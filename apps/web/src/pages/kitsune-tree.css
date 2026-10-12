@@ -61,3 +61,9 @@
 @keyframes kt-recovery-restore{0%{opacity:0;stroke-dasharray:4 12}65%{opacity:1}100%{opacity:.6;stroke-dasharray:0 0}}
 @keyframes kt-recovery-node{0%{opacity:.4;filter:grayscale(1)}100%{opacity:1;filter:grayscale(0)}}
 @media(prefers-reduced-motion:reduce){.kt-canvas-edges .kt-branch-bloom,.kt-canvas-edges .kt-neural-pulse,.kt-canvas-edges .kt-recovery-path,.kt-canvas-node.kt-recovered{animation:none!important}.kt-canvas-node.kt-out-of-focus{transition:none}}
+
+/* Graph layout regression fixes: preserve scroll geometry at all zoom levels. */
+.kt-graph:has(>.kt-canvas-viewport){display:block;min-width:0;padding:12px;overflow:hidden}
+.kt-canvas-viewport{box-sizing:border-box;display:block;width:100%;max-width:100%;min-width:0;overflow:auto;overscroll-behavior:contain}
+.kt-canvas-scroll-area{position:relative;min-width:0;min-height:0}
+@media(max-width:780px){.kt-graph:has(>.kt-canvas-viewport){padding:8px}}
