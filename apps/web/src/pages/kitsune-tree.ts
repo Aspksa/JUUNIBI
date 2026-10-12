@@ -1,3 +1,4 @@
+import {getFoxPulls,refreshFoxChecks,foxPullTrack,type FoxPull} from "./kitsune-fox-github";
 import {foxBranches,BRANCH_TRACKS,type BranchTrack} from "./kitsune-fox-branches";
 import {eliteFoxAwards} from "./kitsune-fox-elite";
 import {synchronizeFoxHistory,type FoxHourly} from "./kitsune-fox-server";
@@ -80,6 +81,8 @@ export function kitsuneTreePage():HTMLElement {
  let foxChanged=new Set<string>();
  let foxLimit=30;
  let foxTrack:BranchTrack="update";
+ let foxPulls:FoxPull[]|null=null;
+ let foxPullsLoading=true;
  let foxEliteOnlyEarned=false;
  let foxEliteLimit=20;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
