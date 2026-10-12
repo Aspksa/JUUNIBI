@@ -1,3 +1,4 @@
+import {FOX_WORLDS,foxMetrics} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
 import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
 import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
@@ -8,7 +9,7 @@ import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions" | "impact" | "comparison" | "brain-chat" | "discovery" | "growth";
+export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions" | "impact" | "comparison" | "brain-chat" | "discovery" | "growth" | "fox";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -51,6 +52,13 @@ export function kitsuneTreePage():HTMLElement {
  let activeVersion="";
  let graphMotion:"bloom"|"pulse"|"recovery"|"none"="none";
  let playedEvent="";
+ let foxWorld=-1;
+ let foxOnlyFavorite=false;
+ let foxSearch="";
+ let foxSnapshot:EvolutionSnapshot|null=null;
+ const favoritesKey="juunibi:fox-commotion:favorites:v1";
+ let foxFavorites=new Set<string>();
+ try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
  const body=el("div",{cls:"kt-layout"});
  const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
  const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","KITSUNE TREE · Живая карта архитектуры и развития JUUNIBI"),
@@ -80,10 +88,68 @@ export function kitsuneTreePage():HTMLElement {
  const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
    renderOverview();
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"],["impact","Влияние"],["comparison","Сравнение"],["brain-chat","Brain-диалог"],["discovery","Автообнаружение"],["growth","Живой рост"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"],["impact","Влияние"],["comparison","Сравнение"],["brain-chat","Brain-диалог"],["discovery","Автообнаружение"],["growth","Живой рост"],["fox","🦊 Лисий переполох"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
+   if(mode==="fox"){
+     const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth});
+     const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох — сто живых показателей"}});
+     main.append(el("div",{cls:"kt-fox-hero"},
+       el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / FOX COMMOTION"}),
+       el("h2",{textContent:"🦊 Лисий переполох"}),
+       el("p",{textContent:"100 лесных историй в 10 мирах. Значения берутся из подтверждённых данных; неизвестные показатели честно показывают «Нет данных»."})));
+     const view=el("div",{cls:"kt-fox-toolbar"});
+     const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
+     search.value=foxSearch;
+     const world=el("select",{attrs:{"aria-label":"Мир показателей"}});
+     world.append(el("option",{textContent:"🌍 Все 10 миров",attrs:{value:"-1"}}));
+     FOX_WORLDS.forEach((x,i)=>world.append(el("option",{textContent:x.emoji+" "+x.title,attrs:{value:String(i)}})));
+     world.value=String(foxWorld);
+     const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
+     const cards=el("div",{cls:"kt-fox-grid"});
+     const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
+     const paint=()=>{
+       const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
+       count.textContent="Найдено: "+displayed.length+" из 100 · Избранное: "+foxFavorites.size;
+       cards.replaceChildren();
+       for(const m of displayed){
+         const article=el("article",{cls:"kt-fox-card"});
+         const favorite=el("button",{cls:"kt-fox-heart",textContent:foxFavorites.has(m.id)?"♥":"♡",attrs:{"aria-label":(foxFavorites.has(m.id)?"Удалить из избранного: ":"Добавить в избранное: ")+m.name,"aria-pressed":String(foxFavorites.has(m.id))}});
+         favorite.addEventListener("click",()=>{
+           if(foxFavorites.has(m.id))foxFavorites.delete(m.id);else foxFavorites.add(m.id);
+           try{localStorage.setItem(favoritesKey,JSON.stringify([...foxFavorites]));}catch{/* Private storage disabled */}
+           paint();
+         });
+         const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
+         open.disabled=m.value===null;
+         open.addEventListener("click",()=>{mode=m.target;render();});
+         article.append(
+           el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
+           el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
+           el("h3",{textContent:m.name}),
+           el("p",{textContent:m.description}),
+           el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
+           open
+         );cards.append(article);
+       }
+       if(!displayed.length)cards.append(el("p",{cls:"kt-empty",textContent:"Здесь пока нет подходящих показателей. Измени мир, поиск или избранное."}));
+     };
+     search.addEventListener("input",()=>{foxSearch=search.value;paint();});
+     world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
+     favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
+     view.append(search,world,favoritesToggle);
+     main.append(view,count,cards);
+     const side=el("aside",{cls:"kt-detail"},
+       el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
+       el("h2",{textContent:"Как живёт лес"}),
+       el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён."}),
+       el("p",{textContent:"Избранные карточки сохраняются только в этом браузере. Никакие действия с проектом не выполняются."}));
+     const availability=metrics.filter(x=>x.value!==null).length;
+     side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"}));
+     body.replaceChildren(main,side);
+     paint();status.textContent="Лисий переполох · 100 показателей, "+availability+" с подключёнными данными";return;
+   }
    if(mode==="growth"){
      const timeline=el("div",{cls:"kt-growth-timeline",attrs:{"aria-label":"Подтверждённые события роста"}});
      if(!growth.length)timeline.append(el("p",{cls:"kt-empty",textContent:"Подтверждённых изменений между двумя сохранёнными манифестами пока нет. Эффекты появятся после установки нового релиза и получения обоих снимков."}));
@@ -317,6 +383,7 @@ export function kitsuneTreePage():HTMLElement {
    const snapshot=await response.json() as EvolutionSnapshot;
    dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
    persistedHistory=snapshot.timeline;
+   foxSnapshot=snapshot;
    growth=growthEvents(snapshot);
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
    if(growth.length&&playedEvent!==eventKey){
