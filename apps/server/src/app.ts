@@ -97,7 +97,7 @@ export interface AppDeps {
   assistant?: Assistant | undefined;
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
-  kitsuneEvolution?: { snapshot(): Promise<unknown> };
+  kitsuneEvolution?: { snapshot(): Promise<unknown>; foxHistory?(payload:unknown):Promise<unknown> };
   /** Ends the process so the launcher installs a prepared update. Returns false when not started by the launcher. */
   restart?: () => boolean;
   /** Human-readable list of work that a restart would interrupt (beyond running chats and open approvals). */
@@ -759,6 +759,11 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         }
         if (req.method === "GET" && p === "/api/update/events") return send(res, 200, await deps.updater?.events() ?? []);
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater ? { ...deps.updater.status(), activity: interruptions() } : { error: "Модуль обновления недоступен" });
+        if (p === "/api/kitsune/fox-history" && (req.method === "GET" || req.method === "POST")) {
+          if (!deps.kitsuneEvolution?.foxHistory) return send(res, 503, { error: "Fox SQLite unavailable" });
+          const payload = req.method === "GET" ? { action: "read" } : await readJson(req);
+          return send(res, 200, await deps.kitsuneEvolution.foxHistory(payload));
+        }
         if (req.method === "GET" && p === "/api/kitsune/evolution") return send(res, 200, deps.kitsuneEvolution ? await deps.kitsuneEvolution.snapshot() : { error: "Evolution unavailable" });
         if (req.method === "GET" && p === "/api/update/history") return send(res, 200, deps.updater ? await deps.updater.history() : { items: [], canRollback: null, rollbackPending: false });
         if (req.method === "POST" && p === "/api/update/settings") {
