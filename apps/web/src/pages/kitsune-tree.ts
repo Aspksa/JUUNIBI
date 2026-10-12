@@ -57,6 +57,30 @@ export function kitsuneTreePage():HTMLElement {
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
+   if(mode==="history"||mode==="versions"){
+     const history=persistedHistory?.history??[];
+     const list=el("div",{cls:"kt-graph"});
+     if(mode==="history"){
+       for(const event of evolutionChronology(history)){
+         if(!(event.description+" "+event.version).toLowerCase().includes(filter))continue;
+         list.append(el("article",{cls:"kt-node"},el("strong",{textContent:event.kind==="install"?"Установка":event.kind==="rollback"?"Откат":"Событие"}),
+           el("small",{textContent:event.at+" · "+event.version.slice(0,12)}),el("p",{textContent:event.description})));
+       }
+     }else{
+       for(const item of traceCapabilities(nodesOf(),persistedHistory?.activeVersion??"",history)){
+         if(!item.title.toLowerCase().includes(filter))continue;
+         const card=el("article",{cls:"kt-node"},el("strong",{textContent:item.title}),
+           el("small",{textContent:item.origin?"PR #"+item.origin.pr+" · "+item.origin.sha.slice(0,12):"Нет точного SHA"}),
+           el("p",{textContent:item.installation==="current"?"Совпадает с активным SHA":item.installation==="recorded"?"SHA есть в журнале":"Наличие способности в установленной версии не подтверждено"}));
+         if(item.origin)card.append(el("a",{textContent:"Исходный PR",attrs:{href:"https://github.com/Aspksa/JUUNIBI/pull/"+item.origin.pr,target:"_blank",rel:"noopener noreferrer"}}));
+         list.append(card);
+       }
+     }
+     if(!list.childNodes.length)list.append(el("p",{textContent:"Нет подтверждённых записей."}));
+     body.replaceChildren(list,el("aside",{cls:"kt-detail"},el("h2",{textContent:mode==="history"?"Хронология обновлений":"Происхождение возможностей"}),
+       el("p",{textContent:"Данные подтверждаются журналом Центра обновлений и точным SHA релиза. Совпадение названия не означает подтверждённую установку."})));
+     status.textContent=mode==="history"?"История установок и откатов":"Происхождение ветвей по SHA и PR";return;
+   }
    if(mode==="updates"){
      status.textContent=updatesLoading?"Загружаю историю Центра обновлений…":
        "История установок и текущая версия из Центра обновлений";
