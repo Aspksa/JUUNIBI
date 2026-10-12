@@ -37,11 +37,7 @@
         "brain"
       ],
       "stage": 2,
-      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/265",
-      "introducedIn": {
-        "sha": "3aadf16d97624ca79baf03ef036a986c5fe4a69e",
-        "pr": 267
-      }
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/265"
     },
     {
       "id": "search",
