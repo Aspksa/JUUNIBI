@@ -14,6 +14,7 @@ def run(db_path, request):
         db.execute("CREATE TABLE IF NOT EXISTS decisions (id TEXT PRIMARY KEY, goal TEXT NOT NULL, chosen TEXT NOT NULL, observed TEXT NOT NULL CHECK(observed IN ('success','failure')), observed_at TEXT NOT NULL, task_type TEXT)")
         db.execute("CREATE TABLE IF NOT EXISTS graph_edges (decision_id TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(decision_id,kind,target), FOREIGN KEY(decision_id) REFERENCES decisions(id))")
         db.execute("CREATE INDEX IF NOT EXISTS idx_decision_task ON decisions(task_type,observed_at)")
+        db.execute("CREATE TABLE IF NOT EXISTS embedding_vectors (decision_id TEXT NOT NULL, provider TEXT NOT NULL, content_hash TEXT NOT NULL, vector_json TEXT NOT NULL, PRIMARY KEY(decision_id,provider))")
         if request.get("action")=="sync":
             items=request.get("items",[])
             if not isinstance(items,list) or len(items)>100: raise ValueError("invalid items")
@@ -40,6 +41,23 @@ def run(db_path, request):
                 if matching: results.append({"id":row[0],"goal":row[1],"chosen":row[2],"observed":row[3],"observedAt":row[4],"taskType":row[5],"score":matching})
             results.sort(key=lambda r:(-r["score"],r["observedAt"]),reverse=False)
             return {"items":results[:limit],"searchMode":"lexical","durable":True}
+        if request.get("action")=="vectors":
+            provider=request.get("provider")
+            if not isinstance(provider,str) or not 1<=len(provider)<=300: raise ValueError("invalid provider")
+            rows=db.execute("SELECT decision_id,content_hash,vector_json FROM embedding_vectors WHERE provider=? LIMIT 100",(provider,)).fetchall()
+            return {"items":[{"id":r[0],"hash":r[1],"vector":json.loads(r[2])} for r in rows]}
+        if request.get("action")=="save_vectors":
+            provider=request.get("provider")
+            items=request.get("items")
+            if not isinstance(provider,str) or not 1<=len(provider)<=300 or not isinstance(items,list) or len(items)>100: raise ValueError("invalid vectors")
+            for item in items:
+                if not isinstance(item,dict) or not isinstance(item.get("id"),str) or len(item["id"])>80 or not isinstance(item.get("hash"),str) or len(item["hash"])!=64:
+                    raise ValueError("invalid vector key")
+                values=item.get("vector")
+                if not isinstance(values,list) or not 1<=len(values)<=4096 or any(type(x) not in (float,int) or x!=x or abs(x)>1e20 for x in values): raise ValueError("invalid vector")
+                db.execute("INSERT INTO embedding_vectors VALUES(?,?,?,?) ON CONFLICT(decision_id,provider) DO UPDATE SET content_hash=excluded.content_hash,vector_json=excluded.vector_json",(item["id"],provider,item["hash"],json.dumps(values)))
+            db.commit()
+            return {"stored":len(items)}
         if request.get("action")=="list":
             limit=request.get("limit",100)
             if type(limit)!=int or not 1<=limit<=100: raise ValueError("invalid limit")
