@@ -418,6 +418,8 @@ export function kitsuneTreePage():HTMLElement {
    const latest=growth.find(x=>x.kind==="new"||x.kind==="rollback"||x.kind==="installed");
    foxReaction=latest?latest.kind==="rollback"?"🦊 Уф! Лес вернулся к прежней версии. Всё под контролем.":latest.kind==="new"?"🌱 Ой, лапки! У нас появилась новая веточка: "+latest.title:"✨ Обновление установлено — проверим, что изменилось!":"";
    growth=growthEvents(snapshot);
+   const dailyEvents:ForestEvent[]=growth.map(item=>({id:item.id,day:new Date().toISOString().slice(0,10),kind:item.kind==="new"?"growth":item.kind==="rollback"?"recovery":item.kind==="removed"?"warning":"update",title:item.title,detail:item.detail,metricId:undefined}));
+   foxEvents=mergeForestEvents(foxEvents,dailyEvents);
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
    if(growth.length&&playedEvent!==eventKey){
      playedEvent=eventKey;
