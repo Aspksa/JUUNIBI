@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import type { DecisionRecord } from "./decision-memory";
@@ -44,18 +45,33 @@ export class BrainGraphSQLite {
     const lexical=await this.call({action:"search",query,limit});
     if(!this.embedding) return lexical;
     try {
-      const data=await this.call({action:"list",limit:100}) as {items:GraphRow[]};
+      // Index a bounded recent window to cap embedding API cost. Persist vectors for future searches/restarts.
+      const data=await this.call({action:"list",limit:32}) as {items:GraphRow[]};
       const provider=this.embedding;
+      const model=provider.id??"unspecified";
+      const saved=await this.call({action:"vectors",provider:model}) as {items:{id:string;hash:string;vector:number[]}[]};
+      const byId=new Map(saved.items.map(item=>[item.id,item]));
       const queryVector=await provider.embed(query);
       if(!queryVector.length||queryVector.some(v=>!Number.isFinite(v)))throw new Error("invalid embedding");
+      const newVectors:{id:string;hash:string;vector:number[]}[]=[];
       const scored=await Promise.all(data.items.map(async row=>{
         const text=row.goal+" "+row.chosen;
-        const key=(provider.id??"unspecified")+":"+row.id+":"+text;
-        let vec=this.vectors.get(key)?.vector;
-        if(!vec){vec=await provider.embed(text);if(vec.every(Number.isFinite)&&vec.length===queryVector.length)this.vectors.set(key,{model:provider.id??"",vector:vec});}
-        return {...row,score:cosine(queryVector,vec??[])};
+        const hash=createHash("sha256").update(text).digest("hex");
+        const key=model+":"+row.id+":"+hash;
+        const persisted=byId.get(row.id);
+        let vec=this.vectors.get(key)?.vector ?? (persisted?.hash===hash?persisted.vector:undefined);
+        if(!vec||vec.length!==queryVector.length||vec.some(v=>!Number.isFinite(v))){
+          vec=await provider.embed(text);
+          if(vec.length===queryVector.length && vec.every(Number.isFinite))
+            newVectors.push({id:row.id,hash,vector:vec});
+        }
+        if(vec.length===queryVector.length && vec.every(Number.isFinite))
+          this.vectors.set(key,{model,vector:vec});
+        return {...row,score:cosine(queryVector,vec)};
       }));
-      return {items:scored.filter(r=>r.score>0).sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,limit),searchMode:"semantic",durable:true};
+      if(newVectors.length) await this.call({action:"save_vectors",provider:model,items:newVectors});
+      return {items:scored.filter(r=>r.score>0).sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,limit),
+        searchMode:"semantic",durable:true,candidateCount:data.items.length,candidateLimit:32};
     }catch{return {...lexical,searchMode:"lexical-fallback"};}
   }
 }
