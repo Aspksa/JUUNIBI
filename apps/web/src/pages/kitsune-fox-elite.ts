@@ -169,7 +169,7 @@ const SECONDARY=[7,11,1,15,54,35,18,47,36,2] as const;
  * When a feed is missing the achievement remains locked, never treated as zero. */
 export function eliteFoxAwards(metrics:FoxMetric[],history:FoxHistory):EliteAward[]{
  return ELITE_FOX_THEMES.flatMap((theme,world)=>theme.names.map((name,rank)=>{
-  const first=PRIMARY[world],second=SECONDARY[world];
+  const first=PRIMARY[world]!,second=SECONDARY[world]!;
   const a=metrics[first]?.value,b=metrics[second]?.value;
   const aHistory=history["fox-"+first]??[],bHistory=history["fox-"+second]??[];
   const days=Math.min(new Set(aHistory.map(p=>p.day)).size,new Set(bHistory.map(p=>p.day)).size);
