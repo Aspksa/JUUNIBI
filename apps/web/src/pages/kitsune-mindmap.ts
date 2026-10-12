@@ -1,4 +1,4 @@
-import {el} from "../dom";
+import {el,icon,iconButton,type IconName} from "../dom";
 import {CLANS,allNodes,clanColor,clansInUse,searchAtlas,type AtlasNode} from "./kitsune-atlas-model";
 import {defaultExpanded,degrees,downstreamDepths,expandToDepth,layoutMind,maxDepth,pathTo,revealHits,shortLabel,type MindBox,type MindLayout,type MindMode} from "./kitsune-mindmap-model";
 import {LAYER_TEXT} from "./kitsune-sections";
@@ -35,6 +35,7 @@ export interface MindOptions{
  /** id узла → номер этапа (для слоя «Этапы») */
  stages:Record<string,number>;
 }
+const MODE_ICON:Record<MindMode,IconName>={structure:"modules",links:"link",stages:"rows",impact:"alert"};
 export function mindView(o:MindOptions):HTMLElement{
  const {tree,state}=o;
  const nodes=allNodes(tree);
@@ -172,7 +173,7 @@ export function mindView(o:MindOptions):HTMLElement{
  const impactPanel=el("section",{cls:"kt-impact km-impact",attrs:{"aria-label":"Что сломается"}});
  const lead=el("p",{cls:"km-lead muted"});
  const modeButtons:[MindMode,HTMLButtonElement][]=(["structure","links","stages","impact"] as MindMode[]).map(m=>{
-  const b=el("button",{type:"button",cls:"kt-chip km-mode",textContent:LAYER_TEXT[m].title,attrs:{"aria-pressed":"false"}});
+  const b=el("button",{type:"button",cls:"km-mode",title:LAYER_TEXT[m].lead,attrs:{"aria-pressed":"false"}},icon(MODE_ICON[m],16),el("span",{textContent:m==="impact"?"Что сломается":LAYER_TEXT[m].title}));
   b.addEventListener("click",()=>setMode(m));
   return [m,b];
  });
@@ -348,7 +349,7 @@ export function mindView(o:MindOptions):HTMLElement{
  };
 
  // ── панель: поиск, раскрытие, масштаб, легенда ──
- const query=el("input",{cls:"kt-search ka-search",attrs:{type:"search",placeholder:"Найти на карте: ветвь, показатель, награда, файл…","aria-label":"Поиск по карте-схеме"}});
+ const query=el("input",{cls:"kt-search ka-search",attrs:{type:"search",placeholder:"Найти ветвь, показатель, награду, файл…","aria-label":"Поиск по карте-схеме"}});
  query.value=state.query;
  let hitIdx=0;
  const goHit=(step:number)=>{
@@ -368,26 +369,29 @@ export function mindView(o:MindOptions):HTMLElement{
  });
  const legend=el("div",{cls:"ka-legend",attrs:{role:"group","aria-label":"Кланы ветвей: нажмите, чтобы оставить только один"}},
   ...clansInUse(tree).map(i=>{
-   const b=el("button",{type:"button",cls:"ka-clan",attrs:{"aria-pressed":"false"}},el("i",{attrs:{style:`background:${clanColor(i)}`}}),CLANS[i]!.label);
+   const b=el("button",{type:"button",cls:"ka-clan",title:CLANS[i]!.label,attrs:{"aria-pressed":"false"}},el("i",{attrs:{style:`background:${clanColor(i)}`}}),el("span",{cls:"ka-clan-t",textContent:CLANS[i]!.label}));
    b.dataset.clan=String(i);
    b.addEventListener("click",()=>{state.clan=state.clan===i?null:i;paintFilters();});
    return b;
   }));
- const btn=(label:string,aria:string,fn:()=>void)=>{const b=el("button",{type:"button",cls:"kt-chip",textContent:label,attrs:{"aria-label":aria}});b.addEventListener("click",fn);return b;};
+ const tool=(name:IconName,label:string,fn:()=>void)=>iconButton(name,label,()=>fn(),"km-ib");
+ const textTool=(text:string,label:string,fn:()=>void)=>{const b=el("button",{type:"button",cls:"km-ib",textContent:text,title:label,attrs:{"aria-label":label}});b.addEventListener("click",fn);return b;};
  const setExpanded=(set:Set<string>)=>{expanded=set;state.expanded=set;render();fit();};
  const levels=maxDepth(tree);
- const bar=el("div",{cls:"ka-bar"},query,
-  el("div",{cls:"ka-zoom",attrs:{role:"group","aria-label":"Раскрытие веток"}},
-   btn("Раскрыть всё","Раскрыть все ветки",()=>setExpanded(expandToDepth(tree,levels+1))),
-   btn("Свернуть","Свернуть до первого уровня",()=>setExpanded(defaultExpanded(tree))),
-   btn("Уровень 2","Раскрыть до второго уровня",()=>setExpanded(expandToDepth(tree,2)))),
-  el("div",{cls:"ka-zoom",attrs:{role:"group","aria-label":"Масштаб"}},
-   btn("−","Отдалить",()=>zoomAt(1/1.25,v.x+v.w/2,v.y+v.h/2)),
-   btn("+","Приблизить",()=>zoomAt(1.25,v.x+v.w/2,v.y+v.h/2)),
-   btn("Вся карта","Показать всю карту",fit)));
- const stage=el("div",{cls:"ka-stage km-stage"});stage.append(svg);
- const hint=el("p",{cls:"ka-hint muted",textContent:"Нажмите на ветвь — она раскроется, двойной щелчок или Enter — подробности. Наведите на узел: подсветится путь до корня, пунктир покажет связи «зависит от»."});
- const root=el("section",{cls:"ka-wrap km-wrap",attrs:{"aria-label":"Карта-схема"}},el("div",{cls:"km-modes",attrs:{role:"group","aria-label":"Слой карты"}},...modeButtons.map(x=>x[1])),lead,bar,status,legend,stage,impactPanel,hint);
+ const bar=el("div",{cls:"km-toolbar"},
+  el("div",{cls:"km-seg",attrs:{role:"group","aria-label":"Слой карты"}},...modeButtons.map(x=>x[1])),
+  el("div",{cls:"km-search"},icon("search",16),query),
+  el("div",{cls:"km-tools",attrs:{role:"group","aria-label":"Раскрытие и масштаб"}},
+   tool("maximize","Раскрыть все ветки",()=>setExpanded(expandToDepth(tree,levels+1))),
+   tool("list","Раскрыть до второго уровня",()=>setExpanded(expandToDepth(tree,2))),
+   tool("minimize","Свернуть до первого уровня",()=>setExpanded(defaultExpanded(tree))),
+   el("span",{cls:"km-sep"}),
+   textTool("−","Отдалить",()=>zoomAt(1/1.25,v.x+v.w/2,v.y+v.h/2)),
+   textTool("+","Приблизить",()=>zoomAt(1.25,v.x+v.w/2,v.y+v.h/2)),
+   tool("target","Показать всю карту",fit)));
+ const stage=el("div",{cls:"ka-stage km-stage"});stage.append(svg,legend);
+ legend.classList.add("km-legend-ov");
+ const root=el("section",{cls:"ka-wrap km-wrap",attrs:{"aria-label":"Карта-схема"}},bar,lead,status,stage,impactPanel);
  svg.addEventListener("keydown",ev=>{
   const k=(ev as KeyboardEvent).key;
   if(ev.target!==svg)return;
