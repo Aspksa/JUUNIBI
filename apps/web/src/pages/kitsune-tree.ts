@@ -42,6 +42,7 @@ export function kitsuneTreePage():HTMLElement {
  let dynamicNodes:EvolutionNode[]|null=null;
  let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
  let graphZoom=1;
+ let focusNext=false;
  let updatesLoading=true;
  let discovery:EvolutionSnapshot["discovery"]|null=null;
  let brainMessages:{role:"user"|"assistant";text:string}[]=[];
@@ -273,7 +274,7 @@ export function kitsuneTreePage():HTMLElement {
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
    if(mode==="development") {graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);}
    const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
-   if(mode==="architecture"||mode==="connections") {graph.append(buildGraph(nodes,selected,id=>{selected=id;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion));graphMotion="none";}
+   if(mode==="architecture"||mode==="connections") {graph.append(buildGraph(nodes,selected,id=>{selected=id;focusNext=true;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion,focusNext));focusNext=false;graphMotion="none";}
    else for(const node of nodes){
      const card=el("button",{cls:"kt-node "+(node.id===selected?"kt-selected ":"")+(node.status==="planned"?"kt-future":""),
        attrs:{"aria-pressed":String(node.id===selected)},
