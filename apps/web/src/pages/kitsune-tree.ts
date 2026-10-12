@@ -107,7 +107,19 @@ export function kitsuneTreePage():HTMLElement {
      const advice=recommendEvolution({schemaVersion:1,project:"JUUNIBI",nodes:allNodes});
      const adviceHost=el("div",{cls:"kt-graph"});
      adviceHost.append(el("p",{cls:"muted",textContent:"Правила зависимостей, не генеративный ИИ. Предложения не изменяют проект автоматически."}));
-     for(const row of advice)adviceHost.append(el("article",{cls:"kt-node"},el("strong",{textContent:row.title}),el("p",{textContent:row.explanation}),el("small",{textContent:row.ready?"Зависимости готовы":"Есть блокирующие зависимости"})));
+     for(const row of advice){
+       const node=allNodes.find(n=>n.id===row.nodeId)!;
+       const prompt=architecturePrompt(node,allNodes);
+       const button=el("button",{textContent:"Подготовить запрос Brain",attrs:{type:"button"}});
+       button.addEventListener("click",()=>{
+         const panel=el("textarea",{attrs:{readonly:"true","aria-label":"Запрос для анализа Brain"},textContent:prompt});
+         const copy=el("button",{textContent:"Скопировать"});
+         copy.addEventListener("click",()=>{void navigator.clipboard?.writeText(prompt).then(()=>{copy.textContent="Скопировано";});});
+         button.replaceWith(panel,copy);
+       });
+       adviceHost.append(el("article",{cls:"kt-node"},el("strong",{textContent:row.title}),
+         el("p",{textContent:row.explanation}),el("small",{textContent:row.ready?"Зависимости готовы":"Есть блокирующие зависимости"}),button));
+     }
      body.replaceChildren(adviceHost,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Архитектор развития"}),el("p",{textContent:"Анализирует реальные связи манифеста, показывает блокировки и будущие этапы. Для фактической реализации потребуется отдельное подтверждение."})));
      status.textContent=advice.length+" направлений для развития";return;
    }
