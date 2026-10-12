@@ -12,7 +12,7 @@ import { traceCapabilities, evolutionChronology, architecturePrompt } from "./ki
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el, icon, type IconName } from "../dom";
 import { openSheet } from "./sheet";
-import { RAIL, SEARCHABLE, activeItem, type FoxView, type TreeMode } from "./kitsune-sections";
+import { RAIL, RAIL_ITEMS, SEARCHABLE, activeItem, type FoxView, type TreeMode } from "./kitsune-sections";
 import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
 import { buildForestReport, reportSvg, saveReportPng } from "./kitsune-report";
 import { buildAtlas, countLeaves, allNodes, type AtlasInput, type AtlasNode } from "./kitsune-atlas-model";
@@ -108,12 +108,18 @@ export function kitsuneTreePage():HTMLElement {
  const nodesOf=():EvolutionNode[]=>((dynamicNodes??TREE_NODES) as EvolutionNode[]).map(withRuTitle);
  /** Идентификатор ветви манифеста на карте-схеме: ядро — корень, остальные — с приставкой. */
  const mindId=(id:string)=>id==="core"?"root":"m:"+id;
+ let lastSection="";
  function render(){
    // A redraw rebuilds the page body; keep the caret where the person was typing.
    const active=document.activeElement;
    const label=active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement||active instanceof HTMLSelectElement?active.getAttribute("aria-label"):null;
    const caret=active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement?active.selectionStart:null;
    draw();
+   const sectionKey=mode+":"+(mode==="fox"?foxView:"");
+   if(sectionKey!==lastSection){
+     lastSection=sectionKey;
+     body.classList.remove("is-enter");void body.offsetWidth;body.classList.add("is-enter");
+   }
    status.hidden=!status.textContent?.trim();
    if(label&&root.contains(active)===false){
      const again=[...root.querySelectorAll<HTMLElement>("input,textarea,select")].find(x=>x.getAttribute("aria-label")===label);
@@ -369,6 +375,7 @@ export function kitsuneTreePage():HTMLElement {
      el("p",{textContent:"Ствол и ветви — модули проекта. Заполненный лист подтверждён, пунктирный — запланирован. Крона — 100 показателей в 10 мирах; куст показывает, сколько из десяти подтверждено."}),
      el("p",{textContent:"Каждый показатель знает свой источник. Число 0 — подтверждённое отсутствие событий. «Нет данных» — нужный источник пока не подключён. Избранное хранится только в этом браузере."}),
      el("p",{textContent:"Карта основана на известных компонентах и подтверждённых изменениях. Установленные версии берутся из Центра обновлений; связи новых версий с ветвями определяются по описанию и поэтому предположительны."}),
+     el("p",{textContent:"Горячие клавиши: цифры 1–9 переключают разделы слева, «/» — поиск. Колесо мыши на карте — масштаб, перетаскивание — сдвиг, справа внизу — мини-карта."}),
      el("p",{cls:"muted",textContent:"Ничего здесь не меняет проект и не выполняет действий."}))});
  }
  function miniRing(ratio:number,label:string):SVGSVGElement{
@@ -422,16 +429,37 @@ export function kitsuneTreePage():HTMLElement {
        const b=el("button",{type:"button",cls:"kt-rail-item"+(on?" is-active":""),attrs:on?{"aria-current":"page",title:item.hint}:{title:item.hint}},
          el("span",{cls:"ri-ico",attrs:{"aria-hidden":"true"}},icon(RAIL_ICON[item.id]??"spark",18)),
          el("span",{cls:"ri-text"},el("strong",{textContent:item.label})),
-         count?el("span",{cls:"ri-count",textContent:count}):null);
-       b.addEventListener("click",()=>{
-         mode=item.mode;if(item.foxView)foxView=item.foxView;
-         render();
-         main.scrollIntoView({block:"start",behavior:"auto"});
-       });
+         count?el("span",{cls:"ri-count",textContent:count}):null,
+         RAIL_ITEMS.indexOf(item)<9?el("kbd",{cls:"ri-key",attrs:{"aria-hidden":"true"},textContent:String(RAIL_ITEMS.indexOf(item)+1)}):null);
+       b.addEventListener("click",()=>openSection(item));
        return b;
      }))));
    rail.replaceChildren(today,nav);
  }
+ function openSection(item:(typeof RAIL_ITEMS)[number]){
+   mode=item.mode;if(item.foxView)foxView=item.foxView;
+   render();
+   main.scrollIntoView({block:"start",behavior:"auto"});
+ }
+ /** Горячие клавиши: 1–9 — разделы панели, «/» — поиск. Не мешают набору текста и открытым окнам. */
+ const hotkeys=(ev:KeyboardEvent)=>{
+   if(!root.isConnected){document.removeEventListener("keydown",hotkeys);return;}
+   if(ev.ctrlKey||ev.metaKey||ev.altKey)return;
+   const target=ev.target;
+   if(target instanceof HTMLElement&&(target.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)))return;
+   const sheetOpen=[...document.querySelectorAll<HTMLElement>(".sheet")].some(s=>s.getBoundingClientRect().width>0);
+   if(sheetOpen)return;
+   if(ev.key==="/"){
+     const field=[...root.querySelectorAll<HTMLInputElement>("input[type=search]")].find(f=>!f.closest("[hidden]")&&f.getBoundingClientRect().width>0);
+     if(field){ev.preventDefault();field.focus();}
+     return;
+   }
+   if(/^[1-9]$/.test(ev.key)){
+     const item=RAIL_ITEMS[Number(ev.key)-1];
+     if(item){ev.preventDefault();openSection(item);}
+   }
+ };
+ document.addEventListener("keydown",hotkeys);
  const RAIL_ICON:Record<string,IconName>={mindmap:"modules",metrics:"pulse",awards:"trophy",branches:"flame",updates:"download",history:"clock",versions:"archive",comparison:"rows",growth:"spark",discovery:"search",architect:"wand","brain-chat":"brain"};
  function foxCompanion(mood:{emoji:string;label:string;detail:string}){
    const state=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";

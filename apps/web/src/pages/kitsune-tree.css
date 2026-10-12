@@ -518,3 +518,15 @@
 .kt-rail-item .ri-count{position:absolute;top:2px;right:6px;min-width:0;padding:0 5px;font-size:.62rem}
 .kt-rail-item{position:relative}
 }
+
+/* ───── мелочи v16: переход между разделами, подсказки клавиш, мини-карта ───── */
+.kt-layout.is-enter{animation:kt-enter .24s cubic-bezier(.2,.8,.3,1) both}
+@keyframes kt-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ri-key{flex:none;min-width:20px;padding:1px 6px;border:1px solid var(--kt-line);border-radius:6px;background:transparent;color:var(--muted);font:600 .68rem/1.4 inherit;text-align:center;opacity:0;transition:opacity .15s}
+.kt-rail-item:hover .ri-key,.kt-rail-item:focus-visible .ri-key{opacity:.85}
+.kt-rail-item .ri-count+.ri-key{margin-left:-4px}
+.km-mini{position:absolute;right:12px;bottom:12px;z-index:2;width:176px;height:112px;border:1px solid var(--kt-line);border-radius:12px;background:color-mix(in srgb,var(--surface) 82%,transparent);backdrop-filter:blur(8px);cursor:pointer;touch-action:none;overflow:hidden}
+.km-mini.is-small{display:none}
+.km-mini-view{fill:color-mix(in srgb,var(--kt-brand) 16%,transparent);stroke:var(--kt-brand);stroke-width:1.4}
+@media(max-width:700px){.km-mini{display:none}.ri-key{display:none}}
+@media(prefers-reduced-motion:reduce){.kt-layout.is-enter{animation:none}}

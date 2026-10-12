@@ -250,6 +250,32 @@ export function mindView(o:MindOptions):HTMLElement{
   if(m!=="structure")showBoxes(manifestIds);
   else fit();
  };
+ // ── мини-карта: вся карта точками и рамка текущего вида; клик и перетаскивание двигают вид ──
+ const MM_W=176,MM_H=112;
+ const mini=s("svg",{class:"km-mini",viewBox:`0 0 ${MM_W} ${MM_H}`,role:"presentation"}) as SVGSVGElement;
+ const miniBody=s("g",{});const miniFrame=s("rect",{class:"km-mini-view",rx:2});
+ mini.append(miniBody,miniFrame);
+ const miniScale=()=>{const b=layout.bounds;const sc=Math.min(MM_W/b.w,MM_H/b.h);return {b,sc,ox:(MM_W-b.w*sc)/2,oy:(MM_H-b.h*sc)/2};};
+ const paintMiniBody=()=>{
+  const {b,sc,ox,oy}=miniScale();
+  miniBody.replaceChildren(...layout.boxes.map(bx=>s("rect",{x:((bx.x-b.x)*sc+ox).toFixed(1),y:(((bx.y-bx.h/2)-b.y)*sc+oy).toFixed(1),width:Math.max(2.5,bx.w*sc).toFixed(1),height:Math.max(1.6,bx.h*sc).toFixed(1),rx:.8,fill:color(bx.node)})));
+  mini.classList.toggle("is-small",layout.boxes.length<=14);
+ };
+ const paintMiniFrame=()=>{
+  const {b,sc,ox,oy}=miniScale();
+  miniFrame.setAttribute("x",((v.x-b.x)*sc+ox).toFixed(1));miniFrame.setAttribute("y",((v.y-b.y)*sc+oy).toFixed(1));
+  miniFrame.setAttribute("width",(v.w*sc).toFixed(1));miniFrame.setAttribute("height",(v.h*sc).toFixed(1));
+ };
+ const moveFromMini=(ev:PointerEvent)=>{
+  const r=mini.getBoundingClientRect();const {b,sc,ox,oy}=miniScale();
+  const px=(ev.clientX-r.left)/r.width*MM_W,py=(ev.clientY-r.top)/r.height*MM_H;
+  v.x=b.x+(px-ox)/sc-v.w/2;v.y=b.y+(py-oy)/sc-v.h/2;apply();
+ };
+ let miniDrag=false;
+ mini.addEventListener("pointerdown",ev=>{ev.stopPropagation();miniDrag=true;try{mini.setPointerCapture(ev.pointerId);}catch{/* указатель уже отпущен */}moveFromMini(ev);});
+ mini.addEventListener("pointermove",ev=>{if(miniDrag)moveFromMini(ev);});
+ const miniStop=()=>{miniDrag=false;};
+ mini.addEventListener("pointerup",miniStop);mini.addEventListener("pointercancel",miniStop);
  let firstRender=true;
  const render=(anchor?:string)=>{
   const prevPos=new Map([...layout.byId].map(([id,b])=>[id,b]));
@@ -285,6 +311,7 @@ export function mindView(o:MindOptions):HTMLElement{
    p.style.setProperty("d",`path("${l.d}")`);
   }
   firstRender=false;
+  paintMiniBody();
   paintFocus();paintFilters();paintMode();
   if(anchor){
    // карта не «убегает»: после раскрытия держим выбранный узел там, где он был на экране
@@ -308,7 +335,7 @@ export function mindView(o:MindOptions):HTMLElement{
  const size=()=>{const r=svg.getBoundingClientRect();return {w:r.width||900,h:r.height||600};};
  const scaleOf=()=>size().w/v.w;
  const fitScale=()=>{const r=size(),b=layout.bounds;return Math.min(r.w/b.w,r.h/b.h);};
- const apply=()=>{svg.setAttribute("viewBox",[v.x,v.y,v.w,v.h].map(n=>n.toFixed(1)).join(" "));state.vb=[v.x,v.y,v.w,v.h];};
+ const apply=()=>{svg.setAttribute("viewBox",[v.x,v.y,v.w,v.h].map(n=>n.toFixed(1)).join(" "));state.vb=[v.x,v.y,v.w,v.h];paintMiniFrame();};
  const toWorld=(cx:number,cy:number):[number,number]=>{
   const r=svg.getBoundingClientRect();const sc=Math.min(r.width/v.w,r.height/v.h)||1;
   return [v.x+(cx-r.left-(r.width-v.w*sc)/2)/sc,v.y+(cy-r.top-(r.height-v.h*sc)/2)/sc];
@@ -389,7 +416,7 @@ export function mindView(o:MindOptions):HTMLElement{
    textTool("−","Отдалить",()=>zoomAt(1/1.25,v.x+v.w/2,v.y+v.h/2)),
    textTool("+","Приблизить",()=>zoomAt(1.25,v.x+v.w/2,v.y+v.h/2)),
    tool("target","Показать всю карту",fit)));
- const stage=el("div",{cls:"ka-stage km-stage"});stage.append(svg,legend);
+ const stage=el("div",{cls:"ka-stage km-stage"});stage.append(svg,legend,mini);
  legend.classList.add("km-legend-ov");
  const root=el("section",{cls:"ka-wrap km-wrap",attrs:{"aria-label":"Карта-схема"}},bar,lead,status,stage,impactPanel);
  svg.addEventListener("keydown",ev=>{
