@@ -46,3 +46,18 @@
 @media(max-width:1150px){.kt-overview{grid-template-columns:repeat(4,minmax(0,1fr))}.kt-overview-intro{grid-column:1/-1}}
 @media(max-width:780px){.kt-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.kt-overview-intro{grid-column:1/-1}.kt-overview-stat{padding:16px}.kt-detail{position:static;max-height:none}.kt-tabs{width:100%}.kt-controls>.kt-zoom{margin-left:auto}}
 @media(prefers-reduced-motion:reduce){.kt-growth-event,.kt-growth-orb,.kt-graph-new{animation:none!important}.kt-tabs button{transition:none}}
+
+
+/* KITSUNE TREE 9: finite, event-driven animation; no perpetual loops. */
+.kt-canvas-node.kt-out-of-focus{opacity:.52;transition:opacity .35s ease,box-shadow .25s ease,border-color .25s ease}
+.kt-canvas-node.kt-out-of-focus:hover,.kt-canvas-node.kt-out-of-focus:focus-visible{opacity:1}
+.kt-canvas-node.selected{opacity:1}
+.kt-canvas-edges .kt-branch-bloom{stroke:var(--accent,#866bbd);stroke-width:2.8;stroke-dasharray:10 5;animation:kt-branch-trace .72s cubic-bezier(.2,.8,.2,1) both}
+.kt-canvas-edges .kt-neural-pulse{stroke:var(--accent,#866bbd);stroke-width:3;animation:kt-neural-flash .75s ease-out 1}
+.kt-canvas-edges .kt-recovery-path{stroke:var(--accent,#866bbd);animation:kt-recovery-restore .7s ease-out 1}
+.kt-canvas-node.kt-recovered{animation:kt-recovery-node .7s ease-out 1}
+@keyframes kt-branch-trace{from{opacity:0;stroke-dashoffset:120}60%{opacity:1}to{opacity:.9;stroke-dashoffset:0}}
+@keyframes kt-neural-flash{0%{opacity:.2;stroke-width:1}45%{opacity:1;stroke-width:5}100%{opacity:.65;stroke-width:2}}
+@keyframes kt-recovery-restore{0%{opacity:0;stroke-dasharray:4 12}65%{opacity:1}100%{opacity:.6;stroke-dasharray:0 0}}
+@keyframes kt-recovery-node{0%{opacity:.4;filter:grayscale(1)}100%{opacity:1;filter:grayscale(0)}}
+@media(prefers-reduced-motion:reduce){.kt-canvas-edges .kt-branch-bloom,.kt-canvas-edges .kt-neural-pulse,.kt-canvas-edges .kt-recovery-path,.kt-canvas-node.kt-recovered{animation:none!important}.kt-canvas-node.kt-out-of-focus{transition:none}}

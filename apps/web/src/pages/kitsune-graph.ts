@@ -29,8 +29,9 @@ export function readPositions(nodes:EvolutionNode[]):Positions {
 export function savePositions(p:Positions):void {
  try{localStorage.setItem(KEY,JSON.stringify(p));}catch{/* private storage disabled */}
 }
-export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set()):HTMLElement {
+export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set(),motion:"bloom"|"pulse"|"recovery"|"none"="none"):HTMLElement {
  const positions=readPositions(nodes);
+ const moving=motion!=="none"&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
  const viewport=document.createElement("div");viewport.className="kt-canvas-viewport";
  viewport.setAttribute("aria-label","Интерактивная карта связей JUUNIBI");
  const canvas=document.createElement("div");canvas.className="kt-canvas";
@@ -48,13 +49,17 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
      const line=document.createElementNS(ns,"path");
      line.setAttribute("d",`M ${a.x+178} ${a.y+35} C ${a.x+215} ${a.y+35}, ${b.x-35} ${b.y+35}, ${b.x} ${b.y+35}`);
      line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width",id===selected||n.id===selected?"2.6":"1.3");
-     line.setAttribute("opacity",id===selected||n.id===selected?".9":".27");svg.append(line);
+     line.setAttribute("opacity",id===selected||n.id===selected?".9":".27");
+     if(moving&&motion==="bloom"&&newIds.has(n.id))line.setAttribute("class","kt-branch-bloom");
+     if(moving&&motion==="pulse"&&(id===selected||n.id===selected))line.setAttribute("class","kt-neural-pulse");
+     if(moving&&motion==="recovery")line.setAttribute("class","kt-recovery-path");
+     svg.append(line);
    }
  }
  lines();canvas.append(svg);
  for(const n of nodes){
    const node=document.createElement("button");node.type="button";
-   node.className="kt-canvas-node"+(n.id===selected?" selected":"")+(n.status==="planned"?" planned":"")+(newIds.has(n.id)?" kt-graph-new":"");
+   node.className="kt-canvas-node"+(n.id===selected?" selected":"")+(n.status==="planned"?" planned":"")+(newIds.has(n.id)&&moving?" kt-graph-new":"")+(n.id!==selected?" kt-out-of-focus":"")+(motion==="recovery"&&moving?" kt-recovered":"");
    node.textContent=n.title;node.style.left=positions[n.id]!.x+"px";node.style.top=positions[n.id]!.y+"px";
    node.setAttribute("aria-label",n.title+", "+(n.status==="planned"?"запланировано":"реализовано")+". Перетащите либо используйте Alt и стрелки, чтобы переместить");
    node.addEventListener("click",()=>{if(!suppressClick)onSelect(n.id);suppressClick=false;});
@@ -76,5 +81,11 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
    node.addEventListener("pointerup",end);node.addEventListener("pointercancel",end);
    canvas.append(node);
  }
- viewport.append(canvas);return viewport;
+ viewport.append(canvas);
+ const target=positions[selected];
+ if(target&&typeof requestAnimationFrame==="function")requestAnimationFrame(()=>{
+  if(!viewport.isConnected)return;
+  viewport.scrollTo({left:Math.max(0,(target.x+90)*zoom-viewport.clientWidth/2),top:Math.max(0,(target.y+36)*zoom-viewport.clientHeight/2),behavior:moving?"smooth":"instant"});
+ });
+ return viewport;
 }
