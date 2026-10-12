@@ -1,5 +1,5 @@
 import {foxMotion,foxChangedMetrics,foxVerifiedReadings} from "./kitsune-fox-motion";
-import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,type ForestEvent} from "./kitsune-fox-life";
+import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,safeForestEvents,type ForestEvent} from "./kitsune-fox-life";
 import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
 import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
@@ -66,6 +66,10 @@ export function kitsuneTreePage():HTMLElement {
  let foxHistory:FoxHistory=readHistory();
  let foxFavoriteSort=false;
  let foxEvents:ForestEvent[]=[];
+ const eventStoreKey="juunibi:fox:events:v1";
+ const seenStoreKey="juunibi:fox:seen:v1";
+ const foxSeen=new Set<string>();
+ try{foxEvents=safeForestEvents(JSON.parse(localStorage.getItem(eventStoreKey)??"[]") as unknown);const raw=JSON.parse(localStorage.getItem(seenStoreKey)??"[]") as unknown;if(Array.isArray(raw))for(const id of raw)if(typeof id==="string")foxSeen.add(id);}catch{/* Storage optional */}
  let foxCompact=false;
  let foxLastAward="";
  let foxKnownNumbers=new Map<string,number>();
@@ -445,6 +449,7 @@ export function kitsuneTreePage():HTMLElement {
    growth=growthEvents(snapshot);
    const dailyEvents:ForestEvent[]=growth.map(item=>({id:item.id,day:new Date().toISOString().slice(0,10),kind:item.kind==="new"?"growth":item.kind==="rollback"?"recovery":item.kind==="removed"?"warning":"update",title:item.title,detail:item.detail}));
    foxEvents=mergeForestEvents(foxEvents,dailyEvents);
+   try{localStorage.setItem(eventStoreKey,JSON.stringify(foxEvents));}catch{/* Storage optional */}
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
    if(growth.length&&playedEvent!==eventKey){
      playedEvent=eventKey;
