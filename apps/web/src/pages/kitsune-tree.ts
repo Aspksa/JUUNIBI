@@ -101,11 +101,13 @@ export function kitsuneTreePage():HTMLElement {
    }));
    if(mode==="fox"){
      const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+     const mood=forestMood(metrics);
      const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох — сто живых показателей"}});
      main.append(el("div",{cls:"kt-fox-hero"},
        el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / FOX COMMOTION"}),
        el("h2",{textContent:"🦊 Лисий переполох"}),
        el("p",{textContent:"100 лесных историй в 10 мирах. Значения берутся из подтверждённых данных; неизвестные показатели честно показывают «Нет данных»."})));
+     main.append(el("p",{cls:"kt-fox-reaction",textContent:mood.emoji+" "+mood.label+" · "+mood.detail}));
      if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
      const view=el("div",{cls:"kt-fox-toolbar"});
      const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
