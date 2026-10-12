@@ -112,3 +112,26 @@
 .kt-fox-card:has(.kt-fox-spark){animation:kt-fox-card-arrive .34s ease-out both}
 @keyframes kt-fox-card-arrive{from{opacity:.6;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){.kt-fox-card:has(.kt-fox-spark){animation:none}}
+
+/* 50 fox motion presets: 10 transform/opacity families × 5 parameter variants. */
+.kt-fox-changed{--fox-travel:6px;--fox-angle:5deg;--fox-time:550ms;animation-duration:var(--fox-time);animation-timing-function:cubic-bezier(.2,.8,.2,1);animation-iteration-count:1;transform-origin:center}
+.kt-fox-variant-0{--fox-travel:3px;--fox-angle:3deg;--fox-time:300ms}
+.kt-fox-variant-1{--fox-travel:5px;--fox-angle:5deg;--fox-time:400ms}
+.kt-fox-variant-2{--fox-travel:7px;--fox-angle:7deg;--fox-time:500ms}
+.kt-fox-variant-3{--fox-travel:9px;--fox-angle:9deg;--fox-time:650ms}
+.kt-fox-variant-4{--fox-travel:11px;--fox-angle:11deg;--fox-time:780ms}
+.kt-fox-motion-0{animation-name:fox-rise}.kt-fox-motion-1{animation-name:fox-fall}.kt-fox-motion-2{animation-name:fox-hop}
+.kt-fox-motion-3{animation-name:fox-slide}.kt-fox-motion-4{animation-name:fox-wiggle}.kt-fox-motion-5{animation-name:fox-stretch}
+.kt-fox-motion-6{animation-name:fox-shrink}.kt-fox-motion-7{animation-name:fox-glow}.kt-fox-motion-8{animation-name:fox-tilt}
+.kt-fox-motion-9{animation-name:fox-wave}
+@keyframes fox-rise{0%{opacity:.4;transform:translateY(var(--fox-travel))}100%{opacity:1;transform:translateY(0)}}
+@keyframes fox-fall{0%{opacity:.4;transform:translateY(calc(-1*var(--fox-travel)))}100%{opacity:1;transform:translateY(0)}}
+@keyframes fox-hop{0%,100%{transform:translateY(0)}45%{transform:translateY(calc(-1*var(--fox-travel)))}}
+@keyframes fox-slide{0%{opacity:.5;transform:translateX(var(--fox-travel))}100%{opacity:1;transform:translateX(0)}}
+@keyframes fox-wiggle{0%,100%{transform:rotate(0)}35%{transform:rotate(var(--fox-angle))}70%{transform:rotate(calc(-1*var(--fox-angle)))}}
+@keyframes fox-stretch{0%{opacity:.5;transform:scale(.92,1.04)}100%{opacity:1;transform:scale(1)}}
+@keyframes fox-shrink{0%{opacity:.4;transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
+@keyframes fox-glow{0%{opacity:.35}55%{opacity:.8}100%{opacity:1}}
+@keyframes fox-tilt{0%{opacity:.5;transform:rotate(calc(-1*var(--fox-angle)))}100%{opacity:1;transform:rotate(0)}}
+@keyframes fox-wave{0%,100%{transform:translateX(0)}35%{transform:translateX(calc(-1*var(--fox-travel)))}70%{transform:translateX(var(--fox-travel))}}
+@media(prefers-reduced-motion:reduce){.kt-fox-changed{animation:none!important}}
