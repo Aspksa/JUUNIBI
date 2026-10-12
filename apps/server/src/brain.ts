@@ -1,3 +1,5 @@
+import { evaluateBrainPlanBenchmarks } from "./brain-plan-benchmarks";
+import { BrainGraphSQLite } from "./brain-graph-sqlite";
 import { inspectCognitiveEngine } from "./brain-cognitive-engine";
 import { recallConfirmedExperience, evaluateExperienceRecall } from "./memory-experience-recall";
 import { reviewSixSkills, type CognitiveInput } from "./brain-six-skills";
@@ -48,6 +50,9 @@ export class BrainCore {
   resolveRevision(id:string,outcome:"accepted"|"rejected") { const r=this.revisions.resolve(id,outcome);this.persist();return r; }
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
+  evaluatePlanBenchmarks() { return evaluateBrainPlanBenchmarks(); }
+  async searchGraphMemory(query:string,limit=8) { if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503}); await this.graph.sync(this.decisions.snapshot()); return this.graph.search(query,limit); }
+  async graphMemoryStats() { if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503}); await this.graph.sync(this.decisions.snapshot()); return this.graph.stats(); }
   recallExperience(query: string) { return recallConfirmedExperience(this.decisions.snapshot(), query); }
   searchConfirmedExperience(query: unknown, taskType?: unknown, limit: unknown = 5) { return this.decisions.searchConfirmed(query, taskType, limit); }
   /** Grounded planning advisory only: no inferred permissions or automatic tool execution. */
@@ -205,7 +210,7 @@ export class BrainCore {
   reviewRepairs(input: LearningCase) { return reviewLearningCase(input, this.decisions.snapshot()); }
   rankDecisions(options: RankingOption[], enabled = true) { return { ranked: rankWithExperience(options, this.decisions.snapshot(), enabled), requiresApproval: true as const }; }
   recordDecision(input: {goal:string;chosen:string;reason:string;predictedSuccess:boolean;taskType?:string}) { const result=this.decisions.record(input);this.persist();return result; }
-  confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();return result; }
+  confirmDecision(id:string,outcome:"success"|"failure") { const result=this.decisions.confirm(id,outcome);this.persist();void this.graph?.sync(this.decisions.snapshot()).catch(()=>{});return result; }
   private plans: BrainPlan[] = [];
   private logs: { at: string; planId: string; stepId: string; outcome: string }[] = [];
   private readonly recoveryTrials = new RecoveryTrials();
@@ -344,7 +349,7 @@ export class BrainCore {
   }
   /** Surface a failed save instead of silently treating in-memory data as durable. */
   async verifyPersistence() { await this.flush(); return { persisted: true as const }; }
-  constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage) {}
+  constructor(private readonly assistantReady: () => boolean, private readonly storage?: BrainStorage, private readonly graph?: BrainGraphSQLite) {}
   async load() {
     const raw = await this.storage?.load();
     if (!raw) return;

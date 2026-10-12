@@ -5,6 +5,11 @@ import { Assistant, Memory, type LlmProvider } from "@juunibi/assistant";
 import { Logger } from "@juunibi/core";
 import { createApp, hostAllowed, originAllowed } from "../src/app";
 import { BrainCore } from "../src/brain";
+import { BrainGraphSQLite } from "../src/brain-graph-sqlite";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const llm: LlmProvider = { chat: async (_m, o) => { o?.onText?.("при"); o?.onText?.("вет"); return { content: "привет", toolCalls: [] }; } };
 let server: http.Server, base: string, port: number;
@@ -243,5 +248,28 @@ describe("Brain cognitive engine API", () => {
       expect((await post(url,"/api/brain/cognitive-engine",{planId:p.id,strategies:[strategies[0]]})).status).toBe(400);
       expect((await post(url,"/api/brain/cognitive-engine",{planId:"missing",strategies})).status).toBe(404);
     } finally {server.close();}
+  });
+});
+
+describe("SQLite Brain graph and benchmark HTTP", () => {
+  it("returns only confirmed decisions and quality regression results", async () => {
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-graph-api-"));
+    const py=fileURLToPath(new URL("../../../scripts/brain-graph-sqlite.py",import.meta.url));
+    const brain=new BrainCore(()=>true,undefined,new BrainGraphSQLite(path.join(dir,"graph.sqlite3"),py));
+    const srv=createApp({brain,modules:()=>[],configured:{model:"m"}});
+    const url=`http://127.0.0.1:${await start(srv)}`;
+    try {
+      const approved=brain.recordDecision({goal:"check archive",chosen:"inspect",reason:"verified",predictedSuccess:true,taskType:"backup"});
+      brain.recordDecision({goal:"check archive",chosen:"delete",reason:"pending",predictedSuccess:false,taskType:"backup"});
+      brain.confirmDecision(approved.id,"success");
+      const searched=await post(url,"/api/brain/graph-search",{query:"archive"});
+      expect(searched.status).toBe(200);
+      expect((await searched.json()).items.map((x:{id:string})=>x.id)).toEqual([approved.id]);
+      const stats=await fetch(url+"/api/brain/graph-stats");
+      expect(await stats.json()).toMatchObject({decisions:1,edges:3});
+      const benchmark=await (await fetch(url+"/api/brain/plan-benchmarks")).json();
+      expect(benchmark).toMatchObject({failed:0,method:"deterministic-fixture-regression"});
+      expect((await post(url,"/api/brain/graph-search",{query:5})).status).toBe(400);
+    } finally {srv.close();await rm(dir,{recursive:true,force:true});}
   });
 });
