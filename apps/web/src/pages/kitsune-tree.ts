@@ -1,3 +1,4 @@
+import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
 import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el } from "../dom";
@@ -5,7 +6,7 @@ import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect";
+export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -52,7 +53,7 @@ export function kitsuneTreePage():HTMLElement {
  controls.prepend(tabs);
  const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
