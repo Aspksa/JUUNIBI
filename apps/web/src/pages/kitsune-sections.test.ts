@@ -1,7 +1,11 @@
 import {describe,expect,it} from "vitest";
 import {LAYER_TEXT,PICTURE_MODES,RAIL,RAIL_ITEMS,SEARCHABLE,ZOOMABLE,activeItem,type TreeMode} from "./kitsune-sections";
 
+<<<<<<< HEAD
 const ALL:TreeMode[]=["map","mindmap","atlas","architecture","updates","architect","history","versions","comparison","brain-chat","discovery","growth","fox"];
+=======
+const ALL:TreeMode[]=["map","atlas","architecture","updates","architect","history","versions","comparison","brain-chat","discovery","growth","fox"];
+>>>>>>> origin/main
 describe("левая панель Лисьего древа",()=>{
  it("все режимы, кроме скрытых из панели, доступны из неё",()=>{
   const used=new Set(RAIL_ITEMS.map(i=>i.mode));
@@ -17,7 +21,11 @@ describe("левая панель Лисьего древа",()=>{
  it("четыре группы: дерево, лес, ход развития, анализ",()=>{ expect(RAIL.map(g=>g.id)).toEqual(["tree","forest","history","analysis"]); });
  it("слои дерева — четыре, у каждого есть пояснение",()=>{
   expect(RAIL[0]!.items.filter(i=>i.layer).map(i=>i.layer)).toEqual(["structure","links","stages","impact"]);
+<<<<<<< HEAD
   expect(RAIL[0]!.items.slice(0,2).map(i=>i.id)).toEqual(["mindmap","atlas"]); // карта-схема и атлас — первыми
+=======
+  expect(RAIL[0]!.items[0]!.id).toBe("atlas"); // большая карта — первым пунктом
+>>>>>>> origin/main
   for(const l of Object.values(LAYER_TEXT)){expect(l.title.length).toBeGreaterThan(3);expect(l.lead.length).toBeGreaterThan(20);}
  });
  it("активный пункт находится по режиму, слою и виду леса",()=>{

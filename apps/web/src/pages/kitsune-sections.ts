@@ -1,5 +1,9 @@
 /** Лисье древо — одна страница: дерево в центре, слева панель. Здесь описано, что лежит в панели. */
+<<<<<<< HEAD
 export type TreeMode="map"|"mindmap"|"atlas"|"architecture"|"development"|"connections"|"updates"|"architect"|"history"|"versions"|"impact"|"comparison"|"brain-chat"|"discovery"|"growth"|"fox";
+=======
+export type TreeMode="map"|"atlas"|"architecture"|"development"|"connections"|"updates"|"architect"|"history"|"versions"|"impact"|"comparison"|"brain-chat"|"discovery"|"growth"|"fox";
+>>>>>>> origin/main
 export type Layer="structure"|"links"|"stages"|"impact";
 export type FoxView="metrics"|"awards"|"branches";
 export interface RailItem{id:string;label:string;hint:string;mode:TreeMode;layer?:Layer;foxView?:FoxView}
@@ -7,7 +11,10 @@ export interface RailGroup{id:string;label:string;items:RailItem[]}
 
 export const RAIL:RailGroup[]=[
  {id:"tree",label:"Дерево",items:[
+<<<<<<< HEAD
   {id:"mindmap",label:"Карта-схема",hint:"Ветви раскрываются кликом: от корня до каждого показателя",mode:"mindmap"},
+=======
+>>>>>>> origin/main
   {id:"atlas",label:"Атлас",hint:"Большая карта: модули, показатели, награды, код",mode:"atlas"},
   {id:"structure",label:"Структура",hint:"Модули проекта: ствол и ветви",mode:"map",layer:"structure"},
   {id:"links",label:"Связи",hint:"Что от чего зависит",mode:"map",layer:"links"},
