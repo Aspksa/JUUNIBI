@@ -56,7 +56,7 @@ export class BrainCore {
     return inspectExperienceGraph(this.decisions.snapshot(),decisionId,limit);
   }
   hybridSearchConfirmedExperience(query:string,limit=8,taskType?:string) {
-    return hybridExperienceSearch(this.decisions.snapshot(),query,{limit,taskType});
+    return hybridExperienceSearch(this.decisions.snapshot(),query,{limit,...(taskType===undefined?{}:{taskType})});
   }
   explainPlanStrategies(planId:string,strategies:import("./brain-cognitive-engine").StrategyProposal[]) {
     const plan=this.plans.find(p=>p.id===planId);
