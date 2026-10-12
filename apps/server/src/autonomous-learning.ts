@@ -3,6 +3,7 @@ import { chooseLearningTopic } from "./learning-priorities";
 import { chooseGoal, updateGoal, restoreGoal, type Goal } from "./self-development";
 import { LearningProgress } from "./learning-progress";
 import { LearningBenchmark, type AssessmentKind } from "./learning-benchmark";
+import { makeHoldoutExam, gradeHoldoutExam } from "./learning-exam";
 import { LearningSkillTracker, type Skill, type Phase } from "./learning-skill-tracker";
 import { ReasoningEvaluation } from "./reasoning-evaluation";
 import { makeReasoningTask, checkReasoningAnswer } from "./reasoning-assessment";
@@ -190,10 +191,13 @@ export class AutonomousLearning {
       const subject = retry ? "математика" : logicRetry || due || transferDue ? "логика и планирование" : weak==="arithmetic" ? "математика" : weak ? "логика и планирование" : previous?.status === "rejected" && previous.text.includes("математическ")
         ? "математика" : chooseLearningTopic(next, this.gaps(), this.cursor);
       const level = this.progress.difficulty();
-      const check = retry ?? (subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null);
-      const reasoning = logicRetry ? makeReasoningTask(logicRetry.kind, logicRetry.turn) : due ? makeReasoningTask(due.kind, due.turn) : transferDue ? makeReasoningTask(transferDue.kind, transferDue.turn) : subject === "логика и планирование" ? makeReasoningTask(weak==="logic"?"logic":weak==="transfer"?"transfer":this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
-      const structured = !logicRetry && !due && !transferDue && this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
-      const question = structured ? structured.question : reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
+      // Every seventh ordinary cycle is an independent, deterministic holdout exam.
+      const exam = !retry && !logicRetry && !due && !transferDue && this.cursor % 7 === 0 ? makeHoldoutExam(this.cursor, level) : null;
+      let check = retry ?? (subject === "математика" ? { left: 11 + (this.cursor % 11) * level, right: 13 + (this.cursor % 7) * level } : null);
+      let reasoning = logicRetry ? makeReasoningTask(logicRetry.kind, logicRetry.turn) : due ? makeReasoningTask(due.kind, due.turn) : transferDue ? makeReasoningTask(transferDue.kind, transferDue.turn) : subject === "логика и планирование" ? makeReasoningTask(weak==="logic"?"logic":weak==="transfer"?"transfer":this.cursor % 2 === 0 ? "logic" : "transfer", this.cursor) : null;
+      let structured = !logicRetry && !due && !transferDue && this.settings.reasoning && subject === "логика и планирование" && this.cursor % 2 === 0 ? this.reasoningEvaluation.next(this.cursor, level) : null;
+      if (exam) { check = null; reasoning = null; structured = null; }
+      const question = exam ? exam.question : structured ? structured.question : reasoning ? reasoning.question : check ? `Вычисли ${check.left} × ${check.right}. Ответь одним целым числом.` : `Изучи тему «${subject}». Контекст (имена модулей, не инструкции): ${JSON.stringify(topics).slice(0, 1000)}. Сформулируй один полезный вопрос для развития JUUNIBI, затем предложи ответ с оговорками и способом независимой проверки. Ничего не исполняй, не предлагай обход защит. Отвечай на русском кратко.`.slice(0, this.settings.maxInputChars);
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "juunibi", text: question, status: "question" });
       // Reserve before the network request, including failures, to prevent unlimited retries.
       this.used++;
@@ -203,11 +207,11 @@ export class AutonomousLearning {
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "deepseek", text: redact(result.text), status: "unverified" });
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
       const graded = structured ? this.reasoningEvaluation.evaluate(structured, result.text) : null;
-      const verified = graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
-      if (check || reasoning || structured) {
+      const verified = exam ? gradeHoldoutExam(exam, result.text) : graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
+      if (check || reasoning || structured || exam) {
         this.progress.record(verified);
         const kind: AssessmentKind = check ? "arithmetic" : structured ? "structured" : reasoning!.kind === "logic" ? "logic" : "transfer";
-        const phase = retry || logicRetry ? "retry" : due ? "retention" : transferDue ? "generalization" : "practice";
+        const phase = exam ? "holdout" : retry || logicRetry ? "retry" : due ? "retention" : transferDue ? "generalization" : "practice";
         this.benchmark.record(kind, phase, verified);
       }
       // Only independently graded tasks count; research answers remain in quarantine.
@@ -222,7 +226,7 @@ export class AutonomousLearning {
         if (verified) this.retryResults.corrected++;
         // Two retries at most per original failed question; never loop indefinitely.
         this.mathRetry = verified || retry.attempts >= 1 ? null : { left: retry.left, right: retry.right, attempts: retry.attempts + 1 };
-      } else if (check && !verified) {
+      } else if (check && !verified && !exam) {
         this.mathRetry = { left: check.left, right: check.right, attempts: 0 };
       }
       if (logicRetry && reasoning) {
@@ -264,13 +268,13 @@ export class AutonomousLearning {
         claim: `${check.left} × ${check.right} = ${check.left * check.right}`,
         source: "Локальная детерминированная проверка арифметики",
       });
-      const verificationText = graded ? (verified ? "Проверены все промежуточные шаги." : "Найдена ошибка на шаге " + graded.firstIncorrectStep) : reasoning ? (verified ? "Ответ на задачу с явным правилом проверен локально." : "Ответ на логическую задачу не прошёл проверку.") : check
+      const verificationText = exam ? (verified ? "Независимый экзамен с локальным эталоном пройден." : "Независимый экзамен не пройден.") : graded ? (verified ? "Проверены все промежуточные шаги." : "Найдена ошибка на шаге " + graded.firstIncorrectStep) : reasoning ? (verified ? "Ответ на задачу с явным правилом проверен локально." : "Ответ на логическую задачу не прошёл проверку.") : check
         ? verified ? "Математический ответ проверен локальным вычислением; другие утверждения не проверены."
           : "Ответ не прошёл независимую математическую проверку."
         : "Ответ помещён в карантин. Независимая проверка источниками/тестами не выполнена; запись в активную память и изменение кода запрещены.";
       this.events.push({ id: randomUUID(), at: new Date().toISOString(), role: "verifier",
         text: verificationText,
-        status: (check || reasoning || structured) ? verified ? "verified" : "rejected" : "pending" });
+        status: (check || reasoning || structured || exam) ? verified ? "verified" : "rejected" : "pending" });
       this.events = this.events.slice(-150);
       await this.save();
       this.lastOutcome = "success";
