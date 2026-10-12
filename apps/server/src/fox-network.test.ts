@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { foxWifiSnapshot } from "./fox-network";
+import { foxWifiSnapshot, wlanErrorMessage } from "./fox-network";
 describe("Fox Network read-only scanner", () => {
   it("does not invoke netsh on unsupported platforms", async () => {
     const result = await foxWifiSnapshot("linux", (async () => { throw new Error("must not run"); }) as any);
@@ -19,6 +19,18 @@ describe("Fox Network read-only scanner", () => {
   it("fails safely when Windows WLAN is unavailable", async () => {
     const result = await foxWifiSnapshot("win32", (async () => { throw new Error("no WLAN"); }) as any);
     expect(result.supported).toBe(false);
-    expect(result.error).toContain("no WLAN");
+    expect(result.error).toContain("диагностику Wi-Fi");
+    expect(result.error).not.toContain("no WLAN");
+  });
+  it("preserves adapter details when network scanning fails", async () => {
+    let n=0;
+    const result=await foxWifiSnapshot("win32",(async()=>{n++;if(n===2)throw new Error("failed to scan");return {stdout:"SSID : Home\\nSignal : 82%"};}) as any);
+    expect(result.supported).toBe(true);
+    expect(result.interfaces).toContain("Home");
+    expect(result.error).toContain("сканирование");
+  });
+  it("does not leak raw subprocess output", () => {
+    expect(wlanErrorMessage({code:1,stderr:"secret password 123"})).not.toContain("secret");
+    expect(wlanErrorMessage({code:"ENOENT"})).toContain("netsh");
   });
 });
