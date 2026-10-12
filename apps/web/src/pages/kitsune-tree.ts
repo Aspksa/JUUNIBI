@@ -1,3 +1,4 @@
+import {getFoxPulls,refreshFoxChecks,foxPullTrack,type FoxPull} from "./kitsune-fox-github";
 import {foxBranches,BRANCH_TRACKS,type BranchTrack} from "./kitsune-fox-branches";
 import {eliteFoxAwards} from "./kitsune-fox-elite";
 import {synchronizeFoxHistory,type FoxHourly} from "./kitsune-fox-server";
@@ -80,6 +81,8 @@ export function kitsuneTreePage():HTMLElement {
  let foxChanged=new Set<string>();
  let foxLimit=30;
  let foxTrack:BranchTrack="update";
+ let foxPulls:FoxPull[]|null=null;
+ let foxPullsLoading=true;
  let foxEliteOnlyEarned=false;
  let foxEliteLimit=20;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
@@ -242,20 +245,32 @@ export function kitsuneTreePage():HTMLElement {
      const renderBranches=()=>{
        branchTabs.replaceChildren();branchList.replaceChildren();
        for(const track of BRANCH_TRACKS){
-         const amount=tracks.filter(item=>item.track===track.id).length;
+         const amount=tracks.filter(item=>item.track===track.id).length+(foxPulls??[]).filter(pr=>foxPullTrack(pr)===track.id).length;
          const control=el("button",{textContent:track.emoji+" "+track.title+" ("+amount+")",attrs:{"aria-pressed":String(foxTrack===track.id)}});
          control.addEventListener("click",()=>{foxTrack=track.id;renderBranches();});
          branchTabs.append(control);
        }
        const selected=tracks.filter(item=>item.track===foxTrack);
+       const matchingPRs=(foxPulls??[]).filter(pr=>foxPullTrack(pr)===foxTrack);
+       const totals=matchingPRs.length;
        for(const item of selected.slice(0,30))
          branchList.append(el("article",{cls:"kt-fox-branch"},
            el("strong",{textContent:item.title}),
            el("p",{textContent:item.detail}),
            el("small",{textContent:(item.status==="planned"?"Запланировано · ":"Подтверждено · ")+item.source+(item.at?" · "+item.at:"")+(item.version?" · "+item.version.slice(0,12):"")})));
-       if(!selected.length)branchList.append(el("p",{textContent:foxSnapshot?"Подтверждённых записей пока нет.":"Журнал проекта ещё не загружен."}));
+       for(const pr of matchingPRs.slice(0,15)){
+         const card=el("article",{cls:"kt-fox-branch"},
+           el("strong",{textContent:"PR #"+pr.number+" · "+pr.title}),
+           el("p",{textContent:(pr.state==="merged"?"Объединён":pr.state==="open"?"Открыт — требуется продолжение":"Закрыт без слияния")+" · CI: "+(pr.ci==="passed"?"успешно":pr.ci==="failed"?"ошибка":pr.ci==="pending"?"выполняется":"нет подтверждения")}),
+           el("small",{textContent:"GitHub · "+(pr.mergedAt??pr.createdAt).slice(0,10)+(pr.sha?" · "+pr.sha.slice(0,12):"")}));
+         card.append(el("a",{textContent:"Открыть PR ↗",attrs:{href:pr.url,target:"_blank",rel:"noopener noreferrer"}}));
+         branchList.append(card);
+       }
+       if(!selected.length&&!totals)branchList.append(el("p",{textContent:foxPullsLoading?"Загружается журнал GitHub…":foxPulls===null?"GitHub недоступен — показаны только локальные сведения.":foxSnapshot?"Записей этого типа пока нет.":"Источники ещё не предоставили данные."}));
      };
-     renderBranches();branchPanel.append(branchTabs,branchList);main.append(branchPanel);
+     renderBranches();branchPanel.append(branchTabs,branchList);
+     branchPanel.append(el("p",{cls:"kt-fox-count",textContent:"GitHub: "+(foxPulls===null?"нет данных":foxPulls.length+" последних PR")+" · Классификация по заголовкам PR приблизительная; установка подтверждается только локальным журналом."}));
+     main.append(branchPanel);
      const legendary=eliteFoxAwards(metrics,foxHistory);
      const legendaryPanel=el("section",{cls:"kt-fox-legendary"});
      legendaryPanel.append(el("h3",{textContent:"👑 100 легендарных испытаний"}),el("p",{textContent:"Для каждой награды требуются два реальных показателя и подтверждённая история наблюдений. Недоступные источники никогда не дают награду."}));
@@ -567,6 +582,11 @@ export function kitsuneTreePage():HTMLElement {
    });
    if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
+ void getFoxPulls().then(async prs=>{
+   foxPulls=prs;foxPullsLoading=false;
+   if(mode==="fox")render();
+   if(prs?.length){foxPulls=await refreshFoxChecks(prs);if(mode==="fox")render();}
+ }).catch(()=>{foxPullsLoading=false;if(mode==="fox")render();});
  void loadFox();
  render();return root;
 }
