@@ -59,7 +59,7 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
  lines();canvas.append(svg);
  for(const n of nodes){
    const node=document.createElement("button");node.type="button";
-   node.className="kt-canvas-node"+(n.id===selected?" selected":"")+(n.status==="planned"?" planned":"")+(newIds.has(n.id)?" kt-graph-new":"");
+   node.className="kt-canvas-node"+(n.id===selected?" selected":"")+(n.status==="planned"?" planned":"")+(newIds.has(n.id)&&moving?" kt-graph-new":"")+(n.id!==selected?" kt-out-of-focus":"")+(motion==="recovery"&&moving?" kt-recovered":"");
    node.textContent=n.title;node.style.left=positions[n.id]!.x+"px";node.style.top=positions[n.id]!.y+"px";
    node.setAttribute("aria-label",n.title+", "+(n.status==="planned"?"запланировано":"реализовано")+". Перетащите либо используйте Alt и стрелки, чтобы переместить");
    node.addEventListener("click",()=>{if(!suppressClick)onSelect(n.id);suppressClick=false;});
@@ -81,5 +81,11 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
    node.addEventListener("pointerup",end);node.addEventListener("pointercancel",end);
    canvas.append(node);
  }
- viewport.append(canvas);return viewport;
+ viewport.append(canvas);
+ const target=positions[selected];
+ if(target&&typeof requestAnimationFrame==="function")requestAnimationFrame(()=>{
+  if(!viewport.isConnected)return;
+  viewport.scrollTo({left:Math.max(0,(target.x+90)*zoom-viewport.clientWidth/2),top:Math.max(0,(target.y+36)*zoom-viewport.clientHeight/2),behavior:moving?"smooth":"instant"});
+ });
+ return viewport;
 }
