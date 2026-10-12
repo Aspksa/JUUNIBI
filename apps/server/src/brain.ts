@@ -1,3 +1,4 @@
+import { evaluatePlanBenchmarks } from "./brain-plan-benchmark";
 import { evaluateBrainPlanBenchmarks } from "./brain-plan-benchmarks";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
 import { inspectCognitiveEngine } from "./brain-cognitive-engine";
@@ -49,6 +50,7 @@ export class BrainCore {
   proposeRevision(input:{claimId:string;previous:boolean;proposed:boolean;reason:string}) { const r=this.revisions.add(input);this.persist();return {...r,warnings:this.revisions.warnings(input.claimId,input.proposed)}; }
   resolveRevision(id:string,outcome:"accepted"|"rejected") { const r=this.revisions.resolve(id,outcome);this.persist();return r; }
   private readonly decisions = new DecisionMemory();
+  planBenchmarks() { return evaluatePlanBenchmarks(this.plans); }
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   evaluatePlanBenchmarks() { return evaluateBrainPlanBenchmarks(); }
   async searchGraphMemory(query:string,limit=8) { if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503}); await this.graph.sync(this.decisions.snapshot()); return this.graph.search(query,limit); }
