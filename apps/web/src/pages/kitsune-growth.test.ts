@@ -16,7 +16,7 @@ describe("Kitsune verified motion",()=>{
   expect(growthEvents(snapshot()).map(x=>x.kind)).toEqual(["installed","new"]);
  });
  it("never labels a new feature confirmed without both snapshots",()=>{
-  const s=snapshot();s.timeline.snapshots=s.timeline.snapshots?.slice(1);
+  const s=snapshot();s.timeline.snapshots=(s.timeline.snapshots??[]).slice(1);
   expect(growthEvents(s).map(x=>x.kind)).toEqual(["installed"]);
  });
  it("shows rollback as recovery instead of installation",()=>{
