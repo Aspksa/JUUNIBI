@@ -326,3 +326,5 @@
 .kt-graph>p{grid-column:1/-1;overflow-wrap:anywhere;margin:0 0 8px}
 .kt-node{overflow-wrap:anywhere}
 .kt-graph>select{grid-column:1/-1;justify-self:start;min-width:240px;height:38px;border:1px solid var(--kt-line);border-radius:999px;background:var(--surface);color:var(--fg);padding:0 14px}
+.kt-notice{margin:0 0 12px;padding:10px 14px;border:1px solid color-mix(in srgb,var(--kt-brand) 45%,var(--kt-line));border-radius:14px;background:color-mix(in srgb,var(--kt-brand) 10%,transparent);font-size:.86rem;line-height:1.5}
+.kt-notice[hidden]{display:none}

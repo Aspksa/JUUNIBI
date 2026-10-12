@@ -7,6 +7,9 @@ export interface EvolutionSnapshot {
  timeline:{history:{id:string;at:string;kind:string;from:string;to:string;message:string}[];activeVersion:string;durable:boolean;snapshots?:{version:string;digest:string;manifest:EvolutionManifest}[]};
  discovery?:{scanned:number;modules:{id:string;file:string;imports:string[];candidate:boolean}[];candidates:{id:string;file:string;imports:string[];candidate:boolean}[];cycles:string[][];unresolved:string[];manifestGaps:string[];truncated:boolean};
  phase:string;latest:unknown;
+ /** Whether Python 3 (needed for the SQLite histories) was found; `reason` says what to do when it was not. */
+ python?:{ok:boolean;version?:string;reason?:string};
+ warning?:string;
 }
 export function validateEvolutionManifest(raw:unknown):EvolutionManifest {
  if(!raw||typeof raw!=="object")throw new Error("Некорректный манифест");

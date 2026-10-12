@@ -101,6 +101,9 @@ export function kitsuneTreePage():HTMLElement {
  const controls=el("div",{cls:"kt-controls"},query);
  const overview=el("section",{cls:"kt-overview",attrs:{"aria-label":"Состояние эволюции"}});
  const nav=el("nav",{cls:"kt-nav",attrs:{"aria-label":"Разделы Лисьего древа"}});
+ const notice=el("p",{cls:"kt-notice",attrs:{role:"status"}});
+ notice.hidden=true;
+ root.insertBefore(notice,body);
  root.insertBefore(nav,body);
  root.insertBefore(overview,body);
  root.insertBefore(controls,body);
@@ -574,6 +577,9 @@ export function kitsuneTreePage():HTMLElement {
    const snapshot=await response.json() as EvolutionSnapshot;
    dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
    persistedHistory=snapshot.timeline;
+   // Without Python 3 the stored histories cannot work: say so plainly instead of silently showing less.
+   const problem=snapshot.python&&!snapshot.python.ok?snapshot.python.reason:snapshot.warning;
+   notice.textContent=problem??"";notice.hidden=!problem;
    foxSnapshot=snapshot;
    const latest=growth.find(x=>x.kind==="new"||x.kind==="rollback"||x.kind==="installed");
    foxReaction=latest?latest.kind==="rollback"?"🦊 Уф! Лес вернулся к прежней версии. Всё под контролем.":latest.kind==="new"?"🌱 Ой, лапки! У нас появилась новая веточка: "+latest.title:"✨ Обновление установлено — проверим, что изменилось!":"";
