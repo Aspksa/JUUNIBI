@@ -1,4 +1,5 @@
 import { foxWifiSnapshot } from "./fox-network";
+import { probeLocalRouter } from "./fox-router-probe";
 import { LIMIT as DISK_LIMIT, type LocalDisk } from "./local-disk";
 import { zipLength, zipStream, type ZipSource } from "./zip-write";
 import { collectLife } from "./disk-life";
@@ -251,7 +252,8 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (p === "/api/fox-network") {
           if (lan) return send(res, 403, { error: "Диагностика Wi-Fi доступна только на компьютере" });
           if (req.method !== "GET") return send(res, 405, { error: "Разрешено только чтение" });
-          return send(res, 200, await foxWifiSnapshot());
+          const [wifi, router] = await Promise.all([foxWifiSnapshot(), probeLocalRouter()]);
+          return send(res, 200, {...wifi, router});
         }
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
         const a = deps.getAssistant?.() ?? deps.assistant;
