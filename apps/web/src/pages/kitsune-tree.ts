@@ -134,12 +134,16 @@ export function kitsuneTreePage():HTMLElement {
      first.setAttribute("aria-pressed",String(foxFavoriteSort));
      const cards=el("div",{cls:"kt-fox-grid"});
      const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
+     const loadMore=el("button",{textContent:"Показать ещё 30",cls:"kt-fox-more"});
+     loadMore.addEventListener("click",()=>{foxLimit=Math.min(100,foxLimit+30);paint();});
      const paint=()=>{
        const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
-       count.textContent="Найдено: "+displayed.length+" из 100 · Избранное: "+foxFavorites.size;
+       if(foxFavoriteSort)displayed.sort((a,b)=>Number(foxFavorites.has(b.id))-Number(foxFavorites.has(a.id)));
+       count.textContent="Показано: "+Math.min(foxLimit,displayed.length)+" из "+displayed.length+" · Избранное: "+foxFavorites.size;
+       loadMore.hidden=displayed.length<=foxLimit;
        cards.classList.toggle("kt-fox-compact",foxCompact);
        cards.replaceChildren();
-       for(const m of displayed){
+       for(const m of displayed.slice(0,foxLimit)){
          const changed=foxChanged.delete(m.id);
          const article=el("article",{cls:"kt-fox-card"+(changed?" "+foxMotion(Number(m.id.slice(4))).className:"")});
          const favorite=el("button",{cls:"kt-fox-heart",textContent:foxFavorites.has(m.id)?"♥":"♡",attrs:{"aria-label":(foxFavorites.has(m.id)?"Удалить из избранного: ":"Добавить в избранное: ")+m.name,"aria-pressed":String(foxFavorites.has(m.id))}});
@@ -175,7 +179,7 @@ export function kitsuneTreePage():HTMLElement {
      const compact=el("button",{textContent:foxCompact?"▦ Карточки":"☷ Компактно"});
      compact.addEventListener("click",()=>{foxCompact=!foxCompact;compact.textContent=foxCompact?"▦ Карточки":"☷ Компактно";paint();});
      view.append(search,world,favoritesToggle,period,compact,first,reload);
-     main.append(view,count,cards);
+     main.append(view,count,cards,loadMore);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
        el("h2",{textContent:"Как живёт лес"}),
