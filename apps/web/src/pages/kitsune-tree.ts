@@ -273,7 +273,7 @@ export function kitsuneTreePage():HTMLElement {
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
    if(mode==="development") {graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);}
    const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
-   if(mode==="architecture"||mode==="connections") graph.append(buildGraph(nodes,selected,id=>{selected=id;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion));
+   if(mode==="architecture"||mode==="connections") {graph.append(buildGraph(nodes,selected,id=>{selected=id;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion));graphMotion="none";}
    else for(const node of nodes){
      const card=el("button",{cls:"kt-node "+(node.id===selected?"kt-selected ":"")+(node.status==="planned"?"kt-future":""),
        attrs:{"aria-pressed":String(node.id===selected)},
