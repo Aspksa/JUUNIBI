@@ -190,6 +190,17 @@ export function kitsuneTreePage():HTMLElement {
      for(const award of awards)side.append(el("p",{cls:award.earned?"kt-fox-earned":"kt-fox-locked",textContent:award.emoji+" "+award.title+" · "+(award.earned?"Открыто":award.detail)}));
      side.append(el("h3",{textContent:"📖 Лесной дневник"}),el("p",{textContent:forestStory(foxEvents,metrics)}));
      for(const event of foxEvents.slice(-8).reverse())side.append(el("p",{cls:"kt-fox-diary",textContent:event.day+" · "+forestEffects(event.kind)+" · "+event.title}));
+     const brainAnalysis=el("button",{cls:"kt-fox-brain",textContent:"🧠 Анализ показателей через Brain"});
+     const brainReport=el("p",{cls:"kt-fox-diary",attrs:{"aria-live":"polite"}});
+     brainAnalysis.addEventListener("click",()=>{
+       if(brainAnalysis.disabled)return;
+       brainAnalysis.disabled=true;brainReport.textContent="Brain анализирует подтверждённые данные…";
+       const facts=metrics.filter(m=>m.value!==null).slice(0,40).map(m=>m.name+": "+m.value+" ("+m.source+")").join("; ");
+       const prompt="Проанализируй только следующие наблюдаемые показатели JUUNIBI. Укажи проблемы, сильные стороны и три безопасные рекомендации. Не выдумывай отсутствующие значения, не выполняй никаких действий и не меняй проект. Наблюдения: "+facts;
+       void api.chat(prompt).then(r=>{brainReport.textContent=r.ok?r.value.reply:"Brain недоступен: "+r.error.message;})
+       .catch(()=>{brainReport.textContent="Не удалось связаться с Brain";}).finally(()=>{brainAnalysis.disabled=false;});
+     });
+     side.append(brainAnalysis,brainReport);
      const availability=metrics.filter(x=>x.value!==null).length;
      side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
