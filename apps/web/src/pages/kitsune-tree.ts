@@ -134,7 +134,8 @@ export function kitsuneTreePage():HTMLElement {
        cards.classList.toggle("kt-fox-compact",foxCompact);
        cards.replaceChildren();
        for(const m of displayed){
-         const article=el("article",{cls:"kt-fox-card"});
+         const changed=foxChanged.delete(m.id);
+         const article=el("article",{cls:"kt-fox-card"+(changed?" "+foxMotion(Number(m.id.slice(4))).className:"")});
          const favorite=el("button",{cls:"kt-fox-heart",textContent:foxFavorites.has(m.id)?"♥":"♡",attrs:{"aria-label":(foxFavorites.has(m.id)?"Удалить из избранного: ":"Добавить в избранное: ")+m.name,"aria-pressed":String(foxFavorites.has(m.id))}});
          favorite.addEventListener("click",()=>{
            if(foxFavorites.has(m.id))foxFavorites.delete(m.id);else foxFavorites.add(m.id);
