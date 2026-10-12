@@ -31,7 +31,7 @@ export function inspectCognitiveEngine(plan:BrainPlan, history:DecisionRecord[],
     const unresolved=s.dependsOn!.filter(d=>!completed.has(d.toLocaleLowerCase("ru")));
     const riskPenalty={low:0,medium:2,high:5}[s.risk]+(s.reversible?0:3);
     const evidenceScore=successes-failures;
-    const score=evidenceScore-riskPenalty-(unresolved.length?10:0);
+    const score=evidenceScore-riskPenalty-(unresolved.length?5:0);
     return {name:s.name,originalIndex:index,score,risk:s.risk,reversible:s.reversible,successes,failures,
       sampleSize:relevant.length,insufficientEvidence:relevant.length<3,unresolvedDependencies:unresolved,
       blocked:unresolved.length>0,evidenceIds:relevant.map(r=>r.id),requiresOwnerApproval:true};
