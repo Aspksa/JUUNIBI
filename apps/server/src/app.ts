@@ -761,6 +761,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "GET" && p === "/api/update/status") return send(res, 200, deps.updater ? { ...deps.updater.status(), activity: interruptions() } : { error: "Модуль обновления недоступен" });
         if (p === "/api/kitsune/fox-history" && (req.method === "GET" || req.method === "POST")) {
           if (!deps.kitsuneEvolution?.foxHistory) return send(res, 503, { error: "Fox SQLite unavailable" });
+          if (req.method === "POST" && lan) return send(res, 403, { error: "История леса записывается только на компьютере" });
           const payload = req.method === "GET" ? { action: "read" } : await readJson(req);
           return send(res, 200, await deps.kitsuneEvolution.foxHistory(payload));
         }
