@@ -59,7 +59,8 @@ export function kitsuneTreePage():HTMLElement {
  query.addEventListener("input",()=>{filter=query.value.toLocaleLowerCase("ru");render();});
  const controls=el("div",{cls:"kt-controls"},query);
  const overview=el("section",{cls:"kt-overview",attrs:{"aria-label":"Состояние эволюции"}});
- root.insertBefore(overview,controls);
+ root.insertBefore(overview,body);
+ root.insertBefore(controls,body);
  const navLabel=el("p",{cls:"kt-nav-label",textContent:"Разделы развития"});
  controls.prepend(navLabel);
  const renderOverview=()=>{
@@ -74,7 +75,6 @@ export function kitsuneTreePage():HTMLElement {
        .map(([name,count])=>el("div",{cls:"kt-overview-stat"},el("strong",{textContent:count}),el("span",{textContent:name})))
    );
  };
- root.insertBefore(controls,body);
  const tabs=el("div",{cls:"kt-tabs"});
  controls.prepend(tabs);
  const nodesOf=()=>dynamicNodes??TREE_NODES;
