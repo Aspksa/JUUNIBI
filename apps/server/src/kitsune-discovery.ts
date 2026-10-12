@@ -5,7 +5,11 @@ export interface DiscoveredModule {id:string;file:string;imports:string[];candid
 export interface DiscoveryReport {scanned:number;modules:DiscoveredModule[];candidates:DiscoveredModule[];cycles:string[][];unresolved:string[];manifestGaps:string[];truncated:boolean}
 const DIRECTORIES=["apps/server/src","apps/web/src/pages"];
 const MAX_FILES=900;
+/** Type-only imports disappear at build time, so they are not real dependencies and cannot form runtime cycles. */
+const TYPE_ONLY=/\b(?:import|export)\s+type\s[^;]*?\sfrom\s*["'][^"'\r\n]+["']\s*;?/gs;
+export const isTestFile=(file:string)=>/\.(test|spec)\.[tj]sx?$/.test(file);
 function parseImports(source:string):string[] {
+ source=source.replace(TYPE_ONLY,"");
  const results=new Set<string>();
  const rx=/(?:\bfrom\s*|\bimport\s*\(|\brequire\s*\()\s*["'](\.[^"'\r\n]+)["']/g;
  for(const m of source.matchAll(rx))if(m[1])results.add(m[1]);
@@ -39,7 +43,8 @@ export function analyzeModuleGraph(files:Record<string,string>, manifestIds:stri
  const modules=keys.map(file=>{
   const base=path.posix.basename(file).replace(/\.(tsx?|jsx?)$/,"");
   const id=base.toLowerCase().replace(/[^a-z0-9-]/g,"-");
-  const candidate=!manifestIds.includes(id);
+  // Tests are not capabilities of the product, so they are never offered as candidates.
+  const candidate=!manifestIds.includes(id)&&!isTestFile(file);
   return {id,file,imports:resolved.get(file)??[],candidate};
  });
  return {scanned:keys.length,modules,candidates:modules.filter(m=>m.candidate).slice(0,150),cycles:cycles.slice(0,40),

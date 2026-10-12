@@ -23,6 +23,13 @@ export function evolutionFromUpdater(status:UpdateStatus|null,history:UpdateHist
  const items=history?.items??[];
  const rolledBack=new Set(items.filter(h=>h.kind==="rollback").map(h=>h.from));
  for(const item of items){
+   if(item.kind==="failed"||item.kind==="startup_failed"){
+     // A version that did not install or did not start: shown, never counted as installed.
+     result.push({id:"history:"+item.id,title:item.kind==="failed"?"Установка не удалась":"Версия не запустилась",version:item.to,
+       description:item.message||(item.kind==="failed"?"Установка прервана, изменения откатаны":"Новая версия не запустилась, возвращена прежняя"),
+       date:item.at,state:"failed",relatedBranches:inferBranches(item.message??""),evidence:null});
+     continue;
+   }
    if(item.kind!=="install"&&item.kind!=="rollback")continue;
    const state:EvolutionReleaseState=item.kind==="rollback"?"installed":
       rolledBack.has(item.to)&&item.to!==local?"rolled-back":item.to===local?"installed":"rolled-back";

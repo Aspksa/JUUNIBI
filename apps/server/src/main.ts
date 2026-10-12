@@ -11,6 +11,7 @@ import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGat
 import { createApp, type AppDeps } from "./app";
 import { DEFAULT_LAN_PORT, MobileAccess } from "./mobile-access";
 import { ProjectUpdater } from "./updater";
+import { KitsuneGithub } from "./kitsune-github";
 import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
 import { AutonomousLearning } from "./autonomous-learning";
@@ -468,6 +469,7 @@ const appDeps: AppDeps = {
   approvals: approvalGate,
   updater,
   kitsuneEvolution: new KitsuneEvolution(root,updater),
+  kitsuneGithub: new KitsuneGithub(updater),
   // Only a launcher can start the server again, so a restart is offered only when it started us.
   restart: () => { if (process.env.JUUNIBI_SUPERVISED !== "1") return false; setTimeout(() => void shutdown(75), 400); return true; },
   activity: () => {

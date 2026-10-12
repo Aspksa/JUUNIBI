@@ -97,6 +97,8 @@ export interface AppDeps {
   assistant?: Assistant | undefined;
   approvals?: ApprovalGate;
   updater?: ProjectUpdater;
+  /** Public PR list and CI results for the Kitsune tree: fetched by the server (the page may not call GitHub itself). */
+  kitsuneGithub?: { pulls(): Promise<unknown[]>; runs(sha: string): Promise<unknown> };
   kitsuneEvolution?: { snapshot(): Promise<unknown>; foxHistory?(payload:unknown):Promise<unknown> };
   /** Ends the process so the launcher installs a prepared update. Returns false when not started by the launcher. */
   restart?: () => boolean;
@@ -764,6 +766,16 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if (req.method === "POST" && lan) return send(res, 403, { error: "История леса записывается только на компьютере" });
           const payload = req.method === "GET" ? { action: "read" } : await readJson(req);
           return send(res, 200, await deps.kitsuneEvolution.foxHistory(payload));
+        }
+        if (req.method === "GET" && p === "/api/kitsune/github/pulls") {
+          if (!deps.kitsuneGithub) return send(res, 503, { error: "GitHub недоступен" });
+          try { return send(res, 200, await deps.kitsuneGithub.pulls()); } catch (e) { return send(res, 502, { error: (e as Error).message }); }
+        }
+        if (req.method === "GET" && p === "/api/kitsune/github/runs") {
+          if (!deps.kitsuneGithub) return send(res, 503, { error: "GitHub недоступен" });
+          const sha = url.searchParams.get("sha") ?? "";
+          if (!/^[0-9a-f]{40}$/.test(sha)) return send(res, 400, { error: "Некорректный SHA" });
+          try { return send(res, 200, await deps.kitsuneGithub.runs(sha)); } catch (e) { return send(res, 502, { error: (e as Error).message }); }
         }
         if (req.method === "GET" && p === "/api/kitsune/evolution") return send(res, 200, deps.kitsuneEvolution ? await deps.kitsuneEvolution.snapshot() : { error: "Evolution unavailable" });
         if (req.method === "GET" && p === "/api/update/history") return send(res, 200, deps.updater ? await deps.updater.history() : { items: [], canRollback: null, rollbackPending: false });

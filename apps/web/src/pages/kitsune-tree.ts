@@ -5,18 +5,22 @@ import {synchronizeFoxHistory,type FoxHourly} from "./kitsune-fox-server";
 import {foxMotion,foxChangedMetrics,foxVerifiedReadings} from "./kitsune-fox-motion";
 import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,safeForestEvents,type ForestEvent} from "./kitsune-fox-life";
 import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
-import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
+import {FOX_WORLDS,foxMetrics,type FoxLive,type FoxMetric} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
 import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
 import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
 import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
-import { el } from "../dom";
+import { el, icon } from "../dom";
+import { openSheet } from "./sheet";
+import { SECTIONS, SEARCHABLE, ZOOMABLE, FOX_VIEWS, sectionOf, treeSummary, type FoxView, type TreeMode } from "./kitsune-sections";
+import { treeArt } from "./kitsune-tree-art";
+import { awardShelf, medalItems, newShelfState, nextMedalTile } from "./kitsune-medals";
 import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions" | "impact" | "comparison" | "brain-chat" | "discovery" | "growth" | "fox";
+export type { TreeMode };
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -45,7 +49,9 @@ export const TREE_NODES:TreeNode[]=[
 ];
 export const treeConnections=()=>TREE_NODES.flatMap(node=>node.dependsOn.map(from=>({from,to:node.id})));
 export function kitsuneTreePage():HTMLElement {
- let mode:TreeMode="architecture",selected="brain",filter="";
+ let mode:TreeMode="map",selected="brain",filter="";
+ let foxView:FoxView="today";
+ const shelfState=newShelfState();
  let releases:EvolutionRelease[]=[];
  let dynamicNodes:EvolutionNode[]|null=null;
  let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
@@ -79,223 +85,56 @@ export function kitsuneTreePage():HTMLElement {
  let foxLastAward="";
  let foxKnownNumbers=new Map<string,number>();
  let foxChanged=new Set<string>();
- let foxLimit=30;
+ let foxLimit=24;
  let foxTrack:BranchTrack="update";
  let foxPulls:FoxPull[]|null=null;
  let foxPullsLoading=true;
- let foxEliteOnlyEarned=false;
- let foxEliteLimit=20;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
  const body=el("div",{cls:"kt-layout"});
  const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
- const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","KITSUNE TREE · Живая карта архитектуры и развития JUUNIBI"),
-   el("p",{cls:"muted",textContent:"Карта основана на известных компонентах проекта и подтверждённых PR. Будущие возможности отмечены отдельно. Установленные версии берутся из Центра обновлений; связи новых релизов с ветвями определяются предположительно по описанию."}),status,body);
+ const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","Живая карта архитектуры и развития JUUNIBI"),
+   el("details",{cls:"kt-about"},el("summary",{textContent:"О карте"}),el("p",{textContent:"Карта основана на известных компонентах проекта и подтверждённых PR. Будущие возможности отмечены отдельно. Установленные версии берутся из Центра обновлений; связи новых релизов с ветвями определяются предположительно по описанию."})),status,body);
  const query=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Найти ветвь…","aria-label":"Поиск ветви"}});
  query.addEventListener("input",()=>{filter=query.value.toLocaleLowerCase("ru");render();});
  const controls=el("div",{cls:"kt-controls"},query);
  const overview=el("section",{cls:"kt-overview",attrs:{"aria-label":"Состояние эволюции"}});
+ const nav=el("nav",{cls:"kt-nav",attrs:{"aria-label":"Разделы Лисьего древа"}});
+ root.insertBefore(nav,body);
  root.insertBefore(overview,body);
  root.insertBefore(controls,body);
- const navLabel=el("p",{cls:"kt-nav-label",textContent:"Разделы развития"});
- controls.prepend(navLabel);
  const renderOverview=()=>{
-   const nodes=nodesOf();
-   const verified=nodes.filter(n=>n.status==="implemented").length;
-   overview.replaceChildren(
-     el("div",{cls:"kt-overview-intro"},
-       el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / KITSUNE SYSTEM"}),
-       el("h2",{textContent:"Живая архитектура"}),
-       el("p",{textContent:"Исследуйте возможности, просматривайте проверенные изменения и наблюдайте развитие проекта."})),
-     ...([["Ветви",String(nodes.length)],["Реализовано",String(verified)],["Связи",String(nodes.reduce((n,x)=>n+x.dependsOn.length,0))],["Новые события",String(growth.length)]] as [string,string][])
-       .map(([name,count])=>el("div",{cls:"kt-overview-stat"},el("strong",{textContent:count}),el("span",{textContent:name})))
-   );
+   overview.replaceChildren(...treeSummary(nodesOf(),growth.length).map(x=>el("span",{cls:"kt-stat"},el("strong",{textContent:String(x.value)}),el("span",{textContent:x.label}))));
  };
- const tabs=el("div",{cls:"kt-tabs"});
- controls.prepend(tabs);
  const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
-   renderOverview();
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"],["impact","Влияние"],["comparison","Сравнение"],["brain-chat","Brain-диалог"],["discovery","Автообнаружение"],["growth","Живой рост"],["fox","🦊 Лисий переполох"]] as [TreeMode,string][]).map(([value,label])=>{
-     const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
-     b.addEventListener("click",()=>{mode=value;render();});return b;
-   }));
-   if(mode==="fox"){
-     const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
-     const mood=forestMood(metrics);
-     const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох — сто живых показателей"}});
-     main.append(el("div",{cls:"kt-fox-hero"},
-       el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / FOX COMMOTION"}),
-       el("h2",{textContent:"🦊 Лисий переполох"}),
-       el("p",{textContent:"100 лесных историй в 10 мирах. Значения берутся из подтверждённых данных; неизвестные показатели честно показывают «Нет данных»."})));
-     const faceMood=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";
-     main.append(el("div",{cls:"kt-fox-mascot kt-fox-mascot-"+faceMood,attrs:{role:"status","aria-label":"Настроение лисички: "+mood.label}},
-       el("span",{cls:"kt-fox-mascot-ears",textContent:"▲  ▲"}),
-       el("span",{cls:"kt-fox-mascot-face",textContent:"🦊"}),
-       el("span",{cls:"kt-fox-mascot-tail",textContent:"〰"}),
-       el("small",{textContent:mood.label})));
-     main.append(el("p",{cls:"kt-fox-reaction",textContent:mood.emoji+" "+mood.label+" · "+mood.detail}));
-     if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
-     const view=el("div",{cls:"kt-fox-toolbar"});
-     const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
-     search.value=foxSearch;
-     const world=el("select",{attrs:{"aria-label":"Мир показателей"}});
-     world.append(el("option",{textContent:"🌍 Все 10 миров",attrs:{value:"-1"}}));
-     FOX_WORLDS.forEach((x,i)=>world.append(el("option",{textContent:x.emoji+" "+x.title,attrs:{value:String(i)}})));
-     world.value=String(foxWorld);
-     const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
-     const period=el("button",{textContent:foxPeriod===1?"24 часа":foxPeriod+" дней"});
-     period.addEventListener("click",()=>{foxPeriod=foxPeriod===1?7:foxPeriod===7?30:foxPeriod===30?90:1;period.textContent=foxPeriod===1?"24 часа":foxPeriod+" дней";paint();});
-     const reload=el("button",{textContent:"↻ Обновить"});
-     reload.addEventListener("click",()=>{reload.disabled=true;foxLoading=true;void loadFox().finally(()=>{reload.disabled=false;});});
-     const first=el("button",{textContent:"★ Любимые сверху"});
-     first.addEventListener("click",()=>{foxFavoriteSort=!foxFavoriteSort;first.setAttribute("aria-pressed",String(foxFavoriteSort));paint();});
-     first.setAttribute("aria-pressed",String(foxFavoriteSort));
-     const cards=el("div",{cls:"kt-fox-grid"});
-     const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
-     const loadMore=el("button",{textContent:"Показать ещё 30",cls:"kt-fox-more"});
-     loadMore.addEventListener("click",()=>{foxLimit=Math.min(100,foxLimit+30);paint();});
-     const paint=()=>{
-       const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
-       if(foxFavoriteSort)displayed.sort((a,b)=>Number(foxFavorites.has(b.id))-Number(foxFavorites.has(a.id)));
-       count.textContent="Показано: "+Math.min(foxLimit,displayed.length)+" из "+displayed.length+" · Избранное: "+foxFavorites.size;
-       loadMore.hidden=displayed.length<=foxLimit;
-       cards.classList.toggle("kt-fox-compact",foxCompact);
-       cards.replaceChildren();
-       for(const m of displayed.slice(0,foxLimit)){
-         const changed=foxChanged.delete(m.id);
-         const article=el("article",{cls:"kt-fox-card"+(changed?" "+foxMotion(Number(m.id.slice(4))).className:"")});
-         const favorite=el("button",{cls:"kt-fox-heart",textContent:foxFavorites.has(m.id)?"♥":"♡",attrs:{"aria-label":(foxFavorites.has(m.id)?"Удалить из избранного: ":"Добавить в избранное: ")+m.name,"aria-pressed":String(foxFavorites.has(m.id))}});
-         favorite.addEventListener("click",()=>{
-           if(foxFavorites.has(m.id))foxFavorites.delete(m.id);else foxFavorites.add(m.id);
-           try{localStorage.setItem(favoritesKey,JSON.stringify([...foxFavorites]));}catch{/* Private storage disabled */}
-           paint();
-         });
-         const hourly=foxHourly[m.id]??[];
-         const delta=foxPeriod===1?(hourly.length>=2?hourly[hourly.length-1]!.value-hourly[0]!.value:null):metricDelta(foxHistory[m.id]??[],foxPeriod);
-         const label=delta===null?"История накапливается":(delta>0?"+":"")+delta+" за "+(foxPeriod===1?"24 часа":foxPeriod+" дней");
-         const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
-         open.disabled=m.value===null;
-         open.addEventListener("click",()=>{mode=m.target;render();});
-         const chartPoints=foxPeriod===1?hourly.map(x=>({day:x.hour,value:x.value})):(foxHistory[m.id]??[]).filter(x=>Date.parse(x.day+"T00:00:00Z")>=Date.now()-(foxPeriod-1)*86400000);
-         const plotted=sparkPoints(chartPoints);
-         article.append(
-           el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
-           el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
-           el("h3",{textContent:m.name}),
-           el("small",{cls:"kt-fox-delta",textContent:label}),
-           el("small",{textContent:plotted?"График: "+(foxHistory[m.id]?.length??0)+" дней":"График появится после двух измерений"}),
-           el("p",{textContent:m.description}),
-           el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
-           open
-         );
-         if(plotted){const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("viewBox","0 0 150 34");svg.setAttribute("class","kt-fox-spark");svg.setAttribute("role","img");svg.setAttribute("aria-label","Динамика по подтверждённым измерениям");const line=document.createElementNS("http://www.w3.org/2000/svg","polyline");line.setAttribute("points",plotted);line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");svg.append(line);article.insertBefore(svg,open);}
-         cards.append(article);
-       }
-       if(!displayed.length)cards.append(el("p",{cls:"kt-empty",textContent:"Здесь пока нет подходящих показателей. Измени мир, поиск или избранное."}));
-     };
-     search.addEventListener("input",()=>{foxSearch=search.value;paint();});
-     world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
-     favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
-     const compact=el("button",{textContent:foxCompact?"▦ Карточки":"☷ Компактно"});
-     compact.addEventListener("click",()=>{foxCompact=!foxCompact;compact.textContent=foxCompact?"▦ Карточки":"☷ Компактно";paint();});
-     view.append(search,world,favoritesToggle,period,compact,first,reload);
-     main.append(view,count,cards,loadMore);
-     const side=el("aside",{cls:"kt-detail"},
-       el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
-       el("h2",{textContent:"Как живёт лес"}),
-       el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён."}),
-       el("p",{textContent:"Избранные карточки сохраняются только в этом браузере. Никакие действия с проектом не выполняются."}));
-     const awards=forestAwards(metrics,foxHistory);
-     side.append(el("h3",{textContent:"🏆 Награды: "+awards.filter(a=>a.earned).length+" из "+awards.length}));
-     for(const award of awards)side.append(el("p",{cls:award.earned?"kt-fox-earned":"kt-fox-locked",textContent:award.emoji+" "+award.title+" · "+(award.earned?"Открыто":award.detail)}));
-     side.append(el("h3",{textContent:"📖 Лесной дневник"}),el("p",{textContent:forestStory(foxEvents,metrics)}));
-     for(const event of foxEvents.slice(-8).reverse())side.append(el("p",{cls:"kt-fox-diary",textContent:event.day+" · "+forestEffects(event.kind)+" · "+event.title}));
-     const brainAnalysis=el("button",{cls:"kt-fox-brain",textContent:"🧠 Анализ показателей через Brain"});
-     const brainReport=el("p",{cls:"kt-fox-diary",attrs:{"aria-live":"polite"}});
-     brainAnalysis.addEventListener("click",()=>{
-       if(brainAnalysis.disabled)return;
-       brainAnalysis.disabled=true;brainReport.textContent="Brain анализирует подтверждённые данные…";
-       const facts=metrics.filter(m=>m.value!==null).slice(0,40).map(m=>m.name+": "+m.value+" ("+m.source+")").join("; ");
-       const prompt="Проанализируй только следующие наблюдаемые показатели JUUNIBI. Укажи проблемы, сильные стороны и три безопасные рекомендации. Не выдумывай отсутствующие значения, не выполняй никаких действий и не меняй проект. Наблюдения: "+facts;
-       void api.chat(prompt).then(r=>{brainReport.textContent=r.ok?r.value.reply:"Brain недоступен: "+r.error.message;})
-       .catch(()=>{brainReport.textContent="Не удалось связаться с Brain";}).finally(()=>{brainAnalysis.disabled=false;});
-     });
-     side.append(brainAnalysis,brainReport);
-     const unread=foxEvents.filter(e=>!foxSeen.has(e.id));
-     const notice=el("div",{cls:"kt-fox-notice"},
-       el("h3",{textContent:"🔔 Лесные вести · "+unread.length+" новых"}),
-       el("p",{textContent:unread.length?unread.slice(-3).map(e=>forestEffects(e.kind)+" "+e.title).join(" · "):"Новых событий нет."}));
-     const acknowledge=el("button",{textContent:"Прочитано",attrs:{type:"button"}});
-     acknowledge.disabled=unread.length===0;
-     acknowledge.addEventListener("click",()=>{
-       for(const event of foxEvents)foxSeen.add(event.id);
-       try{localStorage.setItem(seenStoreKey,JSON.stringify([...foxSeen].slice(-150)));}catch{/* Storage optional */}
-       notice.replaceChildren(el("h3",{textContent:"🔔 Все вести прочитаны"}));acknowledge.disabled=true;
-     });
-     notice.append(acknowledge);side.append(notice);
-     const verifiedUpdate=foxEvents.filter(e=>e.kind==="update").length;
-     if(verifiedUpdate>=5)side.append(el("p",{cls:"kt-fox-easter",textContent:"🎁 Тайный подарок лисичек: пять или больше подтверждённых записей об обновлениях! Лес благодарит своего хранителя."}));
-     const tracks=foxBranches(foxSnapshot,growth);
-     const branchPanel=el("section",{cls:"kt-fox-branches"});
-     branchPanel.append(el("h3",{textContent:"🌿 Лисьи ветки проекта"}));
-     const branchTabs=el("div",{cls:"kt-fox-branch-tabs"});
-     const branchList=el("div",{cls:"kt-fox-branch-list"});
-     const renderBranches=()=>{
-       branchTabs.replaceChildren();branchList.replaceChildren();
-       for(const track of BRANCH_TRACKS){
-         const amount=tracks.filter(item=>item.track===track.id).length+(foxPulls??[]).filter(pr=>foxPullTrack(pr)===track.id).length;
-         const control=el("button",{textContent:track.emoji+" "+track.title+" ("+amount+")",attrs:{"aria-pressed":String(foxTrack===track.id)}});
-         control.addEventListener("click",()=>{foxTrack=track.id;renderBranches();});
-         branchTabs.append(control);
-       }
-       const selected=tracks.filter(item=>item.track===foxTrack);
-       const matchingPRs=(foxPulls??[]).filter(pr=>foxPullTrack(pr)===foxTrack);
-       const totals=matchingPRs.length;
-       for(const item of selected.slice(0,30))
-         branchList.append(el("article",{cls:"kt-fox-branch"},
-           el("strong",{textContent:item.title}),
-           el("p",{textContent:item.detail}),
-           el("small",{textContent:(item.status==="planned"?"Запланировано · ":"Подтверждено · ")+item.source+(item.at?" · "+item.at:"")+(item.version?" · "+item.version.slice(0,12):"")})));
-       for(const pr of matchingPRs.slice(0,15)){
-         const card=el("article",{cls:"kt-fox-branch"},
-           el("strong",{textContent:"PR #"+pr.number+" · "+pr.title}),
-           el("p",{textContent:(pr.state==="merged"?"Объединён":pr.state==="open"?"Открыт — требуется продолжение":"Закрыт без слияния")+" · CI: "+(pr.ci==="passed"?"успешно":pr.ci==="failed"?"ошибка":pr.ci==="pending"?"выполняется":"нет подтверждения")}),
-           el("small",{textContent:"GitHub · "+(pr.mergedAt??pr.createdAt).slice(0,10)+(pr.sha?" · "+pr.sha.slice(0,12):"")}));
-         card.append(el("a",{textContent:"Открыть PR ↗",attrs:{href:pr.url,target:"_blank",rel:"noopener noreferrer"}}));
-         branchList.append(card);
-       }
-       if(!selected.length&&!totals)branchList.append(el("p",{textContent:foxPullsLoading?"Загружается журнал GitHub…":foxPulls===null?"GitHub недоступен — показаны только локальные сведения.":foxSnapshot?"Записей этого типа пока нет.":"Источники ещё не предоставили данные."}));
-     };
-     renderBranches();branchPanel.append(branchTabs,branchList);
-     branchPanel.append(el("p",{cls:"kt-fox-count",textContent:"GitHub: "+(foxPulls===null?"нет данных":foxPulls.length+" последних PR")+" · Классификация по заголовкам PR приблизительная; установка подтверждается только локальным журналом."}));
-     main.append(branchPanel);
-     const legendary=eliteFoxAwards(metrics,foxHistory);
-     const legendaryPanel=el("section",{cls:"kt-fox-legendary"});
-     legendaryPanel.append(el("h3",{textContent:"👑 100 легендарных испытаний"}),el("p",{textContent:"Для каждой награды требуются два реальных показателя и подтверждённая история наблюдений. Недоступные источники никогда не дают награду."}));
-     const onlyEarned=el("button",{textContent:foxEliteOnlyEarned?"Показать все":"Только полученные"});
-     const legendaryGrid=el("div",{cls:"kt-fox-legendary-grid"});
-     const legendaryMore=el("button",{textContent:"Показать ещё 20",cls:"kt-fox-more"});
-     const paintLegendary=()=>{
-       const shown=legendary.filter(item=>!foxEliteOnlyEarned||item.earned);
-       legendaryGrid.replaceChildren();
-       for(const item of shown.slice(0,foxEliteLimit))
-         legendaryGrid.append(el("article",{cls:"kt-fox-legendary-card"+(item.earned?" kt-fox-earned":"")},
-          el("strong",{textContent:item.emoji+" "+item.name}),
-          el("small",{textContent:item.world+" · "+(item.earned?"Открыта":item.ready?"В процессе":"Ожидает источников")}),
-          el("p",{textContent:item.requirement}),
-          el("div",{cls:"kt-fox-progress",attrs:{role:"progressbar","aria-label":item.name,"aria-valuemin":"0","aria-valuemax":"100","aria-valuenow":String(Math.round(item.progress*100))}},el("span",{attrs:{style:"width:"+Math.round(item.progress*100)+"%"}}))));
-       legendaryMore.hidden=shown.length<=foxEliteLimit;
-     };
-     onlyEarned.addEventListener("click",()=>{foxEliteOnlyEarned=!foxEliteOnlyEarned;onlyEarned.textContent=foxEliteOnlyEarned?"Показать все":"Только полученные";paintLegendary();});
-     legendaryMore.addEventListener("click",()=>{foxEliteLimit=Math.min(100,foxEliteLimit+20);paintLegendary();});
-     legendaryPanel.append(onlyEarned,legendaryGrid,legendaryMore);main.append(legendaryPanel);paintLegendary();
-     const availability=metrics.filter(x=>x.value!==null).length;
-     side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
-     body.replaceChildren(main,side);
-     paint();status.textContent="Лисий переполох · 100 показателей, "+availability+" с подключёнными данными";return;
+   // A redraw rebuilds the page body; keep the caret where the person was typing.
+   const active=document.activeElement;
+   const label=active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement||active instanceof HTMLSelectElement?active.getAttribute("aria-label"):null;
+   const caret=active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement?active.selectionStart:null;
+   draw();
+   status.hidden=!status.textContent?.trim();
+   if(label&&root.contains(active)===false){
+     const again=[...root.querySelectorAll<HTMLElement>("input,textarea,select")].find(x=>x.getAttribute("aria-label")===label);
+     if(again){again.focus();if(caret!==null&&again instanceof HTMLInputElement)try{again.setSelectionRange(caret,caret);}catch{/* not selectable */}}
    }
+ }
+ function draw(){
+   renderOverview();
+   const section=sectionOf(mode);
+   overview.hidden=section.id==="fox";
+   nav.replaceChildren(...[
+     el("div",{cls:"kt-sections"},...SECTIONS.map(x=>{
+       const b=el("button",{type:"button",cls:"kt-section"+(x.id===section.id?" is-active":""),attrs:{"aria-pressed":String(x.id===section.id)}},el("strong",{textContent:x.label}),el("small",{textContent:x.hint}));
+       b.addEventListener("click",()=>{if(x.id!==section.id){mode=x.modes[0]![0];render();}});return b;})),
+     section.modes.length>1?el("div",{cls:"kt-subtabs",attrs:{role:"group","aria-label":"Вид раздела «"+section.label+"»"}},...section.modes.map(([value,label])=>{
+       const b=el("button",{type:"button",cls:"kt-chip",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
+       b.addEventListener("click",()=>{mode=value;render();});return b;})):null].filter((x):x is NonNullable<typeof x>=>x!==null));
+   query.hidden=!SEARCHABLE.has(mode);zoom.hidden=!ZOOMABLE.has(mode);controls.hidden=query.hidden&&zoom.hidden;
+   body.classList.toggle("kt-solo",mode==="fox"||mode==="map");
+   if(mode==="fox"){renderFox();return;}
+   if(mode==="map"){renderMap();return;}
    if(mode==="growth"){
      const timeline=el("div",{cls:"kt-growth-timeline",attrs:{"aria-label":"Подтверждённые события роста"}});
      if(!growth.length)timeline.append(el("p",{cls:"kt-empty",textContent:"Подтверждённых изменений между двумя сохранёнными манифестами пока нет. Эффекты появятся после установки нового релиза и получения обоих снимков."}));
@@ -354,7 +193,7 @@ export function kitsuneTreePage():HTMLElement {
      choose.addEventListener("change",()=>{selected=choose.value;render();});
      pane.append(choose,el("p",{textContent:"Зависимые ветви: "+affected.length}));
      for(const a of affected)pane.append(el("article",{cls:"kt-node"},el("strong",{textContent:a.title}),
-        el("small",{textContent:"Глубина связи: "+a.distance+" · "+a.status})));
+        el("small",{textContent:"Глубина связи: "+a.distance+" · "+(a.status==="planned"?"запланировано":"реализовано")})));
      body.replaceChildren(pane,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Анализ влияния"}),
        el("p",{textContent:"Показывает все транзитивные зависимости. Это структурный анализ манифеста, не прогноз фактического сбоя."})));
      status.textContent=affected.length+" ветвей зависят от "+target.title;return;
@@ -482,7 +321,7 @@ export function kitsuneTreePage():HTMLElement {
      status.textContent=advice.length+" направлений для развития";return;
    }
    const matched=allNodes.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
-   status.textContent=`${allNodes.filter(n=>n.status==="implemented").length} реализовано · ${allNodes.filter(n=>n.status==="planned").length} запланировано · ${allNodes.flatMap(n=>n.dependsOn).length} связей`;
+   status.textContent="";
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
    if(mode==="development") {graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);}
    const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
@@ -517,6 +356,212 @@ export function kitsuneTreePage():HTMLElement {
      details.append(el("h3",{textContent:"Переходы по связям"}),list);
    }
    body.replaceChildren(graph,details);
+ }
+ /** Details of one branch in a window in the middle of the screen; related branches open in the same window. */
+ function openNode(id:string){
+   const all=nodesOf();
+   const node=all.find(n=>n.id===id);
+   if(!node)return;
+   selected=id;
+   const parents=node.dependsOn.map(p=>all.find(n=>n.id===p)).filter((n):n is typeof node=>Boolean(n));
+   const kids=all.filter(n=>n.dependsOn.includes(id));
+   const jump=(n:typeof node)=>{const b=el("button",{type:"button",cls:"kt-chip",textContent:n.title});b.addEventListener("click",()=>{openNode(n.id);render();});return b;};
+   const block=(title:string,...kidsNodes:(Node|string)[])=>el("div",{cls:"kt-sheet-block"},el("h4",{textContent:title}),...kidsNodes);
+   const impact=el("button",{type:"button",cls:"kt-chip is-strong",textContent:"Показать влияние"});
+   const content=el("div",{cls:"kt-node-sheet"},
+     el("p",{textContent:node.description}),
+     block("Как работает",el("p",{textContent:node.how})),
+     block("Зависит от",parents.length?el("div",{cls:"kt-chip-row"},...parents.map(jump)):el("p",{cls:"muted",textContent:"Корневой компонент"})),
+     block("Связанные ветви",kids.length?el("div",{cls:"kt-chip-row"},...kids.map(jump)):el("p",{cls:"muted",textContent:"Пока нет"})),
+     el("p",{cls:"kt-state",textContent:node.status==="implemented"?"Подтверждено в проекте":"План развития, пока не реализовано"}),
+     node.evidence?el("a",{textContent:"Открыть подтверждающий PR ↗",attrs:{href:node.evidence,target:"_blank",rel:"noopener noreferrer"}}):null,
+     el("div",{cls:"kt-chip-row"},impact));
+   const sheet=openSheet({title:node.title,icon:"link",sub:node.status==="implemented"?"Подтверждено":"Запланировано",tone:node.status==="implemented"?"ok":"off",content});
+   impact.addEventListener("click",()=>{sheet.close();mode="impact";render();});
+ }
+ function foxCompanion(mood:{emoji:string;label:string;detail:string}){
+   const state=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";
+   return el("div",{cls:"kt-companion state-"+state,attrs:{role:"status","aria-label":"Настроение лисички: "+mood.label}},
+     el("span",{cls:"kc-face",textContent:"🦊",attrs:{"aria-hidden":"true"}}),
+     el("div",{},el("strong",{textContent:mood.label}),el("small",{textContent:mood.detail})));
+ }
+ /** The calm main screen: the tree as a picture, a few numbers, what comes next. */
+ function renderMap(){
+   const all=nodesOf();
+   const metrics=foxMetrics({nodes:all,snapshot:foxSnapshot,growth,live:foxLive});
+   const mood=forestMood(metrics);
+   const fresh=new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id)));
+   const art=treeArt(all,{selected,highlight:fresh,onSelect:id=>{openNode(id);render();}});
+   const legend=el("ul",{cls:"kta-legend"},
+     el("li",{},el("i",{cls:"lg ok"}),"Подтверждено"),el("li",{},el("i",{cls:"lg planned"}),"Запланировано"),
+     fresh.size?el("li",{},el("i",{cls:"lg fresh"}),"Новая ветвь"):null);
+   const planned=all.filter(n=>n.status==="planned");
+   const next=el("div",{cls:"kt-chip-row"},...planned.map(n=>{const b=el("button",{type:"button",cls:"kt-chip",textContent:n.title});b.addEventListener("click",()=>{openNode(n.id);});return b;}));
+   const events=growth.slice(0,4);
+   const side=el("aside",{cls:"kt-map-side",attrs:{"aria-label":"Сводка"}},
+     foxCompanion(mood),
+     el("h3",{textContent:"Что дальше"}),
+     planned.length?next:el("p",{cls:"muted",textContent:"Запланированных ветвей нет."}),
+     el("h3",{textContent:"Недавние события"}),
+     events.length?el("ul",{cls:"kt-mini-list"},...events.map(e=>el("li",{},el("strong",{textContent:e.title}),el("small",{cls:"muted",textContent:e.detail})))):el("p",{cls:"muted",textContent:"Подтверждённых изменений между версиями пока нет."}));
+   body.replaceChildren(el("div",{cls:"kt-map"},el("section",{cls:"kt-map-art",attrs:{"aria-label":"Дерево развития"}},art,legend),side));
+   const done=all.filter(n=>n.status==="implemented").length;
+   status.textContent="Нажмите на лист, чтобы узнать о ветви подробнее.";
+ }
+ const FOX_HUES=[140,25,265,330,200,45,175,95,235,15];
+ function foxCard(m:FoxMetric,repaint:()=>void):HTMLElement{
+   const changed=foxChanged.delete(m.id);
+   const article=el("article",{cls:"kt-fox-card"+(m.value===null?" is-empty":"")+(changed?" "+foxMotion(Number(m.id.slice(4))).className:"")});
+   article.style.setProperty("--wh",String(FOX_HUES[m.world%10]??140));
+   const fav=foxFavorites.has(m.id);
+   const favorite=el("button",{type:"button",cls:"kt-fox-heart",textContent:fav?"♥":"♡",attrs:{"aria-label":(fav?"Удалить из избранного: ":"Добавить в избранное: ")+m.name,"aria-pressed":String(fav)}});
+   favorite.addEventListener("click",()=>{
+     if(foxFavorites.has(m.id))foxFavorites.delete(m.id);else foxFavorites.add(m.id);
+     try{localStorage.setItem(favoritesKey,JSON.stringify([...foxFavorites]));}catch{/* Private storage disabled */}
+     repaint();
+   });
+   const hourly=foxHourly[m.id]??[];
+   const delta=foxPeriod===1?(hourly.length>=2?hourly[hourly.length-1]!.value-hourly[0]!.value:null):metricDelta(foxHistory[m.id]??[],foxPeriod);
+   const deltaLabel=delta===null?"":(delta>0?"+":"")+delta+" за "+(foxPeriod===1?"24 часа":foxPeriod+" дней");
+   const open=el("button",{type:"button",cls:"kt-fox-open",textContent:"Источник →"});
+   open.disabled=m.value===null;
+   open.addEventListener("click",()=>{mode=m.target;render();});
+   const chartPoints=foxPeriod===1?hourly.map(x=>({day:x.hour,value:x.value})):(foxHistory[m.id]??[]).filter(x=>Date.parse(x.day+"T00:00:00Z")>=Date.now()-(foxPeriod-1)*86400000);
+   const plotted=sparkPoints(chartPoints);
+   article.append(
+     el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji,attrs:{"aria-hidden":"true"}}),el("span",{cls:"kt-fox-world",textContent:FOX_WORLDS[m.world]?.title??""}),favorite),
+     el("div",{cls:"kt-fox-valuebox"},el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),m.value===null||delta===null?null:el("small",{cls:"kt-fox-delta",textContent:deltaLabel})),
+     el("h3",{textContent:m.name}),
+     el("p",{textContent:m.description}),
+     el("small",{cls:"kt-fox-source",textContent:(m.value===null?"Источник не подключён: ":"Источник: ")+m.source}));
+   if(plotted){const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("viewBox","0 0 150 34");svg.setAttribute("class","kt-fox-spark");svg.setAttribute("role","img");svg.setAttribute("aria-label","Динамика по подтверждённым измерениям");const line=document.createElementNS("http://www.w3.org/2000/svg","polyline");line.setAttribute("points",plotted);line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");line.setAttribute("stroke-linecap","round");line.setAttribute("stroke-linejoin","round");svg.append(line);article.append(svg);}
+   article.append(el("div",{cls:"kt-fox-card-foot"},
+     el("span",{cls:"kt-fox-chip "+(m.value===null?"off":"ok"),textContent:m.value===null?"Нет данных":"Подтверждено"}),
+     open));
+   return article;
+ }
+ function foxToday(main:HTMLElement,metrics:FoxMetric[],medals:ReturnType<typeof medalItems>){
+   const availability=metrics.filter(x=>x.value!==null).length;
+   const unread=foxEvents.filter(e=>!foxSeen.has(e.id));
+   const acknowledge=el("button",{type:"button",cls:"kt-chip",textContent:"Прочитано"});
+   acknowledge.disabled=unread.length===0;
+   acknowledge.addEventListener("click",()=>{
+     for(const event of foxEvents)foxSeen.add(event.id);
+     try{localStorage.setItem(seenStoreKey,JSON.stringify([...foxSeen].slice(-150)));}catch{/* Storage optional */}
+     render();
+   });
+   main.append(el("div",{cls:"kt-today-tiles"},
+     el("div",{cls:"kt-today-tile"},icon("spark",24),el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
+     nextMedalTile(medals),
+     el("div",{cls:"kt-today-tile"},icon("book",24),el("div",{},el("strong",{textContent:unread.length?"Новых вестей: "+unread.length:"Новых вестей нет"}),el("small",{cls:"muted",textContent:unread.length?unread.slice(-1).map(e=>e.title).join(""):"лесной дневник спокоен"}),acknowledge))));
+   const changedNow=metrics.filter(m=>foxChanged.has(m.id)).slice(0,6);
+   const shown=changedNow.length?changedNow:metrics.filter(m=>m.value!==null).slice(0,6);
+   main.append(el("h3",{cls:"kt-h",textContent:changedNow.length?"Что изменилось":"Ключевые показатели"}));
+   const grid=el("div",{cls:"kt-fox-grid"});
+   const paint=()=>{grid.replaceChildren(...shown.map(m=>foxCard(m,paint)));if(!shown.length)grid.append(el("p",{cls:"kt-empty",textContent:"Подтверждённых показателей пока нет: нужные источники не подключены."}));};
+   paint();main.append(grid);
+   main.append(el("h3",{cls:"kt-h",textContent:"Лесной дневник"}),el("p",{cls:"muted",textContent:forestStory(foxEvents,metrics)}));
+   const recent=foxEvents.slice(-6).reverse();
+   if(recent.length)main.append(el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))));
+   const brainAnalysis=el("button",{type:"button",cls:"kt-chip",textContent:"🧠 Разобрать показатели через Brain"});
+   const brainReport=el("p",{cls:"kt-brain-report",attrs:{"aria-live":"polite"}});
+   brainAnalysis.addEventListener("click",()=>{
+     if(brainAnalysis.disabled)return;
+     brainAnalysis.disabled=true;brainReport.textContent="Brain анализирует подтверждённые данные…";
+     const facts=metrics.filter(m=>m.value!==null).slice(0,40).map(m=>m.name+": "+m.value+" ("+m.source+")").join("; ");
+     const prompt="Проанализируй только следующие наблюдаемые показатели JUUNIBI. Укажи проблемы, сильные стороны и три безопасные рекомендации. Не выдумывай отсутствующие значения, не выполняй никаких действий и не меняй проект. Наблюдения: "+facts;
+     void api.chat(prompt).then(r=>{brainReport.textContent=r.ok?r.value.reply:"Brain недоступен: "+r.error.message;})
+     .catch(()=>{brainReport.textContent="Не удалось связаться с Brain";}).finally(()=>{brainAnalysis.disabled=false;});
+   });
+   main.append(el("div",{cls:"kt-chip-row"},brainAnalysis),brainReport);
+   if(foxEvents.filter(e=>e.kind==="update").length>=5)main.append(el("p",{cls:"kt-fox-easter",textContent:"🎁 Тайный подарок лисичек: пять или больше подтверждённых записей об обновлениях! Лес благодарит своего хранителя."}));
+   main.append(el("details",{cls:"kt-about"},el("summary",{textContent:"Как читать показатели"}),
+     el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён. Избранное сохраняется только в этом браузере. Никакие действия с проектом не выполняются."})));
+ }
+ function foxMetricsView(main:HTMLElement,metrics:FoxMetric[]){
+   const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
+   search.value=foxSearch;
+   const world=el("select",{attrs:{"aria-label":"Мир показателей"}});
+   world.append(el("option",{textContent:"🌍 Все 10 миров",attrs:{value:"-1"}}));
+   FOX_WORLDS.forEach((x,i)=>world.append(el("option",{textContent:x.emoji+" "+x.title,attrs:{value:String(i)}})));
+   world.value=String(foxWorld);
+   const favoritesToggle=el("button",{type:"button",cls:"kt-chip",textContent:foxOnlyFavorite?"♥ Избранное":"♡ Избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
+   const period=el("button",{type:"button",cls:"kt-chip",textContent:"Период: "+(foxPeriod===1?"24 часа":foxPeriod+" дней")});
+   const first=el("button",{type:"button",cls:"kt-chip",textContent:"★ Любимые сверху",attrs:{"aria-pressed":String(foxFavoriteSort)}});
+   const reload=el("button",{type:"button",cls:"kt-chip",textContent:"↻ Обновить"});
+   const cards=el("div",{cls:"kt-fox-grid"});
+   const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
+   const loadMore=el("button",{type:"button",cls:"kt-more",textContent:"Показать ещё"});
+   const paint=()=>{
+     const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
+     if(foxFavoriteSort)displayed.sort((a,b)=>Number(foxFavorites.has(b.id))-Number(foxFavorites.has(a.id)));
+     count.textContent="Показано: "+Math.min(foxLimit,displayed.length)+" из "+displayed.length+" · избранное: "+foxFavorites.size;
+     loadMore.hidden=displayed.length<=foxLimit;
+     cards.replaceChildren(...displayed.slice(0,foxLimit).map(m=>foxCard(m,paint)));
+     if(!displayed.length)cards.append(el("p",{cls:"kt-empty",textContent:"Здесь пока нет подходящих показателей. Измени мир, поиск или избранное."}));
+   };
+   search.addEventListener("input",()=>{foxSearch=search.value;paint();});
+   world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
+   favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
+   period.addEventListener("click",()=>{foxPeriod=foxPeriod===1?7:foxPeriod===7?30:foxPeriod===30?90:1;period.textContent="Период: "+(foxPeriod===1?"24 часа":foxPeriod+" дней");paint();});
+   first.addEventListener("click",()=>{foxFavoriteSort=!foxFavoriteSort;first.setAttribute("aria-pressed",String(foxFavoriteSort));paint();});
+   reload.addEventListener("click",()=>{reload.disabled=true;foxLoading=true;void loadFox().finally(()=>{reload.disabled=false;});});
+   loadMore.addEventListener("click",()=>{foxLimit=Math.min(100,foxLimit+24);paint();});
+   main.append(el("div",{cls:"kt-fox-toolbar"},search,world,favoritesToggle,period,first,reload),count,cards,loadMore);
+   paint();
+ }
+ function foxBranchesView(main:HTMLElement){
+   const tracks=foxBranches(foxSnapshot,growth);
+   const branchPanel=el("section",{cls:"kt-fox-branches"});
+   const branchTabs=el("div",{cls:"kt-subtabs"});
+   const branchList=el("div",{cls:"kt-fox-branch-list"});
+   const renderBranches=()=>{
+     branchTabs.replaceChildren();branchList.replaceChildren();
+     for(const track of BRANCH_TRACKS){
+       const amount=tracks.filter(item=>item.track===track.id).length+(foxPulls??[]).filter(pr=>foxPullTrack(pr)===track.id).length;
+       const control=el("button",{type:"button",cls:"kt-chip",textContent:track.emoji+" "+track.title+" ("+amount+")",attrs:{"aria-pressed":String(foxTrack===track.id)}});
+       control.addEventListener("click",()=>{foxTrack=track.id;renderBranches();});
+       branchTabs.append(control);
+     }
+     const selectedItems=tracks.filter(item=>item.track===foxTrack);
+     const matchingPRs=(foxPulls??[]).filter(pr=>foxPullTrack(pr)===foxTrack);
+     for(const item of selectedItems.slice(0,30))
+       branchList.append(el("article",{cls:"kt-fox-branch"},
+         el("strong",{textContent:item.title}),
+         el("p",{textContent:item.detail}),
+         el("small",{textContent:(item.status==="planned"?"Запланировано · ":"Подтверждено · ")+item.source+(item.at?" · "+item.at:"")+(item.version?" · "+item.version.slice(0,12):"")})));
+     for(const pr of matchingPRs.slice(0,15)){
+       const card=el("article",{cls:"kt-fox-branch"},
+         el("strong",{textContent:"PR #"+pr.number+" · "+pr.title}),
+         el("p",{textContent:(pr.state==="merged"?"Объединён":pr.state==="open"?"Открыт — требуется продолжение":"Закрыт без слияния")+" · CI: "+(pr.ci==="passed"?"успешно":pr.ci==="failed"?"ошибка":pr.ci==="pending"?"выполняется":"нет подтверждения")}),
+         el("small",{textContent:"GitHub · "+(pr.mergedAt??pr.createdAt).slice(0,10)+(pr.sha?" · "+pr.sha.slice(0,12):"")}));
+       card.append(el("a",{textContent:"Открыть PR ↗",attrs:{href:pr.url,target:"_blank",rel:"noopener noreferrer"}}));
+       branchList.append(card);
+     }
+     if(!selectedItems.length&&!matchingPRs.length)branchList.append(el("p",{cls:"kt-empty",textContent:foxPullsLoading?"Загружается журнал GitHub…":foxPulls===null?"GitHub недоступен — показаны только локальные сведения.":foxSnapshot?"Записей этого типа пока нет.":"Источники ещё не предоставили данные."}));
+   };
+   renderBranches();branchPanel.append(branchTabs,branchList);
+   branchPanel.append(el("p",{cls:"kt-fox-count",textContent:"GitHub: "+(foxPulls===null?"нет данных":foxPulls.length+" последних PR")+" · классификация по заголовкам PR приблизительная; установка подтверждается только локальным журналом."}));
+   main.append(branchPanel);
+ }
+ function renderFox(){
+   const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+   const mood=forestMood(metrics);
+   const availability=metrics.filter(x=>x.value!==null).length;
+   const medals=medalItems(metrics,foxHistory);
+   const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох"}});
+   main.append(foxCompanion(mood));
+   if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
+   main.append(el("div",{cls:"kt-subtabs",attrs:{role:"group","aria-label":"Вид раздела «Лисичка»"}},...FOX_VIEWS.map(([value,label])=>{
+     const b=el("button",{type:"button",cls:"kt-chip",textContent:label+(value==="awards"?" · "+medals.filter(m=>m.earned).length:""),attrs:{"aria-pressed":String(foxView===value)}});
+     b.addEventListener("click",()=>{foxView=value;render();});return b;})));
+   if(foxView==="today")foxToday(main,metrics,medals);
+   else if(foxView==="metrics")foxMetricsView(main,metrics);
+   else if(foxView==="awards"){
+     main.append(el("p",{cls:"muted kt-lead",textContent:"Награды выдаются только за подтверждённые данные. Бронза, серебро, золото и легенда показывают сложность награды. Если источника нет, награда остаётся закрытой."}),awardShelf(medals,shelfState));
+   }else foxBranchesView(main);
+   body.replaceChildren(main);
+   status.textContent=foxLoading?"Получаем данные…":"";
  }
  const zoom=el("div",{cls:"kt-zoom"});
  for(const [label,value] of [["−",-0.15],["+",0.15],["100%",0]] as [string,number][]){
