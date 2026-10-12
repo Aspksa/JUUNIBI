@@ -144,3 +144,15 @@
 .kt-fox-notice h3{margin:0 0 8px}
 .kt-fox-notice p{font-size:12px;line-height:1.6}
 .kt-fox-easter{font-size:13px;padding:12px;border:1px solid var(--accent,#866bbd);border-radius:12px}
+
+.kt-fox-mascot{display:flex;gap:8px;align-items:center;margin:0 10px 12px;padding:9px 13px;border:1px solid var(--border,#8884);border-radius:15px;background:var(--bg,#fff);max-width:340px}
+.kt-fox-mascot-ears{font-size:12px;letter-spacing:5px;opacity:.8}
+.kt-fox-mascot-face{font-size:30px;line-height:1}
+.kt-fox-mascot-tail{font-size:28px;line-height:1;transform-origin:0 50%}
+.kt-fox-mascot small{font-weight:650;font-size:12px}
+.kt-fox-mascot-warning{border-color:color-mix(in srgb,#dc9946 60%,var(--border,#8884))}
+.kt-fox-mascot-warning .kt-fox-mascot-ears{transform:rotate(-9deg)}
+.kt-fox-mascot-sleeping .kt-fox-mascot-face{opacity:.65}
+.kt-fox-mascot-working .kt-fox-mascot-tail{animation:fox-tail-swish .75s ease-in-out 1}
+@keyframes fox-tail-swish{0%,100%{transform:rotate(0)}35%{transform:rotate(-15deg)}70%{transform:rotate(10deg)}}
+@media(prefers-reduced-motion:reduce){.kt-fox-mascot-working .kt-fox-mascot-tail{animation:none}}
