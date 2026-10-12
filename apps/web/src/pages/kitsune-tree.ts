@@ -1,3 +1,4 @@
+import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
 import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el } from "../dom";
@@ -5,7 +6,7 @@ import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect";
+export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -52,10 +53,34 @@ export function kitsuneTreePage():HTMLElement {
  controls.prepend(tabs);
  const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
+   if(mode==="history"||mode==="versions"){
+     const history=persistedHistory?.history??[];
+     const list=el("div",{cls:"kt-graph"});
+     if(mode==="history"){
+       for(const event of evolutionChronology(history)){
+         if(!(event.description+" "+event.version).toLowerCase().includes(filter))continue;
+         list.append(el("article",{cls:"kt-node"},el("strong",{textContent:event.kind==="install"?"Установка":event.kind==="rollback"?"Откат":"Событие"}),
+           el("small",{textContent:event.at+" · "+event.version.slice(0,12)}),el("p",{textContent:event.description})));
+       }
+     }else{
+       for(const item of traceCapabilities(nodesOf(),persistedHistory?.activeVersion??"",history)){
+         if(!item.title.toLowerCase().includes(filter))continue;
+         const card=el("article",{cls:"kt-node"},el("strong",{textContent:item.title}),
+           el("small",{textContent:item.origin?"PR #"+item.origin.pr+" · "+item.origin.sha.slice(0,12):"Нет точного SHA"}),
+           el("p",{textContent:item.installation==="current"?"Совпадает с активным SHA":item.installation==="recorded"?"SHA есть в журнале":"Наличие способности в установленной версии не подтверждено"}));
+         if(item.origin)card.append(el("a",{textContent:"Исходный PR",attrs:{href:"https://github.com/Aspksa/JUUNIBI/pull/"+item.origin.pr,target:"_blank",rel:"noopener noreferrer"}}));
+         list.append(card);
+       }
+     }
+     if(!list.childNodes.length)list.append(el("p",{textContent:"Нет подтверждённых записей."}));
+     body.replaceChildren(list,el("aside",{cls:"kt-detail"},el("h2",{textContent:mode==="history"?"Хронология обновлений":"Происхождение возможностей"}),
+       el("p",{textContent:"Данные подтверждаются журналом Центра обновлений и точным SHA релиза. Совпадение названия не означает подтверждённую установку."})));
+     status.textContent=mode==="history"?"История установок и откатов":"Происхождение ветвей по SHA и PR";return;
+   }
    if(mode==="updates"){
      status.textContent=updatesLoading?"Загружаю историю Центра обновлений…":
        "История установок и текущая версия из Центра обновлений";
@@ -82,7 +107,19 @@ export function kitsuneTreePage():HTMLElement {
      const advice=recommendEvolution({schemaVersion:1,project:"JUUNIBI",nodes:allNodes});
      const adviceHost=el("div",{cls:"kt-graph"});
      adviceHost.append(el("p",{cls:"muted",textContent:"Правила зависимостей, не генеративный ИИ. Предложения не изменяют проект автоматически."}));
-     for(const row of advice)adviceHost.append(el("article",{cls:"kt-node"},el("strong",{textContent:row.title}),el("p",{textContent:row.explanation}),el("small",{textContent:row.ready?"Зависимости готовы":"Есть блокирующие зависимости"})));
+     for(const row of advice){
+       const node=allNodes.find(n=>n.id===row.nodeId)!;
+       const prompt=architecturePrompt(node,allNodes);
+       const button=el("button",{textContent:"Подготовить запрос Brain",attrs:{type:"button"}});
+       button.addEventListener("click",()=>{
+         const panel=el("textarea",{attrs:{readonly:"true","aria-label":"Запрос для анализа Brain"},textContent:prompt});
+         const copy=el("button",{textContent:"Скопировать"});
+         copy.addEventListener("click",()=>{void navigator.clipboard?.writeText(prompt).then(()=>{copy.textContent="Скопировано";});});
+         button.replaceWith(panel,copy);
+       });
+       adviceHost.append(el("article",{cls:"kt-node"},el("strong",{textContent:row.title}),
+         el("p",{textContent:row.explanation}),el("small",{textContent:row.ready?"Зависимости готовы":"Есть блокирующие зависимости"}),button));
+     }
      body.replaceChildren(adviceHost,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Архитектор развития"}),el("p",{textContent:"Анализирует реальные связи манифеста, показывает блокировки и будущие этапы. Для фактической реализации потребуется отдельное подтверждение."})));
      status.textContent=advice.length+" направлений для развития";return;
    }

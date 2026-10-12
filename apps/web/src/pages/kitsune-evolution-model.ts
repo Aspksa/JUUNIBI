@@ -1,5 +1,5 @@
 export interface EvolutionNode {
- id:string;title:string;description:string;how:string;status:"implemented"|"planned";dependsOn:string[];stage:number;evidence?:string;
+ id:string;title:string;description:string;how:string;status:"implemented"|"planned";dependsOn:string[];stage:number;evidence?:string;introducedIn?:{sha:string;pr:number};
 }
 export interface EvolutionManifest {schemaVersion:number;project:string;nodes:EvolutionNode[]}
 export interface EvolutionSnapshot {
@@ -19,6 +19,7 @@ export function validateEvolutionManifest(raw:unknown):EvolutionManifest {
      typeof node.how!=="string"||!["planned","implemented"].includes(node.status)||
      !Array.isArray(node.dependsOn)||!Number.isInteger(node.stage)||node.stage<0||node.stage>100)
      throw new Error("Недопустимая ветвь");
+   if(node.introducedIn && (!/^[0-9a-f]{40}$/.test(node.introducedIn.sha)||!Number.isInteger(node.introducedIn.pr)||node.introducedIn.pr<1))throw new Error("Некорректное происхождение ветви");
    ids.add(node.id);
  }
  for(const node of obj.nodes)if(node.dependsOn.some(id=>!ids.has(id)||id===node.id))
