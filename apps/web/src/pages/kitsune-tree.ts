@@ -153,7 +153,9 @@ export function kitsuneTreePage():HTMLElement {
            el("p",{textContent:m.description}),
            el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
            open
-         );cards.append(article);
+         );
+         if(plotted){const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("viewBox","0 0 150 34");svg.setAttribute("class","kt-fox-spark");svg.setAttribute("role","img");svg.setAttribute("aria-label","Динамика по подтверждённым измерениям");const line=document.createElementNS("http://www.w3.org/2000/svg","polyline");line.setAttribute("points",plotted);line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");svg.append(line);article.insertBefore(svg,open);}
+         cards.append(article);
        }
        if(!displayed.length)cards.append(el("p",{cls:"kt-empty",textContent:"Здесь пока нет подходящих показателей. Измени мир, поиск или избранное."}));
      };
