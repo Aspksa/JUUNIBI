@@ -1,3 +1,4 @@
+import {synchronizeFoxHistory,type FoxHourly} from "./kitsune-fox-server";
 import {foxMotion,foxChangedMetrics,foxVerifiedReadings} from "./kitsune-fox-motion";
 import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,safeForestEvents,type ForestEvent} from "./kitsune-fox-life";
 import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
@@ -62,7 +63,8 @@ export function kitsuneTreePage():HTMLElement {
  let foxLive:FoxLive={};
  let foxLoading=true;
  let foxReaction="";
- let foxPeriod:7|30=7;
+ let foxPeriod:1|7|30|90=7;
+ let foxHourly:FoxHourly={};
  let foxHistory:FoxHistory=readHistory();
  let foxFavoriteSort=false;
  let foxEvents:ForestEvent[]=[];
@@ -129,8 +131,8 @@ export function kitsuneTreePage():HTMLElement {
      FOX_WORLDS.forEach((x,i)=>world.append(el("option",{textContent:x.emoji+" "+x.title,attrs:{value:String(i)}})));
      world.value=String(foxWorld);
      const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
-     const period=el("button",{textContent:foxPeriod+" дней"});
-     period.addEventListener("click",()=>{foxPeriod=foxPeriod===7?30:7;period.textContent=foxPeriod+" дней";paint();});
+     const period=el("button",{textContent:foxPeriod===1?"24 часа":foxPeriod+" дней"});
+     period.addEventListener("click",()=>{foxPeriod=foxPeriod===1?7:foxPeriod===7?30:foxPeriod===30?90:1;period.textContent=foxPeriod===1?"24 часа":foxPeriod+" дней";paint();});
      const reload=el("button",{textContent:"↻ Обновить"});
      reload.addEventListener("click",()=>{reload.disabled=true;foxLoading=true;void loadFox().finally(()=>{reload.disabled=false;});});
      const first=el("button",{textContent:"★ Любимые сверху"});
