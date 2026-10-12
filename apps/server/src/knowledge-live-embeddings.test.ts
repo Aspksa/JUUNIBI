@@ -20,6 +20,7 @@ describe("live knowledge embeddings", () => {
       const lexical = await ledger.semanticSearch("память");
       expect(lexical.searchMode).toBe("lexical");
       expect(lexical.items).toHaveLength(1);
+      await ledger.flush();
     } finally { await rm(dir, {recursive:true,force:true}); }
   });
 });
