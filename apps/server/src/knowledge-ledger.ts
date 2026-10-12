@@ -37,6 +37,7 @@ const validKnowledge = (value: unknown): value is VerifiedKnowledge => {
 export class KnowledgeLedger {
   private items: VerifiedKnowledge[] = [];
   private writes: Promise<void> = Promise.resolve();
+  private embeddingProvider: EmbeddingProvider | undefined;
   constructor(private readonly filename: string) {}
   async load() {
     try {
@@ -55,7 +56,8 @@ export class KnowledgeLedger {
   /** Explainable, unverified edge suggestions around a verified knowledge record. */
   neighbors(id: string, limit = 12) { return exploreKnowledgeNeighbors(this.list(), id, limit); }
   /** Optional meaning-aware ranking, with verified-only lexical fallback. */
-  semanticSearch(query: string, provider?: EmbeddingProvider, limit = 10) { return searchKnowledgeSemantic(this.list(), query, provider, limit); }
+  setEmbeddingProvider(provider?: EmbeddingProvider) { this.embeddingProvider = provider; }
+  semanticSearch(query: string, provider?: EmbeddingProvider, limit = 10) { return searchKnowledgeSemantic(this.list(), query, provider ?? this.embeddingProvider, limit); }
   /** Unverified topical suggestions, never factual or causal claims. */
   suggestedLinks() {
     const entries=this.items.filter(x=>x.status==="verified");
