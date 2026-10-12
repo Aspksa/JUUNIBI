@@ -158,12 +158,14 @@ export function kitsuneTreePage():HTMLElement {
            try{localStorage.setItem(favoritesKey,JSON.stringify([...foxFavorites]));}catch{/* Private storage disabled */}
            paint();
          });
-         const delta=metricDelta(foxHistory[m.id]??[],foxPeriod);
-         const label=delta===null?"История накапливается":(delta>0?"+":"")+delta+" за "+foxPeriod+" дней";
+         const hourly=foxHourly[m.id]??[];
+         const delta=foxPeriod===1?(hourly.length>=2?hourly[hourly.length-1]!.value-hourly[0]!.value:null):metricDelta(foxHistory[m.id]??[],foxPeriod);
+         const label=delta===null?"История накапливается":(delta>0?"+":"")+delta+" за "+(foxPeriod===1?"24 часа":foxPeriod+" дней");
          const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
          open.disabled=m.value===null;
          open.addEventListener("click",()=>{mode=m.target;render();});
-         const plotted=sparkPoints(foxHistory[m.id]??[]);
+         const chartPoints=foxPeriod===1?hourly.map(x=>({day:x.hour,value:x.value})):(foxHistory[m.id]??[]).filter(x=>Date.parse(x.day+"T00:00:00Z")>=Date.now()-(foxPeriod-1)*86400000);
+         const plotted=sparkPoints(chartPoints);
          article.append(
            el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
            el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
