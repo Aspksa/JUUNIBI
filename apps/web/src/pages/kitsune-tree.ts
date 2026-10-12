@@ -504,6 +504,14 @@ export function kitsuneTreePage():HTMLElement {
    foxKnownNumbers=foxVerifiedReadings(fresh);
    foxHistory=recordMetrics(foxHistory,foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive}),new Date().toISOString().slice(0,10));
    saveHistory(foxHistory);
+   void synchronizeFoxHistory(fresh,foxEvents).then(record=>{
+     if(!record)return;
+     foxHistory={...foxHistory,...record.daily};
+     foxHourly=record.hourly;
+     foxEvents=mergeForestEvents(foxEvents,record.events);
+     saveHistory(foxHistory);
+     if(mode==="fox")render();
+   });
    if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
  void loadFox();
