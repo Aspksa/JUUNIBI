@@ -2,7 +2,7 @@ import { inspectCognitiveEngine, type StrategyProposal } from "./brain-cognitive
 import type { BrainPlan } from "./brain";
 import type { DecisionRecord } from "./decision-memory";
 
-/** Held-out fixtures assess ranking changes; never grants execution permission. */
+/** Fixed labelled fixtures assess ranking changes; never grants execution permission. */
 interface CalibrationCase {
   id:string; goal:string; strategies:StrategyProposal[];
   history:DecisionRecord[]; expected:string;
