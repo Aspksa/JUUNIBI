@@ -5,7 +5,7 @@ describe("Fox Commotion 4 real-event systems",()=>{
  const metrics=foxMetrics({nodes:[],snapshot:null,growth:[]});
  it("awards are locked until verified sources report their conditions",()=>{
   const awards=forestAwards(metrics,{});
-  expect(awards).toHaveLength(10);
+  expect(awards).toHaveLength(100);
   expect(awards.every(a=>!a.earned)).toBe(true);
   expect(forestStory([],metrics)).toContain("первые воспоминания");
  });
