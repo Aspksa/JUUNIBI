@@ -17,6 +17,7 @@ import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
 import { buildForestReport, reportSvg, saveReportPng } from "./kitsune-report";
 import { buildAtlas, countLeaves, allNodes, type AtlasInput, type AtlasNode } from "./kitsune-atlas-model";
 import { mindView, newMindState } from "./kitsune-mindmap";
+import { connectGuide } from "./kitsune-connect";
 import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
 import { api } from "../api";
@@ -633,9 +634,11 @@ export function kitsuneTreePage():HTMLElement {
    const hourly=foxHourly[m.id]??[];
    const delta=foxPeriod===1?(hourly.length>=2?hourly[hourly.length-1]!.value-hourly[0]!.value:null):metricDelta(foxHistory[m.id]??[],foxPeriod);
    const deltaLabel=delta===null?"":(delta>0?"+":"")+delta+" за "+(foxPeriod===1?"24 часа":foxPeriod+" дней");
-   const open=el("button",{type:"button",cls:"kt-fox-open",textContent:"Источник →"});
-   open.disabled=m.value===null;
-   open.addEventListener("click",()=>{onNavigate?.();mode=m.target==="architecture"?"mindmap":m.target;render();});
+   const open=el("button",{type:"button",cls:"kt-fox-open",textContent:m.value===null?"Как подключить":"Источник →"});
+   open.addEventListener("click",()=>{
+     if(m.value===null){openConnect(m);return;}
+     onNavigate?.();mode=m.target==="architecture"?"mindmap":m.target;render();
+   });
    const chartPoints=foxPeriod===1?hourly.map(x=>({day:x.hour,value:x.value})):(foxHistory[m.id]??[]).filter(x=>Date.parse(x.day+"T00:00:00Z")>=Date.now()-(foxPeriod-1)*86400000);
    const plotted=sparkPoints(chartPoints);
    article.append(
@@ -649,6 +652,19 @@ export function kitsuneTreePage():HTMLElement {
      el("span",{cls:"kt-fox-chip "+(m.value===null?"off":"ok"),textContent:m.value===null?"Нет данных":"Подтверждено"}),
      open));
    return article;
+ }
+ /** Окно «Как подключить» у пустого показателя: что нужно сделать и куда перейти. */
+ function openConnect(m:FoxMetric){
+   const guide=connectGuide(m.source);
+   const go=guide.route?el("button",{type:"button",cls:"kt-chip is-strong",textContent:guide.routeLabel??"Открыть"}):null;
+   const content=el("div",{cls:"kt-node-sheet"},
+     el("p",{textContent:m.description}),
+     el("div",{cls:"kt-sheet-block"},el("h4",{textContent:"Источник"}),el("p",{textContent:m.source})),
+     el("div",{cls:"kt-sheet-block"},el("h4",{textContent:"Что сделать"}),el("ol",{cls:"kt-connect-steps"},...guide.steps.map(s=>el("li",{textContent:s})))),
+     el("p",{cls:"muted",textContent:"Пока источник не подтвердит значение, показатель честно остаётся пустым: мы ничего не выдумываем."}),
+     go?el("div",{cls:"kt-chip-row"},go):null);
+   const sheet=openSheet({title:m.name,icon:"link",sub:"Нет данных · "+(FOX_WORLDS[m.world]?.title??""),tone:"off",content});
+   go?.addEventListener("click",()=>{sheet.close();location.hash="#/"+guide.route;});
  }
  function foxMetricsView(main:HTMLElement,metrics:FoxMetric[]){
    const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
@@ -720,12 +736,11 @@ export function kitsuneTreePage():HTMLElement {
    const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
    const medals=medalItems(metrics,foxHistory);
    const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лес"}});
-   const back=el("button",{type:"button",cls:"kt-chip kt-back",textContent:"← К карте"});
-   back.addEventListener("click",()=>{mode="mindmap";render();});
    const head=foxView==="metrics"?["Показатели","100 показателей в 10 мирах. Каждый знает свой источник; без источника честно написано «Нет данных»."]
      :foxView==="awards"?["Награды","Награды выдаются только за подтверждённые данные. Бронза, серебро, золото и легенда показывают сложность награды; если источника нет, награда остаётся закрытой."]
      :["Ветки проекта","Обновления, правки, ошибки и продолжение — по журналу установок и последним изменениям на GitHub."];
-   main.append(el("header",{cls:"kt-map-head"},back,el("h2",{textContent:head[0]!}),el("p",{textContent:head[1]!})));
+   const shownCount=foxView==="metrics"?metrics.filter(x=>x.value!==null).length+" из "+metrics.length:foxView==="awards"?medals.filter(m=>m.earned).length+" из "+medals.length:"";
+   main.append(sectionHead("fox",shownCount),el("p",{cls:"km-lead muted",textContent:head[1]!}));
    if(foxView==="metrics")foxMetricsView(main,metrics);
    else if(foxView==="awards")main.append(awardShelf(medals,shelfState));
    else foxBranchesView(main);

@@ -620,3 +620,7 @@
 .kt-fox-value{background:linear-gradient(135deg,var(--fg),hsl(var(--wh,140) 70% 62%));-webkit-background-clip:text;background-clip:text;color:transparent}
 .kt-fox-card.is-empty .kt-fox-value{background:none;color:var(--muted)}
 @media(prefers-reduced-motion:reduce){.kt-medal-card,.kt-fox-card{transition:none}.kt-medal-card:hover,.kt-fox-card:hover{transform:none}.kt-medal-card.tier-legend.is-earned::after{animation:none;display:none}}
+.kt-fox-main .kt-sec-head{margin-bottom:2px}
+.kt-fox-main>.km-lead{margin:0 0 12px 60px;max-width:78ch}
+.kt-connect-steps{margin:6px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;line-height:1.5}
+.kt-fox-card.is-empty .kt-fox-open{color:var(--kt-brand);font-weight:650}
