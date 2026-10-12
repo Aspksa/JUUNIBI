@@ -1,3 +1,4 @@
+import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,type ForestEvent} from "./kitsune-fox-life";
 import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
 import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
@@ -63,6 +64,9 @@ export function kitsuneTreePage():HTMLElement {
  let foxPeriod:7|30=7;
  let foxHistory:FoxHistory=readHistory();
  let foxFavoriteSort=false;
+ let foxEvents:ForestEvent[]=[];
+ let foxCompact=false;
+ let foxLastAward="";
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
@@ -124,6 +128,7 @@ export function kitsuneTreePage():HTMLElement {
      const paint=()=>{
        const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
        count.textContent="Найдено: "+displayed.length+" из 100 · Избранное: "+foxFavorites.size;
+       cards.classList.toggle("kt-fox-compact",foxCompact);
        cards.replaceChildren();
        for(const m of displayed){
          const article=el("article",{cls:"kt-fox-card"});
@@ -138,28 +143,39 @@ export function kitsuneTreePage():HTMLElement {
          const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
          open.disabled=m.value===null;
          open.addEventListener("click",()=>{mode=m.target;render();});
+         const plotted=sparkPoints(foxHistory[m.id]??[]);
          article.append(
            el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
            el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
            el("h3",{textContent:m.name}),
            el("small",{cls:"kt-fox-delta",textContent:label}),
+           el("small",{textContent:plotted?"График: "+(foxHistory[m.id]?.length??0)+" дней":"График появится после двух измерений"}),
            el("p",{textContent:m.description}),
            el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
            open
-         );cards.append(article);
+         );
+         if(plotted){const svg=document.createElementNS("http://www.w3.org/2000/svg","svg");svg.setAttribute("viewBox","0 0 150 34");svg.setAttribute("class","kt-fox-spark");svg.setAttribute("role","img");svg.setAttribute("aria-label","Динамика по подтверждённым измерениям");const line=document.createElementNS("http://www.w3.org/2000/svg","polyline");line.setAttribute("points",plotted);line.setAttribute("fill","none");line.setAttribute("stroke","currentColor");line.setAttribute("stroke-width","2");svg.append(line);article.insertBefore(svg,open);}
+         cards.append(article);
        }
        if(!displayed.length)cards.append(el("p",{cls:"kt-empty",textContent:"Здесь пока нет подходящих показателей. Измени мир, поиск или избранное."}));
      };
      search.addEventListener("input",()=>{foxSearch=search.value;paint();});
      world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
      favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
-     view.append(search,world,favoritesToggle,period);
+     const compact=el("button",{textContent:foxCompact?"▦ Карточки":"☷ Компактно"});
+     compact.addEventListener("click",()=>{foxCompact=!foxCompact;compact.textContent=foxCompact?"▦ Карточки":"☷ Компактно";paint();});
+     view.append(search,world,favoritesToggle,period,compact);
      main.append(view,count,cards);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
        el("h2",{textContent:"Как живёт лес"}),
        el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён."}),
        el("p",{textContent:"Избранные карточки сохраняются только в этом браузере. Никакие действия с проектом не выполняются."}));
+     const awards=forestAwards(metrics,foxHistory);
+     side.append(el("h3",{textContent:"🏆 Награды: "+awards.filter(a=>a.earned).length+" из "+awards.length}));
+     for(const award of awards)side.append(el("p",{cls:award.earned?"kt-fox-earned":"kt-fox-locked",textContent:award.emoji+" "+award.title+" · "+(award.earned?"Открыто":award.detail)}));
+     side.append(el("h3",{textContent:"📖 Лесной дневник"}),el("p",{textContent:forestStory(foxEvents,metrics)}));
+     for(const event of foxEvents.slice(-8).reverse())side.append(el("p",{cls:"kt-fox-diary",textContent:event.day+" · "+forestEffects(event.kind)+" · "+event.title}));
      const availability=metrics.filter(x=>x.value!==null).length;
      side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
@@ -402,6 +418,8 @@ export function kitsuneTreePage():HTMLElement {
    const latest=growth.find(x=>x.kind==="new"||x.kind==="rollback"||x.kind==="installed");
    foxReaction=latest?latest.kind==="rollback"?"🦊 Уф! Лес вернулся к прежней версии. Всё под контролем.":latest.kind==="new"?"🌱 Ой, лапки! У нас появилась новая веточка: "+latest.title:"✨ Обновление установлено — проверим, что изменилось!":"";
    growth=growthEvents(snapshot);
+   const dailyEvents:ForestEvent[]=growth.map(item=>({id:item.id,day:new Date().toISOString().slice(0,10),kind:item.kind==="new"?"growth":item.kind==="rollback"?"recovery":item.kind==="removed"?"warning":"update",title:item.title,detail:item.detail}));
+   foxEvents=mergeForestEvents(foxEvents,dailyEvents);
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
    if(growth.length&&playedEvent!==eventKey){
      playedEvent=eventKey;

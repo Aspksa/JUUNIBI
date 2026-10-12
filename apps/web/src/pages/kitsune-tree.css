@@ -99,3 +99,16 @@
 .kt-fox-reaction{margin:0 10px 15px;padding:12px 15px;border:1px solid color-mix(in srgb,var(--accent,#866bbd) 24%,transparent);border-radius:14px;background:color-mix(in srgb,var(--accent,#866bbd) 9%,transparent);line-height:1.5;font-size:13px}
 
 .kt-fox-delta{font-variant-numeric:tabular-nums;color:var(--accent,#866bbd)}
+
+/* Fox Commotion 4: dense, lightweight, motion-safe dashboards */
+.kt-fox-compact{grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:8px}
+.kt-fox-compact .kt-fox-card{padding:9px;gap:4px}
+.kt-fox-compact .kt-fox-card p,.kt-fox-compact .kt-fox-card .kt-fox-open{display:none}
+.kt-fox-compact .kt-fox-value{font-size:22px}
+.kt-fox-spark{width:100%;height:34px;color:var(--accent,#866bbd);display:block;opacity:.88;overflow:visible}
+.kt-fox-earned{font-size:12px;border-radius:9px;padding:8px;background:color-mix(in srgb,var(--accent,#866bbd) 12%,transparent)}
+.kt-fox-locked{font-size:12px;opacity:.65}
+.kt-fox-diary{font-size:12px;line-height:1.5;border-left:2px solid var(--accent,#866bbd);padding:5px 10px}
+.kt-fox-card:has(.kt-fox-spark){animation:kt-fox-card-arrive .34s ease-out both}
+@keyframes kt-fox-card-arrive{from{opacity:.6;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.kt-fox-card:has(.kt-fox-spark){animation:none}}
