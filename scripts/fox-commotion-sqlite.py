@@ -73,7 +73,7 @@ def run(db_path, request):
 
 if __name__ == "__main__":
     try:
-        print(json.dumps(run(sys.argv[1], json.load(sys.stdin)), ensure_ascii=True))
+        print(json.dumps(run(sys.argv[1], json.loads(sys.stdin.buffer.read().decode("utf-8"))), ensure_ascii=True))
     except (ValueError, TypeError, sqlite3.Error, OSError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
