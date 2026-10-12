@@ -117,6 +117,8 @@ export function kitsuneTreePage():HTMLElement {
      FOX_WORLDS.forEach((x,i)=>world.append(el("option",{textContent:x.emoji+" "+x.title,attrs:{value:String(i)}})));
      world.value=String(foxWorld);
      const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
+     const period=el("button",{textContent:foxPeriod+" дней"});
+     period.addEventListener("click",()=>{foxPeriod=foxPeriod===7?30:7;period.textContent=foxPeriod+" дней";paint();});
      const cards=el("div",{cls:"kt-fox-grid"});
      const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
      const paint=()=>{
