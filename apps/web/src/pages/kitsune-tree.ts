@@ -1,3 +1,4 @@
+import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,type ForestEvent} from "./kitsune-fox-life";
 import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
 import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
@@ -63,6 +64,9 @@ export function kitsuneTreePage():HTMLElement {
  let foxPeriod:7|30=7;
  let foxHistory:FoxHistory=readHistory();
  let foxFavoriteSort=false;
+ let foxEvents:ForestEvent[]=[];
+ let foxCompact=false;
+ let foxLastAward="";
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
