@@ -187,30 +187,7 @@
 
 /* the tree picture */
 .kt-map-art{padding:14px 10px 10px;border:1px solid var(--kt-line);border-radius:22px;background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,var(--kt-brand) 9%,transparent),transparent 62%),var(--surface)}
-.kta-wrap{width:100%;display:flex;justify-content:center}
 .kta{width:100%;max-width:720px;height:auto;max-height:78vh;display:block}
-.kta-ground{fill:color-mix(in srgb,var(--kt-brand) 12%,transparent)}
-.kta-trunk{fill:color-mix(in srgb,var(--kt-brand) 34%,var(--surface-2))}
-.kta-root{stroke:color-mix(in srgb,var(--kt-brand) 34%,var(--surface-2));stroke-width:5;stroke-linecap:round}
-.kta-edge{stroke:color-mix(in srgb,var(--fg) 30%,transparent);stroke-width:2.2;stroke-linecap:round}
-.kta-edge.planned{stroke-dasharray:4 6;opacity:.65}
-.kta-edge.active{stroke:var(--kt-brand);stroke-width:3;opacity:1}
-.kta-node{cursor:pointer;outline:none}
-.kta-hit{fill:transparent}
-.kta-ring{fill:var(--bg);stroke:var(--kt-line);stroke-width:1.5;transition:stroke .15s}
-.kta-node:hover .kta-ring{stroke:var(--kt-brand)}
-.kta-node.ok .kta-ring{stroke:color-mix(in srgb,var(--kt-brand) 60%,var(--kt-line))}
-.kta-node.selected .kta-ring{stroke:var(--kt-brand);stroke-width:3}
-.kta-node.fresh .kta-ring{stroke:var(--kt-ok);stroke-width:3}
-.kta-node:focus-visible .kta-ring{stroke:var(--fg);stroke-width:3.5}
-.kta-leaf{fill:var(--kt-brand);stroke:color-mix(in srgb,var(--kt-brand) 60%,#000);stroke-width:1}
-.kta-node.planned .kta-leaf{fill:none;stroke:var(--muted);stroke-width:1.6;stroke-dasharray:3 3}
-.kta-label{fill:var(--fg);font-size:13px;font-weight:600;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}
-.kta-node.planned .kta-label{fill:var(--muted);font-weight:500}
-.kta-legend{list-style:none;display:flex;flex-wrap:wrap;justify-content:center;gap:16px;margin:6px 0 2px;padding:0;font-size:.8rem;color:var(--muted)}
-.kta-legend li{display:inline-flex;align-items:center;gap:7px}
-.kta-legend .lg{width:14px;height:14px;border-radius:50% 0 50% 0;display:inline-block;transform:rotate(45deg)}
-.kta-legend .lg.ok{background:var(--kt-brand)}.kta-legend .lg.planned{border:1.5px dashed var(--muted)}.kta-legend .lg.fresh{background:var(--kt-ok)}
 
 /* the fox, still */
 .kt-companion{display:flex;align-items:center;gap:14px;padding:12px 16px;border:1px solid var(--kt-line);border-radius:18px;background:var(--surface);--kc:var(--kt-ok);margin-bottom:12px}
@@ -347,31 +324,8 @@
 .kt-map-head p{margin:0;max-width:76ch;color:var(--muted);font-size:.9rem;line-height:1.5}
 .kt-back{align-self:flex-start;margin-bottom:6px}
 .kta{max-width:880px;max-height:82vh}
-.kta-canopy{fill:color-mix(in srgb,var(--kt-brand) 6%,transparent);stroke:color-mix(in srgb,var(--kt-brand) 18%,transparent);stroke-dasharray:3 7}
-.kta-bush{cursor:pointer;outline:none}
-.kta-bush-face{fill:var(--bg);stroke:var(--kt-line);stroke-width:1.5}
-.kta-bush.part .kta-bush-face{fill:color-mix(in srgb,var(--kt-ok) 12%,var(--bg))}
-.kta-bush.full .kta-bush-face{fill:color-mix(in srgb,var(--kt-ok) 24%,var(--bg))}
-.kta-bush.empty .kta-bush-face{fill:var(--surface-2)}
-.kta-bush-ring{stroke:var(--kt-ok);stroke-width:3.2;stroke-linecap:round}
-.kta-bush.empty .kta-bush-glyph{opacity:.4;filter:grayscale(1)}
-.kta-bush-glyph{font-size:20px}
-.kta-bush-count{fill:var(--muted);font-size:11px;font-weight:650;font-variant-numeric:tabular-nums}
-.kta-bush:hover .kta-bush-face{stroke:var(--kt-brand)}
-.kta-bush:focus-visible .kta-bush-face{stroke:var(--fg);stroke-width:3}
-.kta-bush.full .kta-bush-count{fill:var(--kt-ok)}
-.kta-legend .lg.bush{border-radius:50%;background:color-mix(in srgb,var(--kt-ok) 30%,var(--bg));border:1.5px solid var(--kt-ok);transform:none}
-.kta-band{stroke:var(--kt-line);stroke-dasharray:2 6}
-.kta-band-label{fill:var(--muted);font-size:11px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
-.kta-deg{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .layer-links .kta-edge{stroke:color-mix(in srgb,var(--fg) 46%,transparent);stroke-width:2.6}
-.kta-edge.dim{opacity:.18}
-.kta-node.dim{opacity:.32}
-.kta-node.source .kta-ring{stroke:var(--kt-brand);stroke-width:4}
-.kta-node.affected .kta-ring{stroke:var(--danger,#f87171);stroke-width:3}
-.kta-node.affected .kta-leaf{fill:var(--danger,#f87171);stroke:color-mix(in srgb,var(--danger,#f87171) 60%,#000)}
 .layer-impact .kta-edge.active{stroke:var(--danger,#f87171);stroke-width:3.2;opacity:1}
-.kta-badge{fill:var(--danger,#f87171)}.kta-badge-text{fill:#fff;font-size:12px;font-weight:700}
 .kt-impact{padding:16px 18px;border:1px solid color-mix(in srgb,var(--danger,#f87171) 35%,var(--kt-line));border-radius:20px;background:var(--surface)}
 .kt-impact h3{margin:0 0 10px;font-size:1rem}
 .kt-impact-list{list-style:none;margin:0 0 10px;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
@@ -431,52 +385,10 @@
 .ka-clan:focus-visible{outline:2px solid var(--kt-brand);outline-offset:2px}
 .ka-stage{border:1px solid var(--kt-line);border-radius:24px;overflow:hidden;background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,#2a9d8f 20%,transparent),transparent 62%),color-mix(in srgb,var(--surface) 86%,#2a6f6a)}
 .ka-hint{margin:0;font-size:.8rem}
-.ka{display:block;width:100%;height:min(78vh,880px);min-height:520px;cursor:grab;touch-action:none;outline:none;user-select:none}
 .ka.is-drag{cursor:grabbing}
 .ka:focus-visible{box-shadow:inset 0 0 0 2px var(--kt-brand)}
-.ka-ground{fill:color-mix(in srgb,#8a6a3a 28%,transparent)}
-.ka-trunk{fill:hsl(28 30% 46%)}
-.ka-roots{stroke:hsl(28 30% 46%);stroke-width:12;stroke-linecap:round}
-.ka-edge{stroke:var(--c);stroke-linecap:round;opacity:.9}
-.ka-spoke{stroke:var(--c);stroke-width:1.4;opacity:.55}
-.ka-edge.is-dim,.ka-spoke.is-dim{opacity:.1}
-.ka-node{cursor:pointer;outline:none}
-.ka-hit{fill:transparent}
-.ka-disc{fill:color-mix(in srgb,var(--c) 30%,var(--bg));stroke:var(--c);stroke-width:2}
-.ka-node.trunk .ka-disc{fill:hsl(28 36% 40%);stroke:hsl(28 40% 62%);stroke-width:4}
-.ka-node.branch .ka-disc{fill:color-mix(in srgb,var(--c) 45%,var(--bg));stroke-width:3.4}
-.ka-node.leaf .ka-disc{stroke-width:1.6}
-.ka-node.st-planned .ka-disc{fill:transparent;stroke-dasharray:3 3}
-.ka-node.st-empty .ka-disc{fill:var(--surface-2);stroke:color-mix(in srgb,var(--muted) 55%,transparent)}
-.ka-node.st-bad .ka-disc{stroke:var(--danger,#f87171);fill:color-mix(in srgb,var(--danger,#f87171) 22%,var(--bg))}
-.ka-node.st-info .ka-disc{fill:color-mix(in srgb,var(--c) 14%,var(--bg))}
-.ka-node.st-empty .ka-glyph{opacity:.4;filter:grayscale(1)}
-.ka-label{fill:var(--fg);font-size:calc(11px*var(--ls,1));font-weight:650;paint-order:stroke;stroke:color-mix(in srgb,var(--surface) 80%,#0f2b2c);stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
-.ka-node.trunk .ka-label{font-size:calc(20px*var(--ls,1));font-weight:800;letter-spacing:.06em}
-.ka-node.branch .ka-label{font-size:calc(14px*var(--ls,1));font-weight:750;stroke-width:calc(3.5px*var(--ls,1))}
-.ka-node:hover .ka-disc,.ka-node:focus-visible .ka-disc{stroke:var(--fg);stroke-width:3}
-.ka-node.is-hit .ka-disc{r:18px;stroke:var(--kt-brand);stroke-width:5;fill:color-mix(in srgb,var(--kt-brand) 40%,var(--bg))}
-.ka-node.is-dim{opacity:.18}
 /* уровни детализации: издалека — ветви и хабы, ближе — листья, вплотную — подписи листьев */
-.ka.z-far .ka-node.leaf .ka-glyph,.ka.z-far .ka-node.leaf .ka-label,.ka.z-far .ka-node.hub .ka-label{display:none}
-.ka.z-mid .ka-node.leaf .ka-label{display:none}
-.ka-node.hub .ka-label{font-size:calc(11px*min(var(--ls,1),1.5));stroke-width:3px}
-.ka-node.leaf .ka-label{font-size:calc(9.5px*min(var(--ls,1),1.2))}
-.ka.z-far .ka-node.leaf .ka-disc{r:6}
-.ka-list{display:flex;flex-direction:column;gap:8px;padding:12px;max-height:80vh;overflow:auto}
-.ka-list-branch{border:1px solid var(--kt-line);border-radius:16px;background:var(--surface);padding:6px 12px}
-.ka-list-branch summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0}
-.ka-list-branch summary i{width:14px;height:14px;border-radius:50%;background:var(--c)}
-.ka-list-row{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:2px 0}
-.ka-list-item{padding:4px 10px;border:1px solid var(--kt-line);border-radius:999px;background:var(--bg);color:var(--fg);cursor:pointer;font-size:.85rem}
-.ka-list-leaves{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
-.ka-list-leaf{padding:3px 9px;border:1px solid color-mix(in srgb,var(--c,var(--kt-line)) 55%,var(--kt-line));border-radius:999px;background:var(--surface);color:var(--fg);cursor:pointer;font-size:.78rem}
-.ka-list-leaf.st-empty{color:var(--muted)}
-.ka-list-item:focus-visible,.ka-list-leaf:focus-visible{outline:2px solid var(--kt-brand);outline-offset:2px}
-.ka-wrap.is-list .ka-stage{background:transparent;border:0}
 @media(max-width:700px){.ka{height:68vh;min-height:420px}}
-.ka .ka-node.is-hit .ka-disc{r:22px;filter:drop-shadow(0 0 8px var(--kt-brand))}
-.ka .ka-node.is-hit .ka-label{display:block}
 
 /* ───── Карта-схема (интеллект-карта) ───── */
 .km-stage{background:radial-gradient(ellipse at 0% 50%,color-mix(in srgb,#e8a33d 14%,transparent),transparent 55%),radial-gradient(ellipse at 100% 0%,color-mix(in srgb,#6b8fe0 12%,transparent),transparent 50%),color-mix(in srgb,var(--surface) 90%,#1f2a44)}
@@ -527,3 +439,20 @@
 @keyframes km-pulse{50%{filter:drop-shadow(0 0 12px var(--kt-brand))}}
 @media(prefers-reduced-motion:reduce){.km-link,.km-node,.km-chev-mark,.km-badge{transition:none}.km-link.is-new,.km-node.is-new,.km-node.is-hit .km-body,.km-dep,.km.has-focus .km-link.on-path{animation:none}.km-link.is-new{stroke-dasharray:none;stroke-dashoffset:0}}
 @media(max-width:700px){.km{height:70vh;min-height:420px}}
+
+/* слои карты-схемы */
+.km-modes{display:flex;flex-wrap:wrap;gap:8px}
+.km-mode[aria-pressed="true"]{border-color:var(--kt-brand);background:color-mix(in srgb,var(--kt-brand) 18%,var(--surface));font-weight:700}
+.km-lead{margin:0;font-size:.86rem}
+.km-deg{fill:var(--muted);font-size:10.5px;font-weight:650;pointer-events:none}
+.km-badge-dot{fill:color-mix(in srgb,var(--kt-brand) 55%,var(--surface));stroke:var(--kt-brand);stroke-width:1.4}
+.km-badge-dot.is-step{fill:color-mix(in srgb,#f2b84b 70%,var(--surface));stroke:#f2b84b}
+.km-badge-num{fill:var(--fg);font-size:11px;font-weight:800;pointer-events:none}
+.km.mode-impact .km-node:not(.is-source):not(.in-impact){opacity:.3}
+.km.mode-impact .km-node.is-source .km-body{stroke:#f87171;stroke-width:3;filter:drop-shadow(0 0 12px #f87171)}
+.km.mode-impact .km-node.in-impact .km-body{stroke:#f2b84b;stroke-width:2.6;filter:drop-shadow(0 0 9px #f2b84b)}
+.km-deps-all .km-dep{opacity:.8}
+.km-impact{margin-top:6px}
+.km-wrap .ka-legend{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.km-wrap .ka-clan{flex:none}
+.km-wrap{gap:8px}

@@ -92,3 +92,25 @@ export function layoutMind(root:AtlasNode,expanded:Set<string>):MindLayout{
  const pad=60;
  return {boxes,links,byId,bounds:{x:minX-pad,y:minY-pad,w:maxX-minX+2*pad,h:maxY-minY+2*pad}};
 }
+
+// ───────── слои: «Связи», «Этапы», «Что сломается, если…» ─────────
+export interface DepNode{id:string;dependsOn:string[]}
+/** Расстояния от ветви до всего, что от неё зависит (в шагах). Источник не входит в результат. */
+export function downstreamDepths(nodes:DepNode[],source:string):Map<string,number>{
+ const depth=new Map<string,number>([[source,0]]);
+ const queue=[source];
+ for(let i=0;i<queue.length;i++){
+  const current=queue[i]!;
+  for(const n of nodes)if(n.dependsOn.includes(current)&&!depth.has(n.id)){depth.set(n.id,depth.get(current)!+1);queue.push(n.id);}
+ }
+ depth.delete(source);
+ return depth;
+}
+/** Сколько ветвей нужны этой (↑) и сколько зависят от неё напрямую (↓). */
+export function degrees(nodes:DepNode[]):Map<string,{up:number;down:number}>{
+ const ids=new Set(nodes.map(n=>n.id));
+ const result=new Map(nodes.map(n=>[n.id,{up:n.dependsOn.filter(d=>ids.has(d)).length,down:0}]));
+ for(const n of nodes)for(const d of n.dependsOn)if(result.has(d))result.get(d)!.down++;
+ return result;
+}
+export type MindMode="structure"|"links"|"stages"|"impact";

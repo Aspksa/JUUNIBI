@@ -1,14 +1,15 @@
 import {el} from "../dom";
 import {CLANS,allNodes,clanColor,clansInUse,searchAtlas,type AtlasNode} from "./kitsune-atlas-model";
-import {defaultExpanded,expandToDepth,layoutMind,maxDepth,pathTo,revealHits,shortLabel,type MindBox,type MindLayout} from "./kitsune-mindmap-model";
+import {defaultExpanded,degrees,downstreamDepths,expandToDepth,layoutMind,maxDepth,pathTo,revealHits,shortLabel,type MindBox,type MindLayout,type MindMode} from "./kitsune-mindmap-model";
+import {LAYER_TEXT} from "./kitsune-sections";
 
 /**
  * «Карта-схема»: интеллект-карта проекта. Ветви раскрываются вправо, путь до корня подсвечивается
  * бегущим свечением, связи манифеста («зависит от») показываются пунктиром при наведении.
  * Эффекты короткие и отключаются при «уменьшить движение».
  */
-export interface MindState{expanded:Set<string>|null;vb:[number,number,number,number]|null;query:string;clan:number|null}
-export const newMindState=():MindState=>({expanded:null,vb:null,query:"",clan:null});
+export interface MindState{expanded:Set<string>|null;vb:[number,number,number,number]|null;query:string;clan:number|null;mode:MindMode;selected:string|null}
+export const newMindState=():MindState=>({expanded:null,vb:null,query:"",clan:null,mode:"structure",selected:null});
 
 const NS="http://www.w3.org/2000/svg";
 const s=(name:string,attrs:Record<string,string|number>={},...kids:(SVGElement|string)[])=>{
@@ -18,10 +19,21 @@ const s=(name:string,attrs:Record<string,string|number>={},...kids:(SVGElement|s
  return n as SVGElement;
 };
 const MIN_ZOOM=0.3,MAX_ZOOM=3;
+
+/** Дуга зависимости от одного узла к другому: выходит сбоку, чтобы не слипаться с ветвями дерева. */
+function depCurve(a:MindBox,b:MindBox):string{
+ const down=b.y>=a.y;
+ const x1=a.x+a.w/2,y1=a.y+(down?a.h/2:-a.h/2),x2=b.x+b.w/2,y2=b.y+(down?-b.h/2:b.h/2);
+ const bend=Math.max(60,Math.abs(x2-x1)*0.4)+Math.abs(y2-y1)*0.15;
+ const f=(n:number)=>n.toFixed(1);
+ return `M${f(x1)} ${f(y1)} C${f(x1-bend)} ${f(y1)} ${f(x2-bend)} ${f(y2)} ${f(x2)} ${f(y2)}`;
+}
 export interface MindOptions{
  tree:AtlasNode;state:MindState;onOpen:(n:AtlasNode)=>void;
  /** id узла → id узлов, от которых он зависит (из манифеста) */
  deps:Record<string,string[]>;
+ /** id узла → номер этапа (для слоя «Этапы») */
+ stages:Record<string,number>;
 }
 export function mindView(o:MindOptions):HTMLElement{
  const {tree,state}=o;
@@ -49,6 +61,11 @@ export function mindView(o:MindOptions):HTMLElement{
  const els=new Map<string,SVGElement>();
  const linkEls=new Map<string,SVGElement>();
  const status=el("span",{cls:"ka-status muted",attrs:{"aria-live":"polite"}});
+ const depNodes=Object.entries(o.deps).map(([id,dependsOn])=>({id,dependsOn}));
+ const isManifest=(id:string)=>id in o.deps;
+ const deg=degrees(depNodes);
+ const gAll=s("g",{class:"km-deps-all","aria-hidden":"true"});
+ svg.insertBefore(gAll,gDeps);
 
  // ── состояние, не меняющее раскладку: фокус, поиск, клан ──
  let hits=new Set<string>();
@@ -69,11 +86,7 @@ export function mindView(o:MindOptions):HTMLElement{
   const draw=(otherId:string,incoming:boolean)=>{
    const other=layout.byId.get(otherId);
    if(!other||other===here)return;
-   const a=incoming?other:here,b=incoming?here:other;
-   const x1=a.x+a.w/2,y1=a.y+(b.y>=a.y?a.h/2:-a.h/2),x2=b.x+b.w/2,y2=b.y+(b.y>=a.y?-b.h/2:b.h/2);
-   const bend=Math.max(60,Math.abs(x2-x1)*0.4)+Math.abs(y2-y1)*0.15;
-   const d=`M${x1.toFixed(1)} ${y1.toFixed(1)} C${(x1-bend).toFixed(1)} ${y1.toFixed(1)} ${(x2-bend).toFixed(1)} ${y2.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
-   gDeps.append(s("path",{d,class:"km-dep "+(incoming?"is-in":"is-out"),fill:"none"}));
+   gDeps.append(s("path",{d:incoming?depCurve(other,here):depCurve(here,other),class:"km-dep "+(incoming?"is-in":"is-out"),fill:"none"}));
   };
   for(const d of o.deps[focusId]??[])draw(d,false);
   for(const d of dependents[focusId]??[])draw(d,true);
@@ -126,8 +139,13 @@ export function mindView(o:MindOptions):HTMLElement{
    badge.setAttribute("transform",`translate(${w+14} 0)`);
    g.append(badge);
   }
+  g.append(s("g",{class:"km-extra"}));
   g.append(s("title",{},n.label+(n.note?" — "+n.note:"")));
-  g.addEventListener("click",()=>{if(dragMoved)return;if(n.children.length&&b.depth>0)toggleNode(n);else o.onOpen(n);});
+  g.addEventListener("click",()=>{
+   if(dragMoved)return;
+   if(state.mode==="impact"&&isManifest(n.id)){selectSource(n.id);return;}
+   if(n.children.length&&b.depth>0)toggleNode(n);else o.onOpen(n);
+  });
   g.addEventListener("dblclick",ev=>{ev.preventDefault();o.onOpen(n);});
   g.addEventListener("mouseenter",()=>{focusId=n.id;paintFocus();});
   g.addEventListener("mouseleave",()=>{focusId=null;paintFocus();});
@@ -147,6 +165,89 @@ export function mindView(o:MindOptions):HTMLElement{
    const pid=parentOf.get(n.id);const sib=pid?byNode.get(pid)!.children.filter(c=>layout.byId.has(c.id)):[];
    const i=sib.findIndex(c=>c.id===n.id);move(sib[i+(k==="ArrowDown"?1:-1)]?.id);
   }
+ };
+
+ // ── слои: структура, связи, этапы, «что сломается, если…» ──
+ let impact=new Map<string,number>();
+ const impactPanel=el("section",{cls:"kt-impact km-impact",attrs:{"aria-label":"Что сломается"}});
+ const lead=el("p",{cls:"km-lead muted"});
+ const modeButtons:[MindMode,HTMLButtonElement][]=(["structure","links","stages","impact"] as MindMode[]).map(m=>{
+  const b=el("button",{type:"button",cls:"kt-chip km-mode",textContent:LAYER_TEXT[m].title,attrs:{"aria-pressed":"false"}});
+  b.addEventListener("click",()=>setMode(m));
+  return [m,b];
+ });
+ const paintMode=()=>{
+  const m=state.mode;
+  svg.classList.remove("mode-structure","mode-links","mode-stages","mode-impact");svg.classList.add("mode-"+m);
+  lead.textContent=LAYER_TEXT[m].lead;
+  for(const [k,b] of modeButtons)b.setAttribute("aria-pressed",String(k===m));
+  impact=m==="impact"&&state.selected&&isManifest(state.selected)?downstreamDepths(depNodes,state.selected):new Map();
+  gAll.replaceChildren();
+  for(const [id,g] of els){
+   const extra=g.querySelector<SVGElement>(".km-extra");
+   g.classList.toggle("is-source",m==="impact"&&state.selected===id);
+   g.classList.toggle("in-impact",m==="impact"&&impact.has(id));
+   if(!extra)continue;
+   extra.replaceChildren();
+   const b=layout.byId.get(id);
+   if(!b||!isManifest(id))continue;
+   if(m==="links"){const d=deg.get(id);if(d)extra.append(s("text",{class:"km-deg",x:b.w/2,y:b.h/2+13,"text-anchor":"middle"},`↑${d.up}  ↓${d.down}`));}
+   if(m==="stages"&&id in o.stages)extra.append(s("circle",{class:"km-badge-dot",cx:-2,cy:-b.h/2+2,r:10}),s("text",{class:"km-badge-num",x:-2,y:-b.h/2+6,"text-anchor":"middle"},String(o.stages[id])));
+   if(m==="impact"&&impact.has(id))extra.append(s("circle",{class:"km-badge-dot is-step",cx:b.w+4,cy:-b.h/2+2,r:10}),s("text",{class:"km-badge-num",x:b.w+4,y:-b.h/2+6,"text-anchor":"middle"},String(impact.get(id))));
+  }
+  if(m==="links"){
+   for(const b of layout.boxes)for(const dep of o.deps[b.node.id]??[]){
+    const to=layout.byId.get(dep);
+    if(to&&to!==b)gAll.append(s("path",{d:depCurve(b,to),class:"km-dep is-out",fill:"none"}));
+   }
+  }
+  impactPanel.hidden=m!=="impact";
+  if(m==="impact"){
+   const src=state.selected?byNode.get(state.selected):undefined;
+   const list=[...impact.entries()].map(([id,d])=>({n:byNode.get(id)!,d})).filter(x=>x.n).sort((a,b)=>a.d-b.d||a.n.label.localeCompare(b.n.label,"ru"));
+   const details=el("button",{type:"button",cls:"kt-chip",textContent:"Сведения о ветви «"+(src?.label??"")+"»"});
+   details.addEventListener("click",()=>{if(src)o.onOpen(src);});
+   impactPanel.replaceChildren(
+    el("h3",{textContent:src?`Если сломается «${src.label}»`:"Выберите ветвь"}),
+    list.length?el("ul",{cls:"kt-impact-list"},...list.map(x=>el("li",{},el("strong",{textContent:x.n.label}),el("small",{cls:"muted",textContent:(x.d===1?"зависит напрямую":"через "+x.d+" "+(x.d<5?"шага":"шагов"))+(x.n.state==="planned"?" · запланировано":"")})))):el("p",{cls:"muted",textContent:"От этой ветви пока ничего не зависит."}),
+    el("p",{cls:"muted",textContent:"Это структурный анализ карты, а не прогноз фактического сбоя."}),details);
+  }
+ };
+ /** Показать выбранные узлы целиком: масштаб подбирается так, чтобы они поместились, но не мельче читаемого. */
+ const showBoxes=(ids:string[])=>{
+  const boxes=ids.map(i=>layout.byId.get(i)).filter((b):b is MindBox=>!!b);
+  if(!boxes.length)return;
+  const r=size();
+  const minX=Math.min(...boxes.map(b=>b.x)),maxX=Math.max(...boxes.map(b=>b.x+b.w));
+  const minY=Math.min(...boxes.map(b=>b.y-b.h/2)),maxY=Math.max(...boxes.map(b=>b.y+b.h/2));
+  const w=maxX-minX+200,h=maxY-minY+140;
+  const sc=Math.max(READABLE,Math.min(r.w/w,r.h/h,1.3));
+  v.w=r.w/sc;v.h=r.h/sc;v.x=(minX+maxX)/2-v.w/2;v.y=(minY+maxY)/2-v.h/2;apply();
+ };
+ const manifestIds=Object.keys(o.deps).filter(id=>byNode.has(id));
+ /** Для слоёв модулей раскрываем всё, что связано с манифестом: показатели, награды и код остаются свёрнутыми. */
+ const expandModules=()=>{
+  for(const id of manifestIds){const n=byNode.get(id)!;if(n.children.some(c=>isManifest(c.id)))expanded.add(id);}
+  state.expanded=expanded;
+ };
+ const selectSource=(id:string)=>{
+  state.selected=id;
+  const down=downstreamDepths(depNodes,id);
+  expanded=revealHits(tree,new Set([id,...down.keys()]),expanded);state.expanded=expanded;
+  render();
+  showBoxes([id,...down.keys()]);
+ };
+ const setMode=(m:MindMode)=>{
+  state.mode=m;
+  if(m!=="structure")expandModules();
+  if(m==="impact"&&!(state.selected&&isManifest(state.selected))){
+   // по умолчанию — модуль, от которого зависит больше всего других (кроме корня)
+   const best=depNodes.filter(n=>n.id!==tree.id).map(n=>({id:n.id,k:downstreamDepths(depNodes,n.id).size})).sort((a,b)=>b.k-a.k)[0];
+   if(best){selectSource(best.id);return;}
+  }
+  render();
+  if(m!=="structure")showBoxes(manifestIds);
+  else fit();
  };
  let firstRender=true;
  const render=(anchor?:string)=>{
@@ -183,7 +284,7 @@ export function mindView(o:MindOptions):HTMLElement{
    p.style.setProperty("d",`path("${l.d}")`);
   }
   firstRender=false;
-  paintFocus();paintFilters();
+  paintFocus();paintFilters();paintMode();
   if(anchor){
    // карта не «убегает»: после раскрытия держим выбранный узел там, где он был на экране
    const was=prevPos.get(anchor),now=layout.byId.get(anchor);
@@ -286,7 +387,7 @@ export function mindView(o:MindOptions):HTMLElement{
    btn("Вся карта","Показать всю карту",fit)));
  const stage=el("div",{cls:"ka-stage km-stage"});stage.append(svg);
  const hint=el("p",{cls:"ka-hint muted",textContent:"Нажмите на ветвь — она раскроется, двойной щелчок или Enter — подробности. Наведите на узел: подсветится путь до корня, пунктир покажет связи «зависит от»."});
- const root=el("section",{cls:"ka-wrap km-wrap",attrs:{"aria-label":"Карта-схема"}},bar,status,legend,stage,hint);
+ const root=el("section",{cls:"ka-wrap km-wrap",attrs:{"aria-label":"Карта-схема"}},el("div",{cls:"km-modes",attrs:{role:"group","aria-label":"Слой карты"}},...modeButtons.map(x=>x[1])),lead,bar,status,legend,stage,impactPanel,hint);
  svg.addEventListener("keydown",ev=>{
   const k=(ev as KeyboardEvent).key;
   if(ev.target!==svg)return;

@@ -1,5 +1,6 @@
 import {describe,expect,it} from "vitest";
-import {CLANS,MAX_CODE_HUBS,MAX_LEAVES_PER_HUB,allNodes,buildAtlas,clanColor,clansInUse,clusterRadius,countLeaves,layoutAtlas,searchAtlas,type AtlasInput} from "./kitsune-atlas-model";
+import {defaultExpanded,layoutMind} from "./kitsune-mindmap-model";
+import {CLANS,MAX_CODE_HUBS,MAX_LEAVES_PER_HUB,allNodes,buildAtlas,clanColor,clansInUse,countLeaves,searchAtlas,type AtlasInput} from "./kitsune-atlas-model";
 
 const manifest=[
  {id:"core",title:"Ядро JUUNIBI",status:"implemented" as const,dependsOn:[]},
@@ -20,7 +21,7 @@ const input:AtlasInput={nodes:manifest,metrics,worlds,medals,code,
  modules:[{name:"brain",status:"started"},{name:"scenes",status:"failed"},{name:"x",status:"stopped"}],
  history:[{id:"1",kind:"install",to:"a",at:"2026-10-10",label:"10 окт."},{id:"2",kind:"rollback",to:"b",at:"2026-10-11",label:"11 окт."}]};
 
-describe("модель атласа",()=>{
+describe("модель карты-схемы",()=>{
  const tree=buildAtlas(input);
  it("корень — ствол JUUNIBI; ядро манифеста даёт ему смысл, а не лишнюю ветвь",()=>{
   expect(tree.kind).toBe("trunk");expect(tree.label).toBe("JUUNIBI");
@@ -79,7 +80,7 @@ describe("модель атласа",()=>{
  it("пустой манифест и пустые данные не ломают построение",()=>{
   const t=buildAtlas({nodes:[],metrics:[],worlds:[],medals:[]});
   expect(t.kind).toBe("trunk");expect(t.children).toEqual([]);
-  expect(layoutAtlas(t).bounds.w).toBeGreaterThan(0);
+  expect(layoutMind(t,defaultExpanded(t)).bounds.w).toBeGreaterThan(0);
  });
  it("число листьев и легенда кланов",()=>{
   expect(countLeaves(tree)).toBeGreaterThan(200);
@@ -88,59 +89,7 @@ describe("модель атласа",()=>{
   expect(clanColor(0)).toMatch(/^hsl\(/);expect(clanColor(99)).toMatch(/^hsl\(/);
  });
 });
-describe("раскладка атласа",()=>{
- const tree=buildAtlas(input);
- const lay=layoutAtlas(tree);
- it("детерминирована",()=>{
-  const again=layoutAtlas(buildAtlas(input));
-  expect([...again.placed.values()].map(p=>[p.node.id,p.x,p.y])).toEqual([...lay.placed.values()].map(p=>[p.node.id,p.x,p.y]));
-  expect(again.leaves).toEqual(lay.leaves);
- });
- it("ствол внизу в нуле, всё растёт вверх и дальше от ствола с каждым уровнем",()=>{
-  expect(lay.placed.get("root")).toMatchObject({x:0,y:0});
-  for(const p of lay.placed.values())if(p.parent){
-   expect(p.y).toBeLessThan(0);
-   const parent=lay.placed.get(p.parent)!;
-   expect(Math.hypot(p.x,p.y)).toBeGreaterThan(Math.hypot(parent.x,parent.y)-1);
-  }
- });
- it("картинка не вытянута в тонкую полосу: высота не меньше трети ширины",()=>{
-  expect(lay.bounds.h).toBeGreaterThan(lay.bounds.w/3);
- });
- it("кластеры не налезают друг на друга (кроме родителя и ребёнка)",()=>{
-  const ps=[...lay.placed.values()].slice(1);
-  let worst=Infinity;
-  for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++){
-   const a=ps[i]!,b=ps[j]!;
-   if(a.parent===b.node.id||b.parent===a.node.id)continue;
-   worst=Math.min(worst,Math.hypot(a.x-b.x,a.y-b.y)-(a.cluster+b.cluster)*0.7);
-  }
-  expect(worst).toBeGreaterThan(0);
- });
- it("у каждого листа есть позиция внутри картинки; листьев ровно столько, сколько в дереве",()=>{
-  const leafNodes=allNodes(tree).filter(n=>n.kind==="leaf");
-  expect(lay.leaves.length).toBe(leafNodes.length);
-  expect(new Set(lay.leaves.map(l=>l.id)).size).toBe(leafNodes.length);
-  const b=lay.bounds;
-  for(const l of lay.leaves){expect(l.x).toBeGreaterThanOrEqual(b.x);expect(l.x).toBeLessThanOrEqual(b.x+b.w);expect(l.y).toBeGreaterThanOrEqual(b.y);expect(l.y).toBeLessThanOrEqual(b.y+b.h);}
- });
- it("листья одного хаба не сливаются: расстояние между соседями не меньше диаметра кружка",()=>{
-  const byHub=new Map<string,typeof lay.leaves>();
-  for(const l of lay.leaves)(byHub.get(l.hub)??byHub.set(l.hub,[]).get(l.hub)!).push(l);
-  for(const list of byHub.values())for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++)
-   expect(Math.hypot(list[i]!.x-list[j]!.x,list[i]!.y-list[j]!.y)).toBeGreaterThan(14);
- });
- it("рёбра по одному на каждый хаб, без ссылок на несуществующее",()=>{
-  expect(lay.edges.length).toBe(lay.placed.size-1);
-  for(const e of lay.edges){expect(lay.placed.has(e.from)).toBe(true);expect(lay.placed.has(e.to)).toBe(true);expect(e.d).toMatch(/^M[\d. -]+C[\d. -]+$/);}
- });
- it("радиус кластера растёт с числом листьев",()=>{
-  const small=buildAtlas({...input,medals:medals.slice(0,2)}).children.find(c=>c.id==="c:awards")!.children[0]!;
-  const big=buildAtlas(input).children.find(c=>c.id==="c:awards")!.children[0]!;
-  expect(clusterRadius(big)).toBeGreaterThanOrEqual(clusterRadius(small));
- });
-});
-describe("поиск по атласу",()=>{
+describe("поиск по карте",()=>{
  const tree=buildAtlas(input);
  it("ищет по названию и пояснению без учёта регистра и ё/е",()=>{
   expect(searchAtlas(tree,"ПАМЯТЬ").has("m:memory")).toBe(true);
