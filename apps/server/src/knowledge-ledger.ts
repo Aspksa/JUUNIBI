@@ -5,6 +5,7 @@ import { analyzeMemoryV4 } from "./memory-v4-engine";
 import { diagnoseKnowledgeGraph } from "./knowledge-graph-diagnostics";
 import { exploreKnowledge, exploreKnowledgeNeighbors } from "./knowledge-graph-explorer";
 import { searchKnowledgeSemantic } from "./knowledge-semantic-search";
+import { KnowledgeVectorCache } from "./knowledge-vector-cache";
 import type { EmbeddingProvider } from "@juunibi/assistant";
 
 export interface VerifiedKnowledge {
@@ -38,7 +39,8 @@ export class KnowledgeLedger {
   private items: VerifiedKnowledge[] = [];
   private writes: Promise<void> = Promise.resolve();
   private embeddingProvider: EmbeddingProvider | undefined;
-  constructor(private readonly filename: string) {}
+  private readonly vectorCache: KnowledgeVectorCache;
+  constructor(private readonly filename: string) { this.vectorCache = new KnowledgeVectorCache(filename + ".vectors.json"); }
   async load() {
     try {
       const state: unknown = JSON.parse(await readFile(this.filename, "utf8"));
@@ -56,7 +58,9 @@ export class KnowledgeLedger {
   /** Explainable, unverified edge suggestions around a verified knowledge record. */
   neighbors(id: string, limit = 12) { return exploreKnowledgeNeighbors(this.list(), id, limit); }
   /** Optional meaning-aware ranking, with verified-only lexical fallback. */
-  setEmbeddingProvider(provider?: EmbeddingProvider) { this.embeddingProvider = provider; }
+  setEmbeddingProvider(provider?: EmbeddingProvider) {
+    this.embeddingProvider = provider ? { id: provider.id, embed: (text: string) => this.vectorCache.embed(provider, text) } : undefined;
+  }
   semanticSearch(query: string, provider?: EmbeddingProvider, limit = 10) { return searchKnowledgeSemantic(this.list(), query, provider ?? this.embeddingProvider, limit); }
   /** Unverified topical suggestions, never factual or causal claims. */
   suggestedLinks() {
@@ -133,7 +137,7 @@ export class KnowledgeLedger {
     this.save().catch(() => {});
     return { ...item };
   }
-  flush() { return this.writes; }
+  async flush() { await this.writes; await this.vectorCache.flush(); }
   private save() {
     const data = JSON.stringify(this.items);
     this.writes = this.writes.catch(() => {}).then(async () => {
