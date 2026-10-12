@@ -18,6 +18,7 @@ import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
 import { buildForestReport, reportSvg, saveReportPng } from "./kitsune-report";
 import { buildAtlas, countLeaves, allNodes, type AtlasInput, type AtlasNode } from "./kitsune-atlas-model";
 import { atlasView, newAtlasState } from "./kitsune-atlas";
+import { mindView, newMindState } from "./kitsune-mindmap";
 import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
 import { treeArt, downstreamDepths, type CrownBush } from "./kitsune-tree-art";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
@@ -58,6 +59,7 @@ export function kitsuneTreePage():HTMLElement {
  let foxView:FoxView="metrics";
  let layer:Layer="structure";
  const atlasState=newAtlasState();
+ const mindState=newMindState();
  let frameIndex=-1; // -1 = «сейчас»
  const shelfState=newShelfState();
  let releases:EvolutionRelease[]=[];
@@ -130,8 +132,9 @@ export function kitsuneTreePage():HTMLElement {
    const medals=medalItems(metrics,foxHistory);
    renderRail(metrics,medals);
    query.hidden=!SEARCHABLE.has(mode);zoom.hidden=!ZOOMABLE.has(mode);controls.hidden=query.hidden&&zoom.hidden;
-   body.classList.toggle("kt-solo",mode==="fox"||mode==="map"||mode==="atlas");
+   body.classList.toggle("kt-solo",mode==="fox"||mode==="map"||mode==="atlas"||mode==="mindmap");
    if(mode==="atlas"){renderAtlas(metrics,medals);return;}
+   if(mode==="mindmap"){renderMind(metrics,medals);return;}
    if(mode==="fox"){renderFox();return;}
    if(mode==="map"){renderMap();return;}
    if(mode==="growth"){
@@ -483,7 +486,7 @@ export function kitsuneTreePage():HTMLElement {
  }
  const ruTitleOf=(title:string,id:string)=>withRuTitle({id,title}).title;
  /** Атлас: большое дерево-плакат из реальных источников. Клик по любому кружку открывает окно по центру. */
- function renderAtlas(metrics:FoxMetric[],medals:MedalItem[]){
+ function atlasInput(metrics:FoxMetric[],medals:MedalItem[]):AtlasInput{
    const worldOf=(medal:MedalItem):string=>{
      if(medal.kind==="legendary")return medal.world;
      if(medal.kind==="featured")return "Особые награды";
@@ -500,6 +503,26 @@ export function kitsuneTreePage():HTMLElement {
      ...(foxLive.modules?{modules:foxLive.modules.map(m=>({name:m.name,...(m.title?{title:m.title}:{}),status:m.status}))}:{}),
      ...(persistedHistory?{history:persistedHistory.history.slice(0,16).map(h=>({id:h.id,kind:h.kind,to:h.to,at:h.at,label:(dateRu(h.at)||"—")+" · "+(h.kind==="install"?"установка":h.kind==="rollback"?"откат":"сбой")}))}:{}),
    };
+   return input;
+ }
+ function renderMind(metrics:FoxMetric[],medals:MedalItem[]){
+   const input=atlasInput(metrics,medals);
+   const tree=buildAtlas(input);
+   const deps:Record<string,string[]>={};
+   for(const n of input.nodes)deps["m:"+n.id]=n.dependsOn.map(d=>"m:"+d);
+   // ядро — корень дерева: у него другой идентификатор
+   const core=input.nodes.find(n=>n.id==="core");
+   const fix=(id:string)=>core&&id==="m:"+core.id?"root":id;
+   const fixed:Record<string,string[]>={};
+   for(const [k,v] of Object.entries(deps))fixed[fix(k)]=v.map(fix);
+   const open=(n:AtlasNode)=>openAtlasNode(n,metrics,medals);
+   body.replaceChildren(el("div",{cls:"kt-map"},
+     el("header",{cls:"kt-map-head"},el("h2",{textContent:"Карта-схема"}),el("p",{textContent:`Интеллект-карта проекта: корень JUUNIBI слева, ветви раскрываются вправо — ${countLeaves(tree)} реальных узлов. Только то, что есть в данных.`})),
+     mindView({tree,state:mindState,onOpen:open,deps:fixed})));
+   status.textContent="";
+ }
+ function renderAtlas(metrics:FoxMetric[],medals:MedalItem[]){
+   const input=atlasInput(metrics,medals);
    const tree=buildAtlas(input);
    const leaves=countLeaves(tree);
    const open=(n:AtlasNode)=>openAtlasNode(n,metrics,medals);
