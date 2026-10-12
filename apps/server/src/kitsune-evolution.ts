@@ -1,3 +1,4 @@
+import {discoverProject} from "./kitsune-discovery";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
@@ -12,7 +13,9 @@ export class KitsuneEvolution {
   const history=await this.updater.history();
   const activeVersion=this.updater.status().localVersion;
   const timeline=await this.sqlite({history:history.items,activeVersion,...(/^[0-9a-f]{40}$/.test(activeVersion) ? {manifest} : {})});
-  return {manifest,timeline,latest:this.updater.status().latest,phase:this.updater.status().phase};
+  const ids=(manifest as {nodes:{id:string}[]}).nodes.map(n=>n.id);
+  const discovery=await discoverProject(this.root,ids);
+  return {manifest,timeline,discovery,latest:this.updater.status().latest,phase:this.updater.status().phase};
  }
  private sqlite(payload:unknown):Promise<{history:unknown[];activeVersion:string;durable:boolean}>{
   return new Promise((resolve,reject)=>{
