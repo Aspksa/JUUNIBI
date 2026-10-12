@@ -23,6 +23,7 @@ import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMed
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 import { assessTreeHealth } from "./kitsune-tree-health";
+import { treeDevelopmentRoute } from "./kitsune-tree-routes";
 
 export type { TreeMode };
 export interface TreeNode {
@@ -457,6 +458,31 @@ export function kitsuneTreePage():HTMLElement {
      el("p",{cls:"muted",textContent:"Это диагностика манифеста, не подтверждение локальной установки. Древо ничего не меняет автоматически."}));
    openSheet({title:"Здоровье Лисьего древа",icon:"modules",tone:health.missing.length||health.cycles.length?"warn":"ok",content:panel});
  }
+ /** Development plan based on actual manifest dependencies, never executes changes. */
+ function openTreeRoute() {
+   const nodes=nodesOf(),planned=nodes.filter(x=>x.status==="planned");
+   const host=el("div",{cls:"kt-node-sheet"});
+   const select=el("select",{attrs:{"aria-label":"Целевая ветвь развития"}});
+   for(const node of (planned.length?planned:nodes))select.append(el("option",{textContent:node.title,attrs:{value:node.id}}));
+   const detail=el("div",{cls:"kt-route-detail",attrs:{"aria-live":"polite"}});
+   const show=()=>{
+     const route=treeDevelopmentRoute(nodes,select.value),byId=new Map(nodes.map(x=>[x.id,x]));
+     const name=(id:string)=>byId.get(id)?.title??id;
+     detail.replaceChildren(
+       el("h3",{textContent:route.ready?"Готово к разработке по зависимостям":"Есть блокирующие условия"}),
+       el("p",{textContent:"Путь: "+(route.steps.map((step,i)=>(i+1)+". "+name(step.id)+" — "+(step.status==="implemented"?"отмечена реализованной":"запланирована")).join(" → ")||"Не найден")}),
+       el("h3",{textContent:"Затронутые зависимые ветви: "+route.affected.length}),
+       el("p",{textContent:route.affected.map(name).join(", ")||"Нет зарегистрированных зависимых ветвей"}),
+       el("p",{textContent:route.missing.length?"Отсутствуют: "+route.missing.join(", "):"Все зависимости присутствуют в манифесте"}),
+       el("p",{textContent:route.cycles.length?"Циклы обнаружены: "+route.cycles.join(", "):"Циклов в маршруте нет"}),
+       el("p",{cls:"muted",textContent:"Маршрут — только план по манифесту. Он не изменяет код и не подтверждает локальную установку."})
+     );
+   };
+   select.addEventListener("change",show);
+   host.append(el("p",{textContent:"Выберите ветвь, чтобы увидеть путь разработки и влияние на другие части JUUNIBI."}),select,detail);
+   show();
+   openSheet({title:"Маршруты Лисьего древа",icon:"modules",tone:"ok",content:host});
+ }
  /** Обзор леса: главная цифра, три факта и ближайшая награда — над картой, а не в боковой панели. */
  function overviewStrip(metrics:FoxMetric[],medals:MedalItem[]):HTMLElement{
    const availability=metrics.filter(x=>x.value!==null).length;
@@ -468,6 +494,8 @@ export function kitsuneTreePage():HTMLElement {
      el("span",{cls:"kt-stat-ico",attrs:{"aria-hidden":"true"}},icon(name,18)),el("strong",{textContent:value}),el("small",{textContent:label}));
    const healthButton=el("button",{cls:"kt-chip kt-mini",textContent:"🌳 Здоровье древа",attrs:{type:"button","aria-label":"Проверить здоровье Лисьего древа"}});
    healthButton.addEventListener("click",openTreeHealth);
+   const routeButton=el("button",{cls:"kt-chip kt-mini",textContent:"🦊 Маршруты развития",attrs:{type:"button","aria-label":"Показать маршруты развития Лисьего древа"}});
+   routeButton.addEventListener("click",openTreeRoute);
    return el("section",{cls:"kt-overview-strip",attrs:{"aria-label":"Обзор леса"}},
      el("div",{cls:"kt-ov-ring"},miniRing(availability/100,String(availability)),
        el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
@@ -475,7 +503,7 @@ export function kitsuneTreePage():HTMLElement {
        stat("trophy",earned+" / "+medals.length,"наград"),
        stat("modules",String(all.length-planned)+(planned?" + "+planned:""),planned?"ветвей + план":"ветвей"),
        stat("clock",last?(dateRu(last.at)||"—"):"нет",last?"обновление":"обновлений")),
-     nextMedalTile(medals),healthButton);
+     nextMedalTile(medals),healthButton,routeButton);
  }
  function openSection(item:(typeof RAIL_ITEMS)[number]){
    mode=item.mode;if(item.foxView)foxView=item.foxView;
