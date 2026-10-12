@@ -1,6 +1,10 @@
 import type { EvolutionNode } from "./kitsune-evolution-model";
 export interface Point {x:number;y:number}
 export type Positions=Record<string,Point>;
+export function scaledScrollBounds(width:number,height:number,zoom:number):Point {
+ const safeZoom=Number.isFinite(zoom)?Math.max(.6,Math.min(1.5,zoom)):1;
+ return {x:Math.ceil(width*safeZoom),y:Math.ceil(height*safeZoom)};
+}
 const KEY="juunibi:kitsune:positions:v1";
 export function defaultPositions(nodes:EvolutionNode[]):Positions {
  const lanes=new Map<number,number>();const positions:Positions={};
@@ -41,7 +45,8 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
  const maxY=Math.max(600,...Object.values(positions).map(p=>p.y+120));
  canvas.style.width=maxX+"px";canvas.style.height=maxY+"px";
  const scrollArea=document.createElement("div");scrollArea.className="kt-canvas-scroll-area";
- scrollArea.style.width=Math.ceil(maxX*zoom)+"px";scrollArea.style.height=Math.ceil(maxY*zoom)+"px";
+ const bounds=scaledScrollBounds(maxX,maxY,zoom);
+ scrollArea.style.width=bounds.x+"px";scrollArea.style.height=bounds.y+"px";
  const ns="http://www.w3.org/2000/svg";
  const svg=document.createElementNS(ns,"svg");svg.setAttribute("class","kt-canvas-edges");
  svg.setAttribute("viewBox",`0 0 ${maxX} ${maxY}`);svg.setAttribute("aria-hidden","true");
