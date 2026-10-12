@@ -292,6 +292,28 @@ describe("BrainCore", () => {
     expect(() => brain.compareExperienceStrategies(p.id,["dup","dup"])).toThrow();
     expect(() => brain.compareExperienceStrategies("absent",["a","b"])).toThrow();
   });
+  it("integrates risk, outcome graph, reflection and non-executing adaptive plans", () => {
+    const brain=new BrainCore(()=>true);
+    const plan=brain.plan("проверить резервную копию",["подготовить","проверить"]);
+    const success=brain.recordDecision({goal:"проверить резервную копию",chosen:"проверка",reason:"надёжно",predictedSuccess:true,taskType:"backup"});
+    const failure=brain.recordDecision({goal:"проверить резервную копию",chosen:"удаление",reason:"риск",predictedSuccess:false,taskType:"backup"});
+    brain.confirmDecision(success.id,"success");brain.confirmDecision(failure.id,"failure");
+    brain.recordDecision({goal:"проверить резервную копию",chosen:"удаление",reason:"не подтверждено",predictedSuccess:true,taskType:"backup"});
+    const report=brain.inspectCognitiveEngine(plan.id,{taskType:"backup",strategies:[
+      {name:"удаление",risk:"high",reversible:false},
+      {name:"проверка",risk:"low",reversible:true,dependsOn:["подготовить"]}
+    ]});
+    expect(report.memoryGraph).toHaveLength(2);
+    expect(report.strategies[0]?.name).toBe("проверка");
+    expect(report.strategies[0]?.blocked).toBe(true);
+    expect(report.adaptivePlan.suggestedStrategy).toBe(null);
+    expect(report.reflection.confirmedFailures).toBe(1);
+    expect(report.reflection.unconfirmedExcluded).toBe(1);
+    expect(report.adaptivePlan.executesAutomatically).toBe(false);
+    expect(brain.status().plans[0]?.steps.every(x=>x.status==="pending")).toBe(true);
+    expect(()=>brain.inspectCognitiveEngine(plan.id,{strategies:[{name:"a",risk:"low",reversible:true}]})).toThrow();
+    expect(()=>brain.inspectCognitiveEngine("absent",{strategies:[]})).toThrow();
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };

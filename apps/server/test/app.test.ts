@@ -226,3 +226,22 @@ describe("Brain strategy comparison API", () => {
     } finally {srv.close();}
   });
 });
+
+describe("Brain cognitive engine API", () => {
+  it("returns a read-only assessment with validation", async () => {
+    const brain=new BrainCore(()=>true);
+    let calls=0;
+    const server=createApp({brain,modules:()=>{calls++;return [];},configured:{model:"m"}});
+    const url=`http://127.0.0.1:${await start(server)}`;
+    try {
+      const p=brain.plan("check backup",["inspect"]);
+      const strategies=[{name:"inspect",risk:"low",reversible:true},{name:"erase",risk:"high",reversible:false}];
+      const res=await post(url,"/api/brain/cognitive-engine",{planId:p.id,strategies});
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({planId:p.id,requiresExplicitExecution:true,adaptivePlan:{executesAutomatically:false},evaluation:{totalSteps:1}});
+      expect(calls).toBe(0);
+      expect((await post(url,"/api/brain/cognitive-engine",{planId:p.id,strategies:[strategies[0]]})).status).toBe(400);
+      expect((await post(url,"/api/brain/cognitive-engine",{planId:"missing",strategies})).status).toBe(404);
+    } finally {server.close();}
+  });
+});
