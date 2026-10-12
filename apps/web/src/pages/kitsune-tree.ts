@@ -171,6 +171,11 @@ export function kitsuneTreePage():HTMLElement {
        el("h2",{textContent:"Как живёт лес"}),
        el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён."}),
        el("p",{textContent:"Избранные карточки сохраняются только в этом браузере. Никакие действия с проектом не выполняются."}));
+     const awards=forestAwards(metrics,foxHistory);
+     side.append(el("h3",{textContent:"🏆 Награды: "+awards.filter(a=>a.earned).length+" из "+awards.length}));
+     for(const award of awards)side.append(el("p",{cls:award.earned?"kt-fox-earned":"kt-fox-locked",textContent:award.emoji+" "+award.title+" · "+(award.earned?"Открыто":award.detail)}));
+     side.append(el("h3",{textContent:"📖 Лесной дневник"}),el("p",{textContent:forestStory(foxEvents,metrics)}));
+     for(const event of foxEvents.slice(-8).reverse())side.append(el("p",{cls:"kt-fox-diary",textContent:event.day+" · "+forestEffects(event.kind)+" · "+event.title}));
      const availability=metrics.filter(x=>x.value!==null).length;
      side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
