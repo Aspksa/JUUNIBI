@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BrainGraphSQLite } from "../src/brain-graph-sqlite";
-import { evaluateBrainPlanBenchmarks } from "../src/brain-plan-benchmarks";
+import { evaluateBrainPlanBenchmarks, evaluateRetrievalQuality } from "../src/brain-plan-benchmarks";
 import type { DecisionRecord } from "../src/decision-memory";
 
 const script=fileURLToPath(new URL("../../../scripts/brain-graph-sqlite.py",import.meta.url));
@@ -64,6 +64,20 @@ describe("durable graph and benchmarks",()=>{
       expect((await graph.relatedDecisions("four",10)).sourceFound).toBe(false);
       await expect(graph.relatedDecisions("one",21)).rejects.toThrow("Некорректные");
     }finally{await rm(dir,{recursive:true,force:true});}
+  });
+  it("measures retrieval precision, recall, MRR and hit rate from labelled cases",()=>{
+    const good=evaluateRetrievalQuality([
+      {query:"safe archive",relevantIds:["safe"],retrievedIds:["safe","bad"]},
+      {query:"inspection",relevantIds:["inspect"],retrievedIds:["irrelevant","inspect"]}
+    ],2);
+    expect(good.precisionAtK).toBe(0.5);
+    expect(good.recallAtK).toBe(1);
+    expect(good.mrr).toBe(0.75);
+    expect(good.hitRate).toBe(1);
+    const weak=evaluateRetrievalQuality([{query:"missing",relevantIds:["answer"],retrievedIds:["wrong"]}],2);
+    expect(weak.hitRate).toBe(0);
+    expect(weak.recallAtK).toBe(0);
+    expect(()=>evaluateRetrievalQuality([],21)).toThrow();
   });
   it("reports all fixed plan quality checks",()=>{
     const result=evaluateBrainPlanBenchmarks();
