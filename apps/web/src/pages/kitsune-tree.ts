@@ -48,6 +48,8 @@ export function kitsuneTreePage():HTMLElement {
  let brainBusy=false;
  let growth:GrowthEvent[]=[];
  let activeVersion="";
+ let graphMotion:"bloom"|"pulse"|"recovery"|"none"="none";
+ let playedEvent="";
  const body=el("div",{cls:"kt-layout"});
  const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
  const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","KITSUNE TREE · Живая карта архитектуры и развития JUUNIBI"),
@@ -271,7 +273,7 @@ export function kitsuneTreePage():HTMLElement {
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
    if(mode==="development") {graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);}
    const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
-   if(mode==="architecture"||mode==="connections") graph.append(buildGraph(nodes,selected,id=>{selected=id;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id)))));
+   if(mode==="architecture"||mode==="connections") graph.append(buildGraph(nodes,selected,id=>{selected=id;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion));
    else for(const node of nodes){
      const card=el("button",{cls:"kt-node "+(node.id===selected?"kt-selected ":"")+(node.status==="planned"?"kt-future":""),
        attrs:{"aria-pressed":String(node.id===selected)},
@@ -315,6 +317,11 @@ export function kitsuneTreePage():HTMLElement {
    dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
    persistedHistory=snapshot.timeline;
    growth=growthEvents(snapshot);
+   const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
+   if(growth.length&&playedEvent!==eventKey){
+     playedEvent=eventKey;
+     graphMotion=growth.some(x=>x.kind==="rollback")?"recovery":growth.some(x=>x.kind==="new")?"bloom":"pulse";
+   }
    activeVersion=snapshot.timeline.activeVersion;
    discovery=snapshot.discovery??null;
    render();
