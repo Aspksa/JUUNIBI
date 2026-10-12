@@ -95,7 +95,9 @@ function medalCard(m:MedalItem):HTMLButtonElement{
   attrs:{"aria-label":`${m.title}. ${TIER_LABEL[m.tier]}. ${STATE_LABEL[state]}${state==="progress"?", "+percent+"%":""}`}},
   medalSvg(m),
   el("strong",{cls:"mc-title",textContent:m.title}),
-  el("span",{cls:"mc-meta",textContent:TIER_LABEL[m.tier]+" · "+(m.earned?"получена":state==="progress"?percent+"%":state==="waiting"?"ещё нет":"нет данных")}));
+  el("span",{cls:"mc-meta",textContent:TIER_LABEL[m.tier]+" · "+(m.earned?"получена":state==="progress"?percent+"%":state==="waiting"?"ещё нет":"нет данных")}),
+  state==="progress"?el("span",{cls:"mc-bar",attrs:{"aria-hidden":"true"}},el("i",{attrs:{style:`width:${percent}%`}})):null,
+  !m.earned&&m.requirement?el("small",{cls:"mc-need",textContent:m.requirement}):null);
  card.addEventListener("click",()=>openMedal(m));
  return card;
 }
