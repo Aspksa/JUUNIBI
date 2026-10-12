@@ -198,7 +198,7 @@ export type DiskPreview =
 export const diskThumbUrl=(f:{id:string;sha256:string})=>"/api/disk/files/"+encodeURIComponent(f.id)+"/thumb?v="+f.sha256.slice(0,12);
 export interface DiskUploaded extends DiskFile {duplicates:{id:string;name:string;folder:string}[]}
 export interface DiskListing {folders:string[];files:DiskFile[];trash:DiskFile[];usedBytes:number;maxFileBytes:number}
-export interface FoxWifiSnapshot { supported: boolean; checkedAt: string; interfaces: string; networks: string; meshNote: string; error?: string }
+export interface FoxWifiSnapshot { supported: boolean; checkedAt: string; interfaces: string; networks: string; meshNote: string; error?: string; router?: { candidates:{ address:string; port:number; reachable:boolean; latencyMs:number|null }[]; detected:string|null; brandVerified:false; mode:"read-only" } }
 export const api = {
   foxNetwork: () => attemptAsync(() => call<FoxWifiSnapshot>("/api/fox-network")),
   diskLife: () => attemptAsync(()=>call<DiskLife>("/api/disk/life")),
