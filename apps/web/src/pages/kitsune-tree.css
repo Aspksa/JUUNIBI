@@ -95,3 +95,5 @@
 @media(max-width:780px){.kt-fox-main{padding:10px}.kt-fox-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.kt-fox-card{padding:11px}.kt-fox-toolbar select{max-width:100%}.kt-fox-toolbar .kt-search{width:100%}}
 @media(max-width:420px){.kt-fox-grid{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.kt-fox-card{transition:none}.kt-fox-card:hover{transform:none}}
+
+.kt-fox-reaction{margin:0 10px 15px;padding:12px 15px;border:1px solid color-mix(in srgb,var(--accent,#866bbd) 24%,transparent);border-radius:14px;background:color-mix(in srgb,var(--accent,#866bbd) 9%,transparent);line-height:1.5;font-size:13px}

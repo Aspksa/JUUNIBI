@@ -1,3 +1,4 @@
+import type {ModuleInfo,BrainStatus,AchievementsData,DiskLife,Organizer,UpdateStatus,ProjectStatsData} from "../api";
 import type {EvolutionNode,EvolutionSnapshot} from "./kitsune-evolution-model";
 import type {GrowthEvent} from "./kitsune-growth";
 export const FOX_WORLDS=[
@@ -13,9 +14,10 @@ export const FOX_WORLDS=[
  {emoji:"🏡",title:"Домик JUUNIBI",names:["Тёплые объятия","Радостные ушки","Танцующие хвостики","Чашечки чая","Подушки отдыха","Домашние искорки","Плюшевые сердечки","Уютные вечера","Сундучки воспоминаний","Добрые пожелания"]},
 ] as const;
 export interface FoxMetric {id:string;name:string;world:number;emoji:string;value:number|null;source:string;description:string;target:"architecture"|"discovery"|"growth"|"history"|"updates"}
-export interface FoxData {nodes:EvolutionNode[];snapshot:EvolutionSnapshot|null;growth:GrowthEvent[]}
+export interface FoxLive {modules?:ModuleInfo[];brain?:BrainStatus;achievements?:AchievementsData;disk?:DiskLife;organizer?:Organizer;updater?:UpdateStatus;project?:ProjectStatsData}
+export interface FoxData {nodes:EvolutionNode[];snapshot:EvolutionSnapshot|null;growth:GrowthEvent[];live?:FoxLive}
 export function foxMetrics(data:FoxData):FoxMetric[]{
- const {nodes,snapshot,growth}=data,discovery=snapshot?.discovery,timeline=snapshot?.timeline;
+ const {nodes,snapshot,growth}=data,discovery=snapshot?.discovery,timeline=snapshot?.timeline,live=data.live;
  const values=new Map<number,[number|null,string,string,FoxMetric["target"]]>();
  const put=(id:number,value:number|null,source:string,description:string,target:FoxMetric["target"])=>values.set(id,[value,source,description,target]);
  const manifestReady=Boolean(snapshot);
@@ -50,6 +52,58 @@ export function foxMetrics(data:FoxData):FoxMetric[]{
  put(83,manifestReady?edges:null,"Манифест архитектуры","Межмодульные связи по дереву","architecture");
  put(86,discovery?.candidates.length??null,"Сканер исходников","Кандидаты на будущие возможности","discovery");
  put(88,discovery?.candidates.length??null,"Сканер исходников","Обнаруженные архитектурные кандидаты","discovery");
+
+ // Other subsystems are queried independently; a failed source never becomes a fake zero.
+ if(live?.modules){
+  put(10,live.modules.filter(x=>x.running).length,"Монитор модулей","Запущенные модули приложения","architecture");
+  put(12,live.modules.filter(x=>x.status==="error"||Boolean(x.error)).length,"Монитор модулей","Компоненты, сообщившие об ошибке","architecture");
+  put(20,live.modules.filter(x=>x.running).length,"Монитор модулей","Активные модули Brain и JUUNIBI","architecture");
+  put(56,live.modules.reduce((n,x)=>n+(x.errors24h??0),0),"Монитор модулей","Ошибки модулей за последние 24 часа","architecture");
+  put(66,live.modules.filter(x=>x.running).length,"Монитор модулей","Запущенные наблюдаемые компоненты","architecture");
+  put(70,live.modules.filter(x=>x.running).length,"Монитор модулей","Количество работающих модулей","architecture");
+ }
+ if(live?.brain){
+  put(11,live.brain.plans.filter(p=>p.status==="completed").length,"Планы Brain","Успешно завершённые планы Brain","architecture");
+  put(13,live.brain.plans.length,"Планы Brain","Планы, зарегистрированные Brain","architecture");
+  put(19,live.brain.plans.filter(p=>p.status==="planned").length,"Планы Brain","Планы, ожидающие запуска","architecture");
+  put(24,live.brain.plans.filter(p=>p.status==="running").length,"Планы Brain","Выполняемые планы Brain","architecture");
+  put(27,live.brain.plans.filter(p=>p.status==="planned").length,"Планы Brain","Подготовленные варианты исполнения","architecture");
+  put(29,live.brain.plans.filter(p=>p.status==="completed").length,"Планы Brain","Завершённые и зарегистрированные планы","architecture");
+  put(58,live.brain.plans.filter(p=>p.status==="failed").length,"Планы Brain","Неуспешные планы Brain","architecture");
+ }
+ if(live?.achievements){
+  put(14,live.achievements.stats.won,"Достижения","Подтверждённые завершённые достижения","architecture");
+  put(30,live.achievements.stats.medals,"Достижения","Полученные медали","architecture");
+  put(31,live.achievements.stats.won,"Достижения","Число открытых наград","architecture");
+  put(36,live.achievements.stats.won,"Достижения","Полученные награды JUUNIBI","architecture");
+  put(38,live.achievements.stats.rare,"Достижения","Редкие достижения","architecture");
+  put(39,live.achievements.notices.length,"Достижения","История поздравлений и наград","architecture");
+  put(76,live.achievements.records.length,"Достижения","Зарегистрированные рекорды","architecture");
+  put(96,live.achievements.stats.won,"Достижения","Личные достижения","architecture");
+  put(98,live.achievements.records.length,"Достижения","История рекордов","architecture");
+ }
+ if(live?.disk){
+  put(73,live.disk.analysis.documents,"Жизнь Диска","Документы, учтённые Диском","architecture");
+  put(78,live.disk.analysis.scans,"Жизнь Диска","Проверки документов","architecture");
+ }
+ if(live?.organizer){
+  const tasks=live.organizer.notes.filter(n=>n.kind==="todo");
+  put(15,tasks.filter(x=>x.done).length,"Органайзер","Завершённые задачи","architecture");
+  put(17,tasks.filter(x=>x.done).length,"Органайзер","Выполненные задачи","architecture");
+  put(55,tasks.filter(x=>!x.done).length,"Органайзер","Открытые задачи, а не сбои","architecture");
+  put(63,tasks.filter(x=>x.done).length,"Органайзер","Завершённые задачи","architecture");
+ }
+ if(live?.updater){
+  put(41,live.updater.latest&&live.updater.latest.sha!==live.updater.localVersion?1:0,"Центр обновлений","Наличие доступного обновления","updates");
+  put(42,live.updater.phase==="downloading"||live.updater.phase==="testing"?live.updater.percent:null,"Центр обновлений","Процент активной операции; без установки данных нет","updates");
+  put(44,live.updater.phase==="downloading"||live.updater.phase==="testing"?1:0,"Центр обновлений","Активная операция обновления","updates");
+  put(45,live.updater.phase==="ready"?1:0,"Центр обновлений","Подготовленный пакет обновления","updates");
+  put(54,live.updater.phase==="error"?1:0,"Центр обновлений","Ошибочное состояние обновлятора","updates");
+  put(57,live.updater.phase==="error"?1:0,"Центр обновлений","Неуспешное состояние обновлятора","updates");
+ }
+ if(live?.project){
+  put(84,live.project.commits,"Жизнь проекта","Коммиты, подтверждённые источником статистики","history");
+ }
  return FOX_WORLDS.flatMap((w,i)=>w.names.map((name,j)=>{
   const index=i*10+j;
   const known=values.get(index);
