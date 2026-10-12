@@ -40,6 +40,11 @@ def run(db_path, request):
                 if matching: results.append({"id":row[0],"goal":row[1],"chosen":row[2],"observed":row[3],"observedAt":row[4],"taskType":row[5],"score":matching})
             results.sort(key=lambda r:(-r["score"],r["observedAt"]),reverse=False)
             return {"items":results[:limit],"searchMode":"lexical","durable":True}
+        if request.get("action")=="list":
+            limit=request.get("limit",100)
+            if type(limit)!=int or not 1<=limit<=100: raise ValueError("invalid limit")
+            rows=db.execute("SELECT id,goal,chosen,observed,observed_at,task_type FROM decisions ORDER BY observed_at DESC LIMIT ?",(limit,)).fetchall()
+            return {"items":[{"id":r[0],"goal":r[1],"chosen":r[2],"observed":r[3],"observedAt":r[4],"taskType":r[5]} for r in rows]}
         if request.get("action")=="stats":
             return {"decisions":db.execute("SELECT count(*) FROM decisions").fetchone()[0],"edges":db.execute("SELECT count(*) FROM graph_edges").fetchone()[0]}
         raise ValueError("unknown action")
