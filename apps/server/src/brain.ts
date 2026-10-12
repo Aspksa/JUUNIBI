@@ -1,3 +1,4 @@
+import { inspectExperienceGraph, hybridExperienceSearch, explainStrategyDecision, evaluateBrainEvolutionSuite } from "./brain-evolution";
 import { evaluateStrategyCalibration, type StrategyCalibrationPolicy } from "./brain-strategy-calibration";
 import { evaluateBrainPlanBenchmarks } from "./brain-plan-benchmarks";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
@@ -51,6 +52,18 @@ export class BrainCore {
   resolveRevision(id:string,outcome:"accepted"|"rejected") { const r=this.revisions.resolve(id,outcome);this.persist();return r; }
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
+  inspectExperienceRelations(decisionId:string,limit=20) {
+    return inspectExperienceGraph(this.decisions.snapshot(),decisionId,limit);
+  }
+  hybridSearchConfirmedExperience(query:string,limit=8,taskType?:string) {
+    return hybridExperienceSearch(this.decisions.snapshot(),query,{limit,...(taskType===undefined?{}:{taskType})});
+  }
+  explainPlanStrategies(planId:string,strategies:import("./brain-cognitive-engine").StrategyProposal[]) {
+    const plan=this.plans.find(p=>p.id===planId);
+    if(!plan) throw Object.assign(new Error("План не найден"),{status:404});
+    return explainStrategyDecision(plan,this.decisions.snapshot(),strategies);
+  }
+  brainEvolutionBenchmarks() {return evaluateBrainEvolutionSuite();}
   previewStrategyCalibration(policy:StrategyCalibrationPolicy) {
     return evaluateStrategyCalibration(policy);
   }

@@ -39,7 +39,7 @@ describe("durable graph and benchmarks",()=>{
       await graph.sync([record("1","archive","inspect files","success"),record("2","archive","erase files","failure")]);
       graph.setEmbeddingProvider({id:"fake-test",embed:async text=>text.includes("inspect")||text==="safe approach"?[1,0]:[0,1]});
       const result=await graph.search("safe approach",2);
-      expect(result.searchMode).toBe("semantic");
+      expect(result.searchMode).toBe("hybrid");
       expect(result.items[0].chosen).toBe("inspect files");
       graph.setEmbeddingProvider({id:"broken",embed:async()=>{throw new Error("offline");}});
       expect((await graph.search("archive",2)).searchMode).toBe("lexical-fallback");
