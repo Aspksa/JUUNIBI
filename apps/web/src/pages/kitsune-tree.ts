@@ -75,13 +75,36 @@ export function kitsuneTreePage():HTMLElement {
      status.textContent=affected.length+" ветвей зависят от "+target.title;return;
    }
    if(mode==="comparison"){
-     const versions=persistedHistory?.history.filter(h=>h.kind==="install")??[];
-     const pane=el("div",{cls:"kt-graph"},el("p",{textContent:"Доступен текущий манифест. Для достоверного сравнения двух версий необходимы сохранённые манифесты обеих версий."}));
-     const diff=compareManifests(nodesOf(),nodesOf());
-     pane.append(el("p",{textContent:"Текущий снимок: "+diff.unchanged.length+" ветвей; известных установок: "+versions.length}));
-     body.replaceChildren(pane,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Сравнение версий"}),
-       el("p",{textContent:"История установок отображается отдельно. Совпадение коммитов или названий без исторического манифеста не доказывает различия способностей."})));
-     status.textContent="Сравнение по проверенным манифестам";return;
+     const versions=persistedHistory?.snapshots??[];
+     const pane=el("div",{cls:"kt-graph"});
+     const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Сравнение версий"}),
+       el("p",{textContent:"Каждый сохранённый манифест закреплён за SHA установленной версии. Изменения вычисляются только между реальными снимками."}));
+     if(versions.length<2){
+       pane.append(el("p",{textContent:"Для сравнения нужны минимум две последовательно установленные версии с записанными манифестами. Снимки появятся автоматически при открытии дерева после установки."}));
+     }else{
+       const controls=el("div",{cls:"kt-tabs"});
+       const before=el("select",{attrs:{"aria-label":"Предыдущая версия"}}),after=el("select",{attrs:{"aria-label":"Новая версия"}});
+       for(const v of versions){
+         before.append(el("option",{attrs:{value:v.version},textContent:v.version.slice(0,12)}));
+         after.append(el("option",{attrs:{value:v.version},textContent:v.version.slice(0,12)}));
+       }
+       before.value=versions[1]!.version;after.value=versions[0]!.version;
+       const result=el("div",{cls:"kt-comparison"});
+       const show=()=>{
+         const x=versions.find(v=>v.version===before.value),y=versions.find(v=>v.version===after.value);
+         result.replaceChildren();
+         if(!x||!y)return;
+         const d=compareManifests(x.manifest.nodes,y.manifest.nodes);
+         for(const [title,arr] of [["Новые ветви",d.added],["Удалённые",d.removed],["Изменённые",d.uncertain],["Без изменений",d.unchanged]] as [string,string[]][]){
+           result.append(el("article",{cls:"kt-node"},el("strong",{textContent:title+" · "+arr.length}),
+             el("p",{textContent:arr.join(", ")||"Нет"})));
+         }
+       };
+       before.addEventListener("change",show);after.addEventListener("change",show);
+       controls.append(before,after);pane.append(controls,result);show();
+     }
+     body.replaceChildren(pane,side);
+     status.textContent=versions.length+" сохранённых версий архитектуры";return;
    }
    if(mode==="brain-chat"){
      const pane=el("div",{cls:"kt-brain-panel"});

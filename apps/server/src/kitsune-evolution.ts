@@ -11,7 +11,7 @@ export class KitsuneEvolution {
     throw new Error("Invalid evolution manifest");
   const history=await this.updater.history();
   const activeVersion=this.updater.status().localVersion;
-  const timeline=await this.sqlite({history:history.items,activeVersion});
+  const timeline=await this.sqlite({history:history.items,activeVersion,...(/^[0-9a-f]{40}$/.test(activeVersion) ? {manifest} : {})});
   return {manifest,timeline,latest:this.updater.status().latest,phase:this.updater.status().phase};
  }
  private sqlite(payload:unknown):Promise<{history:unknown[];activeVersion:string;durable:boolean}>{

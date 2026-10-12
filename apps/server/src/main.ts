@@ -516,6 +516,8 @@ const appDeps: AppDeps = {
 };
 const server = createApp(appDeps);
 checkUpdates();
+// Record a versioned evolution snapshot on each startup, without waiting for the UI to open.
+void appDeps.kitsuneEvolution?.snapshot().catch((error: unknown) => log.warn("Kitsune evolution snapshot unavailable", String(error)));
 server.listen(port, "127.0.0.1", () => {
   log.info(`http://127.0.0.1:${port}/`);
   // performance.now() counts from the start of the process: this is the whole start-up

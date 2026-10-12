@@ -4,7 +4,7 @@ export interface EvolutionNode {
 export interface EvolutionManifest {schemaVersion:number;project:string;nodes:EvolutionNode[]}
 export interface EvolutionSnapshot {
  manifest:EvolutionManifest;
- timeline:{history:{id:string;at:string;kind:string;from:string;to:string;message:string}[];activeVersion:string;durable:boolean};
+ timeline:{history:{id:string;at:string;kind:string;from:string;to:string;message:string}[];activeVersion:string;durable:boolean;snapshots?:{version:string;digest:string;manifest:EvolutionManifest}[]};
  phase:string;latest:unknown;
 }
 export function validateEvolutionManifest(raw:unknown):EvolutionManifest {
