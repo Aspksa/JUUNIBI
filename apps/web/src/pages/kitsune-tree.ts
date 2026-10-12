@@ -121,6 +121,12 @@ export function kitsuneTreePage():HTMLElement {
        el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / FOX COMMOTION"}),
        el("h2",{textContent:"🦊 Лисий переполох"}),
        el("p",{textContent:"100 лесных историй в 10 мирах. Значения берутся из подтверждённых данных; неизвестные показатели честно показывают «Нет данных»."})));
+     const faceMood=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";
+     main.append(el("div",{cls:"kt-fox-mascot kt-fox-mascot-"+faceMood,attrs:{role:"status","aria-label":"Настроение лисички: "+mood.label}},
+       el("span",{cls:"kt-fox-mascot-ears",textContent:"▲  ▲"}),
+       el("span",{cls:"kt-fox-mascot-face",textContent:"🦊"}),
+       el("span",{cls:"kt-fox-mascot-tail",textContent:"〰"}),
+       el("small",{textContent:mood.label})));
      main.append(el("p",{cls:"kt-fox-reaction",textContent:mood.emoji+" "+mood.label+" · "+mood.detail}));
      if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
      const view=el("div",{cls:"kt-fox-toolbar"});
