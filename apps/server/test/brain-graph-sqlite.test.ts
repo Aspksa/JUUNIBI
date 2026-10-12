@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { BrainGraphSQLite } from "../src/brain-graph-sqlite";
-import { evaluateBrainPlanBenchmarks } from "../src/brain-plan-benchmarks";
+import { evaluateBrainPlanBenchmarks, evaluateRetrievalQuality } from "../src/brain-plan-benchmarks";
 import type { DecisionRecord } from "../src/decision-memory";
 
 const script=fileURLToPath(new URL("../../../scripts/brain-graph-sqlite.py",import.meta.url));
@@ -44,6 +44,40 @@ describe("durable graph and benchmarks",()=>{
       graph.setEmbeddingProvider({id:"broken",embed:async()=>{throw new Error("offline");}});
       expect((await graph.search("archive",2)).searchMode).toBe("lexical-fallback");
     }finally{await rm(dir,{recursive:true,force:true});}
+  });
+  it("links confirmed decisions across goals without treating pending evidence as fact",async()=>{
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-relations-"));
+    try {
+      const graph=new BrainGraphSQLite(path.join(dir,"graph.sqlite3"),script);
+      await graph.sync([
+        {...record("one","archive alpha","inspect files","success"),taskType:"file-audit"},
+        {...record("two","archive beta","inspect files","failure"),taskType:"file-audit"},
+        {...record("three","archive gamma","delete files","success"),taskType:"file-audit"},
+        {...record("four","archive delta","inspect files"),taskType:"file-audit"}
+      ]);
+      const links=await graph.relatedDecisions("one",10);
+      expect(links.sourceFound).toBe(true);
+      expect(links.items.map((item:{id:string})=>item.id)).toEqual(["two","three"]);
+      expect(links.items[0].relationship).toEqual(["same-task-type","same-strategy"]);
+      expect(links.items[0].observed).toBe("failure");
+      expect(links.inferredOutcome).toBe(false);
+      expect((await graph.relatedDecisions("four",10)).sourceFound).toBe(false);
+      await expect(graph.relatedDecisions("one",21)).rejects.toThrow("Некорректные");
+    }finally{await rm(dir,{recursive:true,force:true});}
+  });
+  it("measures retrieval precision, recall, MRR and hit rate from labelled cases",()=>{
+    const good=evaluateRetrievalQuality([
+      {query:"safe archive",relevantIds:["safe"],retrievedIds:["safe","bad"]},
+      {query:"inspection",relevantIds:["inspect"],retrievedIds:["irrelevant","inspect"]}
+    ],2);
+    expect(good.precisionAtK).toBe(0.5);
+    expect(good.recallAtK).toBe(1);
+    expect(good.mrr).toBe(0.75);
+    expect(good.hitRate).toBe(1);
+    const weak=evaluateRetrievalQuality([{query:"missing",relevantIds:["answer"],retrievedIds:["wrong"]}],2);
+    expect(weak.hitRate).toBe(0);
+    expect(weak.recallAtK).toBe(0);
+    expect(()=>evaluateRetrievalQuality([],21)).toThrow();
   });
   it("reports all fixed plan quality checks",()=>{
     const result=evaluateBrainPlanBenchmarks();

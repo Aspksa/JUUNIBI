@@ -52,6 +52,11 @@ export class BrainCore {
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
   evaluatePlanBenchmarks() { return evaluateBrainPlanBenchmarks(); }
   async searchGraphMemory(query:string,limit=8) { if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503}); await this.graph.sync(this.decisions.snapshot()); return this.graph.search(query,limit); }
+  async relatedGraphDecisions(decisionId:string,limit=10) {
+    if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503});
+    await this.graph.sync(this.decisions.snapshot());
+    return this.graph.relatedDecisions(decisionId,limit);
+  }
   async graphMemoryStats() { if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503}); await this.graph.sync(this.decisions.snapshot()); return this.graph.stats(); }
   recallExperience(query: string) { return recallConfirmedExperience(this.decisions.snapshot(), query); }
   searchConfirmedExperience(query: unknown, taskType?: unknown, limit: unknown = 5) { return this.decisions.searchConfirmed(query, taskType, limit); }

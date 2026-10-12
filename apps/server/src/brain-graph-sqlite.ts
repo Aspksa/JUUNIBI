@@ -38,6 +38,14 @@ export class BrainGraphSQLite {
   }
   flush(){return this.queue;}
   async stats(){await this.queue;return this.call({action:"stats"});}
+  /** Explainable cross-task links; only recorded, owner-confirmed outcomes are considered. */
+  async relatedDecisions(decisionId:string,limit=10){
+    if(typeof decisionId!=="string"||!decisionId.trim()||decisionId.length>500||
+      !Number.isSafeInteger(limit)||limit<1||limit>20)
+      throw Object.assign(new Error("Некорректные параметры связей"),{status:400});
+    await this.queue;
+    return this.call({action:"related",decisionId,limit});
+  }
   async search(query:string,limit=8){
     if(typeof query!=="string"||!query.trim()||query.length>500||!Number.isSafeInteger(limit)||limit<1||limit>20)
       throw Object.assign(new Error("Некорректный поиск"),{status:400});

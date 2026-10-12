@@ -41,6 +41,28 @@ def run(db_path, request):
                 if matching: results.append({"id":row[0],"goal":row[1],"chosen":row[2],"observed":row[3],"observedAt":row[4],"taskType":row[5],"score":matching})
             results.sort(key=lambda r:(-r["score"],r["observedAt"]),reverse=False)
             return {"items":results[:limit],"searchMode":"lexical","durable":True}
+        if request.get("action")=="related":
+            decision_id=request.get("decisionId")
+            limit=request.get("limit",10)
+            if not isinstance(decision_id,str) or not 1<=len(decision_id)<=500 or type(limit)!=int or not 1<=limit<=20:
+                raise ValueError("invalid relation request")
+            source=db.execute("SELECT id,goal,chosen,observed,task_type FROM decisions WHERE id=?",(decision_id,)).fetchone()
+            if source is None: return {"items":[],"sourceFound":False,"evidence":"owner-confirmed-only"}
+            rows=db.execute("""SELECT id,goal,chosen,observed,observed_at,task_type
+                FROM decisions WHERE id<>? ORDER BY observed_at DESC LIMIT 1000""",(decision_id,)).fetchall()
+            related=[]
+            for row in rows:
+                reasons=[]
+                if source[1].casefold()==row[1].casefold(): reasons.append("same-goal")
+                if source[4] and row[5] and source[4].casefold()==row[5].casefold(): reasons.append("same-task-type")
+                if source[2].casefold()==row[2].casefold(): reasons.append("same-strategy")
+                if not reasons: continue
+                related.append({"id":row[0],"goal":row[1],"chosen":row[2],
+                    "observed":row[3],"observedAt":row[4],"taskType":row[5],
+                    "relationship":reasons,"strength":len(reasons)})
+            related.sort(key=lambda item:(-item["strength"],item["id"]))
+            return {"items":related[:limit],"sourceFound":True,
+                "evidence":"owner-confirmed-only","inferredOutcome":False}
         if request.get("action")=="vectors":
             provider=request.get("provider")
             if not isinstance(provider,str) or not 1<=len(provider)<=300: raise ValueError("invalid provider")
