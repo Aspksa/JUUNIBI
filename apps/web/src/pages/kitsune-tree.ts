@@ -128,6 +128,7 @@ export function kitsuneTreePage():HTMLElement {
      const paint=()=>{
        const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
        count.textContent="Найдено: "+displayed.length+" из 100 · Избранное: "+foxFavorites.size;
+       cards.classList.toggle("kt-fox-compact",foxCompact);
        cards.replaceChildren();
        for(const m of displayed){
          const article=el("article",{cls:"kt-fox-card"});
@@ -157,7 +158,9 @@ export function kitsuneTreePage():HTMLElement {
      search.addEventListener("input",()=>{foxSearch=search.value;paint();});
      world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
      favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
-     view.append(search,world,favoritesToggle,period);
+     const compact=el("button",{textContent:foxCompact?"▦ Карточки":"☷ Компактно"});
+     compact.addEventListener("click",()=>{foxCompact=!foxCompact;compact.textContent=foxCompact?"▦ Карточки":"☷ Компактно";paint();});
+     view.append(search,world,favoritesToggle,period,compact);
      main.append(view,count,cards);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
