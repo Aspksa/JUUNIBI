@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promis
 import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
-import { applyPreparedUpdate, safeUpdatePath, rollbackInstall, rollbackFailedStart, confirmUpdate, applyRollbackRequest, pruneUpdateFolder } from "./apply-update.mjs";
+import { applyPreparedUpdate, installNote, safeUpdatePath, rollbackInstall, rollbackFailedStart, confirmUpdate, applyRollbackRequest, pruneUpdateFolder } from "./apply-update.mjs";
 import { readdir } from "node:fs/promises";
 const hash = b => createHash("sha1").update("blob " + b.length + "\0").update(b).digest("hex");
 async function fixture() {
@@ -269,4 +269,24 @@ test("only the newest backups and failed manifests are kept", async () => {
     assert.deepEqual((await readdir(path.join(folder,"backups"))).sort(),["2026-03-c","2026-04-d","2026-05-e"]);
     assert.deepEqual((await readdir(folder)).filter(n=>n.startsWith("ready.failed")).sort(),["ready.failed-3.json","ready.failed-4.json","ready.failed-5.json"]);
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+test("an install is recorded with what it brought, so branches can be linked to it", async () => {
+  const root=await fixture();
+  try {
+    await ready(root,[["apps/a.txt","x"]]);
+    const file=path.join(root,".updates","ready.json");
+    const m=JSON.parse(await readFile(file,"utf8"));
+    await writeFile(file,JSON.stringify({...m,notes:[{title:"feat: память Мозга",pr:12},{title:"fix: диск"}]}));
+    await applyPreparedUpdate(root);
+    const [h]=await history(root);
+    assert.equal(h.message,"feat: память Мозга (#12) · fix: диск");
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+test("installNote falls back to the release description and ignores junk", () => {
+  assert.equal(installNote({description:"Обновление проекта из GitHub. Коммит: feat: диск"}),"feat: диск");
+  assert.equal(installNote({notes:[null,{title:"  "},{title:42}],description:"Описание"}),"Описание");
+  assert.equal(installNote({notes:[{title:"a",pr:-1},{title:"b",pr:3}]}),"a · b (#3)");
+  assert.equal(installNote({}),"");
+  assert.ok(installNote({notes:Array.from({length:40},(_,i)=>({title:"t".repeat(100)+i}))}).length<=600);
 });

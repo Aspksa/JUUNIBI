@@ -1022,7 +1022,8 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
       try { data = await readFile(file); } catch { file = path.join(root, "index.html"); data = await readFile(file); }
       res.writeHead(200, {
         "content-type": TYPES[path.extname(file)] ?? "application/octet-stream", "x-content-type-options": "nosniff",
-        "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline'", "referrer-policy": "no-referrer",
+        // data: and blob: images are allowed so the page can draw and save its own pictures (the weekly report); scripts and connections stay limited to this server.
+        "content-security-policy": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'", "referrer-policy": "no-referrer",
       });
       res.end(req.method === "HEAD" ? undefined : data);
     } catch (e) {

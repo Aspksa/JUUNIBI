@@ -49,6 +49,15 @@ const KEEP_BACKUPS = 3;
 const BACKUP_NAME = /^[\w.-]{1,120}$/;
 const readOrNull = (file) => readFile(file, "utf8").catch(e => e?.code === "ENOENT" ? null : Promise.reject(e));
 
+/** What this installation brought, in words: titles of the changes (with their numbers) or, failing that, the description of the release. */
+export function installNote(manifest) {
+  const notes = Array.isArray(manifest?.notes)
+    ? manifest.notes.filter(n => n && typeof n.title === "string" && n.title.trim()).slice(0, 12)
+        .map(n => n.title.trim().slice(0, 140) + (Number.isSafeInteger(n.pr) && n.pr > 0 ? ` (#${n.pr})` : ""))
+    : [];
+  if (notes.length) return notes.join(" · ").slice(0, 600);
+  return typeof manifest?.description === "string" ? manifest.description.replace(/^Обновление проекта из GitHub\.\s*(Коммит:\s*)?/, "").trim().slice(0, 300) : "";
+}
 /** Remembers installs and rollbacks for the "history" card and for choosing what can be rolled back. */
 async function addHistory(folder, item) {
   try {
@@ -263,7 +272,7 @@ export async function applyPreparedUpdate(root, { healthCheck = defaultHealthChe
     await rm(path.join(folder, "removals-confirmed.json"), { force: true });
     await rm(manifestFile);
     await event("update_completed", "", "completed", { sha: manifest.sha, backup_relative_path: path.relative(root, backup) });
-    await addHistory(folder, { kind: "install", from: (oldVersion?.toString("utf8") ?? "").trim(), to: manifest.sha, backup: path.basename(backup), files: changes.length });
+    await addHistory(folder, { kind: "install", from: (oldVersion?.toString("utf8") ?? "").trim(), to: manifest.sha, backup: path.basename(backup), files: changes.length, message: installNote(manifest) });
     // The launcher confirms this once the new version has really started; otherwise it puts the old one back.
     await writeFile(path.join(folder, "pending-confirm.json"), JSON.stringify({ backup: path.basename(backup), sha: manifest.sha }));
     await rm(staging, { recursive: true, force: true }).catch(() => {});

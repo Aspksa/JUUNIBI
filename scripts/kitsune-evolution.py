@@ -57,8 +57,8 @@ def snapshot(db_path, payload):
         db.commit()
         snapshots=[]
         if db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='evolution_snapshots'").fetchone():
-            for v,d,m in db.execute("SELECT version,digest,manifest FROM evolution_snapshots ORDER BY recorded_at DESC,version DESC LIMIT 30"):
-                snapshots.append({"version":v,"digest":d,"manifest":json.loads(m)})
+            for v,d,m,r in db.execute("SELECT version,digest,manifest,recorded_at FROM evolution_snapshots ORDER BY recorded_at DESC,version DESC LIMIT 30"):
+                snapshots.append({"version":v,"digest":d,"manifest":json.loads(m),"recordedAt":r})
         rows=db.execute("""SELECT id,at,kind,from_version,to_version,message
             FROM evolution_events ORDER BY at DESC,id DESC LIMIT 200""").fetchall()
         return {"schemaVersion":1,"history":[dict(zip(("id","at","kind","from","to","message"),r)) for r in rows],

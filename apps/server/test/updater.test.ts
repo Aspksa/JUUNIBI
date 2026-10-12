@@ -159,6 +159,7 @@ describe("Обновление проекта", () => {
         expect(await readFile(path.join(root, ".updates", "staging", "same.txt"), "utf8")).toBe("same");
         const ready = JSON.parse(await readFile(path.join(root, ".updates", "ready.json"), "utf8"));
         expect(ready.files.map((f: { path: string }) => f.path).sort()).toEqual(["new.txt", "same.txt"]);
+        expect(Array.isArray(ready.notes)).toBe(true); // what the release brings, for the install history
       } finally { await rm(root, { recursive: true, force: true }); }
     });
 

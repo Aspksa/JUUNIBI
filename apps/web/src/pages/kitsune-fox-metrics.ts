@@ -45,8 +45,8 @@ export function foxMetrics(data:FoxData):FoxMetric[]{
  put(34,timeline?rollbacks.length:null,"Журнал обновлений","Записанные восстановления предыдущей версии","history");
  put(35,timeline?updates.length:null,"Журнал обновлений","Зарегистрированные установленные версии","history");
  put(40,timeline?updates.length:null,"Журнал обновлений","Подтверждённые установки обновлений","updates");
- put(43,timeline?snapshots.length:null,"История SQLite","Сохранённые снимки архитектуры","history");
- put(47,timeline?snapshots.length:null,"История SQLite","Снимки версий для сравнения","history");
+ put(43,timeline?snapshots.length:null,"Журнал версий","Сохранённые снимки архитектуры","history");
+ put(47,timeline?snapshots.length:null,"Журнал версий","Снимки версий для сравнения","history");
  put(51,discovery?.cycles.length??null,"Сканер исходников","Циклические зависимости найденных файлов","discovery");
  put(52,discovery?.unresolved.length??null,"Сканер исходников","Не найденные при сканировании импорты","discovery");
  put(83,manifestReady?edges:null,"Манифест архитектуры","Межмодульные связи по дереву","architecture");
@@ -57,19 +57,19 @@ export function foxMetrics(data:FoxData):FoxMetric[]{
  if(live?.modules){
   put(10,live.modules.filter(x=>x.running).length,"Монитор модулей","Запущенные модули приложения","architecture");
   put(12,live.modules.filter(x=>x.status==="error"||Boolean(x.error)).length,"Монитор модулей","Компоненты, сообщившие об ошибке","architecture");
-  put(20,live.modules.filter(x=>x.running).length,"Монитор модулей","Активные модули Brain и JUUNIBI","architecture");
+  put(20,live.modules.filter(x=>x.running).length,"Монитор модулей","Активные модули Мозга и JUUNIBI","architecture");
   put(56,live.modules.reduce((n,x)=>n+(x.errors24h??0),0),"Монитор модулей","Ошибки модулей за последние 24 часа","architecture");
   put(66,live.modules.filter(x=>x.running).length,"Монитор модулей","Запущенные наблюдаемые компоненты","architecture");
   put(70,live.modules.filter(x=>x.running).length,"Монитор модулей","Количество работающих модулей","architecture");
  }
  if(live?.brain){
-  put(11,live.brain.plans.filter(p=>p.status==="completed").length,"Планы Brain","Успешно завершённые планы Brain","architecture");
-  put(13,live.brain.plans.length,"Планы Brain","Планы, зарегистрированные Brain","architecture");
-  put(19,live.brain.plans.filter(p=>p.status==="planned").length,"Планы Brain","Планы, ожидающие запуска","architecture");
-  put(24,live.brain.plans.filter(p=>p.status==="running").length,"Планы Brain","Выполняемые планы Brain","architecture");
-  put(27,live.brain.plans.filter(p=>p.status==="planned").length,"Планы Brain","Подготовленные варианты исполнения","architecture");
-  put(29,live.brain.plans.filter(p=>p.status==="completed").length,"Планы Brain","Завершённые и зарегистрированные планы","architecture");
-  put(58,live.brain.plans.filter(p=>p.status==="failed").length,"Планы Brain","Неуспешные планы Brain","architecture");
+  put(11,live.brain.plans.filter(p=>p.status==="completed").length,"Планы Мозга","Успешно завершённые планы Мозга","architecture");
+  put(13,live.brain.plans.length,"Планы Мозга","Планы, зарегистрированные Мозгом","architecture");
+  put(19,live.brain.plans.filter(p=>p.status==="planned").length,"Планы Мозга","Планы, ожидающие запуска","architecture");
+  put(24,live.brain.plans.filter(p=>p.status==="running").length,"Планы Мозга","Выполняемые планы Мозга","architecture");
+  put(27,live.brain.plans.filter(p=>p.status==="planned").length,"Планы Мозга","Подготовленные варианты исполнения","architecture");
+  put(29,live.brain.plans.filter(p=>p.status==="completed").length,"Планы Мозга","Завершённые и зарегистрированные планы","architecture");
+  put(58,live.brain.plans.filter(p=>p.status==="failed").length,"Планы Мозга","Неуспешные планы Мозга","architecture");
  }
  if(live?.achievements){
   put(14,live.achievements.stats.won,"Достижения","Подтверждённые завершённые достижения","architecture");
