@@ -54,7 +54,7 @@ export class BrainGraphSQLite {
     if(!this.embedding) return lexical;
     try {
       // Index a bounded recent window to cap embedding API cost. Persist vectors for future searches/restarts.
-      const data=await this.call({action:"list",limit:32}) as {items:GraphRow[]};
+      const data=await this.call({action:"list",limit:100}) as {items:GraphRow[]};
       const provider=this.embedding;
       const model=provider.id??"unspecified";
       const saved=await this.call({action:"vectors",provider:model}) as {items:{id:string;hash:string;vector:number[]}[]};
@@ -78,8 +78,18 @@ export class BrainGraphSQLite {
         return {...row,score:cosine(queryVector,vec)};
       }));
       if(newVectors.length) await this.call({action:"save_vectors",provider:model,items:newVectors});
-      return {items:scored.filter(r=>r.score>0).sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,limit),
-        searchMode:"semantic",durable:true,candidateCount:data.items.length,candidateLimit:32};
+      const combined=new Map<string,GraphRow & {score:number;lexicalScore:number;semanticScore:number}>();
+      for(const row of lexical.items as (GraphRow & {score:number})[])
+        combined.set(row.id,{...row,lexicalScore:row.score,semanticScore:0,score:row.score*2});
+      for(const row of scored){
+        if(!Number.isFinite(row.score)||row.score<=0)continue;
+        const previous=combined.get(row.id);
+        const semanticScore=row.score;
+        const lexicalScore=previous?.lexicalScore??0;
+        combined.set(row.id,{...row,lexicalScore,semanticScore,score:lexicalScore*2+semanticScore});
+      }
+      return {items:[...combined.values()].sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id)).slice(0,limit),
+        searchMode:"hybrid",durable:true,candidateCount:data.items.length,candidateLimit:100};
     }catch{return {...lexical,searchMode:"lexical-fallback"};}
   }
 }
