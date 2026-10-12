@@ -205,6 +205,20 @@ export function kitsuneTreePage():HTMLElement {
        .catch(()=>{brainReport.textContent="Не удалось связаться с Brain";}).finally(()=>{brainAnalysis.disabled=false;});
      });
      side.append(brainAnalysis,brainReport);
+     const unread=foxEvents.filter(e=>!foxSeen.has(e.id));
+     const notice=el("div",{cls:"kt-fox-notice"},
+       el("h3",{textContent:"🔔 Лесные вести · "+unread.length+" новых"}),
+       el("p",{textContent:unread.length?unread.slice(-3).map(e=>forestEffects(e.kind)+" "+e.title).join(" · "):"Новых событий нет."}));
+     const acknowledge=el("button",{textContent:"Прочитано",attrs:{type:"button"}});
+     acknowledge.disabled=unread.length===0;
+     acknowledge.addEventListener("click",()=>{
+       for(const event of foxEvents)foxSeen.add(event.id);
+       try{localStorage.setItem(seenStoreKey,JSON.stringify([...foxSeen].slice(-150)));}catch{/* Storage optional */}
+       notice.replaceChildren(el("h3",{textContent:"🔔 Все вести прочитаны"}));acknowledge.disabled=true;
+     });
+     notice.append(acknowledge);side.append(notice);
+     const verifiedUpdate=foxEvents.filter(e=>e.kind==="update").length;
+     if(verifiedUpdate>=5)side.append(el("p",{cls:"kt-fox-easter",textContent:"🎁 Тайный подарок лисичек: пять или больше подтверждённых записей об обновлениях! Лес благодарит своего хранителя."}));
      const availability=metrics.filter(x=>x.value!==null).length;
      side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
