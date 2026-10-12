@@ -429,8 +429,7 @@
 .ka-clan i{width:12px;height:12px;border-radius:50%;display:inline-block}
 .ka-clan[aria-pressed="true"]{border-color:var(--kt-brand);background:color-mix(in srgb,var(--kt-brand) 14%,var(--surface));font-weight:650}
 .ka-clan:focus-visible{outline:2px solid var(--kt-brand);outline-offset:2px}
-.ka-stage{border:1px solid var(--kt-line);border-radius:24px;overflow:hidden;background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,#2a6f6a 22%,transparent),transparent 62%),color-mix(in srgb,#0f2b2c 55%,var(--surface))}
-:root[data-theme="light"] .ka-stage{background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,#2a6f6a 14%,transparent),transparent 62%),color-mix(in srgb,#e8f1ee 60%,var(--surface))}
+.ka-stage{border:1px solid var(--kt-line);border-radius:24px;overflow:hidden;background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,#2a9d8f 20%,transparent),transparent 62%),color-mix(in srgb,var(--surface) 86%,#2a6f6a)}
 .ka-hint{margin:0;font-size:.8rem}
 .ka{display:block;width:100%;height:min(78vh,880px);min-height:520px;cursor:grab;touch-action:none;outline:none;user-select:none}
 .ka.is-drag{cursor:grabbing}
@@ -452,13 +451,11 @@
 .ka-node.st-bad .ka-disc{stroke:var(--danger,#f87171);fill:color-mix(in srgb,var(--danger,#f87171) 22%,var(--bg))}
 .ka-node.st-info .ka-disc{fill:color-mix(in srgb,var(--c) 14%,var(--bg))}
 .ka-node.st-empty .ka-glyph{opacity:.4;filter:grayscale(1)}
-.ka-label{fill:var(--fg);font-size:calc(11px*var(--ls,1));font-weight:650;paint-order:stroke;stroke:color-mix(in srgb,#0f2b2c 70%,var(--bg));stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
-:root[data-theme="light"] .ka-label{stroke:color-mix(in srgb,#fff 80%,var(--bg))}
+.ka-label{fill:var(--fg);font-size:calc(11px*var(--ls,1));font-weight:650;paint-order:stroke;stroke:color-mix(in srgb,var(--surface) 80%,#0f2b2c);stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
 .ka-node.trunk .ka-label{font-size:calc(20px*var(--ls,1));font-weight:800;letter-spacing:.06em}
 .ka-node.branch .ka-label{font-size:calc(14px*var(--ls,1));font-weight:750;stroke-width:calc(3.5px*var(--ls,1))}
-.ka-node.leaf .ka-label{font-size:9.5px;font-weight:550}
 .ka-node:hover .ka-disc,.ka-node:focus-visible .ka-disc{stroke:var(--fg);stroke-width:3}
-.ka-node.is-hit .ka-disc{stroke:var(--kt-brand);stroke-width:4;fill:color-mix(in srgb,var(--kt-brand) 40%,var(--bg))}
+.ka-node.is-hit .ka-disc{r:18px;stroke:var(--kt-brand);stroke-width:5;fill:color-mix(in srgb,var(--kt-brand) 40%,var(--bg))}
 .ka-node.is-dim{opacity:.18}
 /* уровни детализации: издалека — ветви и хабы, ближе — листья, вплотную — подписи листьев */
 .ka.z-far .ka-node.leaf .ka-glyph,.ka.z-far .ka-node.leaf .ka-label,.ka.z-far .ka-node.hub .ka-label{display:none}
@@ -478,3 +475,5 @@
 .ka-list-item:focus-visible,.ka-list-leaf:focus-visible{outline:2px solid var(--kt-brand);outline-offset:2px}
 .ka-wrap.is-list .ka-stage{background:transparent;border:0}
 @media(max-width:700px){.ka{height:68vh;min-height:420px}}
+.ka .ka-node.is-hit .ka-disc{r:22px;filter:drop-shadow(0 0 8px var(--kt-brand))}
+.ka .ka-node.is-hit .ka-label{display:block}

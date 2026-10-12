@@ -169,7 +169,7 @@ export function layoutAtlas(root:AtlasNode):AtlasLayout{
  const assign=(n:AtlasNode,a0:number,a1:number,depth:number)=>{
   const kids=hubKids(n);
   if(!kids.length)return;
-  const weights=kids.map(k=>Math.pow(sizeOf(k),0.8));
+  const weights=kids.map(k=>Math.max(Math.pow(sizeOf(k),0.8),depth===1?6:1));
   const total=weights.reduce((a,b)=>a+b,0);
   let cursor=a0;
   kids.forEach((k,i)=>{

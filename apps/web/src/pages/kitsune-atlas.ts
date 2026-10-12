@@ -15,7 +15,7 @@ const s=(name:string,attrs:Record<string,string|number>={},...kids:(SVGElement|s
 const MIN_ZOOM=0.5,MAX_ZOOM=7;
 export type ZoomBand="far"|"mid"|"near";
 /** Уровень детализации: издалека видны ветви и хабы, ближе — листья, вплотную — подписи листьев. */
-export const zoomBand=(zoom:number):ZoomBand=>zoom<1.5?"far":zoom<3.2?"mid":"near";
+export const zoomBand=(zoom:number):ZoomBand=>zoom<2.4?"far":zoom<4?"mid":"near";
 export const clampZoom=(z:number)=>Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,Number.isFinite(z)?z:1));
 const EDGE_WIDTH=(depth:number)=>depth<=1?18:depth===2?10:6;
 
@@ -30,6 +30,7 @@ export function atlasView(o:AtlasOptions):HTMLElement{
  const base=layout.bounds;
  const v={x:state.vb?.[0]??base.x,y:state.vb?.[1]??base.y,w:state.vb?.[2]??base.w,h:state.vb?.[3]??base.h};
  const wide=typeof matchMedia==="function"&&matchMedia("(max-width:700px)").matches;
+ if(wide&&!state.vb){v.w=base.w/2;v.h=v.w*1.6;v.x=-v.w/2;v.y=base.y+base.h-v.h+220;}
  let listMode=state.list??wide;
 
  const svg=s("svg",{class:"ka z-mid",viewBox:`${v.x} ${v.y} ${v.w} ${v.h}`,role:"group","aria-label":"Атлас Лисьего древа: большая карта проекта",preserveAspectRatio:"xMidYMid meet",tabindex:0}) as SVGSVGElement;
@@ -115,14 +116,14 @@ export function atlasView(o:AtlasOptions):HTMLElement{
  svg.addEventListener("pointerdown",ev=>{
   if(ev.button!==0)return;
   drag={x:ev.clientX,y:ev.clientY,vx:v.x,vy:v.y};dragMoved=false;
-  svg.setPointerCapture(ev.pointerId);svg.classList.add("is-drag");
  });
  svg.addEventListener("pointermove",ev=>{
   if(!drag)return;
   const r=svg.getBoundingClientRect();
   const scale=Math.min(r.width/v.w,r.height/v.h)||1;
   const dx=(ev.clientX-drag.x)/scale,dy=(ev.clientY-drag.y)/scale;
-  if(Math.abs(ev.clientX-drag.x)+Math.abs(ev.clientY-drag.y)>5)dragMoved=true;
+  if(!dragMoved&&Math.abs(ev.clientX-drag.x)+Math.abs(ev.clientY-drag.y)>5){dragMoved=true;try{svg.setPointerCapture(ev.pointerId);}catch{/* указатель уже отпущен */}svg.classList.add("is-drag");}
+  if(!dragMoved)return;
   v.x=drag.vx-dx;v.y=drag.vy-dy;apply();
  });
  const stopDrag=()=>{drag=null;svg.classList.remove("is-drag");setTimeout(()=>{dragMoved=false;},0);};
