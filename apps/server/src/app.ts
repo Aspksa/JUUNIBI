@@ -701,29 +701,9 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "GET" && p === "/api/brain/plan-benchmarks")
           return send(res,deps.brain?200:503,deps.brain?.evaluatePlanBenchmarks()??{error:"Мозг недоступен"});
         if (req.method === "GET" && p === "/api/brain/graph-stats") {
-          if(!deps.brain) return send(res,503,{error:"Мозг недоступен"});
+          if (!deps.brain) return send(res,503,{error:"Мозг недоступен"});
           return send(res,200,await deps.brain.graphMemoryStats());
         }
-        if (req.method === "POST" && p === "/api/brain/graph-search") {
-          if(!deps.brain) return send(res,503,{error:"Мозг недоступен"});
-          const b=await readJson(req);
-          if(typeof b.query!=="string") return send(res,400,{error:"Укажите поисковый запрос"});
-          if(b.limit!==undefined && typeof b.limit!=="number") return send(res,400,{error:"Некорректный лимит"});
-          return send(res,200,await deps.brain.searchGraphMemory(b.query,typeof b.limit==="number"?b.limit:8));
-        }
-        if (req.method === "GET" && p === "/api/brain/plan-benchmarks")
-          return send(res,deps.brain?200:503,deps.brain?.planBenchmarks()??{error:"Мозг недоступен"});
-        if (req.method === "GET" && p === "/api/brain/graph-stats") {
-          if(!deps.brain) return send(res,503,{error:"Мозг недоступен"});
-          return send(res,200,await deps.brain.graphMemoryStats());
-        }
-        if (req.method === "POST" && p === "/api/brain/graph-search") {
-          if(!deps.brain) return send(res,503,{error:"Мозг недоступен"});
-          const b=await readJson(req);
-          return send(res,200,await deps.brain.searchGraphMemory(b.query,b.limit??8));
-        }
-        if (req.method === "GET" && p === "/api/brain/graph-stats")
-          return send(res, deps.brain ? 200 : 503, deps.brain ? await deps.brain.graphMemoryStats() : {error:"Мозг недоступен"});
         if (req.method === "POST" && p === "/api/brain/graph-search") {
           if (!deps.brain) return send(res,503,{error:"Мозг недоступен"});
           const b=await readJson(req);
