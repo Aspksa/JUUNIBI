@@ -1,3 +1,4 @@
+import { BrainGraphSQLite } from "./brain-graph-sqlite";
 import { LocalDisk } from "./local-disk";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -82,7 +83,8 @@ const mobile = new MobileAccess(path.join(dataDir, "mobile.json"), {
   makeServer: (gate) => createApp(appDeps, gate),
   log,
 });
-const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, "brain.json")));
+const brainGraph = new BrainGraphSQLite(path.join(dataDir, "brain-graph.sqlite3"),path.join(root, "scripts", "brain-graph-sqlite.py"));
+const brain = new BrainCore(() => cloudConfigured, fileStore(path.join(dataDir, "brain.json")),brainGraph);
 /** Background check according to the owner's choice (off / hourly / daily); the 15-minute tick only decides whether it is time. */
 const checkUpdates = () => {
   const every = { off: 0, hourly: 60 * 60_000, daily: 24 * 60 * 60_000 }[updater.getConfig().autoCheck];
@@ -180,10 +182,10 @@ let embeddingKey: { apiKey: string; baseUrl?: string } | undefined;
 /** Reuse the chat credential; embeddings use their own model (never the chat model). Any problem leaves word search in place. */
 function applyEmbeddings() {
   const e = settings.get().embeddings;
-  if (!embeddingKey || !e.enabled) { memory.setEmbeddingProvider(undefined); return; }
+  if (!embeddingKey || !e.enabled) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); return; }
   const base = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? embeddingKey.baseUrl;
-  try { memory.setEmbeddingProvider(new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) })); }
-  catch (error) { memory.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
+  try { const embedding = new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) }); memory.setEmbeddingProvider(embedding); brainGraph.setEmbeddingProvider(embedding); }
+  catch (error) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
 }
 settings.onChange((s) => { applyEmbeddings(); learningProvider?.setModels(s.chat); });
 let currentPersona = "";
