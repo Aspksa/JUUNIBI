@@ -1,3 +1,4 @@
+import { inspectCognitiveEngine } from "./brain-cognitive-engine";
 import { recallConfirmedExperience, evaluateExperienceRecall } from "./memory-experience-recall";
 import { reviewSixSkills, type CognitiveInput } from "./brain-six-skills";
 import { randomUUID } from "node:crypto";
@@ -94,6 +95,15 @@ export class BrainCore {
       nextStepId:readiness.canResumeReadOnly?readiness.nextStepId:null,
       requiresExplicitExecution:true as const,
       note:"Эвристическое сравнение ограниченного опыта; выбор стратегии и действия требуют проверки владельцем."};
+  }
+  inspectCognitiveEngine(planId: string, input: unknown) {
+    const plan=this.plans.find(p=>p.id===planId);
+    if(!plan) throw Object.assign(new Error("План не найден"),{status:404});
+    const inspection=inspectCognitiveEngine(plan,this.decisions.snapshot(),input);
+    const readiness=this.executionReadiness(planId);
+    return {...inspection,readiness,adaptivePlan:{...inspection.adaptivePlan,
+      nextStepId:readiness.canResumeReadOnly?inspection.adaptivePlan.nextStepId:null,
+      canContinueReadOnly:readiness.canResumeReadOnly}};
   }
   toolRegistry() { return { tools: [{name:"list_modules",risk:"read",requiresExplicitExecution:true},{name:"search_memory",risk:"read",requiresExplicitExecution:true}], writeEnabled:false, arbitraryToolsEnabled:false } as const; }
   reviewSixCognitiveSkills(input: CognitiveInput) { return reviewSixSkills(input); }
