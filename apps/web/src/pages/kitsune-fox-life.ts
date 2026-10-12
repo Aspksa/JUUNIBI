@@ -1,7 +1,8 @@
 import type {FoxMetric} from "./kitsune-fox-metrics";
 import type {FoxHistory,FoxPoint} from "./kitsune-fox-history";
 export type ForestEvent={id:string;day:string;kind:"growth"|"warning"|"achievement"|"recovery"|"update";title:string;detail:string;metricId?:string};
-export type ForestAward={id:string;emoji:string;title:string;detail:string;earned:boolean};
+/** `need` — порог награды в единицах показателя (для оценки сложности); у «Хранителей» это просто подтверждение значения. */
+export type ForestAward={id:string;emoji:string;title:string;detail:string;earned:boolean;need:number};
 const ID_PATTERN=/^fox-(?:[0-9]|[1-9][0-9])$/;
 export function safeForestEvents(raw:unknown):ForestEvent[]{
  if(!Array.isArray(raw))return [];
@@ -25,20 +26,20 @@ export function mergeForestEvents(old:ForestEvent[],incoming:ForestEvent[]):Fore
 export function forestAwards(metrics:FoxMetric[],history:FoxHistory):ForestAward[]{
  const get=(id:number)=>metrics[id]?.value??null;
  const count=Object.values(history).filter(x=>x.length>1).length;
- const conditions:[string,string,string,string,boolean][]=[
- ["first","🌱","Первый росток","В лесу появилась подтверждённая ветвь",(get(1)??0)>=1],
- ["roots","🌳","Король корней","В дереве найдено не менее пяти корневых систем",(get(0)??0)>=5],
- ["links","🧵","Паутинка дружбы","Между системами зарегистрировано 20 связей",(get(7)??0)>=20],
- ["steps","🐾","Лисий следопыт","В органайзере завершено десять задач",(get(15)??0)>=10],
- ["release","🚀","Космический хвост","Зарегистрирована успешная установка",(get(40)??0)>=1],
- ["awards","🏅","Лесной чемпион","Система достижений сообщила о пяти наградах",(get(14)??0)>=5],
- ["history","📚","Летописец","Есть история более чем у десяти показателей",count>=10],
- ["brain","🧠","Мудрая лисичка","Завершён хотя бы один план Мозга",(get(11)??0)>=1],
- ["healthy","🛡️","Страж леса","Монитор подтвердил отсутствие ошибок",get(12)===0],
- ["forest","🍃","Полный листопад","В архитектуре подтверждено 25 ветвей",(get(1)??0)>=25]
+ const conditions:[string,string,string,string,boolean,number][]=[
+ ["first","🌱","Первый росток","В лесу появилась подтверждённая ветвь",(get(1)??0)>=1,1],
+ ["roots","🌳","Король корней","В дереве найдено не менее пяти корневых систем",(get(0)??0)>=5,5],
+ ["links","🧵","Паутинка дружбы","Между системами зарегистрировано 20 связей",(get(7)??0)>=20,20],
+ ["steps","🐾","Лисий следопыт","В органайзере завершено десять задач",(get(15)??0)>=10,10],
+ ["release","🚀","Космический хвост","Зарегистрирована успешная установка",(get(40)??0)>=1,1],
+ ["awards","🏅","Лесной чемпион","Система достижений сообщила о пяти наградах",(get(14)??0)>=5,5],
+ ["history","📚","Летописец","Есть история более чем у десяти показателей",count>=10,10],
+ ["brain","🧠","Мудрая лисичка","Завершён хотя бы один план Мозга",(get(11)??0)>=1,1],
+ ["healthy","🛡️","Страж леса","Монитор подтвердил отсутствие ошибок",get(12)===0,1],
+ ["forest","🍃","Полный листопад","В архитектуре подтверждено 25 ветвей",(get(1)??0)>=25,25]
  ];
- const legendary=conditions.map(([id,emoji,title,detail,earned])=>({id,emoji,title,detail,earned}));
- const everyday=metrics.slice(10,100).map(m=>({id:"metric:"+m.id,emoji:m.emoji,title:"Хранитель: "+m.name,detail:"Подтвердить значение показателя «"+m.name+"»",earned:m.value!==null&&(m.world===5?m.value===0:m.value>0)}));
+ const legendary=conditions.map(([id,emoji,title,detail,earned,need])=>({id,emoji,title,detail,earned,need}));
+ const everyday=metrics.slice(10,100).map(m=>({id:"metric:"+m.id,emoji:m.emoji,title:"Хранитель: "+m.name,detail:"Подтвердить значение показателя «"+m.name+"»",earned:m.value!==null&&(m.world===5?m.value===0:m.value>0),need:1}));
  return [...legendary,...everyday];
 }
 export function forestStory(events:ForestEvent[],metrics:FoxMetric[]):string{

@@ -162,7 +162,7 @@ export const ELITE_FOX_THEMES=[
   ]
  }
 ] as const;
-export interface EliteAward {id:string;emoji:string;name:string;world:string;requirement:string;earned:boolean;progress:number;ready:boolean}
+export interface EliteAward {id:string;emoji:string;name:string;world:string;requirement:string;earned:boolean;progress:number;ready:boolean;/** Пороги двух показателей и число дней измерений — по ним считается сложность. */needs:{a:number;b:number;days:number}}
 const PRIMARY=[1,15,7,11,12,40,3,43,14,0] as const;
 const SECONDARY=[7,11,1,15,54,35,18,47,36,2] as const;
 /** Compound challenges require TWO distinct observed metrics and multiple verified daily samples.
@@ -179,6 +179,6 @@ export function eliteFoxAwards(metrics:FoxMetric[],history:FoxHistory):EliteAwar
   const progress=ready?Math.min(1,a/needA,b/needB,days/needDays):0;
   return {id:"elite-"+world+"-"+rank,emoji:theme.emoji,name,world:theme.title,
    requirement:"Нужно: «"+(metrics[first]?.name??"источник A")+"» ≥ "+needA+", «"+(metrics[second]?.name??"источник B")+"» ≥ "+needB+" и "+needDays+" дней измерений обоих источников.",
-   earned,progress,ready};
+   earned,progress,ready,needs:{a:needA,b:needB,days:needDays}};
  }));
 }

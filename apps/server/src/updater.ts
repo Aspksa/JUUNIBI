@@ -392,7 +392,7 @@ export class ProjectUpdater {
       await this.step("typecheck", "npm", ["run", "typecheck"], staging);
       await this.step("test", "npm", ["test"], staging);
       await this.step("build", "npm", ["run", "build"], staging);
-      await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => ({ path: e.path, sha: e.sha })), removals, description: this.latest!.description }));
+      await writeFile(path.join(this.folder(), "ready.json"), JSON.stringify({ sha, files: entries.map(e => ({ path: e.path, sha: e.sha })), removals, description: this.latest!.description, notes: (this.latest!.changes ?? []).slice(0, 12).map(c => ({ title: c.title, ...(c.pr ? { pr: c.pr } : {}) })) }));
       await this.emit("update_prepared", "", "ready", {sha});
       this.state.phase = "ready";
       this.state.message = "Проверки пройдены. Перезапустите JUUNIBI для установки.";

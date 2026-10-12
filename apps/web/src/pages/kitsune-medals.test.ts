@@ -1,10 +1,10 @@
 import {describe,expect,it} from "vitest";
 import {foxMetrics} from "./kitsune-fox-metrics";
 import {TREE_NODES} from "./kitsune-tree";
-import {RING_LENGTH,filterMedals,legendaryTier,medalItems,medalState,newShelfState,nextMedal,ringDash,type MedalItem} from "./kitsune-medals";
+import {RING_LENGTH,TIER_STEPS,difficultyScore,filterMedals,medalItems,medalState,newShelfState,nextMedal,ringDash,tierOf,type MedalItem} from "./kitsune-medals";
 
 const metrics=foxMetrics({nodes:TREE_NODES,snapshot:null,growth:[]});
-const item=(o:Partial<MedalItem>):MedalItem=>({id:"x",emoji:"🦊",title:"t",kind:"keeper",tier:"bronze",world:"w",earned:false,progress:0,ready:false,requirement:"r",...o});
+const item=(o:Partial<MedalItem>):MedalItem=>({difficulty:1,id:"x",emoji:"🦊",title:"t",kind:"keeper",tier:"bronze",world:"w",earned:false,progress:0,ready:false,requirement:"r",...o});
 
 describe("полка наград",()=>{
  it("собирает все награды в одну полку: 100 хранителей и особых и 100 легендарных",()=>{
@@ -15,14 +15,27 @@ describe("полка наград",()=>{
   expect(items.filter(m=>m.kind==="legendary").length).toBe(100);
   expect(new Set(items.map(m=>m.id)).size).toBe(200);
  });
- it("редкость зависит от сложности, а не от случая",()=>{
-  expect(legendaryTier("elite-3-0")).toBe("gold");
-  expect(legendaryTier("elite-3-4")).toBe("gold");
-  expect(legendaryTier("elite-3-5")).toBe("legend");
-  expect(legendaryTier("elite-9-9")).toBe("legend");
+ it("сложность считается по порогам: log2(1 + порог) на условие и 0,5 за день измерений",()=>{
+  expect(difficultyScore([1])).toBe(1);
+  expect(difficultyScore([20])).toBe(4.39);
+  expect(difficultyScore([6,3],4)).toBe(Math.round((Math.log2(7)+2+2)*100)/100);
+  expect(difficultyScore([-5,Number.NaN])).toBe(0);
+  expect(difficultyScore([2],-3)).toBe(difficultyScore([2]));
+ });
+ it("ступень по границам 3, 6 и 9",()=>{
+  expect([0,2.99,3,5.99,6,8.99,9,30].map(tierOf)).toEqual(["bronze","bronze","silver","silver","gold","gold","legend","legend"]);
+  expect(TIER_STEPS).toEqual([3,6,9]);
+ });
+ it("у каждой награды ступень определяется её сложностью, а не видом",()=>{
   const items=medalItems(metrics,{});
-  expect(items.filter(m=>m.kind==="keeper").every(m=>m.tier==="bronze")).toBe(true);
-  expect(items.filter(m=>m.kind==="featured").every(m=>m.tier==="silver")).toBe(true);
+  for(const m of items)expect(m.tier).toBe(tierOf(m.difficulty));
+  expect(items.filter(m=>m.kind==="keeper").every(m=>m.tier==="bronze")).toBe(true); // порог 1 — просто подтвердить значение
+  const featured=items.filter(m=>m.kind==="featured");
+  expect(new Set(featured.map(m=>m.tier)).size).toBeGreaterThan(1); // «Первый росток» (порог 1) легче «Паутинки» (20 связей)
+  const legendary=items.filter(m=>m.kind==="legendary");
+  const theme=legendary.filter(m=>m.id.startsWith("elite-3-"));
+  expect(theme.map(m=>m.difficulty)).toEqual([...theme.map(m=>m.difficulty)].sort((a,b)=>a-b)); // внутри темы сложность растёт с рангом
+  expect(new Set(legendary.map(m=>m.tier)).size).toBeGreaterThanOrEqual(3);
  });
  it("без данных награда закрыта, а не выдана и не показывает выдуманный прогресс",()=>{
   const items=medalItems(metrics,{});

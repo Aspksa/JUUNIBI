@@ -413,3 +413,7 @@
 }
 @media(prefers-reduced-motion:reduce){.kt-rail-item{transition:none}}
 @media(max-width:600px){.kta-label{font-size:16px}.kta-deg{font-size:14px}.kta-bush-count{font-size:13px}.kta-band-label{font-size:13px}.kt-map-art{padding:14px 6px 8px}}
+.kt-report{display:flex;flex-direction:column;gap:12px;align-items:center}
+.kt-report-img{width:100%;max-width:720px;height:auto;border-radius:20px;box-shadow:0 12px 40px -18px #000}
+.kt-today .kt-chip-row{gap:6px}
+.md-difficulty{font-weight:650;color:var(--tier)}

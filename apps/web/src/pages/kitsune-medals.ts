@@ -5,32 +5,43 @@ import {eliteFoxAwards} from "./kitsune-fox-elite";
 import {el,icon} from "../dom";
 import {openSheet} from "./sheet";
 
-/** One shelf for all awards. The tier says how hard the award is; it is never a statistic about other people. */
+/** Одна полка для всех наград. Ступень показывает, насколько строги условия награды; это не статистика других людей. */
 export type MedalTier="bronze"|"silver"|"gold"|"legend";
 export type MedalKind="keeper"|"featured"|"legendary";
 export interface MedalItem{
  id:string;emoji:string;title:string;kind:MedalKind;tier:MedalTier;world:string;
- earned:boolean;/** 0..1; awards without partial information are 0 until earned. */progress:number;
+ earned:boolean;/** 0..1; без измеримого прогресса — 0, пока награда не получена. */progress:number;
+ /** Сложность по порогам награды (см. difficultyScore): чем строже пороги и дольше нужны измерения, тем выше. */difficulty:number;
  /** True when the data needed to judge the award is there. */ready:boolean;requirement:string;
 }
 export const TIER_LABEL:Record<MedalTier,string>={bronze:"Бронза",silver:"Серебро",gold:"Золото",legend:"Легенда"};
 export const KIND_LABEL:Record<MedalKind,string>={featured:"Особые",keeper:"Хранители",legendary:"Легендарные"};
 
-/** Difficulty of a legendary award grows with its rank inside the theme (see eliteFoxAwards). */
-export function legendaryTier(id:string):MedalTier{
- const rank=Number(/-(\d+)$/.exec(id)?.[1]??0);
- return rank<5?"gold":"legend";
+/** Границы ступеней по сложности: до 3 — бронза, до 6 — серебро, до 9 — золото, дальше — легенда. */
+export const TIER_STEPS=[3,6,9] as const;
+/**
+ * Сложность = сумма log2(1 + порог) по всем условиям + 0,5 за каждый день обязательных измерений.
+ * Подтвердить значение (порог 1) — 1; «20 связей» — 4,4; награда третьего ранга темы (порог 6 и 3 плюс 4 дня) — около 6,8.
+ */
+export function difficultyScore(thresholds:number[],days=0):number{
+ const sum=thresholds.reduce((total,t)=>total+Math.log2(1+Math.max(0,Number.isFinite(t)?t:0)),0);
+ return Math.round((sum+0.5*Math.max(0,days))*100)/100;
+}
+export function tierOf(score:number):MedalTier{
+ return score<TIER_STEPS[0]?"bronze":score<TIER_STEPS[1]?"silver":score<TIER_STEPS[2]?"gold":"legend";
 }
 export function medalItems(metrics:FoxMetric[],history:FoxHistory):MedalItem[]{
  const out:MedalItem[]=[];
  forestAwards(metrics,history).forEach((a,i)=>{
   const featured=i<10;
-  out.push({id:a.id,emoji:a.emoji,title:a.title,kind:featured?"featured":"keeper",tier:featured?"silver":"bronze",
+  const difficulty=difficultyScore([a.need]);
+  out.push({id:a.id,emoji:a.emoji,title:a.title,kind:featured?"featured":"keeper",tier:tierOf(difficulty),difficulty,
    world:featured?"Особые награды":"Хранители показателей",earned:a.earned,progress:a.earned?1:0,ready:a.earned,requirement:a.detail});
  });
  for(const a of eliteFoxAwards(metrics,history))
-  out.push({id:a.id,emoji:a.emoji,title:a.name,kind:"legendary",tier:legendaryTier(a.id),world:a.world,
-   earned:a.earned,progress:a.progress,ready:a.ready,requirement:a.requirement});
+  {const difficulty=difficultyScore([a.needs.a,a.needs.b],a.needs.days);
+   out.push({id:a.id,emoji:a.emoji,title:a.name,kind:"legendary",tier:tierOf(difficulty),difficulty,world:a.world,
+    earned:a.earned,progress:a.progress,ready:a.ready,requirement:a.requirement});}
  return out;
 }
 /** The unearned award that is closest to being earned; null when nothing has measurable progress. */
@@ -96,10 +107,9 @@ export function openMedal(m:MedalItem){
    el("div",{cls:"md-art"},medalSvg(m,120)),
    el("p",{cls:"md-state",textContent:STATE_LABEL[state]+(state==="progress"?" · "+percent+"%":"")}),
    el("p",{textContent:m.requirement}),
-   el("small",{cls:"muted",textContent:m.kind==="legendary"
-     ?"Чем выше ранг внутри темы, тем строже условия. Если источники недоступны, награда остаётся закрытой."
-     :m.kind==="keeper"?"Награда за подтверждённое значение показателя."
-     :"Особая награда за подтверждённое событие в проекте."}))});
+   el("p",{cls:"md-difficulty",textContent:"Сложность: "+m.difficulty.toFixed(1).replace(".",",")+" · "+TIER_LABEL[m.tier]}),
+   el("small",{cls:"muted",textContent:"Ступень считается по порогам награды: бронза — до "+TIER_STEPS[0]+", серебро — до "+TIER_STEPS[1]+", золото — до "+TIER_STEPS[2]+", дальше — легенда. "
+     +(m.kind==="legendary"?"Если источники недоступны, награда остаётся закрытой.":m.kind==="keeper"?"Награда за подтверждённое значение показателя.":"Особая награда за подтверждённое событие в проекте.")}))});
 }
 
 export interface ShelfState{view:"all"|"earned"|"progress"|"locked";kind:"all"|MedalKind;limit:number}

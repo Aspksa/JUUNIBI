@@ -14,7 +14,8 @@ import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type
 import { el, icon } from "../dom";
 import { openSheet } from "./sheet";
 import { RAIL, SEARCHABLE, ZOOMABLE, LAYER_TEXT, activeItem, type FoxView, type Layer, type TreeMode } from "./kitsune-sections";
-import { withRuTitle } from "./kitsune-ru";
+import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
+import { buildForestReport, reportSvg, saveReportPng } from "./kitsune-report";
 import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
 import { treeArt, downstreamDepths, type CrownBush } from "./kitsune-tree-art";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
@@ -57,6 +58,8 @@ export function kitsuneTreePage():HTMLElement {
  let frameIndex=-1; // -1 = «сейчас»
  const shelfState=newShelfState();
  let releases:EvolutionRelease[]=[];
+ let updateStatusValue:Parameters<typeof evolutionFromUpdater>[0]=null;
+ let updateHistoryValue:Parameters<typeof evolutionFromUpdater>[1]=null;
  let dynamicNodes:EvolutionNode[]|null=null;
  let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
  let graphZoom=1;
@@ -145,7 +148,7 @@ export function kitsuneTreePage():HTMLElement {
        el("span",{cls:"kt-eyebrow",textContent:"РОСТ · ПОДТВЕРЖДЕНО"}),
        el("h2",{textContent:"Рост без иллюзий"}),
        el("p",{textContent:"Визуальные эффекты отображают только изменения между подтверждёнными снимками установленной архитектуры. Кандидаты сканера находятся в отдельном разделе."}),
-       el("p",{cls:"kt-state",textContent:"Установленная версия: "+(activeVersion.slice(0,12)||"не определена")}));
+       el("p",{cls:"kt-state",textContent:"Установленная версия: "+(shortVersion(activeVersion)||"не определена")}));
      body.replaceChildren(timeline,side);
      status.textContent=growth.length+" подтверждённых событий эволюции";return;
    }
@@ -165,7 +168,7 @@ export function kitsuneTreePage():HTMLElement {
        side.append(el("h3",{textContent:"Циклические зависимости: "+data.cycles.length}));
        for(const c of data.cycles.slice(0,6))side.append(el("p",{textContent:c.join(" → ")}));
        side.append(el("h3",{textContent:"Ветви без прямого совпадения по файлу: "+data.manifestGaps.length}),
-         el("p",{textContent:data.manifestGaps.join(", ")||"Нет"}));
+         el("p",{textContent:data.manifestGaps.map(id=>withRuTitle({id,title:id}).title).join(", ")||"Нет"}));
        const prompt=el("button",{textContent:"Подготовить разбор для Мозга"});
        prompt.addEventListener("click",()=>{
          const context="Сделай архитектурный аудит JUUNIBI на основании кандидатов, не считая их реализованными возможностями: "+data.candidates.slice(0,20).map(x=>x.file).join(", ")+". Предложи проверки и связи; не меняй проект.";
@@ -187,8 +190,8 @@ export function kitsuneTreePage():HTMLElement {
        const controls=el("div",{cls:"kt-tabs"});
        const before=el("select",{attrs:{"aria-label":"Предыдущая версия"}}),after=el("select",{attrs:{"aria-label":"Новая версия"}});
        for(const v of versions){
-         before.append(el("option",{attrs:{value:v.version},textContent:v.version.slice(0,12)}));
-         after.append(el("option",{attrs:{value:v.version},textContent:v.version.slice(0,12)}));
+         before.append(el("option",{attrs:{value:v.version},textContent:shortVersion(v.version)}));
+         after.append(el("option",{attrs:{value:v.version},textContent:shortVersion(v.version)}));
        }
        before.value=versions[1]!.version;after.value=versions[0]!.version;
        const result=el("div",{cls:"kt-comparison"});
@@ -196,7 +199,7 @@ export function kitsuneTreePage():HTMLElement {
          const x=versions.find(v=>v.version===before.value),y=versions.find(v=>v.version===after.value);
          result.replaceChildren();
          if(!x||!y)return;
-         const d=compareManifests(x.manifest.nodes,y.manifest.nodes);
+         const d=compareManifests(x.manifest.nodes.map(withRuTitle),y.manifest.nodes.map(withRuTitle));
          for(const [title,arr] of [["Новые ветви",d.added],["Удалённые",d.removed],["Изменённые",d.uncertain],["Без изменений",d.unchanged]] as [string,string[]][]){
            result.append(el("article",{cls:"kt-node"},el("strong",{textContent:title+" · "+arr.length}),
              el("p",{textContent:arr.join(", ")||"Нет"})));
@@ -239,7 +242,7 @@ export function kitsuneTreePage():HTMLElement {
        for(const event of evolutionChronology(history)){
          if(!(event.description+" "+event.version).toLowerCase().includes(filter))continue;
          list.append(el("article",{cls:"kt-node"},el("strong",{textContent:event.kind==="install"?"Установка":event.kind==="rollback"?"Откат":"Событие"}),
-           el("small",{textContent:event.at+" · "+event.version.slice(0,12)}),el("p",{textContent:event.description})));
+           el("small",{textContent:(dateRu(event.at)||event.at)+" · "+shortVersion(event.version)}),el("p",{textContent:event.description})));
        }
      }else{
        for(const item of traceCapabilities(nodesOf(),persistedHistory?.activeVersion??"",history)){
@@ -264,14 +267,13 @@ export function kitsuneTreePage():HTMLElement {
      for(const release of releases.filter(x=>(x.title+" "+x.description+" "+x.version).toLocaleLowerCase("ru").includes(filter))){
        const card=el("article",{cls:"kt-node"},
          el("strong",{textContent:release.title}),
-         el("small",{textContent:evolutionStateLabel[release.state]+" · "+release.version}),
+         el("small",{textContent:evolutionStateLabel[release.state]+" · "+shortVersion(release.version)}),
          el("p",{textContent:release.description}),
-         el("small",{textContent:release.relatedBranches.length?
-           "Предполагаемые ветви: "+release.relatedBranches.join(", "):"Ветви не определены"}));
+         el("small",{textContent:branchLine(release)}));
        if(release.evidence)card.append(el("a",{textContent:"Изменение в GitHub ↗",attrs:{href:release.evidence,target:"_blank",rel:"noopener noreferrer"}}));
        timeline.append(card);
      }
-     if(persistedHistory)timeline.prepend(el("p",{cls:"muted",textContent:"Журнал: "+persistedHistory.history.length+" событий · активная версия "+persistedHistory.activeVersion}));
+     if(persistedHistory)timeline.prepend(el("p",{cls:"muted",textContent:"Журнал: "+persistedHistory.history.length+" событий · активная версия "+shortVersion(persistedHistory.activeVersion)}));
      const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Центр обновлений"}),
        el("p",{textContent:"Скачивание само по себе не активирует ветку. Статус «Установлено» появляется только после записи об установке; откат сохраняется в истории."}));
      const link=el("a",{textContent:"Открыть Центр обновлений →",attrs:{href:"#update"}});
@@ -317,6 +319,14 @@ export function kitsuneTreePage():HTMLElement {
    body.replaceChildren(graph,details);
  }
  /** Сведения о ветви — окном по центру; связанные ветви открываются в том же окне. */
+ /** Версии пересчитываются, когда пришёл любой из двух источников: журнал обновлений или снимки архитектуры. */
+ const refreshReleases=()=>{releases=evolutionFromUpdater(updateStatusValue,updateHistoryValue,persistedHistory?.snapshots);};
+ const branchLine=(r:EvolutionRelease):string=>{
+   const names=r.relatedBranches.map(id=>nodesOf().find(n=>n.id===id)?.title??id).join(", ");
+   if(r.branchSource==="snapshots")return names?"Ветви, изменённые по снимкам архитектуры: "+names:"По снимкам архитектуры ветви не менялись";
+   if(r.branchSource==="description")return "Предположительно по описанию: "+names;
+   return "Ветви не определены: нет снимков архитектуры и пояснения";
+ };
  function openNode(id:string){
    const all=nodesOf();
    const node=all.find(n=>n.id===id);
@@ -361,6 +371,18 @@ export function kitsuneTreePage():HTMLElement {
    openSheet({title:"Разбор показателей",icon:"brain",sub:"Мозг смотрит только на подтверждённые значения",tone:"ok",content:el("div",{cls:"kt-node-sheet"},report)});
    void api.chat(prompt).then(r=>{report.textContent=r.ok?r.value.reply:"Мозг недоступен: "+r.error.message;}).catch(()=>{report.textContent="Не удалось связаться с Мозгом";});
  }
+ /** Недельный отчёт: карточка с тремя событиями, ближайшей наградой и тем, что ещё не подтверждено. */
+ function openReport(metrics:FoxMetric[],medals:MedalItem[]){
+   const report=buildForestReport({now:Date.now(),events:foxEvents,metrics,medals,plannedBranches:nodesOf().filter(n=>n.status==="planned").map(n=>n.title)});
+   const img=el("img",{cls:"kt-report-img",attrs:{alt:"Лесной отчёт за неделю",src:"data:image/svg+xml;charset=utf-8,"+encodeURIComponent(reportSvg(report))}});
+   const save=el("button",{type:"button",cls:"kt-chip is-strong",textContent:"Сохранить картинкой"});
+   const note=el("small",{cls:"muted",attrs:{"aria-live":"polite"},textContent:"Картинка сохранится в папку загрузок."});
+   save.addEventListener("click",()=>{
+     save.disabled=true;note.textContent="Готовим картинку…";
+     void saveReportPng(report).then(ok=>{note.textContent=ok?"Готово: файл в папке загрузок.":"Браузер не смог нарисовать картинку. Можно сделать снимок экрана.";}).finally(()=>{save.disabled=false;});
+   });
+   openSheet({title:"Лесной отчёт",icon:"book",sub:"За последние 7 дней",tone:"ok",content:el("div",{cls:"kt-report"},img,el("div",{cls:"kt-chip-row"},save),note)});
+ }
  function helpSheet(){
    openSheet({title:"Как читать Лисье древо",icon:"help",tone:"ok",content:el("div",{cls:"kt-node-sheet"},
      el("p",{textContent:"Ствол и ветви — модули проекта. Заполненный лист подтверждён, пунктирный — запланирован. Крона — 100 показателей в 10 мирах; куст показывает, сколько из десяти подтверждено."}),
@@ -391,6 +413,8 @@ export function kitsuneTreePage():HTMLElement {
      render();
    });
    const recent=foxEvents.slice(-3).reverse();
+   const reportBtn=el("button",{type:"button",cls:"kt-chip kt-mini",textContent:"🗒 Лесной отчёт"});
+   reportBtn.addEventListener("click",()=>openReport(metrics,medals));
    const brain=el("button",{type:"button",cls:"kt-chip kt-mini",textContent:"🧠 Разобрать показатели"});
    brain.addEventListener("click",()=>openBrainReport(metrics));
    const today=el("section",{cls:"kt-today",attrs:{"aria-label":"Сегодня"}},
@@ -402,7 +426,7 @@ export function kitsuneTreePage():HTMLElement {
        el("small",{cls:"muted",textContent:unread.length?unread.slice(-1).map(e=>e.title).join(""):"лесной дневник спокоен"}),acknowledge),
      foxReaction?el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}):null,
      recent.length?el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))):el("p",{cls:"muted kt-today-story",textContent:forestStory(foxEvents,metrics)}),
-     brain);
+     el("div",{cls:"kt-chip-row"},reportBtn,brain));
    const current=activeItem(mode,layer,foxView);
    const badge=(id:string)=>id==="awards"?String(medals.filter(m=>m.earned).length):id==="metrics"?String(availability):"";
    const nav=el("nav",{cls:"kt-rail-nav",attrs:{"aria-label":"Разделы дерева"}},...RAIL.map(group=>el("div",{cls:"kt-rail-group"},
@@ -622,6 +646,7 @@ export function kitsuneTreePage():HTMLElement {
    const snapshot=await response.json() as EvolutionSnapshot;
    dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
    persistedHistory=snapshot.timeline;
+   refreshReleases();
    // Without Python 3 the stored histories cannot work: say so plainly instead of silently showing less.
    const problem=snapshot.python&&!snapshot.python.ok?snapshot.python.reason:snapshot.warning;
    notice.textContent=problem??"";notice.hidden=!problem;
@@ -642,7 +667,7 @@ export function kitsuneTreePage():HTMLElement {
    render();
  }).catch(()=>{ /* Older server: use built-in verified catalog. */ });
  void Promise.all([api.updateStatus(),api.updateHistory()]).then(([st,h])=>{
-   releases=evolutionFromUpdater(st.ok?st.value:null,h.ok?h.value:null);
+   updateStatusValue=st.ok?st.value:null;updateHistoryValue=h.ok?h.value:null;refreshReleases();
    updatesLoading=false;
    render();
  }).catch(()=>{updatesLoading=false;render();});
