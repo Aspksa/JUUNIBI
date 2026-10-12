@@ -1,3 +1,4 @@
+import { KitsuneEvolution } from "./kitsune-evolution";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
 import { LocalDisk } from "./local-disk";
 import { existsSync, readFileSync } from "node:fs";
@@ -466,6 +467,7 @@ const appDeps: AppDeps = {
   memory,
   approvals: approvalGate,
   updater,
+  kitsuneEvolution: new KitsuneEvolution(root,updater),
   // Only a launcher can start the server again, so a restart is offered only when it started us.
   restart: () => { if (process.env.JUUNIBI_SUPERVISED !== "1") return false; setTimeout(() => void shutdown(75), 400); return true; },
   activity: () => {

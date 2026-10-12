@@ -1,9 +1,10 @@
+import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el } from "../dom";
 import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates";
+export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -34,6 +35,9 @@ export const treeConnections=()=>TREE_NODES.flatMap(node=>node.dependsOn.map(fro
 export function kitsuneTreePage():HTMLElement {
  let mode:TreeMode="architecture",selected="brain",filter="";
  let releases:EvolutionRelease[]=[];
+ let dynamicNodes:EvolutionNode[]|null=null;
+ let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
+ let graphZoom=1;
  let updatesLoading=true;
  const body=el("div",{cls:"kt-layout"});
  const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
@@ -45,8 +49,9 @@ export function kitsuneTreePage():HTMLElement {
  root.insertBefore(controls,body);
  const tabs=el("div",{cls:"kt-tabs"});
  controls.prepend(tabs);
+ const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
@@ -65,14 +70,25 @@ export function kitsuneTreePage():HTMLElement {
        if(release.evidence)card.append(el("a",{textContent:"Изменение в GitHub ↗",attrs:{href:release.evidence,target:"_blank",rel:"noopener noreferrer"}}));
        timeline.append(card);
      }
+     if(persistedHistory)timeline.prepend(el("p",{cls:"muted",textContent:"SQLite: "+persistedHistory.history.length+" событий · активная версия "+persistedHistory.activeVersion}));
      const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Центр обновлений"}),
        el("p",{textContent:"Скачивание само по себе не активирует ветку. Статус «Установлено» появляется только после записи об установке; откат сохраняется в истории."}));
      const link=el("a",{textContent:"Открыть Центр обновлений →",attrs:{href:"#update"}});
      side.append(link);body.replaceChildren(timeline,side);return;
    }
-   const matched=TREE_NODES.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
-   status.textContent=`${TREE_NODES.filter(n=>n.status==="implemented").length} реализовано · ${TREE_NODES.filter(n=>n.status==="planned").length} запланировано · ${treeConnections().length} связей`;
+   const allNodes=nodesOf();
+   if(mode==="architect"){
+     const advice=recommendEvolution({schemaVersion:1,project:"JUUNIBI",nodes:allNodes});
+     const adviceHost=el("div",{cls:"kt-graph"});
+     adviceHost.append(el("p",{cls:"muted",textContent:"Правила зависимостей, не генеративный ИИ. Предложения не изменяют проект автоматически."}));
+     for(const row of advice)adviceHost.append(el("article",{cls:"kt-node"},el("strong",{textContent:row.title}),el("p",{textContent:row.explanation}),el("small",{textContent:row.ready?"Зависимости готовы":"Есть блокирующие зависимости"})));
+     body.replaceChildren(adviceHost,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Архитектор развития"}),el("p",{textContent:"Анализирует реальные связи манифеста, показывает блокировки и будущие этапы. Для фактической реализации потребуется отдельное подтверждение."})));
+     status.textContent=advice.length+" направлений для развития";return;
+   }
+   const matched=allNodes.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
+   status.textContent=`${allNodes.filter(n=>n.status==="implemented").length} реализовано · ${TREE_NODES.filter(n=>n.status==="planned").length} запланировано · ${allNodes.flatMap(n=>n.dependsOn).length} связей`;
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
+   graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);
    const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
    for(const node of nodes){
      const card=el("button",{cls:"kt-node "+(node.id===selected?"kt-selected ":"")+(node.status==="planned"?"kt-future":""),
@@ -82,9 +98,9 @@ export function kitsuneTreePage():HTMLElement {
      card.addEventListener("click",()=>{selected=node.id;render();});
      graph.append(card);
    }
-   const current=TREE_NODES.find(n=>n.id===selected)??TREE_NODES[0]!;
-   const parents=current.dependsOn.map(id=>TREE_NODES.find(n=>n.id===id)?.title??id);
-   const children=TREE_NODES.filter(n=>n.dependsOn.includes(current.id)).map(n=>n.title);
+   const current=allNodes.find(n=>n.id===selected)??allNodes[0]!;
+   const parents=current.dependsOn.map(id=>allNodes.find(n=>n.id===id)?.title??id);
+   const children=allNodes.filter(n=>n.dependsOn.includes(current.id)).map(n=>n.title);
    const details=el("aside",{cls:"kt-detail"},
       el("h2",{textContent:current.title}),
       el("p",{textContent:current.description}),
@@ -95,8 +111,8 @@ export function kitsuneTreePage():HTMLElement {
    if(current.evidence){const link=el("a",{textContent:"Открыть подтверждающий PR ↗",attrs:{href:current.evidence,target:"_blank",rel:"noopener noreferrer"}});details.append(link);}
    if(mode==="connections"){
      const list=el("div",{cls:"kt-edges"});
-     for(const edge of treeConnections().filter(e=>e.from===selected||e.to===selected)){
-       const n=TREE_NODES.find(x=>x.id===(edge.from===selected?edge.to:edge.from));
+     for(const edge of allNodes.flatMap(n=>n.dependsOn.map(from=>({from,to:n.id}))).filter(e=>e.from===selected||e.to===selected)){
+       const n=allNodes.find(x=>x.id===(edge.from===selected?edge.to:edge.from));
        if(!n)continue;
        const button=el("button",{textContent:`${edge.from===selected?"Зависит от этой ветви":"Зависимость"} → ${n.title}`});
        button.addEventListener("click",()=>{selected=n.id;render();});list.append(button);
@@ -105,6 +121,19 @@ export function kitsuneTreePage():HTMLElement {
    }
    body.replaceChildren(graph,details);
  }
+ const zoom=el("div",{cls:"kt-zoom"});
+ for(const [label,value] of [["−",-0.15],["+",0.15],["100%",0]] as [string,number][]){
+   const b=el("button",{textContent:label});
+   b.addEventListener("click",()=>{graphZoom=value===0?1:Math.max(.6,Math.min(1.5,graphZoom+value));render();});zoom.append(b);
+ }
+ controls.append(zoom);
+ void fetch("/api/kitsune/evolution").then(async response=>{
+   if(!response.ok)throw new Error("Серверная карта недоступна");
+   const snapshot=await response.json() as EvolutionSnapshot;
+   dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
+   persistedHistory=snapshot.timeline;
+   render();
+ }).catch(()=>{ /* Older server: use built-in verified catalog. */ });
  void Promise.all([api.updateStatus(),api.updateHistory()]).then(([st,h])=>{
    releases=evolutionFromUpdater(st.ok?st.value:null,h.ok?h.value:null);
    updatesLoading=false;

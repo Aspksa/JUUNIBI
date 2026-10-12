@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "project": "JUUNIBI",
+  "nodes": [
+    {
+      "id": "core",
+      "title": "JUUNIBI Core",
+      "description": "Платформа приложения",
+      "how": "Соединяет сервер и интерфейс",
+      "status": "implemented",
+      "dependsOn": [],
+      "stage": 0
+    },
+    {
+      "id": "brain",
+      "title": "Brain Evolution 2.0",
+      "description": "Планирование, опыт и оценка решений",
+      "how": "Анализирует планы и проверенные результаты",
+      "status": "implemented",
+      "dependsOn": [
+        "core"
+      ],
+      "stage": 1,
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269"
+    },
+    {
+      "id": "memory",
+      "title": "Graph Memory",
+      "description": "Память SQLite",
+      "how": "Хранит подтверждённые решения и связи",
+      "status": "implemented",
+      "dependsOn": [
+        "brain"
+      ],
+      "stage": 2,
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/265"
+    },
+    {
+      "id": "search",
+      "title": "Hybrid Search",
+      "description": "Смысловой и лексический поиск",
+      "how": "Сопоставляет тексты и эмбеддинги",
+      "status": "implemented",
+      "dependsOn": [
+        "memory"
+      ],
+      "stage": 3,
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269"
+    },
+    {
+      "id": "strategy",
+      "title": "Strategy Lab",
+      "description": "Сравнение стратегий",
+      "how": "Оценивает результаты, риски и зависимости без автозапуска",
+      "status": "implemented",
+      "dependsOn": [
+        "brain",
+        "memory"
+      ],
+      "stage": 3,
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/268"
+    },
+    {
+      "id": "benchmark",
+      "title": "Brain Benchmark",
+      "description": "Проверочные сценарии",
+      "how": "Использует воспроизводимые проверки логики",
+      "status": "implemented",
+      "dependsOn": [
+        "search",
+        "strategy"
+      ],
+      "stage": 4,
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269"
+    },
+    {
+      "id": "tasks",
+      "title": "Дела и достижения",
+      "description": "Задачи, цели и награды",
+      "how": "Показывает личные и рабочие задачи",
+      "status": "implemented",
+      "dependsOn": [
+        "core"
+      ],
+      "stage": 1
+    },
+    {
+      "id": "disk",
+      "title": "Диск",
+      "description": "Файловое пространство",
+      "how": "Управление файлами и их просмотр",
+      "status": "implemented",
+      "dependsOn": [
+        "core"
+      ],
+      "stage": 1
+    },
+    {
+      "id": "agent",
+      "title": "Agent",
+      "description": "Контролируемые инструменты",
+      "how": "Подтверждение до выполнения чувствительных действий",
+      "status": "implemented",
+      "dependsOn": [
+        "brain"
+      ],
+      "stage": 2
+    },
+    {
+      "id": "kitsune",
+      "title": "Лисье древо",
+      "description": "Карта архитектуры и истории",
+      "how": "Собирает манифест, версии и журнал обновлений",
+      "status": "implemented",
+      "dependsOn": [
+        "core"
+      ],
+      "stage": 2
+    },
+    {
+      "id": "evolution3",
+      "title": "Brain Evolution 3.0",
+      "description": "Полная индексация и независимое обучение",
+      "how": "Следующий запланированный этап",
+      "status": "planned",
+      "dependsOn": [
+        "benchmark",
+        "memory"
+      ],
+      "stage": 5
+    }
+  ]
+}
