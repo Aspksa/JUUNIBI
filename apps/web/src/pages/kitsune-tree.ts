@@ -432,7 +432,10 @@ export function kitsuneTreePage():HTMLElement {
    const organizer=read<import("../api").Organizer>(4);if(organizer)foxLive.organizer=organizer;
    const updater=read<import("../api").UpdateStatus>(5);if(updater)foxLive.updater=updater;
    const project=read<import("../api").ProjectStatsData>(6);if(project)foxLive.project=project;
-   foxLoading=false;if(mode==="fox")render();
+   foxLoading=false;
+   foxHistory=recordMetrics(foxHistory,foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive}),new Date().toISOString().slice(0,10));
+   saveHistory(foxHistory);
+   if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
  render();return root;
 }
