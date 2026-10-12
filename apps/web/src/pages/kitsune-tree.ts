@@ -1,4 +1,5 @@
-import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,type ForestEvent} from "./kitsune-fox-life";
+import {foxMotion,foxChangedMetrics,foxVerifiedReadings} from "./kitsune-fox-motion";
+import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,safeForestEvents,type ForestEvent} from "./kitsune-fox-life";
 import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
 import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
@@ -65,8 +66,15 @@ export function kitsuneTreePage():HTMLElement {
  let foxHistory:FoxHistory=readHistory();
  let foxFavoriteSort=false;
  let foxEvents:ForestEvent[]=[];
+ const eventStoreKey="juunibi:fox:events:v1";
+ const seenStoreKey="juunibi:fox:seen:v1";
+ const foxSeen=new Set<string>();
+ try{foxEvents=safeForestEvents(JSON.parse(localStorage.getItem(eventStoreKey)??"[]") as unknown);const raw=JSON.parse(localStorage.getItem(seenStoreKey)??"[]") as unknown;if(Array.isArray(raw))for(const id of raw)if(typeof id==="string")foxSeen.add(id);}catch{/* Storage optional */}
  let foxCompact=false;
  let foxLastAward="";
+ let foxKnownNumbers=new Map<string,number>();
+ let foxChanged=new Set<string>();
+ let foxLimit=30;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
@@ -123,15 +131,25 @@ export function kitsuneTreePage():HTMLElement {
      const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
      const period=el("button",{textContent:foxPeriod+" дней"});
      period.addEventListener("click",()=>{foxPeriod=foxPeriod===7?30:7;period.textContent=foxPeriod+" дней";paint();});
+     const reload=el("button",{textContent:"↻ Обновить"});
+     reload.addEventListener("click",()=>{reload.disabled=true;foxLoading=true;void loadFox().finally(()=>{reload.disabled=false;});});
+     const first=el("button",{textContent:"★ Любимые сверху"});
+     first.addEventListener("click",()=>{foxFavoriteSort=!foxFavoriteSort;first.setAttribute("aria-pressed",String(foxFavoriteSort));paint();});
+     first.setAttribute("aria-pressed",String(foxFavoriteSort));
      const cards=el("div",{cls:"kt-fox-grid"});
      const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
+     const loadMore=el("button",{textContent:"Показать ещё 30",cls:"kt-fox-more"});
+     loadMore.addEventListener("click",()=>{foxLimit=Math.min(100,foxLimit+30);paint();});
      const paint=()=>{
        const displayed=metrics.filter(x=>(foxWorld<0||x.world===foxWorld)&&(!foxOnlyFavorite||foxFavorites.has(x.id))&&(x.name+" "+x.description).toLocaleLowerCase("ru").includes(foxSearch.toLocaleLowerCase("ru")));
-       count.textContent="Найдено: "+displayed.length+" из 100 · Избранное: "+foxFavorites.size;
+       if(foxFavoriteSort)displayed.sort((a,b)=>Number(foxFavorites.has(b.id))-Number(foxFavorites.has(a.id)));
+       count.textContent="Показано: "+Math.min(foxLimit,displayed.length)+" из "+displayed.length+" · Избранное: "+foxFavorites.size;
+       loadMore.hidden=displayed.length<=foxLimit;
        cards.classList.toggle("kt-fox-compact",foxCompact);
        cards.replaceChildren();
-       for(const m of displayed){
-         const article=el("article",{cls:"kt-fox-card"});
+       for(const m of displayed.slice(0,foxLimit)){
+         const changed=foxChanged.delete(m.id);
+         const article=el("article",{cls:"kt-fox-card"+(changed?" "+foxMotion(Number(m.id.slice(4))).className:"")});
          const favorite=el("button",{cls:"kt-fox-heart",textContent:foxFavorites.has(m.id)?"♥":"♡",attrs:{"aria-label":(foxFavorites.has(m.id)?"Удалить из избранного: ":"Добавить в избранное: ")+m.name,"aria-pressed":String(foxFavorites.has(m.id))}});
          favorite.addEventListener("click",()=>{
            if(foxFavorites.has(m.id))foxFavorites.delete(m.id);else foxFavorites.add(m.id);
@@ -164,8 +182,8 @@ export function kitsuneTreePage():HTMLElement {
      favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
      const compact=el("button",{textContent:foxCompact?"▦ Карточки":"☷ Компактно"});
      compact.addEventListener("click",()=>{foxCompact=!foxCompact;compact.textContent=foxCompact?"▦ Карточки":"☷ Компактно";paint();});
-     view.append(search,world,favoritesToggle,period,compact);
-     main.append(view,count,cards);
+     view.append(search,world,favoritesToggle,period,compact,first,reload);
+     main.append(view,count,cards,loadMore);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
        el("h2",{textContent:"Как живёт лес"}),
@@ -176,6 +194,31 @@ export function kitsuneTreePage():HTMLElement {
      for(const award of awards)side.append(el("p",{cls:award.earned?"kt-fox-earned":"kt-fox-locked",textContent:award.emoji+" "+award.title+" · "+(award.earned?"Открыто":award.detail)}));
      side.append(el("h3",{textContent:"📖 Лесной дневник"}),el("p",{textContent:forestStory(foxEvents,metrics)}));
      for(const event of foxEvents.slice(-8).reverse())side.append(el("p",{cls:"kt-fox-diary",textContent:event.day+" · "+forestEffects(event.kind)+" · "+event.title}));
+     const brainAnalysis=el("button",{cls:"kt-fox-brain",textContent:"🧠 Анализ показателей через Brain"});
+     const brainReport=el("p",{cls:"kt-fox-diary",attrs:{"aria-live":"polite"}});
+     brainAnalysis.addEventListener("click",()=>{
+       if(brainAnalysis.disabled)return;
+       brainAnalysis.disabled=true;brainReport.textContent="Brain анализирует подтверждённые данные…";
+       const facts=metrics.filter(m=>m.value!==null).slice(0,40).map(m=>m.name+": "+m.value+" ("+m.source+")").join("; ");
+       const prompt="Проанализируй только следующие наблюдаемые показатели JUUNIBI. Укажи проблемы, сильные стороны и три безопасные рекомендации. Не выдумывай отсутствующие значения, не выполняй никаких действий и не меняй проект. Наблюдения: "+facts;
+       void api.chat(prompt).then(r=>{brainReport.textContent=r.ok?r.value.reply:"Brain недоступен: "+r.error.message;})
+       .catch(()=>{brainReport.textContent="Не удалось связаться с Brain";}).finally(()=>{brainAnalysis.disabled=false;});
+     });
+     side.append(brainAnalysis,brainReport);
+     const unread=foxEvents.filter(e=>!foxSeen.has(e.id));
+     const notice=el("div",{cls:"kt-fox-notice"},
+       el("h3",{textContent:"🔔 Лесные вести · "+unread.length+" новых"}),
+       el("p",{textContent:unread.length?unread.slice(-3).map(e=>forestEffects(e.kind)+" "+e.title).join(" · "):"Новых событий нет."}));
+     const acknowledge=el("button",{textContent:"Прочитано",attrs:{type:"button"}});
+     acknowledge.disabled=unread.length===0;
+     acknowledge.addEventListener("click",()=>{
+       for(const event of foxEvents)foxSeen.add(event.id);
+       try{localStorage.setItem(seenStoreKey,JSON.stringify([...foxSeen].slice(-150)));}catch{/* Storage optional */}
+       notice.replaceChildren(el("h3",{textContent:"🔔 Все вести прочитаны"}));acknowledge.disabled=true;
+     });
+     notice.append(acknowledge);side.append(notice);
+     const verifiedUpdate=foxEvents.filter(e=>e.kind==="update").length;
+     if(verifiedUpdate>=5)side.append(el("p",{cls:"kt-fox-easter",textContent:"🎁 Тайный подарок лисичек: пять или больше подтверждённых записей об обновлениях! Лес благодарит своего хранителя."}));
      const availability=metrics.filter(x=>x.value!==null).length;
      side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
@@ -420,6 +463,7 @@ export function kitsuneTreePage():HTMLElement {
    growth=growthEvents(snapshot);
    const dailyEvents:ForestEvent[]=growth.map(item=>({id:item.id,day:new Date().toISOString().slice(0,10),kind:item.kind==="new"?"growth":item.kind==="rollback"?"recovery":item.kind==="removed"?"warning":"update",title:item.title,detail:item.detail}));
    foxEvents=mergeForestEvents(foxEvents,dailyEvents);
+   try{localStorage.setItem(eventStoreKey,JSON.stringify(foxEvents));}catch{/* Storage optional */}
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
    if(growth.length&&playedEvent!==eventKey){
      playedEvent=eventKey;
@@ -434,7 +478,7 @@ export function kitsuneTreePage():HTMLElement {
    updatesLoading=false;
    render();
  }).catch(()=>{updatesLoading=false;render();});
- void Promise.allSettled([
+ const loadFox=()=>Promise.allSettled([
    api.modules(),api.brainStatus(),api.achievements(),api.diskLife(),api.organizer(),api.updateStatus(),api.projectStats()
  ]).then(results=>{
    const read=<T,>(index:number):T|undefined=>{
@@ -451,9 +495,13 @@ export function kitsuneTreePage():HTMLElement {
    const updater=read<import("../api").UpdateStatus>(5);if(updater)foxLive.updater=updater;
    const project=read<import("../api").ProjectStatsData>(6);if(project)foxLive.project=project;
    foxLoading=false;
+   const fresh=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+   foxChanged=foxChangedMetrics(foxKnownNumbers,fresh);
+   foxKnownNumbers=foxVerifiedReadings(fresh);
    foxHistory=recordMetrics(foxHistory,foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive}),new Date().toISOString().slice(0,10));
    saveHistory(foxHistory);
    if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
+ void loadFox();
  render();return root;
 }

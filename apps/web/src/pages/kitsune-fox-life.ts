@@ -37,7 +37,9 @@ export function forestAwards(metrics:FoxMetric[],history:FoxHistory):ForestAward
  ["healthy","🛡️","Страж леса","Монитор подтвердил отсутствие ошибок",get(12)===0],
  ["forest","🍃","Полный листопад","В архитектуре подтверждено 25 ветвей",(get(1)??0)>=25]
  ];
- return conditions.map(([id,emoji,title,detail,earned])=>({id,emoji,title,detail,earned}));
+ const legendary=conditions.map(([id,emoji,title,detail,earned])=>({id,emoji,title,detail,earned}));
+ const everyday=metrics.slice(10,100).map(m=>({id:"metric:"+m.id,emoji:m.emoji,title:"Хранитель: "+m.name,detail:"Подтвердить значение показателя «"+m.name+"»",earned:m.value!==null&&(m.world===5?m.value===0:m.value>0)}));
+ return [...legendary,...everyday];
 }
 export function forestStory(events:ForestEvent[],metrics:FoxMetric[]):string{
  const real=metrics.filter(m=>m.value!==null).length;
