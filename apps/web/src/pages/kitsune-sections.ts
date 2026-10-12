@@ -1,19 +1,13 @@
 /** Лисье древо — одна страница: дерево в центре, слева панель. Здесь описано, что лежит в панели. */
-export type TreeMode="map"|"mindmap"|"atlas"|"architecture"|"development"|"connections"|"updates"|"architect"|"history"|"versions"|"impact"|"comparison"|"brain-chat"|"discovery"|"growth"|"fox";
+export type TreeMode="mindmap"|"updates"|"architect"|"history"|"versions"|"comparison"|"brain-chat"|"discovery"|"growth"|"fox";
 export type Layer="structure"|"links"|"stages"|"impact";
 export type FoxView="metrics"|"awards"|"branches";
-export interface RailItem{id:string;label:string;hint:string;mode:TreeMode;layer?:Layer;foxView?:FoxView}
+export interface RailItem{id:string;label:string;hint:string;mode:TreeMode;foxView?:FoxView}
 export interface RailGroup{id:string;label:string;items:RailItem[]}
 
 export const RAIL:RailGroup[]=[
- {id:"tree",label:"Дерево",items:[
-  {id:"mindmap",label:"Карта-схема",hint:"Ветви раскрываются кликом: от корня до каждого показателя",mode:"mindmap"},
-  {id:"atlas",label:"Атлас",hint:"Большая карта: модули, показатели, награды, код",mode:"atlas"},
-  {id:"structure",label:"Структура",hint:"Модули проекта: ствол и ветви",mode:"map",layer:"structure"},
-  {id:"links",label:"Связи",hint:"Что от чего зависит",mode:"map",layer:"links"},
-  {id:"stages",label:"Этапы",hint:"Как проект рос по уровням",mode:"map",layer:"stages"},
-  {id:"impact",label:"Что сломается, если…",hint:"Выберите ветвь: покажу всё зависимое",mode:"map",layer:"impact"},
-  {id:"free",label:"Свободная карта",hint:"Узлы можно перетаскивать",mode:"architecture"},
+ {id:"tree",label:"Карта",items:[
+  {id:"mindmap",label:"Карта-схема",hint:"Ветви раскрываются кликом: модули, связи, этапы, показатели, награды, код",mode:"mindmap"},
  ]},
  {id:"forest",label:"Лес",items:[
   {id:"metrics",label:"Показатели",hint:"100 показателей в 10 мирах",mode:"fox",foxView:"metrics"},
@@ -36,18 +30,15 @@ export const RAIL:RailGroup[]=[
 export const RAIL_ITEMS:RailItem[]=RAIL.flatMap(g=>g.items);
 
 /** Какой пункт панели сейчас открыт. */
-export function activeItem(mode:TreeMode,layer:Layer,foxView:FoxView):RailItem|undefined{
- return RAIL_ITEMS.find(i=>i.mode===mode&&(i.layer?i.layer===layer:true)&&(i.foxView?i.foxView===foxView:true));
+export function activeItem(mode:TreeMode,foxView:FoxView):RailItem|undefined{
+ return RAIL_ITEMS.find(i=>i.mode===mode&&(i.foxView?i.foxView===foxView:true));
 }
-/** Режимы, где нужен поиск по ветвям, и режимы, где нужен масштаб. */
-export const SEARCHABLE:ReadonlySet<TreeMode>=new Set(["architecture","updates","history","versions","discovery"]);
-export const ZOOMABLE:ReadonlySet<TreeMode>=new Set(["architecture"]);
-/** Режимы, показывающие картину дерева: поиск и список под ней не нужны. */
-export const PICTURE_MODES:ReadonlySet<TreeMode>=new Set(["map"]);
+/** Режимы, где нужен поиск по ветвям. */
+export const SEARCHABLE:ReadonlySet<TreeMode>=new Set(["updates","history","versions","discovery"]);
 
 export const LAYER_TEXT:Record<Layer,{title:string;lead:string}>={
- structure:{title:"Структура",lead:"Ствол — ядро проекта, ветви — модули. Заполненный лист подтверждён, пунктирный запланирован."},
- links:{title:"Связи",lead:"Рядом с каждой ветвью: сколько ветвей ей нужны (↑) и сколько зависят от неё (↓)."},
- stages:{title:"Этапы",lead:"Горизонтальные полосы — этапы развития: чем выше, тем позже появилась ветвь."},
- impact:{title:"Что сломается, если…",lead:"Нажмите на ветвь: всё, что от неё зависит, подсветится, а цифра покажет, через сколько шагов."},
+ structure:{title:"Структура",lead:"Корень — ядро проекта, ветви — модули, показатели, награды и код. Нажмите на ветвь, чтобы раскрыть её."},
+ links:{title:"Связи",lead:"Пунктир — зависимости между модулями; под модулем: сколько ветвей ему нужны (↑) и сколько зависят от него (↓)."},
+ stages:{title:"Этапы",lead:"Число у модуля — этап развития: чем больше число, тем позже появилась ветвь."},
+ impact:{title:"Что сломается, если…",lead:"Нажмите на модуль: всё, что от него зависит, подсветится, а цифра покажет, через сколько шагов."},
 };

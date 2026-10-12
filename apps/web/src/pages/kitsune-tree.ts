@@ -9,18 +9,15 @@ import {FOX_WORLDS,foxMetrics,type FoxLive,type FoxMetric} from "./kitsune-fox-m
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
 import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
 import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
-import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el, icon } from "../dom";
 import { openSheet } from "./sheet";
-import { RAIL, SEARCHABLE, ZOOMABLE, LAYER_TEXT, activeItem, type FoxView, type Layer, type TreeMode } from "./kitsune-sections";
+import { RAIL, SEARCHABLE, activeItem, type FoxView, type TreeMode } from "./kitsune-sections";
 import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
 import { buildForestReport, reportSvg, saveReportPng } from "./kitsune-report";
 import { buildAtlas, countLeaves, allNodes, type AtlasInput, type AtlasNode } from "./kitsune-atlas-model";
-import { atlasView, newAtlasState } from "./kitsune-atlas";
 import { mindView, newMindState } from "./kitsune-mindmap";
 import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
-import { treeArt, downstreamDepths, type CrownBush } from "./kitsune-tree-art";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
 import { pageHead } from "./kit";
 import { api } from "../api";
@@ -55,11 +52,9 @@ export const TREE_NODES:TreeNode[]=[
 ];
 export const treeConnections=()=>TREE_NODES.flatMap(node=>node.dependsOn.map(from=>({from,to:node.id})));
 export function kitsuneTreePage():HTMLElement {
- let mode:TreeMode="map",selected="brain",filter="";
+ let mode:TreeMode="mindmap",selected="brain",filter="";
  let foxView:FoxView="metrics";
- let layer:Layer="structure";
- const atlasState=newAtlasState();
- const mindState=newMindState();
+  const mindState=newMindState();
  let frameIndex=-1; // -1 = «сейчас»
  const shelfState=newShelfState();
  let releases:EvolutionRelease[]=[];
@@ -67,15 +62,12 @@ export function kitsuneTreePage():HTMLElement {
  let updateHistoryValue:Parameters<typeof evolutionFromUpdater>[1]=null;
  let dynamicNodes:EvolutionNode[]|null=null;
  let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
- let graphZoom=1;
- let focusNext=false;
  let updatesLoading=true;
  let discovery:EvolutionSnapshot["discovery"]|null=null;
  let brainMessages:{role:"user"|"assistant";text:string}[]=[];
  let brainBusy=false;
  let growth:GrowthEvent[]=[];
  let activeVersion="";
- let graphMotion:"bloom"|"pulse"|"recovery"|"none"="none";
  let playedEvent="";
  let foxWorld=-1;
  let foxOnlyFavorite=false;
@@ -115,6 +107,8 @@ export function kitsuneTreePage():HTMLElement {
  const main=el("div",{cls:"kt-main"},controls,status,body);
  const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","Живая карта JUUNIBI: модули, показатели и награды в одном дереве"),notice,el("div",{cls:"kt-shell"},rail,main));
  const nodesOf=():EvolutionNode[]=>((dynamicNodes??TREE_NODES) as EvolutionNode[]).map(withRuTitle);
+ /** Идентификатор ветви манифеста на карте-схеме: ядро — корень, остальные — с приставкой. */
+ const mindId=(id:string)=>id==="core"?"root":"m:"+id;
  function render(){
    // A redraw rebuilds the page body; keep the caret where the person was typing.
    const active=document.activeElement;
@@ -131,12 +125,10 @@ export function kitsuneTreePage():HTMLElement {
    const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
    const medals=medalItems(metrics,foxHistory);
    renderRail(metrics,medals);
-   query.hidden=!SEARCHABLE.has(mode);zoom.hidden=!ZOOMABLE.has(mode);controls.hidden=query.hidden&&zoom.hidden;
-   body.classList.toggle("kt-solo",mode==="fox"||mode==="map"||mode==="atlas"||mode==="mindmap");
-   if(mode==="atlas"){renderAtlas(metrics,medals);return;}
+   query.hidden=!SEARCHABLE.has(mode);controls.hidden=query.hidden;
+   body.classList.toggle("kt-solo",mode==="fox"||mode==="mindmap");
    if(mode==="mindmap"){renderMind(metrics,medals);return;}
    if(mode==="fox"){renderFox();return;}
-   if(mode==="map"){renderMap();return;}
    if(mode==="growth"){
      const timeline=el("div",{cls:"kt-growth-timeline",attrs:{"aria-label":"Подтверждённые события роста"}});
      if(!growth.length)timeline.append(el("p",{cls:"kt-empty",textContent:"Подтверждённых изменений между двумя сохранёнными манифестами пока нет. Эффекты появятся после установки нового релиза и получения обоих снимков."}));
@@ -146,7 +138,7 @@ export function kitsuneTreePage():HTMLElement {
          el("div",{},el("strong",{textContent:item.title}),el("small",{textContent:item.detail})));
        if(item.nodeId&&nodesOf().some(n=>n.id===item.nodeId)){
          const go=el("button",{textContent:"Открыть ветвь →"});
-         go.addEventListener("click",()=>{selected=item.nodeId!;mode="architecture";render();});
+         go.addEventListener("click",()=>{selected=item.nodeId!;mode="mindmap";mindState.mode="impact";mindState.selected=mindId(item.nodeId!);render();});
          card.append(go);
        }
        timeline.append(card);
@@ -307,23 +299,6 @@ export function kitsuneTreePage():HTMLElement {
      body.replaceChildren(adviceHost,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Архитектор развития"}),el("p",{textContent:"Анализирует реальные связи манифеста, показывает блокировки и будущие этапы. Для фактической реализации потребуется отдельное подтверждение."})));
      status.textContent=advice.length+" направлений для развития";return;
    }
-   const matched=allNodes.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
-   status.textContent="";
-   const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
-   graph.append(buildGraph(matched,selected,id=>{selected=id;focusNext=true;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion,focusNext));
-   focusNext=false;graphMotion="none";
-   const current=allNodes.find(n=>n.id===selected)??allNodes[0]!;
-   const parents=current.dependsOn.map(id=>allNodes.find(n=>n.id===id)?.title??id);
-   const children=allNodes.filter(n=>n.dependsOn.includes(current.id)).map(n=>n.title);
-   const details=el("aside",{cls:"kt-detail"},
-      el("h2",{textContent:current.title}),
-      el("p",{textContent:current.description}),
-      el("h3",{textContent:"Как работает"}),el("p",{textContent:current.how}),
-      el("h3",{textContent:"Зависит от"}),el("p",{textContent:parents.join(" · ")||"Корневой компонент"}),
-      el("h3",{textContent:"Связанные ветви"}),el("p",{textContent:children.join(" · ")||"Пока нет"}),
-      el("p",{cls:"kt-state",textContent:current.status==="implemented"?"Подтверждено в проекте":"План развития, пока не реализовано"}));
-   if(current.evidence){const link=el("a",{textContent:"Открыть подтверждающее изменение ↗",attrs:{href:current.evidence,target:"_blank",rel:"noopener noreferrer"}});details.append(link);}
-   body.replaceChildren(graph,details);
  }
  /** Сведения о ветви — окном по центру; связанные ветви открываются в том же окне. */
  /** Версии пересчитываются, когда пришёл любой из двух источников: журнал обновлений или снимки архитектуры. */
@@ -354,7 +329,7 @@ export function kitsuneTreePage():HTMLElement {
      node.evidence?el("a",{textContent:"Открыть подтверждающее изменение ↗",attrs:{href:node.evidence,target:"_blank",rel:"noopener noreferrer"}}):null,
      el("div",{cls:"kt-chip-row"},impact,ask));
    const sheet=openSheet({title:node.title,icon:"link",sub:node.status==="implemented"?"Подтверждено":"Запланировано",tone:node.status==="implemented"?"ok":"off",content});
-   impact.addEventListener("click",()=>{sheet.close();mode="map";layer="impact";selected=id;render();});
+   impact.addEventListener("click",()=>{sheet.close();mode="mindmap";mindState.mode="impact";mindState.selected=mindId(id);selected=id;render();});
    ask.addEventListener("click",()=>{sheet.close();mode="brain-chat";selected=id;render();});
  }
  /** Куст короны: десять показателей одного мира карточками в окне. */
@@ -434,7 +409,7 @@ export function kitsuneTreePage():HTMLElement {
      foxReaction?el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}):null,
      recent.length?el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))):el("p",{cls:"muted kt-today-story",textContent:forestStory(foxEvents,metrics)}),
      el("div",{cls:"kt-chip-row"},reportBtn,brain));
-   const current=activeItem(mode,layer,foxView);
+   const current=activeItem(mode,foxView);
    const badge=(id:string)=>id==="awards"?String(medals.filter(m=>m.earned).length):id==="metrics"?String(availability):"";
    const nav=el("nav",{cls:"kt-rail-nav",attrs:{"aria-label":"Разделы дерева"}},...RAIL.map(group=>el("div",{cls:"kt-rail-group"},
      el("h3",{textContent:group.label}),
@@ -445,8 +420,7 @@ export function kitsuneTreePage():HTMLElement {
          el("span",{cls:"ri-text"},el("strong",{textContent:item.label}),el("small",{textContent:item.hint})),
          count?el("span",{cls:"ri-count",textContent:count}):null);
        b.addEventListener("click",()=>{
-         mode=item.mode;if(item.layer)layer=item.layer;if(item.foxView)foxView=item.foxView;
-         if(item.layer==="impact"&&!downstreamDepths(nodesOf(),selected).size&&!nodesOf().some(n=>n.dependsOn.includes(selected)))selected=nodesOf().find(n=>nodesOf().some(m=>m.dependsOn.includes(n.id)))?.id??selected;
+         mode=item.mode;if(item.foxView)foxView=item.foxView;
          render();
          main.scrollIntoView({block:"start",behavior:"auto"});
        });
@@ -506,29 +480,27 @@ export function kitsuneTreePage():HTMLElement {
    return input;
  }
  function renderMind(metrics:FoxMetric[],medals:MedalItem[]){
-   const input=atlasInput(metrics,medals);
+   const frames=timeFrames(persistedHistory,nodesOf());
+   const index=frameIndex<0||frameIndex>=frames.length?frames.length-1:frameIndex;
+   const shown=frames[index]!.nodes.map(withRuTitle);
+   const input={...atlasInput(metrics,medals),nodes:shown};
    const tree=buildAtlas(input);
    const deps:Record<string,string[]>={};
-   for(const n of input.nodes)deps["m:"+n.id]=n.dependsOn.map(d=>"m:"+d);
-   // ядро — корень дерева: у него другой идентификатор
-   const core=input.nodes.find(n=>n.id==="core");
-   const fix=(id:string)=>core&&id==="m:"+core.id?"root":id;
-   const fixed:Record<string,string[]>={};
-   for(const [k,v] of Object.entries(deps))fixed[fix(k)]=v.map(fix);
+   const stages:Record<string,number>={};
+   for(const n of shown){deps[mindId(n.id)]=n.dependsOn.map(mindId);stages[mindId(n.id)]=n.stage;}
    const open=(n:AtlasNode)=>openAtlasNode(n,metrics,medals);
+   const earned=medals.filter(m=>m.earned).sort((a,b)=>["bronze","silver","gold","legend"].indexOf(b.tier)-["bronze","silver","gold","legend"].indexOf(a.tier));
+   const more=el("button",{type:"button",cls:"kt-chip",textContent:earned.length>12?`Ещё ${earned.length-12} · вся полка`:"Вся полка наград"});
+   more.addEventListener("click",()=>{mode="fox";foxView="awards";render();});
+   const fruits=el("section",{cls:"kt-fruits",attrs:{"aria-label":"Плоды: награды"}},
+     el("h3",{textContent:`Плоды · получено ${earned.length} из ${medals.length}`}),
+     earned.length?el("div",{cls:"kt-fruit-row"},...earned.slice(0,12).map(m=>{
+       const b=el("button",{type:"button",cls:"kt-fruit",attrs:{title:m.title+" · "+TIER_LABEL[m.tier],"aria-label":m.title+", "+TIER_LABEL[m.tier]}},medalSvg(m,60));
+       b.addEventListener("click",()=>openMedal(m));return b;})):el("p",{cls:"muted",textContent:"Полученных наград пока нет: они откроются, когда появятся подтверждённые данные."}),
+     more);
    body.replaceChildren(el("div",{cls:"kt-map"},
-     el("header",{cls:"kt-map-head"},el("h2",{textContent:"Карта-схема"}),el("p",{textContent:`Интеллект-карта проекта: корень JUUNIBI слева, ветви раскрываются вправо — ${countLeaves(tree)} реальных узлов. Только то, что есть в данных.`})),
-     mindView({tree,state:mindState,onOpen:open,deps:fixed})));
-   status.textContent="";
- }
- function renderAtlas(metrics:FoxMetric[],medals:MedalItem[]){
-   const input=atlasInput(metrics,medals);
-   const tree=buildAtlas(input);
-   const leaves=countLeaves(tree);
-   const open=(n:AtlasNode)=>openAtlasNode(n,metrics,medals);
-   body.replaceChildren(el("div",{cls:"kt-map"},
-     el("header",{cls:"kt-map-head"},el("h2",{textContent:"Атлас"}),el("p",{textContent:`Всё проекта на одной карте: ствол JUUNIBI, ветви-кланы и венцы листьев — ${leaves} реальных узлов. Только то, что есть в данных.`})),
-     atlasView({tree,state:atlasState,onOpen:open})));
+     el("header",{cls:"kt-map-head"},el("h2",{textContent:"Карта-схема"}),el("p",{textContent:`${countLeaves(tree)} реальных узлов: корень JUUNIBI слева, ветви раскрываются вправо.`})),
+     mindView({tree,state:mindState,onOpen:open,deps,stages}),timeControl(frames,index),fruits));
    status.textContent="";
  }
  function infoSheet(title:string,sub:string,lines:string[],actions:[string,()=>void][]=[],tone:"ok"|"warn"|"off"|"bad"="ok"){
@@ -571,49 +543,6 @@ export function kitsuneTreePage():HTMLElement {
      }
    }
  }
- /** Главный экран: дерево одним рисунком, слой, ползунок времени, плоды-награды. */
- function renderMap(){
-   const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
-   const medals=medalItems(metrics,foxHistory);
-   const frames=timeFrames(persistedHistory,nodesOf());
-   const index=frameIndex<0||frameIndex>=frames.length?frames.length-1:frameIndex;
-   const shown=frames[index]!.nodes.map(withRuTitle);
-   const fresh=new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id)));
-   const crown:CrownBush[]=FOX_WORLDS.map((w,i)=>{const list=metrics.filter(m=>m.world===i);return {id:String(i),emoji:w.emoji,title:w.title,confirmed:list.filter(m=>m.value!==null).length,total:list.length};});
-   const text=LAYER_TEXT[layer];
-   const art=treeArt(shown,{selected,layer,highlight:fresh,crown,
-     onSelect:id=>{selected=id;if(layer==="impact")render();else{openNode(id);render();}},
-     onCrown:id=>openWorld(Number(id))});
-   const legend=el("ul",{cls:"kta-legend"},
-     el("li",{},el("i",{cls:"lg ok"}),"Подтверждено"),el("li",{},el("i",{cls:"lg planned"}),"Запланировано"),
-     fresh.size?el("li",{},el("i",{cls:"lg fresh"}),"Новая ветвь"):null,
-     el("li",{},el("i",{cls:"lg bush"}),"Куст — мир показателей"));
-   const picture=el("section",{cls:"kt-map-art",attrs:{"aria-label":"Дерево развития"}},
-     el("header",{cls:"kt-map-head"},el("h2",{textContent:text.title}),el("p",{textContent:text.lead})),art,legend);
-   const parts:(HTMLElement|null)[]=[picture,timeControl(frames,index)];
-   if(layer==="impact"){
-     const depths=downstreamDepths(shown,selected);
-     const source=shown.find(n=>n.id===selected);
-     const list=[...depths.entries()].map(([id,d])=>({node:shown.find(n=>n.id===id)!,d})).filter(x=>x.node).sort((a,b)=>a.d-b.d||a.node.title.localeCompare(b.node.title,"ru"));
-     const details=el("button",{type:"button",cls:"kt-chip",textContent:"Сведения о ветви «"+(source?.title??"")+"»"});
-     details.addEventListener("click",()=>openNode(selected));
-     parts.push(el("section",{cls:"kt-impact",attrs:{"aria-label":"Что сломается"}},
-       el("h3",{textContent:source?`Если сломается «${source.title}»`:"Выберите ветвь"}),
-       list.length?el("ul",{cls:"kt-impact-list"},...list.map(x=>el("li",{},el("strong",{textContent:x.node.title}),el("small",{cls:"muted",textContent:(x.d===1?"зависит напрямую":"через "+x.d+" "+(x.d<5?"шага":"шагов"))+(x.node.status==="planned"?" · запланировано":"")})))):el("p",{cls:"muted",textContent:"От этой ветви пока ничего не зависит."}),
-       el("p",{cls:"muted",textContent:"Это структурный анализ карты, а не прогноз фактического сбоя."}),details));
-   }
-   const earned=medals.filter(m=>m.earned).sort((a,b)=>["bronze","silver","gold","legend"].indexOf(b.tier)-["bronze","silver","gold","legend"].indexOf(a.tier));
-   const more=el("button",{type:"button",cls:"kt-chip",textContent:earned.length>12?`Ещё ${earned.length-12} · вся полка`:"Вся полка наград"});
-   more.addEventListener("click",()=>{mode="fox";foxView="awards";render();});
-   parts.push(el("section",{cls:"kt-fruits",attrs:{"aria-label":"Плоды: награды"}},
-     el("h3",{textContent:`Плоды · получено ${earned.length} из ${medals.length}`}),
-     earned.length?el("div",{cls:"kt-fruit-row"},...earned.slice(0,12).map(m=>{
-       const b=el("button",{type:"button",cls:"kt-fruit",attrs:{title:m.title+" · "+TIER_LABEL[m.tier],"aria-label":m.title+", "+TIER_LABEL[m.tier]}},medalSvg(m,60));
-       b.addEventListener("click",()=>openMedal(m));return b;})):el("p",{cls:"muted",textContent:"Полученных наград пока нет: они откроются, когда появятся подтверждённые данные."}),
-     more));
-   body.replaceChildren(el("div",{cls:"kt-map"},...parts.filter((x):x is HTMLElement=>x!==null)));
-   status.textContent="";
- }
  const FOX_HUES=[140,25,265,330,200,45,175,95,235,15];
  function foxCard(m:FoxMetric,repaint:()=>void,onNavigate?:()=>void):HTMLElement{
    const changed=foxChanged.delete(m.id);
@@ -631,7 +560,7 @@ export function kitsuneTreePage():HTMLElement {
    const deltaLabel=delta===null?"":(delta>0?"+":"")+delta+" за "+(foxPeriod===1?"24 часа":foxPeriod+" дней");
    const open=el("button",{type:"button",cls:"kt-fox-open",textContent:"Источник →"});
    open.disabled=m.value===null;
-   open.addEventListener("click",()=>{onNavigate?.();mode=m.target;render();});
+   open.addEventListener("click",()=>{onNavigate?.();mode=m.target==="architecture"?"mindmap":m.target;render();});
    const chartPoints=foxPeriod===1?hourly.map(x=>({day:x.hour,value:x.value})):(foxHistory[m.id]??[]).filter(x=>Date.parse(x.day+"T00:00:00Z")>=Date.now()-(foxPeriod-1)*86400000);
    const plotted=sparkPoints(chartPoints);
    article.append(
@@ -716,8 +645,8 @@ export function kitsuneTreePage():HTMLElement {
    const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
    const medals=medalItems(metrics,foxHistory);
    const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лес"}});
-   const back=el("button",{type:"button",cls:"kt-chip kt-back",textContent:"← К дереву"});
-   back.addEventListener("click",()=>{mode="map";render();});
+   const back=el("button",{type:"button",cls:"kt-chip kt-back",textContent:"← К карте"});
+   back.addEventListener("click",()=>{mode="mindmap";render();});
    const head=foxView==="metrics"?["Показатели","100 показателей в 10 мирах. Каждый знает свой источник; без источника честно написано «Нет данных»."]
      :foxView==="awards"?["Награды","Награды выдаются только за подтверждённые данные. Бронза, серебро, золото и легенда показывают сложность награды; если источника нет, награда остаётся закрытой."]
      :["Ветки проекта","Обновления, правки, ошибки и продолжение — по журналу установок и последним изменениям на GitHub."];
@@ -728,12 +657,6 @@ export function kitsuneTreePage():HTMLElement {
    body.replaceChildren(main);
    status.textContent=foxLoading?"Получаем данные…":"";
  }
- const zoom=el("div",{cls:"kt-zoom"});
- for(const [label,value] of [["−",-0.15],["+",0.15],["100%",0]] as [string,number][]){
-   const b=el("button",{textContent:label});
-   b.addEventListener("click",()=>{graphZoom=value===0?1:Math.max(.6,Math.min(1.5,graphZoom+value));render();});zoom.append(b);
- }
- controls.append(zoom);
  void fetch("/api/kitsune/evolution").then(async response=>{
    if(!response.ok)throw new Error("Серверная карта недоступна");
    const snapshot=await response.json() as EvolutionSnapshot;
@@ -751,10 +674,7 @@ export function kitsuneTreePage():HTMLElement {
    foxEvents=mergeForestEvents(foxEvents,dailyEvents);
    try{localStorage.setItem(eventStoreKey,JSON.stringify(foxEvents));}catch{/* Storage optional */}
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
-   if(growth.length&&playedEvent!==eventKey){
-     playedEvent=eventKey;
-     graphMotion=growth.some(x=>x.kind==="rollback")?"recovery":growth.some(x=>x.kind==="new")?"bloom":"pulse";
-   }
+   playedEvent=eventKey;
    activeVersion=snapshot.timeline.activeVersion;
    discovery=snapshot.discovery??null;
    render();

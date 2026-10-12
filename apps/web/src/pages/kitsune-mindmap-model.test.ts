@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAtlas, type AtlasInput } from "./kitsune-atlas-model";
-import { countBelow, defaultExpanded, expandToDepth, layoutMind, maxDepth, pathTo, revealHits, ROW_H, shortLabel } from "./kitsune-mindmap-model";
+import { countBelow, degrees, downstreamDepths, defaultExpanded, expandToDepth, layoutMind, maxDepth, pathTo, revealHits, ROW_H, shortLabel } from "./kitsune-mindmap-model";
 
 const input:AtlasInput={
  nodes:[
@@ -64,5 +64,22 @@ describe("карта-схема", () => {
  it("границы охватывают все узлы с запасом", () => {
   const l=layoutMind(tree,expandToDepth(tree,9));
   for(const b of l.boxes){expect(b.x).toBeGreaterThan(l.bounds.x);expect(b.x+b.w).toBeLessThan(l.bounds.x+l.bounds.w);expect(b.y).toBeGreaterThan(l.bounds.y);expect(b.y).toBeLessThan(l.bounds.y+l.bounds.h);}
+ });
+});
+
+describe("слои карты", () => {
+ const nodes=[{id:"a",dependsOn:[]},{id:"b",dependsOn:["a"]},{id:"c",dependsOn:["b"]},{id:"d",dependsOn:["a","c"]}];
+ it("считает шаги до каждой зависимой ветви и не включает источник", () => {
+  const m=downstreamDepths(nodes,"a");
+  expect(m.get("b")).toBe(1);expect(m.get("c")).toBe(2);expect(m.get("d")).toBe(1);expect(m.has("a")).toBe(false);
+ });
+ it("устойчив к циклам и неизвестным ветвям", () => {
+  expect(downstreamDepths([{id:"x",dependsOn:["y"]},{id:"y",dependsOn:["x"]}],"x").get("y")).toBe(1);
+  expect(downstreamDepths(nodes,"нет").size).toBe(0);
+ });
+ it("степени: нужны (↑) и зависят (↓)", () => {
+  const d=degrees(nodes);
+  expect(d.get("a")).toEqual({up:0,down:2});
+  expect(d.get("d")).toEqual({up:2,down:0});
  });
 });

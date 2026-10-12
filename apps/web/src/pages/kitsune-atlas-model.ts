@@ -1,6 +1,6 @@
 /**
- * «Атлас» — большое дерево в стиле плаката: толстый ствол внизу, цветные ветви-кланы, на концах хабы с венцами листьев.
- * Здесь только данные и раскладка (без DOM): всё строится из реальных источников, ничего не выдумывается.
+ * Состав карты-схемы: корень JUUNIBI, ветви-кланы, хабы и листья. Только данные (без DOM и раскладки):
+ * всё строится из реальных источников, ничего не выдумывается.
  */
 export type AtlasKind="trunk"|"branch"|"hub"|"leaf";
 export type AtlasState="ok"|"planned"|"empty"|"bad"|"info";
@@ -131,126 +131,7 @@ export function buildAtlas(input:AtlasInput):AtlasNode{
  return root;
 }
 
-// ───────── раскладка ─────────
-export interface Placed{node:AtlasNode;x:number;y:number;depth:number;parent:string|null;/** радиус «кластера» (хаб с венцом) */cluster:number;/** направление от ствола (радианы, 0 — вправо, π/2 — вверх) */angle:number}
-export interface AtlasEdge{from:string;to:string;depth:number;clan:number;d:string}
-export interface AtlasLeaf{id:string;x:number;y:number;hub:string}
-export interface AtlasLayout{placed:Map<string,Placed>;leaves:AtlasLeaf[];edges:AtlasEdge[];bounds:{x:number;y:number;w:number;h:number}}
-const LEAF_GAP=23;
-
 export const countLeaves=(n:AtlasNode):number=>n.children.length?n.children.reduce((s,c)=>s+countLeaves(c),0):1;
-const leafKids=(n:AtlasNode)=>n.children.filter(c=>c.kind==="leaf");
-const hubKids=(n:AtlasNode)=>n.children.filter(c=>c.kind!=="leaf");
-/** Радиус венца: листья по кругу с зазором LEAF_GAP. */
-export function clusterRadius(n:AtlasNode):number{
- const L=leafKids(n).length;
- const ring=L?Math.max(30,L*LEAF_GAP/(2*Math.PI)):0;
- const base=n.kind==="trunk"?54:n.kind==="branch"?30:20;
- return Math.max(base,ring+16);
-}
-const sizeOf=(n:AtlasNode):number=>1+n.children.reduce((s,c)=>s+(c.kind==="leaf"?0.35:sizeOf(c)),0);
-const FAN_START=Math.PI*0.04,FAN_END=Math.PI*0.96;
-
-/**
- * Лучевая раскладка, как на плакате: ствол внизу, ветви веером вверх, каждый уровень на своём кольце.
- * Угол ветви пропорционален размеру её поддерева; радиус кольца берётся так, чтобы кластеры помещались в свою дугу.
- * После этого пересекающиеся кластеры разводятся, а каждый хаб мягко тянется к своему месту.
- */
-export function layoutAtlas(root:AtlasNode):AtlasLayout{
- const placed=new Map<string,Placed>();
- const order:Placed[]=[];
- const make=(n:AtlasNode,depth:number,parent:string|null,angle:number)=>{
-  const p:Placed={node:n,x:0,y:0,depth,parent,cluster:clusterRadius(n),angle};
-  placed.set(n.id,p);order.push(p);return p;
- };
- const rootP=make(root,0,null,Math.PI/2);
- // 1) углы: дерево делится веером по размеру поддеревьев
- const span=new Map<string,[number,number]>();
- const assign=(n:AtlasNode,a0:number,a1:number,depth:number)=>{
-  const kids=hubKids(n);
-  if(!kids.length)return;
-  const weights=kids.map(k=>Math.max(Math.pow(sizeOf(k),0.8),depth===1?6:1));
-  const total=weights.reduce((a,b)=>a+b,0);
-  let cursor=a0;
-  kids.forEach((k,i)=>{
-   const w=(a1-a0)*weights[i]!/total;
-   const mid=cursor+w/2;
-   span.set(k.id,[cursor,cursor+w]);cursor+=w;
-   const p=make(k,depth,n.id,mid);
-   assign(k,cursor-w,cursor,depth+1);
-   void p;
-  });
- };
- assign(root,FAN_START,FAN_END,1);
- // 2) радиусы колец: на первом кольце ветви помещаются в свои дуги, дальше кольца идут друг за другом без наложения
- const byDepth=new Map<number,Placed[]>();
- for(const p of order.slice(1))(byDepth.get(p.depth)??byDepth.set(p.depth,[]).get(p.depth)!).push(p);
- const maxDepth=Math.max(0,...byDepth.keys());
- const ringFor=(depth:number)=>(byDepth.get(depth)??[]).reduce((m,p)=>Math.max(m,p.cluster),0);
- const children=(id:string)=>order.filter(q=>q.parent===id);
- let r1=300;
- for(const p of byDepth.get(1)??[]){
-  const [a0,a1]=span.get(p.node.id)!;
-  const need=Math.max(2*p.cluster+60,children(p.node.id).reduce((sum,c)=>sum+2*c.cluster+50,0)*0.8);
-  r1=Math.max(r1,need/Math.max(0.05,a1-a0));
- }
- r1=Math.min(r1,1000);
- const R:number[]=[0,r1];
- for(let d=2;d<=maxDepth;d++)R[d]=R[d-1]!+ringFor(d-1)+ringFor(d)+120;
- const target=new Map<string,[number,number]>();
- for(const p of order.slice(1)){
-  const r=R[p.depth]!;
-  p.x=Math.cos(p.angle)*r;p.y=-Math.sin(p.angle)*r;
-  target.set(p.node.id,[p.x,p.y]);
- }
- // 3) разведение пересекающихся кластеров
- const hubs=order.slice(1);
- for(let iter=0;iter<260;iter++){
-  for(let i=0;i<hubs.length;i++)for(let j=i+1;j<hubs.length;j++){
-   const a=hubs[i]!,b=hubs[j]!;
-   const family=a.parent===b.node.id||b.parent===a.node.id;
-   const need=family?(a.cluster+b.cluster)*0.5+60:(a.cluster+b.cluster)*1.0+44;
-   let dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
-   if(d>=need)continue;
-   if(d<1e-6){dx=Math.cos(i*2.399);dy=Math.sin(i*2.399);d=1;}
-   const push=(need-d)/2/d;
-   a.x-=dx*push;a.y-=dy*push;b.x+=dx*push;b.y+=dy*push;
-  }
-  for(const h of hubs){
-   const [tx,ty]=target.get(h.node.id)!;
-   h.x+=(tx-h.x)*0.02;h.y+=(ty-h.y)*0.02;
-   if(h.y>-30)h.y=-30; // ничего не уходит ниже ствола
-  }
- }
- for(const h of hubs){h.x=Math.round(h.x*10)/10;h.y=Math.round(h.y*10)/10;}
- // 4) листья вокруг своего хаба, мимо направления на родителя
- const leaves:AtlasLeaf[]=[];
- for(const p of order){
-  const kids=leafKids(p.node);
-  if(!kids.length)continue;
-  const parent=p.parent?placed.get(p.parent):rootP;
-  const toParent=parent&&parent!==p?Math.atan2(-(parent.y-p.y),parent.x-p.x):-Math.PI/2;
-  const gap=p.parent?0.9:0;
-  const start=toParent+gap/2,arc=Math.PI*2-gap;
-  const ringR=Math.max(30,kids.length*LEAF_GAP/(2*Math.PI));
-  kids.forEach((k,i)=>{
-   const ang=kids.length===1?toParent+Math.PI:start+arc*(i+0.5)/kids.length;
-   leaves.push({id:k.id,x:Math.round((p.x+Math.cos(ang)*ringR)*10)/10,y:Math.round((p.y-Math.sin(ang)*ringR)*10)/10,hub:p.node.id});
-  });
- }
- // 5) ветви: плавные кривые вдоль направления роста
- const edges:AtlasEdge[]=hubs.map(h=>{
-  const p=placed.get(h.parent!)!;
-  const len=Math.hypot(h.x-p.x,h.y-p.y)*0.45;
-  const c1x=p.x+Math.cos(p.parent?p.angle:h.angle)*len,c1y=p.y-Math.sin(p.parent?p.angle:h.angle)*len;
-  const c2x=h.x-Math.cos(h.angle)*len,c2y=h.y+Math.sin(h.angle)*len;
-  const f=(n:number)=>n.toFixed(1);
-  return {from:p.node.id,to:h.node.id,depth:h.depth,clan:h.node.clan,d:`M${f(p.x)} ${f(p.y)} C${f(c1x)} ${f(c1y)} ${f(c2x)} ${f(c2y)} ${f(h.x)} ${f(h.y)}`};
- });
- let minX=-120,maxX=120,minY=-80,maxY=170;
- for(const p of order){minX=Math.min(minX,p.x-p.cluster-40);maxX=Math.max(maxX,p.x+p.cluster+40);minY=Math.min(minY,p.y-p.cluster-40);maxY=Math.max(maxY,p.y+p.cluster+60);}
- return {placed,leaves,edges,bounds:{x:minX,y:minY,w:maxX-minX,h:maxY-minY}};
-}
 
 // ───────── поиск ─────────
 const fold=(s:string)=>s.toLocaleLowerCase("ru").replace(/ё/g,"е").trim();
