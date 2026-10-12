@@ -59,7 +59,7 @@ export class KnowledgeLedger {
   neighbors(id: string, limit = 12) { return exploreKnowledgeNeighbors(this.list(), id, limit); }
   /** Optional meaning-aware ranking, with verified-only lexical fallback. */
   setEmbeddingProvider(provider?: EmbeddingProvider) {
-    this.embeddingProvider = provider ? { id: provider.id, embed: (text: string) => this.vectorCache.embed(provider, text) } : undefined;
+    this.embeddingProvider = provider ? { ...(provider.id ? {id:provider.id} : {}), embed: (text: string) => this.vectorCache.embed(provider, text) } : undefined;
   }
   semanticSearch(query: string, provider?: EmbeddingProvider, limit = 10) { return searchKnowledgeSemantic(this.list(), query, provider ?? this.embeddingProvider, limit); }
   /** Read-only graph snapshot for a future interactive viewer; no hidden or unverified facts are exposed. */
