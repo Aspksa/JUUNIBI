@@ -1,32 +1,35 @@
 import {describe,expect,it} from "vitest";
-import {FOX_VIEWS,SECTIONS,SEARCHABLE,ZOOMABLE,sectionOf,treeSummary,type TreeMode} from "./kitsune-sections";
+import {LAYER_TEXT,PICTURE_MODES,RAIL,RAIL_ITEMS,SEARCHABLE,ZOOMABLE,activeItem,type TreeMode} from "./kitsune-sections";
 
-const ALL:TreeMode[]=["map","architecture","development","connections","updates","architect","history","versions","impact","comparison","brain-chat","discovery","growth","fox"];
-describe("разделы Лисьего древа",()=>{
- it("каждый режим есть ровно в одном разделе",()=>{
-  const listed=SECTIONS.flatMap(s=>s.modes.map(([m])=>m));
-  expect([...listed].sort()).toEqual([...ALL].sort());
-  expect(new Set(listed).size).toBe(listed.length);
+const ALL:TreeMode[]=["map","architecture","updates","architect","history","versions","comparison","brain-chat","discovery","growth","fox"];
+describe("левая панель Лисьего древа",()=>{
+ it("все режимы, кроме скрытых из панели, доступны из неё",()=>{
+  const used=new Set(RAIL_ITEMS.map(i=>i.mode));
+  for(const m of ALL)expect(used.has(m)).toBe(true);
+  expect(used.has("connections")).toBe(false); // «Связи» — теперь слой дерева
+  expect(used.has("development")).toBe(false); // «Этапы» — теперь слой дерева
+  expect(used.has("impact")).toBe(false);      // «Что сломается, если…» — слой дерева
  });
- it("четыре раздела вместо тринадцати вкладок",()=>{
-  expect(SECTIONS.map(s=>s.label)).toEqual(["Карта","История","Анализ","Лисичка"]);
-  expect(Math.max(...SECTIONS.map(s=>s.modes.length))).toBeLessThanOrEqual(5);
+ it("идентификаторы уникальны, подписи и подсказки на русском и непустые",()=>{
+  expect(new Set(RAIL_ITEMS.map(i=>i.id)).size).toBe(RAIL_ITEMS.length);
+  for(const i of RAIL_ITEMS){expect(i.label.length).toBeGreaterThan(2);expect(i.hint.length).toBeGreaterThan(8);expect(i.label+i.hint).not.toMatch(/[A-Za-z]/);}
  });
- it("раздел находится по режиму",()=>{
-  expect(sectionOf("map").id).toBe("map");
-  expect(sectionOf("comparison").id).toBe("history");
-  expect(sectionOf("impact").id).toBe("analysis");
-  expect(sectionOf("fox").id).toBe("fox");
+ it("четыре группы: дерево, лес, ход развития, анализ",()=>{ expect(RAIL.map(g=>g.id)).toEqual(["tree","forest","history","analysis"]); });
+ it("слои дерева — четыре, у каждого есть пояснение",()=>{
+  expect(RAIL[0]!.items.filter(i=>i.layer).map(i=>i.layer)).toEqual(["structure","links","stages","impact"]);
+  for(const l of Object.values(LAYER_TEXT)){expect(l.title.length).toBeGreaterThan(3);expect(l.lead.length).toBeGreaterThan(20);}
  });
- it("масштаб — только у графа и этапов, поиск — только там, где он что-то фильтрует",()=>{
-  expect([...ZOOMABLE].sort()).toEqual(["architecture","connections","development"]);
-  for(const m of ZOOMABLE)expect(SEARCHABLE.has(m)).toBe(true);
+ it("активный пункт находится по режиму, слою и виду леса",()=>{
+  expect(activeItem("map","links","metrics")?.id).toBe("links");
+  expect(activeItem("map","impact","metrics")?.id).toBe("impact");
+  expect(activeItem("fox","structure","awards")?.id).toBe("awards");
+  expect(activeItem("fox","structure","metrics")?.id).toBe("metrics");
+  expect(activeItem("comparison","structure","metrics")?.id).toBe("comparison");
+ });
+ it("поиск и масштаб — только там, где они что-то делают",()=>{
+  expect([...ZOOMABLE]).toEqual(["architecture"]);
   expect(SEARCHABLE.has("fox")).toBe(false);
   expect(SEARCHABLE.has("map")).toBe(false);
- });
- it("у лисички четыре вида",()=>{ expect(FOX_VIEWS.map(([v])=>v)).toEqual(["today","metrics","awards","branches"]); });
- it("сводка считает подтверждённое, план, связи и события",()=>{
-  expect(treeSummary([{status:"implemented",dependsOn:[]},{status:"implemented",dependsOn:["a","b"]},{status:"planned",dependsOn:["a"]}],2))
-   .toEqual([{label:"подтверждено",value:2},{label:"запланировано",value:1},{label:"связей",value:3},{label:"новых событий",value:2}]);
+  expect(PICTURE_MODES.has("map")).toBe(true);
  });
 });

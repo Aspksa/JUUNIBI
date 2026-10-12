@@ -4,7 +4,7 @@ export interface EvolutionNode {
 export interface EvolutionManifest {schemaVersion:number;project:string;nodes:EvolutionNode[]}
 export interface EvolutionSnapshot {
  manifest:EvolutionManifest;
- timeline:{history:{id:string;at:string;kind:string;from:string;to:string;message:string}[];activeVersion:string;durable:boolean;snapshots?:{version:string;digest:string;manifest:EvolutionManifest}[]};
+ timeline:{history:{id:string;at:string;kind:string;from:string;to:string;message:string}[];activeVersion:string;durable:boolean;snapshots?:{version:string;digest:string;manifest:EvolutionManifest;recordedAt?:string}[]};
  discovery?:{scanned:number;modules:{id:string;file:string;imports:string[];candidate:boolean}[];candidates:{id:string;file:string;imports:string[];candidate:boolean}[];cycles:string[][];unresolved:string[];manifestGaps:string[];truncated:boolean};
  phase:string;latest:unknown;
  /** Whether Python 3 (needed for the SQLite histories) was found; `reason` says what to do when it was not. */

@@ -13,9 +13,11 @@ import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el, icon } from "../dom";
 import { openSheet } from "./sheet";
-import { SECTIONS, SEARCHABLE, ZOOMABLE, FOX_VIEWS, sectionOf, treeSummary, type FoxView, type TreeMode } from "./kitsune-sections";
-import { treeArt } from "./kitsune-tree-art";
-import { awardShelf, medalItems, newShelfState, nextMedalTile } from "./kitsune-medals";
+import { RAIL, SEARCHABLE, ZOOMABLE, LAYER_TEXT, activeItem, type FoxView, type Layer, type TreeMode } from "./kitsune-sections";
+import { withRuTitle } from "./kitsune-ru";
+import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
+import { treeArt, downstreamDepths, type CrownBush } from "./kitsune-tree-art";
+import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
 import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
@@ -50,7 +52,9 @@ export const TREE_NODES:TreeNode[]=[
 export const treeConnections=()=>TREE_NODES.flatMap(node=>node.dependsOn.map(from=>({from,to:node.id})));
 export function kitsuneTreePage():HTMLElement {
  let mode:TreeMode="map",selected="brain",filter="";
- let foxView:FoxView="today";
+ let foxView:FoxView="metrics";
+ let layer:Layer="structure";
+ let frameIndex=-1; // -1 = «сейчас»
  const shelfState=newShelfState();
  let releases:EvolutionRelease[]=[];
  let dynamicNodes:EvolutionNode[]|null=null;
@@ -93,24 +97,16 @@ export function kitsuneTreePage():HTMLElement {
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
  const body=el("div",{cls:"kt-layout"});
- const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
- const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","Живая карта архитектуры и развития JUUNIBI"),
-   el("details",{cls:"kt-about"},el("summary",{textContent:"О карте"}),el("p",{textContent:"Карта основана на известных компонентах проекта и подтверждённых PR. Будущие возможности отмечены отдельно. Установленные версии берутся из Центра обновлений; связи новых релизов с ветвями определяются предположительно по описанию."})),status,body);
+ const status=el("p",{cls:"muted kt-status",attrs:{"aria-live":"polite"}});
+ const rail=el("aside",{cls:"kt-rail",attrs:{"aria-label":"Панель Лисьего древа"}});
  const query=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Найти ветвь…","aria-label":"Поиск ветви"}});
  query.addEventListener("input",()=>{filter=query.value.toLocaleLowerCase("ru");render();});
  const controls=el("div",{cls:"kt-controls"},query);
- const overview=el("section",{cls:"kt-overview",attrs:{"aria-label":"Состояние эволюции"}});
- const nav=el("nav",{cls:"kt-nav",attrs:{"aria-label":"Разделы Лисьего древа"}});
  const notice=el("p",{cls:"kt-notice",attrs:{role:"status"}});
  notice.hidden=true;
- root.insertBefore(notice,body);
- root.insertBefore(nav,body);
- root.insertBefore(overview,body);
- root.insertBefore(controls,body);
- const renderOverview=()=>{
-   overview.replaceChildren(...treeSummary(nodesOf(),growth.length).map(x=>el("span",{cls:"kt-stat"},el("strong",{textContent:String(x.value)}),el("span",{textContent:x.label}))));
- };
- const nodesOf=()=>dynamicNodes??TREE_NODES;
+ const main=el("div",{cls:"kt-main"},controls,status,body);
+ const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","Живая карта JUUNIBI: модули, показатели и награды в одном дереве"),notice,el("div",{cls:"kt-shell"},rail,main));
+ const nodesOf=():EvolutionNode[]=>((dynamicNodes??TREE_NODES) as EvolutionNode[]).map(withRuTitle);
  function render(){
    // A redraw rebuilds the page body; keep the caret where the person was typing.
    const active=document.activeElement;
@@ -124,16 +120,9 @@ export function kitsuneTreePage():HTMLElement {
    }
  }
  function draw(){
-   renderOverview();
-   const section=sectionOf(mode);
-   overview.hidden=section.id==="fox";
-   nav.replaceChildren(...[
-     el("div",{cls:"kt-sections"},...SECTIONS.map(x=>{
-       const b=el("button",{type:"button",cls:"kt-section"+(x.id===section.id?" is-active":""),attrs:{"aria-pressed":String(x.id===section.id)}},el("strong",{textContent:x.label}),el("small",{textContent:x.hint}));
-       b.addEventListener("click",()=>{if(x.id!==section.id){mode=x.modes[0]![0];render();}});return b;})),
-     section.modes.length>1?el("div",{cls:"kt-subtabs",attrs:{role:"group","aria-label":"Вид раздела «"+section.label+"»"}},...section.modes.map(([value,label])=>{
-       const b=el("button",{type:"button",cls:"kt-chip",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
-       b.addEventListener("click",()=>{mode=value;render();});return b;})):null].filter((x):x is NonNullable<typeof x>=>x!==null));
+   const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+   const medals=medalItems(metrics,foxHistory);
+   renderRail(metrics,medals);
    query.hidden=!SEARCHABLE.has(mode);zoom.hidden=!ZOOMABLE.has(mode);controls.hidden=query.hidden&&zoom.hidden;
    body.classList.toggle("kt-solo",mode==="fox"||mode==="map");
    if(mode==="fox"){renderFox();return;}
@@ -153,7 +142,7 @@ export function kitsuneTreePage():HTMLElement {
        timeline.append(card);
      }
      const side=el("aside",{cls:"kt-detail"},
-       el("span",{cls:"kt-eyebrow",textContent:"GROWTH / VERIFIED"}),
+       el("span",{cls:"kt-eyebrow",textContent:"РОСТ · ПОДТВЕРЖДЕНО"}),
        el("h2",{textContent:"Рост без иллюзий"}),
        el("p",{textContent:"Визуальные эффекты отображают только изменения между подтверждёнными снимками установленной архитектуры. Кандидаты сканера находятся в отдельном разделе."}),
        el("p",{cls:"kt-state",textContent:"Установленная версия: "+(activeVersion.slice(0,12)||"не определена")}));
@@ -177,7 +166,7 @@ export function kitsuneTreePage():HTMLElement {
        for(const c of data.cycles.slice(0,6))side.append(el("p",{textContent:c.join(" → ")}));
        side.append(el("h3",{textContent:"Ветви без прямого совпадения по файлу: "+data.manifestGaps.length}),
          el("p",{textContent:data.manifestGaps.join(", ")||"Нет"}));
-       const prompt=el("button",{textContent:"Подготовить анализ Brain"});
+       const prompt=el("button",{textContent:"Подготовить разбор для Мозга"});
        prompt.addEventListener("click",()=>{
          const context="Сделай архитектурный аудит JUUNIBI на основании кандидатов, не считая их реализованными возможностями: "+data.candidates.slice(0,20).map(x=>x.file).join(", ")+". Предложи проверки и связи; не меняй проект.";
          const field=el("textarea",{textContent:context,attrs:{readonly:"true","aria-label":"Анализ новых кандидатов"}});
@@ -187,25 +176,11 @@ export function kitsuneTreePage():HTMLElement {
      body.replaceChildren(panel,side);
      status.textContent=data?"Найдено "+data.candidates.length+" возможных новых модулей":"Сканер пока недоступен";return;
    }
-   if(mode==="impact"){
-     const all=nodesOf(),target=all.find(n=>n.id===selected)??all[0]!;
-     const affected=downstreamImpact(all,target.id);
-     const pane=el("div",{cls:"kt-graph"});
-     const choose=el("select",{attrs:{"aria-label":"Исходная ветвь"}});
-     for(const n of all){const opt=el("option",{textContent:n.title,attrs:{value:n.id}});if(n.id===target.id)opt.selected=true;choose.append(opt);}
-     choose.addEventListener("change",()=>{selected=choose.value;render();});
-     pane.append(choose,el("p",{textContent:"Зависимые ветви: "+affected.length}));
-     for(const a of affected)pane.append(el("article",{cls:"kt-node"},el("strong",{textContent:a.title}),
-        el("small",{textContent:"Глубина связи: "+a.distance+" · "+(a.status==="planned"?"запланировано":"реализовано")})));
-     body.replaceChildren(pane,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Анализ влияния"}),
-       el("p",{textContent:"Показывает все транзитивные зависимости. Это структурный анализ манифеста, не прогноз фактического сбоя."})));
-     status.textContent=affected.length+" ветвей зависят от "+target.title;return;
-   }
    if(mode==="comparison"){
      const versions=persistedHistory?.snapshots??[];
      const pane=el("div",{cls:"kt-graph"});
      const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Сравнение версий"}),
-       el("p",{textContent:"Каждый сохранённый манифест закреплён за SHA установленной версии. Изменения вычисляются только между реальными снимками."}));
+       el("p",{textContent:"Каждый сохранённый манифест закреплён за кодом установленной версии. Изменения вычисляются только между реальными снимками."}));
      if(versions.length<2){
        pane.append(el("p",{textContent:"Для сравнения нужны минимум две последовательно установленные версии с записанными манифестами. Снимки появятся автоматически при открытии дерева после установки."}));
      }else{
@@ -236,26 +211,26 @@ export function kitsuneTreePage():HTMLElement {
    if(mode==="brain-chat"){
      const pane=el("div",{cls:"kt-brain-panel"});
      const dialog=el("div",{cls:"kt-brain-messages",attrs:{"aria-live":"polite"}});
-     for(const m of brainMessages)dialog.append(el("p",{cls:"kt-brain-"+m.role,textContent:(m.role==="user"?"Вы: ":"Brain: ")+m.text}));
+     for(const m of brainMessages)dialog.append(el("p",{cls:"kt-brain-"+m.role,textContent:(m.role==="user"?"Вы: ":"Мозг: ")+m.text}));
      const node=nodesOf().find(n=>n.id===selected)??nodesOf()[0]!;
-     const question=el("textarea",{cls:"kt-brain-input",attrs:{placeholder:"Вопрос по развитию "+node.title,"aria-label":"Вопрос Brain"}});
-     const ask=el("button",{textContent:brainBusy?"Анализ выполняется…":"Спросить Brain",attrs:{type:"button"}});
+     const question=el("textarea",{cls:"kt-brain-input",attrs:{placeholder:"Вопрос по развитию "+node.title,"aria-label":"Вопрос Мозгу"}});
+     const ask=el("button",{textContent:brainBusy?"Анализ выполняется…":"Спросить Мозг",attrs:{type:"button"}});
      ask.disabled=brainBusy;
      ask.addEventListener("click",()=>{
        const text=question.value.trim();if(!text||brainBusy)return;
        const prompt=architectureQuestion(nodesOf(),selected,text);
        brainMessages.push({role:"user",text});brainBusy=true;render();
        void api.chat(prompt).then(r=>{
-         brainMessages.push({role:"assistant",text:r.ok?r.value.reply:"Ошибка Brain: "+r.error.message});
-       }).catch(()=>brainMessages.push({role:"assistant",text:"Brain недоступен"})).finally(()=>{brainBusy=false;render();});
+         brainMessages.push({role:"assistant",text:r.ok?r.value.reply:"Ошибка Мозга: "+r.error.message});
+       }).catch(()=>brainMessages.push({role:"assistant",text:"Мозг недоступен"})).finally(()=>{brainBusy=false;render();});
      });
      pane.append(el("p",{textContent:"Контекст ветви: "+node.title}),dialog,question,ask);
-     const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Brain-диалог"}),
+     const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Диалог с Мозгом"}),
        el("p",{textContent:"Запрос отправляется только по нажатию кнопки. Действия помощницы могут требовать отдельного разрешения; этот экран не выполняет изменения проекта."}));
-     const change=el("select",{attrs:{"aria-label":"Ветка для Brain"}});
+     const change=el("select",{attrs:{"aria-label":"Ветвь для Мозга"}});
      for(const n of nodesOf()){const opt=el("option",{textContent:n.title,attrs:{value:n.id}});if(n.id===selected)opt.selected=true;change.append(opt);}
      change.addEventListener("change",()=>{selected=change.value;render();});side.append(change);
-     body.replaceChildren(pane,side);status.textContent="Диалог с Brain по выбранной ветви";return;
+     body.replaceChildren(pane,side);status.textContent="Диалог с Мозгом по выбранной ветви";return;
    }
    if(mode==="history"||mode==="versions"){
      const history=persistedHistory?.history??[];
@@ -270,16 +245,16 @@ export function kitsuneTreePage():HTMLElement {
        for(const item of traceCapabilities(nodesOf(),persistedHistory?.activeVersion??"",history)){
          if(!item.title.toLowerCase().includes(filter))continue;
          const card=el("article",{cls:"kt-node"},el("strong",{textContent:item.title}),
-           el("small",{textContent:item.origin?"PR #"+item.origin.pr+" · "+item.origin.sha.slice(0,12):"Нет точного SHA"}),
-           el("p",{textContent:item.installation==="current"?"Совпадает с активным SHA":item.installation==="recorded"?"SHA есть в журнале":"Наличие способности в установленной версии не подтверждено"}));
-         if(item.origin)card.append(el("a",{textContent:"Исходный PR",attrs:{href:"https://github.com/Aspksa/JUUNIBI/pull/"+item.origin.pr,target:"_blank",rel:"noopener noreferrer"}}));
+           el("small",{textContent:item.origin?"Изменение #"+item.origin.pr+" · "+item.origin.sha.slice(0,7):"Точный код версии неизвестен"}),
+           el("p",{textContent:item.installation==="current"?"Совпадает с установленной версией":item.installation==="recorded"?"Версия есть в журнале":"Наличие способности в установленной версии не подтверждено"}));
+         if(item.origin)card.append(el("a",{textContent:"Исходное изменение",attrs:{href:"https://github.com/Aspksa/JUUNIBI/pull/"+item.origin.pr,target:"_blank",rel:"noopener noreferrer"}}));
          list.append(card);
        }
      }
      if(!list.childNodes.length)list.append(el("p",{textContent:"Нет подтверждённых записей."}));
      body.replaceChildren(list,el("aside",{cls:"kt-detail"},el("h2",{textContent:mode==="history"?"Хронология обновлений":"Происхождение возможностей"}),
-       el("p",{textContent:"Данные подтверждаются журналом Центра обновлений и точным SHA релиза. Совпадение названия не означает подтверждённую установку."})));
-     status.textContent=mode==="history"?"История установок и откатов":"Происхождение ветвей по SHA и PR";return;
+       el("p",{textContent:"Данные подтверждаются журналом Центра обновлений и точным кодом версии. Совпадение названия не означает подтверждённую установку."})));
+     status.textContent=mode==="history"?"История установок и откатов":"Происхождение ветвей по версиям и изменениям";return;
    }
    if(mode==="updates"){
      status.textContent=updatesLoading?"Загружаю историю Центра обновлений…":
@@ -296,7 +271,7 @@ export function kitsuneTreePage():HTMLElement {
        if(release.evidence)card.append(el("a",{textContent:"Изменение в GitHub ↗",attrs:{href:release.evidence,target:"_blank",rel:"noopener noreferrer"}}));
        timeline.append(card);
      }
-     if(persistedHistory)timeline.prepend(el("p",{cls:"muted",textContent:"SQLite: "+persistedHistory.history.length+" событий · активная версия "+persistedHistory.activeVersion}));
+     if(persistedHistory)timeline.prepend(el("p",{cls:"muted",textContent:"Журнал: "+persistedHistory.history.length+" событий · активная версия "+persistedHistory.activeVersion}));
      const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Центр обновлений"}),
        el("p",{textContent:"Скачивание само по себе не активирует ветку. Статус «Установлено» появляется только после записи об установке; откат сохраняется в истории."}));
      const link=el("a",{textContent:"Открыть Центр обновлений →",attrs:{href:"#update"}});
@@ -310,9 +285,9 @@ export function kitsuneTreePage():HTMLElement {
      for(const row of advice){
        const node=allNodes.find(n=>n.id===row.nodeId)!;
        const prompt=architecturePrompt(node,allNodes);
-       const button=el("button",{textContent:"Подготовить запрос Brain",attrs:{type:"button"}});
+       const button=el("button",{textContent:"Подготовить запрос для Мозга",attrs:{type:"button"}});
        button.addEventListener("click",()=>{
-         const panel=el("textarea",{attrs:{readonly:"true","aria-label":"Запрос для анализа Brain"},textContent:prompt});
+         const panel=el("textarea",{attrs:{readonly:"true","aria-label":"Запрос для разбора Мозгом"},textContent:prompt});
          const copy=el("button",{textContent:"Скопировать"});
          copy.addEventListener("click",()=>{void navigator.clipboard?.writeText(prompt).then(()=>{copy.textContent="Скопировано";});});
          button.replaceWith(panel,copy);
@@ -326,17 +301,8 @@ export function kitsuneTreePage():HTMLElement {
    const matched=allNodes.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
    status.textContent="";
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
-   if(mode==="development") {graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);}
-   const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
-   if(mode==="architecture"||mode==="connections") {graph.append(buildGraph(nodes,selected,id=>{selected=id;focusNext=true;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion,focusNext));focusNext=false;graphMotion="none";}
-   else for(const node of nodes){
-     const card=el("button",{cls:"kt-node "+(node.id===selected?"kt-selected ":"")+(node.status==="planned"?"kt-future":""),
-       attrs:{"aria-pressed":String(node.id===selected)},
-       title:node.description},el("span",{cls:"kt-node-title",textContent:node.title}),
-       el("small",{textContent:node.status==="planned"?"Запланировано":`Уровень ${node.stage} · реализовано`}));
-     card.addEventListener("click",()=>{selected=node.id;render();});
-     graph.append(card);
-   }
+   graph.append(buildGraph(matched,selected,id=>{selected=id;focusNext=true;render();},graphZoom,new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id))),graphMotion,focusNext));
+   focusNext=false;graphMotion="none";
    const current=allNodes.find(n=>n.id===selected)??allNodes[0]!;
    const parents=current.dependsOn.map(id=>allNodes.find(n=>n.id===id)?.title??id);
    const children=allNodes.filter(n=>n.dependsOn.includes(current.id)).map(n=>n.title);
@@ -346,21 +312,11 @@ export function kitsuneTreePage():HTMLElement {
       el("h3",{textContent:"Как работает"}),el("p",{textContent:current.how}),
       el("h3",{textContent:"Зависит от"}),el("p",{textContent:parents.join(" · ")||"Корневой компонент"}),
       el("h3",{textContent:"Связанные ветви"}),el("p",{textContent:children.join(" · ")||"Пока нет"}),
-      el("p",{cls:"kt-state",textContent:current.status==="implemented"?"Подтверждено в проекте":"План развития, не реализовано"}));
-   if(current.evidence){const link=el("a",{textContent:"Открыть подтверждающий PR ↗",attrs:{href:current.evidence,target:"_blank",rel:"noopener noreferrer"}});details.append(link);}
-   if(mode==="connections"){
-     const list=el("div",{cls:"kt-edges"});
-     for(const edge of allNodes.flatMap(n=>n.dependsOn.map(from=>({from,to:n.id}))).filter(e=>e.from===selected||e.to===selected)){
-       const n=allNodes.find(x=>x.id===(edge.from===selected?edge.to:edge.from));
-       if(!n)continue;
-       const button=el("button",{textContent:`${edge.from===selected?"Зависит от этой ветви":"Зависимость"} → ${n.title}`});
-       button.addEventListener("click",()=>{selected=n.id;render();});list.append(button);
-     }
-     details.append(el("h3",{textContent:"Переходы по связям"}),list);
-   }
+      el("p",{cls:"kt-state",textContent:current.status==="implemented"?"Подтверждено в проекте":"План развития, пока не реализовано"}));
+   if(current.evidence){const link=el("a",{textContent:"Открыть подтверждающее изменение ↗",attrs:{href:current.evidence,target:"_blank",rel:"noopener noreferrer"}});details.append(link);}
    body.replaceChildren(graph,details);
  }
- /** Details of one branch in a window in the middle of the screen; related branches open in the same window. */
+ /** Сведения о ветви — окном по центру; связанные ветви открываются в том же окне. */
  function openNode(id:string){
    const all=nodesOf();
    const node=all.find(n=>n.id===id);
@@ -370,17 +326,102 @@ export function kitsuneTreePage():HTMLElement {
    const kids=all.filter(n=>n.dependsOn.includes(id));
    const jump=(n:typeof node)=>{const b=el("button",{type:"button",cls:"kt-chip",textContent:n.title});b.addEventListener("click",()=>{openNode(n.id);render();});return b;};
    const block=(title:string,...kidsNodes:(Node|string)[])=>el("div",{cls:"kt-sheet-block"},el("h4",{textContent:title}),...kidsNodes);
-   const impact=el("button",{type:"button",cls:"kt-chip is-strong",textContent:"Показать влияние"});
+   const impact=el("button",{type:"button",cls:"kt-chip is-strong",textContent:"Что сломается, если…"});
+   const ask=el("button",{type:"button",cls:"kt-chip",textContent:"Спросить Мозг"});
    const content=el("div",{cls:"kt-node-sheet"},
      el("p",{textContent:node.description}),
      block("Как работает",el("p",{textContent:node.how})),
      block("Зависит от",parents.length?el("div",{cls:"kt-chip-row"},...parents.map(jump)):el("p",{cls:"muted",textContent:"Корневой компонент"})),
      block("Связанные ветви",kids.length?el("div",{cls:"kt-chip-row"},...kids.map(jump)):el("p",{cls:"muted",textContent:"Пока нет"})),
      el("p",{cls:"kt-state",textContent:node.status==="implemented"?"Подтверждено в проекте":"План развития, пока не реализовано"}),
-     node.evidence?el("a",{textContent:"Открыть подтверждающий PR ↗",attrs:{href:node.evidence,target:"_blank",rel:"noopener noreferrer"}}):null,
-     el("div",{cls:"kt-chip-row"},impact));
+     node.evidence?el("a",{textContent:"Открыть подтверждающее изменение ↗",attrs:{href:node.evidence,target:"_blank",rel:"noopener noreferrer"}}):null,
+     el("div",{cls:"kt-chip-row"},impact,ask));
    const sheet=openSheet({title:node.title,icon:"link",sub:node.status==="implemented"?"Подтверждено":"Запланировано",tone:node.status==="implemented"?"ok":"off",content});
-   impact.addEventListener("click",()=>{sheet.close();mode="impact";render();});
+   impact.addEventListener("click",()=>{sheet.close();mode="map";layer="impact";selected=id;render();});
+   ask.addEventListener("click",()=>{sheet.close();mode="brain-chat";selected=id;render();});
+ }
+ /** Куст короны: десять показателей одного мира карточками в окне. */
+ function openWorld(index:number){
+   const world=FOX_WORLDS[index];
+   if(!world)return;
+   const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive}).filter(m=>m.world===index);
+   const confirmed=metrics.filter(m=>m.value!==null).length;
+   const grid=el("div",{cls:"kt-fox-grid kt-world-grid"});
+   const sheetRef:{close?:()=>void}={};
+   const paint=()=>grid.replaceChildren(...metrics.map(m=>foxCard(m,paint,()=>sheetRef.close?.())));
+   paint();
+   const sheet=openSheet({title:world.title,icon:"spark",sub:`Подтверждено ${confirmed} из ${metrics.length}`,tone:confirmed===0?"off":confirmed===metrics.length?"ok":"warn",content:grid});
+   sheetRef.close=()=>sheet.close();
+ }
+ /** Разбор показателей Мозгом — только по нажатию, без действий над проектом. */
+ function openBrainReport(metrics:FoxMetric[]){
+   const report=el("p",{cls:"kt-brain-report",attrs:{"aria-live":"polite"},textContent:"Мозг анализирует подтверждённые данные…"});
+   const facts=metrics.filter(m=>m.value!==null).slice(0,40).map(m=>m.name+": "+m.value+" ("+m.source+")").join("; ");
+   const prompt="Проанализируй только следующие наблюдаемые показатели JUUNIBI. Укажи проблемы, сильные стороны и три безопасные рекомендации. Не выдумывай отсутствующие значения, не выполняй никаких действий и не меняй проект. Наблюдения: "+facts;
+   openSheet({title:"Разбор показателей",icon:"brain",sub:"Мозг смотрит только на подтверждённые значения",tone:"ok",content:el("div",{cls:"kt-node-sheet"},report)});
+   void api.chat(prompt).then(r=>{report.textContent=r.ok?r.value.reply:"Мозг недоступен: "+r.error.message;}).catch(()=>{report.textContent="Не удалось связаться с Мозгом";});
+ }
+ function helpSheet(){
+   openSheet({title:"Как читать Лисье древо",icon:"help",tone:"ok",content:el("div",{cls:"kt-node-sheet"},
+     el("p",{textContent:"Ствол и ветви — модули проекта. Заполненный лист подтверждён, пунктирный — запланирован. Крона — 100 показателей в 10 мирах; куст показывает, сколько из десяти подтверждено."}),
+     el("p",{textContent:"Каждый показатель знает свой источник. Число 0 — подтверждённое отсутствие событий. «Нет данных» — нужный источник пока не подключён. Избранное хранится только в этом браузере."}),
+     el("p",{textContent:"Карта основана на известных компонентах и подтверждённых изменениях. Установленные версии берутся из Центра обновлений; связи новых версий с ветвями определяются по описанию и поэтому предположительны."}),
+     el("p",{cls:"muted",textContent:"Ничего здесь не меняет проект и не выполняет действий."}))});
+ }
+ function miniRing(ratio:number,label:string):SVGSVGElement{
+   const ns="http://www.w3.org/2000/svg";
+   const svg=document.createElementNS(ns,"svg");svg.setAttribute("viewBox","0 0 80 80");svg.setAttribute("class","kt-ring");svg.setAttribute("aria-hidden","true");
+   const track=document.createElementNS(ns,"circle");track.setAttribute("cx","40");track.setAttribute("cy","40");track.setAttribute("r",String(RING_RADIUS));track.setAttribute("class","r-track");track.setAttribute("fill","none");track.setAttribute("stroke-width","7");
+   const arc=document.createElementNS(ns,"circle");arc.setAttribute("cx","40");arc.setAttribute("cy","40");arc.setAttribute("r",String(RING_RADIUS));arc.setAttribute("class","r-arc");arc.setAttribute("fill","none");arc.setAttribute("stroke-width","7");arc.setAttribute("stroke-linecap","round");arc.setAttribute("stroke-dasharray",ringDash(ratio));arc.setAttribute("transform","rotate(-90 40 40)");
+   const t=document.createElementNS(ns,"text");t.setAttribute("x","40");t.setAttribute("y","47");t.setAttribute("text-anchor","middle");t.setAttribute("class","r-text");t.textContent=label;
+   svg.append(track);if(ratio>0)svg.append(arc);svg.append(t);return svg;
+ }
+ /** Левая панель: «Сегодня» и все разделы одним списком. */
+ function renderRail(metrics:FoxMetric[],medals:MedalItem[]){
+   const availability=metrics.filter(x=>x.value!==null).length;
+   const mood=forestMood(metrics);
+   const unread=foxEvents.filter(e=>!foxSeen.has(e.id));
+   const help=el("button",{type:"button",cls:"kt-help",attrs:{"aria-label":"Как читать Лисье древо",title:"Как читать Лисье древо"}},icon("help",16));
+   help.addEventListener("click",helpSheet);
+   const acknowledge=el("button",{type:"button",cls:"kt-chip kt-mini",textContent:"Прочитано"});
+   acknowledge.disabled=unread.length===0;
+   acknowledge.addEventListener("click",()=>{
+     for(const event of foxEvents)foxSeen.add(event.id);
+     try{localStorage.setItem(seenStoreKey,JSON.stringify([...foxSeen].slice(-150)));}catch{/* Storage optional */}
+     render();
+   });
+   const recent=foxEvents.slice(-3).reverse();
+   const brain=el("button",{type:"button",cls:"kt-chip kt-mini",textContent:"🧠 Разобрать показатели"});
+   brain.addEventListener("click",()=>openBrainReport(metrics));
+   const today=el("section",{cls:"kt-today",attrs:{"aria-label":"Сегодня"}},
+     el("div",{cls:"kt-rail-title"},el("h2",{textContent:"Сегодня"}),help),
+     foxCompanion(mood),
+     el("div",{cls:"kt-today-count"},miniRing(availability/100,String(availability)),el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
+     nextMedalTile(medals),
+     el("div",{cls:"kt-today-news"},el("strong",{textContent:unread.length?"Новых вестей: "+unread.length:"Новых вестей нет"}),
+       el("small",{cls:"muted",textContent:unread.length?unread.slice(-1).map(e=>e.title).join(""):"лесной дневник спокоен"}),acknowledge),
+     foxReaction?el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}):null,
+     recent.length?el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))):el("p",{cls:"muted kt-today-story",textContent:forestStory(foxEvents,metrics)}),
+     brain);
+   const current=activeItem(mode,layer,foxView);
+   const badge=(id:string)=>id==="awards"?String(medals.filter(m=>m.earned).length):id==="metrics"?String(availability):"";
+   const nav=el("nav",{cls:"kt-rail-nav",attrs:{"aria-label":"Разделы дерева"}},...RAIL.map(group=>el("div",{cls:"kt-rail-group"},
+     el("h3",{textContent:group.label}),
+     ...group.items.map(item=>{
+       const on=current?.id===item.id;
+       const count=badge(item.id);
+       const b=el("button",{type:"button",cls:"kt-rail-item"+(on?" is-active":""),attrs:on?{"aria-current":"page",title:item.hint}:{title:item.hint}},
+         el("span",{cls:"ri-text"},el("strong",{textContent:item.label}),el("small",{textContent:item.hint})),
+         count?el("span",{cls:"ri-count",textContent:count}):null);
+       b.addEventListener("click",()=>{
+         mode=item.mode;if(item.layer)layer=item.layer;if(item.foxView)foxView=item.foxView;
+         if(item.layer==="impact"&&!downstreamDepths(nodesOf(),selected).size&&!nodesOf().some(n=>n.dependsOn.includes(selected)))selected=nodesOf().find(n=>nodesOf().some(m=>m.dependsOn.includes(n.id)))?.id??selected;
+         render();
+         main.scrollIntoView({block:"start",behavior:"auto"});
+       });
+       return b;
+     }))));
+   rail.replaceChildren(today,nav);
  }
  function foxCompanion(mood:{emoji:string;label:string;detail:string}){
    const state=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";
@@ -388,31 +429,76 @@ export function kitsuneTreePage():HTMLElement {
      el("span",{cls:"kc-face",textContent:"🦊",attrs:{"aria-hidden":"true"}}),
      el("div",{},el("strong",{textContent:mood.label}),el("small",{textContent:mood.detail})));
  }
- /** The calm main screen: the tree as a picture, a few numbers, what comes next. */
+ /** Ползунок времени: дерево таким, каким оно было при установке версии. Только сохранённые снимки. */
+ function timeControl(frames:ReturnType<typeof timeFrames>,index:number):HTMLElement{
+   const wrap=el("section",{cls:"kt-time",attrs:{"aria-label":"Ползунок времени"}});
+   wrap.append(el("div",{cls:"kt-time-head"},el("h3",{textContent:"Ползунок времени"}),
+     el("span",{cls:"muted",textContent:canTravel(frames)?"Потяните назад — дерево станет таким, каким было":"Данных нет"})));
+   if(!canTravel(frames)){
+     wrap.append(el("p",{cls:"muted kt-time-empty",textContent:"Данных нет: снимки архитектуры сохраняются при установке версий и появятся после двух установок. Мы не рисуем прошлое, которого не записали."}));
+     return wrap;
+   }
+   const slider=el("input",{type:"range",attrs:{min:"0",max:String(frames.length-1),step:"1","aria-label":"Версия дерева по времени","aria-valuetext":frames[index]!.label+" · "+frames[index]!.detail}});
+   slider.value=String(index);
+   slider.addEventListener("input",()=>{const v=Number(slider.value);frameIndex=v>=frames.length-1?-1:v;render();});
+   const ticks=el("div",{cls:"kt-time-ticks"},...frames.map((f,i)=>{
+     const b=el("button",{type:"button",cls:"kt-tick"+(i===index?" is-on":""),attrs:{"aria-pressed":String(i===index)}},el("strong",{textContent:f.label}),el("small",{textContent:f.detail}));
+     b.addEventListener("click",()=>{frameIndex=i>=frames.length-1?-1:i;render();});return b;}));
+   wrap.append(slider,ticks);
+   if(index<frames.length-1){
+     const diff=frameDiff(frames[index]!,frames[frames.length-1]!);
+     const titleOf=(id:string)=>[...frames[index]!.nodes,...frames[frames.length-1]!.nodes].find(n=>n.id===id)?.title??id;
+     wrap.append(el("p",{cls:"kt-time-note",textContent:`Дерево на момент «${frames[index]!.label}»: ветвей ${frames[index]!.nodes.length} (сейчас ${frames[frames.length-1]!.nodes.length}).`
+       +(diff.added.length?` С тех пор появилось: ${diff.added.map(id=>ruTitleOf(titleOf(id),id)).join(", ")}.`:"")+(diff.removed.length?` Исчезло: ${diff.removed.map(id=>ruTitleOf(titleOf(id),id)).join(", ")}.`:"")+" Показатели и награды — на сегодня."}));
+   }
+   return wrap;
+ }
+ const ruTitleOf=(title:string,id:string)=>withRuTitle({id,title}).title;
+ /** Главный экран: дерево одним рисунком, слой, ползунок времени, плоды-награды. */
  function renderMap(){
-   const all=nodesOf();
-   const metrics=foxMetrics({nodes:all,snapshot:foxSnapshot,growth,live:foxLive});
-   const mood=forestMood(metrics);
+   const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+   const medals=medalItems(metrics,foxHistory);
+   const frames=timeFrames(persistedHistory,nodesOf());
+   const index=frameIndex<0||frameIndex>=frames.length?frames.length-1:frameIndex;
+   const shown=frames[index]!.nodes.map(withRuTitle);
    const fresh=new Set(growth.filter(x=>x.kind==="new").map(x=>x.nodeId).filter((id):id is string=>Boolean(id)));
-   const art=treeArt(all,{selected,highlight:fresh,onSelect:id=>{openNode(id);render();}});
+   const crown:CrownBush[]=FOX_WORLDS.map((w,i)=>{const list=metrics.filter(m=>m.world===i);return {id:String(i),emoji:w.emoji,title:w.title,confirmed:list.filter(m=>m.value!==null).length,total:list.length};});
+   const text=LAYER_TEXT[layer];
+   const art=treeArt(shown,{selected,layer,highlight:fresh,crown,
+     onSelect:id=>{selected=id;if(layer==="impact")render();else{openNode(id);render();}},
+     onCrown:id=>openWorld(Number(id))});
    const legend=el("ul",{cls:"kta-legend"},
      el("li",{},el("i",{cls:"lg ok"}),"Подтверждено"),el("li",{},el("i",{cls:"lg planned"}),"Запланировано"),
-     fresh.size?el("li",{},el("i",{cls:"lg fresh"}),"Новая ветвь"):null);
-   const planned=all.filter(n=>n.status==="planned");
-   const next=el("div",{cls:"kt-chip-row"},...planned.map(n=>{const b=el("button",{type:"button",cls:"kt-chip",textContent:n.title});b.addEventListener("click",()=>{openNode(n.id);});return b;}));
-   const events=growth.slice(0,4);
-   const side=el("aside",{cls:"kt-map-side",attrs:{"aria-label":"Сводка"}},
-     foxCompanion(mood),
-     el("h3",{textContent:"Что дальше"}),
-     planned.length?next:el("p",{cls:"muted",textContent:"Запланированных ветвей нет."}),
-     el("h3",{textContent:"Недавние события"}),
-     events.length?el("ul",{cls:"kt-mini-list"},...events.map(e=>el("li",{},el("strong",{textContent:e.title}),el("small",{cls:"muted",textContent:e.detail})))):el("p",{cls:"muted",textContent:"Подтверждённых изменений между версиями пока нет."}));
-   body.replaceChildren(el("div",{cls:"kt-map"},el("section",{cls:"kt-map-art",attrs:{"aria-label":"Дерево развития"}},art,legend),side));
-   const done=all.filter(n=>n.status==="implemented").length;
-   status.textContent="Нажмите на лист, чтобы узнать о ветви подробнее.";
+     fresh.size?el("li",{},el("i",{cls:"lg fresh"}),"Новая ветвь"):null,
+     el("li",{},el("i",{cls:"lg bush"}),"Куст — мир показателей"));
+   const picture=el("section",{cls:"kt-map-art",attrs:{"aria-label":"Дерево развития"}},
+     el("header",{cls:"kt-map-head"},el("h2",{textContent:text.title}),el("p",{textContent:text.lead})),art,legend);
+   const parts:(HTMLElement|null)[]=[picture,timeControl(frames,index)];
+   if(layer==="impact"){
+     const depths=downstreamDepths(shown,selected);
+     const source=shown.find(n=>n.id===selected);
+     const list=[...depths.entries()].map(([id,d])=>({node:shown.find(n=>n.id===id)!,d})).filter(x=>x.node).sort((a,b)=>a.d-b.d||a.node.title.localeCompare(b.node.title,"ru"));
+     const details=el("button",{type:"button",cls:"kt-chip",textContent:"Сведения о ветви «"+(source?.title??"")+"»"});
+     details.addEventListener("click",()=>openNode(selected));
+     parts.push(el("section",{cls:"kt-impact",attrs:{"aria-label":"Что сломается"}},
+       el("h3",{textContent:source?`Если сломается «${source.title}»`:"Выберите ветвь"}),
+       list.length?el("ul",{cls:"kt-impact-list"},...list.map(x=>el("li",{},el("strong",{textContent:x.node.title}),el("small",{cls:"muted",textContent:(x.d===1?"зависит напрямую":"через "+x.d+" "+(x.d<5?"шага":"шагов"))+(x.node.status==="planned"?" · запланировано":"")})))):el("p",{cls:"muted",textContent:"От этой ветви пока ничего не зависит."}),
+       el("p",{cls:"muted",textContent:"Это структурный анализ карты, а не прогноз фактического сбоя."}),details));
+   }
+   const earned=medals.filter(m=>m.earned).sort((a,b)=>["bronze","silver","gold","legend"].indexOf(b.tier)-["bronze","silver","gold","legend"].indexOf(a.tier));
+   const more=el("button",{type:"button",cls:"kt-chip",textContent:earned.length>12?`Ещё ${earned.length-12} · вся полка`:"Вся полка наград"});
+   more.addEventListener("click",()=>{mode="fox";foxView="awards";render();});
+   parts.push(el("section",{cls:"kt-fruits",attrs:{"aria-label":"Плоды: награды"}},
+     el("h3",{textContent:`Плоды · получено ${earned.length} из ${medals.length}`}),
+     earned.length?el("div",{cls:"kt-fruit-row"},...earned.slice(0,12).map(m=>{
+       const b=el("button",{type:"button",cls:"kt-fruit",attrs:{title:m.title+" · "+TIER_LABEL[m.tier],"aria-label":m.title+", "+TIER_LABEL[m.tier]}},medalSvg(m,60));
+       b.addEventListener("click",()=>openMedal(m));return b;})):el("p",{cls:"muted",textContent:"Полученных наград пока нет: они откроются, когда появятся подтверждённые данные."}),
+     more));
+   body.replaceChildren(el("div",{cls:"kt-map"},...parts.filter((x):x is HTMLElement=>x!==null)));
+   status.textContent="";
  }
  const FOX_HUES=[140,25,265,330,200,45,175,95,235,15];
- function foxCard(m:FoxMetric,repaint:()=>void):HTMLElement{
+ function foxCard(m:FoxMetric,repaint:()=>void,onNavigate?:()=>void):HTMLElement{
    const changed=foxChanged.delete(m.id);
    const article=el("article",{cls:"kt-fox-card"+(m.value===null?" is-empty":"")+(changed?" "+foxMotion(Number(m.id.slice(4))).className:"")});
    article.style.setProperty("--wh",String(FOX_HUES[m.world%10]??140));
@@ -428,7 +514,7 @@ export function kitsuneTreePage():HTMLElement {
    const deltaLabel=delta===null?"":(delta>0?"+":"")+delta+" за "+(foxPeriod===1?"24 часа":foxPeriod+" дней");
    const open=el("button",{type:"button",cls:"kt-fox-open",textContent:"Источник →"});
    open.disabled=m.value===null;
-   open.addEventListener("click",()=>{mode=m.target;render();});
+   open.addEventListener("click",()=>{onNavigate?.();mode=m.target;render();});
    const chartPoints=foxPeriod===1?hourly.map(x=>({day:x.hour,value:x.value})):(foxHistory[m.id]??[]).filter(x=>Date.parse(x.day+"T00:00:00Z")>=Date.now()-(foxPeriod-1)*86400000);
    const plotted=sparkPoints(chartPoints);
    article.append(
@@ -442,44 +528,6 @@ export function kitsuneTreePage():HTMLElement {
      el("span",{cls:"kt-fox-chip "+(m.value===null?"off":"ok"),textContent:m.value===null?"Нет данных":"Подтверждено"}),
      open));
    return article;
- }
- function foxToday(main:HTMLElement,metrics:FoxMetric[],medals:ReturnType<typeof medalItems>){
-   const availability=metrics.filter(x=>x.value!==null).length;
-   const unread=foxEvents.filter(e=>!foxSeen.has(e.id));
-   const acknowledge=el("button",{type:"button",cls:"kt-chip",textContent:"Прочитано"});
-   acknowledge.disabled=unread.length===0;
-   acknowledge.addEventListener("click",()=>{
-     for(const event of foxEvents)foxSeen.add(event.id);
-     try{localStorage.setItem(seenStoreKey,JSON.stringify([...foxSeen].slice(-150)));}catch{/* Storage optional */}
-     render();
-   });
-   main.append(el("div",{cls:"kt-today-tiles"},
-     el("div",{cls:"kt-today-tile"},icon("spark",24),el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
-     nextMedalTile(medals),
-     el("div",{cls:"kt-today-tile"},icon("book",24),el("div",{},el("strong",{textContent:unread.length?"Новых вестей: "+unread.length:"Новых вестей нет"}),el("small",{cls:"muted",textContent:unread.length?unread.slice(-1).map(e=>e.title).join(""):"лесной дневник спокоен"}),acknowledge))));
-   const changedNow=metrics.filter(m=>foxChanged.has(m.id)).slice(0,6);
-   const shown=changedNow.length?changedNow:metrics.filter(m=>m.value!==null).slice(0,6);
-   main.append(el("h3",{cls:"kt-h",textContent:changedNow.length?"Что изменилось":"Ключевые показатели"}));
-   const grid=el("div",{cls:"kt-fox-grid"});
-   const paint=()=>{grid.replaceChildren(...shown.map(m=>foxCard(m,paint)));if(!shown.length)grid.append(el("p",{cls:"kt-empty",textContent:"Подтверждённых показателей пока нет: нужные источники не подключены."}));};
-   paint();main.append(grid);
-   main.append(el("h3",{cls:"kt-h",textContent:"Лесной дневник"}),el("p",{cls:"muted",textContent:forestStory(foxEvents,metrics)}));
-   const recent=foxEvents.slice(-6).reverse();
-   if(recent.length)main.append(el("ul",{cls:"kt-mini-list"},...recent.map(e=>el("li",{},el("strong",{textContent:forestEffects(e.kind)+" "+e.title}),el("small",{cls:"muted",textContent:e.day})))));
-   const brainAnalysis=el("button",{type:"button",cls:"kt-chip",textContent:"🧠 Разобрать показатели через Brain"});
-   const brainReport=el("p",{cls:"kt-brain-report",attrs:{"aria-live":"polite"}});
-   brainAnalysis.addEventListener("click",()=>{
-     if(brainAnalysis.disabled)return;
-     brainAnalysis.disabled=true;brainReport.textContent="Brain анализирует подтверждённые данные…";
-     const facts=metrics.filter(m=>m.value!==null).slice(0,40).map(m=>m.name+": "+m.value+" ("+m.source+")").join("; ");
-     const prompt="Проанализируй только следующие наблюдаемые показатели JUUNIBI. Укажи проблемы, сильные стороны и три безопасные рекомендации. Не выдумывай отсутствующие значения, не выполняй никаких действий и не меняй проект. Наблюдения: "+facts;
-     void api.chat(prompt).then(r=>{brainReport.textContent=r.ok?r.value.reply:"Brain недоступен: "+r.error.message;})
-     .catch(()=>{brainReport.textContent="Не удалось связаться с Brain";}).finally(()=>{brainAnalysis.disabled=false;});
-   });
-   main.append(el("div",{cls:"kt-chip-row"},brainAnalysis),brainReport);
-   if(foxEvents.filter(e=>e.kind==="update").length>=5)main.append(el("p",{cls:"kt-fox-easter",textContent:"🎁 Тайный подарок лисичек: пять или больше подтверждённых записей об обновлениях! Лес благодарит своего хранителя."}));
-   main.append(el("details",{cls:"kt-about"},el("summary",{textContent:"Как читать показатели"}),
-     el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён. Избранное сохраняется только в этом браузере. Никакие действия с проектом не выполняются."})));
  }
  function foxMetricsView(main:HTMLElement,metrics:FoxMetric[]){
    const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
@@ -535,34 +583,31 @@ export function kitsuneTreePage():HTMLElement {
          el("small",{textContent:(item.status==="planned"?"Запланировано · ":"Подтверждено · ")+item.source+(item.at?" · "+item.at:"")+(item.version?" · "+item.version.slice(0,12):"")})));
      for(const pr of matchingPRs.slice(0,15)){
        const card=el("article",{cls:"kt-fox-branch"},
-         el("strong",{textContent:"PR #"+pr.number+" · "+pr.title}),
-         el("p",{textContent:(pr.state==="merged"?"Объединён":pr.state==="open"?"Открыт — требуется продолжение":"Закрыт без слияния")+" · CI: "+(pr.ci==="passed"?"успешно":pr.ci==="failed"?"ошибка":pr.ci==="pending"?"выполняется":"нет подтверждения")}),
+         el("strong",{textContent:"Изменение #"+pr.number+" · "+pr.title}),
+         el("p",{textContent:(pr.state==="merged"?"Объединён":pr.state==="open"?"Открыт — требуется продолжение":"Закрыт без слияния")+" · автопроверки: "+(pr.ci==="passed"?"успешно":pr.ci==="failed"?"ошибка":pr.ci==="pending"?"выполняется":"нет подтверждения")}),
          el("small",{textContent:"GitHub · "+(pr.mergedAt??pr.createdAt).slice(0,10)+(pr.sha?" · "+pr.sha.slice(0,12):"")}));
-       card.append(el("a",{textContent:"Открыть PR ↗",attrs:{href:pr.url,target:"_blank",rel:"noopener noreferrer"}}));
+       card.append(el("a",{textContent:"Открыть изменение ↗",attrs:{href:pr.url,target:"_blank",rel:"noopener noreferrer"}}));
        branchList.append(card);
      }
      if(!selectedItems.length&&!matchingPRs.length)branchList.append(el("p",{cls:"kt-empty",textContent:foxPullsLoading?"Загружается журнал GitHub…":foxPulls===null?"GitHub недоступен — показаны только локальные сведения.":foxSnapshot?"Записей этого типа пока нет.":"Источники ещё не предоставили данные."}));
    };
    renderBranches();branchPanel.append(branchTabs,branchList);
-   branchPanel.append(el("p",{cls:"kt-fox-count",textContent:"GitHub: "+(foxPulls===null?"нет данных":foxPulls.length+" последних PR")+" · классификация по заголовкам PR приблизительная; установка подтверждается только локальным журналом."}));
+   branchPanel.append(el("p",{cls:"kt-fox-count",textContent:"GitHub: "+(foxPulls===null?"нет данных":foxPulls.length+" последних изменений")+" · классификация по заголовкам изменений приблизительная; установка подтверждается только локальным журналом."}));
    main.append(branchPanel);
  }
  function renderFox(){
    const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
-   const mood=forestMood(metrics);
-   const availability=metrics.filter(x=>x.value!==null).length;
    const medals=medalItems(metrics,foxHistory);
-   const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох"}});
-   main.append(foxCompanion(mood));
-   if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
-   main.append(el("div",{cls:"kt-subtabs",attrs:{role:"group","aria-label":"Вид раздела «Лисичка»"}},...FOX_VIEWS.map(([value,label])=>{
-     const b=el("button",{type:"button",cls:"kt-chip",textContent:label+(value==="awards"?" · "+medals.filter(m=>m.earned).length:""),attrs:{"aria-pressed":String(foxView===value)}});
-     b.addEventListener("click",()=>{foxView=value;render();});return b;})));
-   if(foxView==="today")foxToday(main,metrics,medals);
-   else if(foxView==="metrics")foxMetricsView(main,metrics);
-   else if(foxView==="awards"){
-     main.append(el("p",{cls:"muted kt-lead",textContent:"Награды выдаются только за подтверждённые данные. Бронза, серебро, золото и легенда показывают сложность награды. Если источника нет, награда остаётся закрытой."}),awardShelf(medals,shelfState));
-   }else foxBranchesView(main);
+   const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лес"}});
+   const back=el("button",{type:"button",cls:"kt-chip kt-back",textContent:"← К дереву"});
+   back.addEventListener("click",()=>{mode="map";render();});
+   const head=foxView==="metrics"?["Показатели","100 показателей в 10 мирах. Каждый знает свой источник; без источника честно написано «Нет данных»."]
+     :foxView==="awards"?["Награды","Награды выдаются только за подтверждённые данные. Бронза, серебро, золото и легенда показывают сложность награды; если источника нет, награда остаётся закрытой."]
+     :["Ветки проекта","Обновления, правки, ошибки и продолжение — по журналу установок и последним изменениям на GitHub."];
+   main.append(el("header",{cls:"kt-map-head"},back,el("h2",{textContent:head[0]!}),el("p",{textContent:head[1]!})));
+   if(foxView==="metrics")foxMetricsView(main,metrics);
+   else if(foxView==="awards")main.append(awardShelf(medals,shelfState));
+   else foxBranchesView(main);
    body.replaceChildren(main);
    status.textContent=foxLoading?"Получаем данные…":"";
  }
