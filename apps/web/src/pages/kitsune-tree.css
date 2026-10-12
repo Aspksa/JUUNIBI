@@ -477,7 +477,6 @@
 @media(max-width:700px){.ka{height:68vh;min-height:420px}}
 .ka .ka-node.is-hit .ka-disc{r:22px;filter:drop-shadow(0 0 8px var(--kt-brand))}
 .ka .ka-node.is-hit .ka-label{display:block}
-<<<<<<< HEAD
 
 /* ───── Карта-схема (интеллект-карта) ───── */
 .km-stage{background:radial-gradient(ellipse at 0% 50%,color-mix(in srgb,#e8a33d 14%,transparent),transparent 55%),radial-gradient(ellipse at 100% 0%,color-mix(in srgb,#6b8fe0 12%,transparent),transparent 50%),color-mix(in srgb,var(--surface) 90%,#1f2a44)}
@@ -528,5 +527,3 @@
 @keyframes km-pulse{50%{filter:drop-shadow(0 0 12px var(--kt-brand))}}
 @media(prefers-reduced-motion:reduce){.km-link,.km-node,.km-chev-mark,.km-badge{transition:none}.km-link.is-new,.km-node.is-new,.km-node.is-hit .km-body,.km-dep,.km.has-focus .km-link.on-path{animation:none}.km-link.is-new{stroke-dasharray:none;stroke-dashoffset:0}}
 @media(max-width:700px){.km{height:70vh;min-height:420px}}
-=======
->>>>>>> origin/main
