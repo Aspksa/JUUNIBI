@@ -143,11 +143,13 @@ export function kitsuneTreePage():HTMLElement {
          const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
          open.disabled=m.value===null;
          open.addEventListener("click",()=>{mode=m.target;render();});
+         const plotted=sparkPoints(foxHistory[m.id]??[]);
          article.append(
            el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
            el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
            el("h3",{textContent:m.name}),
            el("small",{cls:"kt-fox-delta",textContent:label}),
+           el("small",{textContent:plotted?"График: "+(foxHistory[m.id]?.length??0)+" дней":"График появится после двух измерений"}),
            el("p",{textContent:m.description}),
            el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
            open
