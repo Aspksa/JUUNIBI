@@ -19,8 +19,8 @@ describe("Brain Evolution 2.0",()=>{
    const result=hybridExperienceSearch(history,"audit",{limit:10,taskType:"archive",
      semanticScores:{a:0.9,pending:1}});
    expect(result.items).toHaveLength(3);
-   expect(result.items[0].id).toBe("a");
-   expect(result.items[0].reasons).toContain("semantic-similarity");
+   expect(result.items[0]?.id).toBe("a");
+   expect(result.items[0]?.reasons).toContain("semantic-similarity");
    expect(result.excludedUnconfirmed).toBe(1);
    expect(()=>hybridExperienceSearch(history,"audit",{limit:21})).toThrow();
  });
