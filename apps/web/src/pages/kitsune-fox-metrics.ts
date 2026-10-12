@@ -19,6 +19,7 @@ export function foxMetrics(data:FoxData):FoxMetric[]{
  const values=new Map<number,[number|null,string,string,FoxMetric["target"]]>();
  const put=(id:number,value:number|null,source:string,description:string,target:FoxMetric["target"])=>values.set(id,[value,source,description,target]);
  const manifestReady=Boolean(snapshot);
+ const hasComparison=Boolean(timeline?.snapshots&&timeline.snapshots.length>=2);
  const implemented=nodes.filter(n=>n.status==="implemented");
  const planned=nodes.filter(n=>n.status==="planned");
  const edges=nodes.reduce((v,n)=>v+n.dependsOn.length,0);
@@ -31,14 +32,14 @@ export function foxMetrics(data:FoxData):FoxMetric[]{
  put(1,manifestReady?nodes.length:null,"Манифест архитектуры","Все ветви, зарегистрированные в дереве","architecture");
  put(2,manifestReady?implemented.length:null,"Манифест архитектуры","Реализованные ветви, а не количество функций","architecture");
  put(3,discovery?.candidates.length??null,"Сканер исходников","Неподтверждённые кандидаты на новые ветви","discovery");
- put(4,timeline?growth.filter(x=>x.kind==="new").length:null,"История изменений","Ветви, появившиеся между двумя снимками","growth");
+ put(4,hasComparison?growth.filter(x=>x.kind==="new").length:null,"История изменений","Ветви, появившиеся между двумя снимками","growth");
  put(5,manifestReady?planned.length:null,"Манифест архитектуры","Ветви, которые пока только запланированы","architecture");
- put(6,timeline?growth.filter(x=>x.kind==="removed").length:null,"История изменений","Ветви, исчезнувшие из нового снимка","growth");
+ put(6,hasComparison?growth.filter(x=>x.kind==="removed").length:null,"История изменений","Ветви, исчезнувшие из нового снимка","growth");
  put(7,manifestReady?edges:null,"Манифест архитектуры","Количество направленных зависимостей","architecture");
- put(9,timeline?growth.filter(x=>x.kind==="new").length:null,"История изменений","Подтверждённые новые компоненты","growth");
+ put(9,hasComparison?growth.filter(x=>x.kind==="new").length:null,"История изменений","Подтверждённые новые компоненты","growth");
  put(18,discovery?.candidates.length??null,"Сканер исходников","Обнаруженные новые файлы-кандидаты","discovery");
  put(22,manifestReady?edges:null,"Манифест архитектуры","Связи между модулями по манифесту","architecture");
- put(31,timeline?growth.filter(x=>x.kind==="new").length:null,"История изменений","Подтверждённые новые ветви","growth");
+ put(31,hasComparison?growth.filter(x=>x.kind==="new").length:null,"История изменений","Подтверждённые новые ветви","growth");
  put(34,timeline?rollbacks.length:null,"Журнал обновлений","Записанные восстановления предыдущей версии","history");
  put(35,timeline?updates.length:null,"Журнал обновлений","Зарегистрированные установленные версии","history");
  put(40,timeline?updates.length:null,"Журнал обновлений","Подтверждённые установки обновлений","updates");
