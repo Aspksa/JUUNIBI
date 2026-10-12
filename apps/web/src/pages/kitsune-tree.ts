@@ -133,6 +133,8 @@ export function kitsuneTreePage():HTMLElement {
            try{localStorage.setItem(favoritesKey,JSON.stringify([...foxFavorites]));}catch{/* Private storage disabled */}
            paint();
          });
+         const delta=metricDelta(foxHistory[m.id]??[],foxPeriod);
+         const label=delta===null?"История накапливается":(delta>0?"+":"")+delta+" за "+foxPeriod+" дней";
          const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
          open.disabled=m.value===null;
          open.addEventListener("click",()=>{mode=m.target;render();});
@@ -140,6 +142,7 @@ export function kitsuneTreePage():HTMLElement {
            el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
            el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
            el("h3",{textContent:m.name}),
+           el("small",{cls:"kt-fox-delta",textContent:label}),
            el("p",{textContent:m.description}),
            el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
            open
@@ -150,7 +153,7 @@ export function kitsuneTreePage():HTMLElement {
      search.addEventListener("input",()=>{foxSearch=search.value;paint();});
      world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
      favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
-     view.append(search,world,favoritesToggle);
+     view.append(search,world,favoritesToggle,period);
      main.append(view,count,cards);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
