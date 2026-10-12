@@ -273,3 +273,20 @@ describe("SQLite Brain graph and benchmark HTTP", () => {
     } finally {srv.close();await rm(dir,{recursive:true,force:true});}
   });
 });
+
+describe("Brain plan benchmark API", () => {
+  it("exposes deterministic checks without execution", async () => {
+    const brain=new BrainCore(()=>true);
+    brain.plan("audit knowledge graph",["inspect","verify"]);
+    const server=createApp({brain,modules:()=>[],configured:{model:"m"}});
+    const url=`http://127.0.0.1:${await start(server)}`;
+    try {
+      const result=await fetch(url+"/api/brain/plan-benchmarks");
+      expect(result.status).toBe(200);
+      const report=await result.json();
+      expect(report.plansEvaluated).toBe(1);
+      expect(report.cases).toHaveLength(6);
+      expect(report.cases.every((c:{passed:number})=>c.passed===1)).toBe(true);
+    } finally {server.close();}
+  });
+});
