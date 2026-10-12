@@ -314,6 +314,17 @@ describe("BrainCore", () => {
     expect(()=>brain.inspectCognitiveEngine(plan.id,{strategies:[{name:"a",risk:"low",reversible:true}]})).toThrow();
     expect(()=>brain.inspectCognitiveEngine("absent",{strategies:[]})).toThrow();
   });
+  it("benchmarks existing plans deterministically without mutation", () => {
+    const brain = new BrainCore(() => true);
+    const plan = brain.plan("check SQLite memory",["inspect graph","verify result"]);
+    const first=brain.planBenchmarks();
+    const second=brain.planBenchmarks();
+    expect(first).toEqual(second);
+    expect(first.plansEvaluated).toBe(1);
+    expect(first.cases).toHaveLength(6);
+    expect(first.cases.every(test => test.passed === 1)).toBe(true);
+    expect(brain.status().plans[0]?.id).toBe(plan.id);
+  });
   it("persists state and restores plans on restart", async () => {
     let saved: string | null = null;
     const store = { load: async () => saved, save: async (value: string) => { saved = value; } };
