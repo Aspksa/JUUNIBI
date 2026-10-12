@@ -59,6 +59,7 @@ export function kitsuneTreePage():HTMLElement {
  let foxLive:FoxLive={};
  let foxLoading=true;
  let foxReaction="";
+ let foxPeriod:7|30=7;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
