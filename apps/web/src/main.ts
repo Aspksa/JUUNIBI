@@ -21,6 +21,7 @@ import { tasksPage } from "./pages/tasks";
 import { achievementsPage } from "./pages/achievements";
 import { vaultPage } from "./pages/vault";
 import { mobilePage } from "./pages/mobile";
+import { kitsuneTreePage } from "./pages/kitsune-tree";
 import { foxNetworkPage } from "./pages/fox-network";
 import {
   app, BRAIN_TILE_ROUTES, SUB_ROUTES, refreshApprovals, refreshBrief, refreshSettings, refreshSuggestions, refreshEvents, refreshMemory, refreshModules, refreshStatus, refreshUpdate, refreshHistory, routeFromHash,
@@ -34,6 +35,7 @@ import "./nav/nav.css";
 import "./pages/tasks-work.css";
 import "./design.css";
 import "./pages/fox-network.css";
+import "./pages/kitsune-tree.css";
 import "./chat/chat.css";
 
 const kernel = new Kernel(new Logger("web", "info"));
@@ -160,7 +162,7 @@ kernel.register({
     const sigFor = (s: AppState): string => {
       switch (s.route) {
         case "memory": case "quality": return ""; // tiles of the Brain page, which keeps itself up to date
-        case "disk": case "modules": case "tasks": case "mobile": case "fox-network": case "achievements": case "vault": return ""; // the page loads and refreshes its own data
+        case "disk": case "modules": case "tasks": case "mobile": case "fox-network": case "kitsune-tree": case "achievements": case "vault": return ""; // the page loads and refreshes its own data
         case "brain": return "";
         case "update": return JSON.stringify([s.update, s.updateEvents.length ? s.updateEvents[s.updateEvents.length - 1]?.event_id : "", s.updateEvents.length, s.updateError, s.updateHistory, s.updateRestarting, s.updateWarnings]);
         case "settings": return JSON.stringify([s.assistantSettings, s.status?.assistant, s.status?.model, s.theme, s.accent, s.customAccent, s.uiRadius, s.uiScale, s.chatDensity, s.chatFont, s.showScenes, s.chatFollowUps, s.update?.localVersion, chats.store.get().items.length, chats.store.get().items.reduce((n, c) => n + c.messages.length, 0)]);
@@ -180,6 +182,7 @@ kernel.register({
         : s.route === "vault" ? vaultPage({ back: () => go("tasks") })
         : s.route === "mobile" ? mobilePage()
         : s.route === "fox-network" ? foxNetworkPage()
+        : s.route === "kitsune-tree" ? kitsuneTreePage()
         : s.route === "modules" ? modulesPage(s, go)
         : s.route === "brain" ? brainPage()
         : s.route === "update" ? updatePage(s)
