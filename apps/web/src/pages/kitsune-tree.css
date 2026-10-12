@@ -417,3 +417,64 @@
 .kt-report-img{width:100%;max-width:720px;height:auto;border-radius:20px;box-shadow:0 12px 40px -18px #000}
 .kt-today .kt-chip-row{gap:6px}
 .md-difficulty{font-weight:650;color:var(--tier)}
+
+/* ───────── Атлас: большое дерево-плакат ───────── */
+.ka-wrap{display:flex;flex-direction:column;gap:10px}
+.ka-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ka-bar .ka-search{flex:1;min-width:240px}
+.ka-zoom{display:flex;gap:6px}
+.ka-status{min-height:1.2em;font-size:.84rem}
+.ka-legend{display:flex;flex-wrap:wrap;gap:8px}
+.ka-clan{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border:1px solid var(--kt-line);border-radius:999px;background:var(--surface);color:var(--fg);font-size:.8rem;cursor:pointer}
+.ka-clan i{width:12px;height:12px;border-radius:50%;display:inline-block}
+.ka-clan[aria-pressed="true"]{border-color:var(--kt-brand);background:color-mix(in srgb,var(--kt-brand) 14%,var(--surface));font-weight:650}
+.ka-clan:focus-visible{outline:2px solid var(--kt-brand);outline-offset:2px}
+.ka-stage{border:1px solid var(--kt-line);border-radius:24px;overflow:hidden;background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,#2a6f6a 22%,transparent),transparent 62%),color-mix(in srgb,#0f2b2c 55%,var(--surface))}
+:root[data-theme="light"] .ka-stage{background:radial-gradient(ellipse at 50% 100%,color-mix(in srgb,#2a6f6a 14%,transparent),transparent 62%),color-mix(in srgb,#e8f1ee 60%,var(--surface))}
+.ka-hint{margin:0;font-size:.8rem}
+.ka{display:block;width:100%;height:min(78vh,880px);min-height:520px;cursor:grab;touch-action:none;outline:none;user-select:none}
+.ka.is-drag{cursor:grabbing}
+.ka:focus-visible{box-shadow:inset 0 0 0 2px var(--kt-brand)}
+.ka-ground{fill:color-mix(in srgb,#8a6a3a 28%,transparent)}
+.ka-trunk{fill:hsl(28 30% 46%)}
+.ka-roots{stroke:hsl(28 30% 46%);stroke-width:12;stroke-linecap:round}
+.ka-edge{stroke:var(--c);stroke-linecap:round;opacity:.9}
+.ka-spoke{stroke:var(--c);stroke-width:1.4;opacity:.55}
+.ka-edge.is-dim,.ka-spoke.is-dim{opacity:.1}
+.ka-node{cursor:pointer;outline:none}
+.ka-hit{fill:transparent}
+.ka-disc{fill:color-mix(in srgb,var(--c) 30%,var(--bg));stroke:var(--c);stroke-width:2}
+.ka-node.trunk .ka-disc{fill:hsl(28 36% 40%);stroke:hsl(28 40% 62%);stroke-width:4}
+.ka-node.branch .ka-disc{fill:color-mix(in srgb,var(--c) 45%,var(--bg));stroke-width:3.4}
+.ka-node.leaf .ka-disc{stroke-width:1.6}
+.ka-node.st-planned .ka-disc{fill:transparent;stroke-dasharray:3 3}
+.ka-node.st-empty .ka-disc{fill:var(--surface-2);stroke:color-mix(in srgb,var(--muted) 55%,transparent)}
+.ka-node.st-bad .ka-disc{stroke:var(--danger,#f87171);fill:color-mix(in srgb,var(--danger,#f87171) 22%,var(--bg))}
+.ka-node.st-info .ka-disc{fill:color-mix(in srgb,var(--c) 14%,var(--bg))}
+.ka-node.st-empty .ka-glyph{opacity:.4;filter:grayscale(1)}
+.ka-label{fill:var(--fg);font-size:calc(11px*var(--ls,1));font-weight:650;paint-order:stroke;stroke:color-mix(in srgb,#0f2b2c 70%,var(--bg));stroke-width:3.5px;stroke-linejoin:round;pointer-events:none}
+:root[data-theme="light"] .ka-label{stroke:color-mix(in srgb,#fff 80%,var(--bg))}
+.ka-node.trunk .ka-label{font-size:calc(20px*var(--ls,1));font-weight:800;letter-spacing:.06em}
+.ka-node.branch .ka-label{font-size:calc(14px*var(--ls,1));font-weight:750;stroke-width:calc(3.5px*var(--ls,1))}
+.ka-node.leaf .ka-label{font-size:9.5px;font-weight:550}
+.ka-node:hover .ka-disc,.ka-node:focus-visible .ka-disc{stroke:var(--fg);stroke-width:3}
+.ka-node.is-hit .ka-disc{stroke:var(--kt-brand);stroke-width:4;fill:color-mix(in srgb,var(--kt-brand) 40%,var(--bg))}
+.ka-node.is-dim{opacity:.18}
+/* уровни детализации: издалека — ветви и хабы, ближе — листья, вплотную — подписи листьев */
+.ka.z-far .ka-node.leaf .ka-glyph,.ka.z-far .ka-node.leaf .ka-label,.ka.z-far .ka-node.hub .ka-label{display:none}
+.ka.z-mid .ka-node.leaf .ka-label{display:none}
+.ka-node.hub .ka-label{font-size:calc(11px*min(var(--ls,1),1.5));stroke-width:3px}
+.ka-node.leaf .ka-label{font-size:calc(9.5px*min(var(--ls,1),1.2))}
+.ka.z-far .ka-node.leaf .ka-disc{r:6}
+.ka-list{display:flex;flex-direction:column;gap:8px;padding:12px;max-height:80vh;overflow:auto}
+.ka-list-branch{border:1px solid var(--kt-line);border-radius:16px;background:var(--surface);padding:6px 12px}
+.ka-list-branch summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0}
+.ka-list-branch summary i{width:14px;height:14px;border-radius:50%;background:var(--c)}
+.ka-list-row{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin:2px 0}
+.ka-list-item{padding:4px 10px;border:1px solid var(--kt-line);border-radius:999px;background:var(--bg);color:var(--fg);cursor:pointer;font-size:.85rem}
+.ka-list-leaves{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px}
+.ka-list-leaf{padding:3px 9px;border:1px solid color-mix(in srgb,var(--c,var(--kt-line)) 55%,var(--kt-line));border-radius:999px;background:var(--surface);color:var(--fg);cursor:pointer;font-size:.78rem}
+.ka-list-leaf.st-empty{color:var(--muted)}
+.ka-list-item:focus-visible,.ka-list-leaf:focus-visible{outline:2px solid var(--kt-brand);outline-offset:2px}
+.ka-wrap.is-list .ka-stage{background:transparent;border:0}
+@media(max-width:700px){.ka{height:68vh;min-height:420px}}

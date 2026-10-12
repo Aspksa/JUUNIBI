@@ -16,6 +16,8 @@ import { openSheet } from "./sheet";
 import { RAIL, SEARCHABLE, ZOOMABLE, LAYER_TEXT, activeItem, type FoxView, type Layer, type TreeMode } from "./kitsune-sections";
 import { dateRu, shortVersion, withRuTitle } from "./kitsune-ru";
 import { buildForestReport, reportSvg, saveReportPng } from "./kitsune-report";
+import { buildAtlas, countLeaves, allNodes, type AtlasInput, type AtlasNode } from "./kitsune-atlas-model";
+import { atlasView, newAtlasState } from "./kitsune-atlas";
 import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
 import { treeArt, downstreamDepths, type CrownBush } from "./kitsune-tree-art";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
@@ -55,6 +57,7 @@ export function kitsuneTreePage():HTMLElement {
  let mode:TreeMode="map",selected="brain",filter="";
  let foxView:FoxView="metrics";
  let layer:Layer="structure";
+ const atlasState=newAtlasState();
  let frameIndex=-1; // -1 = «сейчас»
  const shelfState=newShelfState();
  let releases:EvolutionRelease[]=[];
@@ -127,7 +130,8 @@ export function kitsuneTreePage():HTMLElement {
    const medals=medalItems(metrics,foxHistory);
    renderRail(metrics,medals);
    query.hidden=!SEARCHABLE.has(mode);zoom.hidden=!ZOOMABLE.has(mode);controls.hidden=query.hidden&&zoom.hidden;
-   body.classList.toggle("kt-solo",mode==="fox"||mode==="map");
+   body.classList.toggle("kt-solo",mode==="fox"||mode==="map"||mode==="atlas");
+   if(mode==="atlas"){renderAtlas(metrics,medals);return;}
    if(mode==="fox"){renderFox();return;}
    if(mode==="map"){renderMap();return;}
    if(mode==="growth"){
@@ -478,6 +482,72 @@ export function kitsuneTreePage():HTMLElement {
    return wrap;
  }
  const ruTitleOf=(title:string,id:string)=>withRuTitle({id,title}).title;
+ /** Атлас: большое дерево-плакат из реальных источников. Клик по любому кружку открывает окно по центру. */
+ function renderAtlas(metrics:FoxMetric[],medals:MedalItem[]){
+   const worldOf=(medal:MedalItem):string=>{
+     if(medal.kind==="legendary")return medal.world;
+     if(medal.kind==="featured")return "Особые награды";
+     const index=Number(/fox-(\d+)$/.exec(medal.id)?.[1]);
+     const w=FOX_WORLDS[metrics[index]?.world??-1];
+     return "Хранители: "+(w?.title??"прочее");
+   };
+   const input:AtlasInput={
+     nodes:nodesOf(),
+     metrics:metrics.map(m=>({id:m.id,name:m.name,world:m.world,emoji:m.emoji,value:m.value})),
+     worlds:FOX_WORLDS.map(w=>({emoji:w.emoji,title:w.title})),
+     medals:medals.map(m=>({id:m.id,title:m.title,emoji:m.emoji,group:worldOf(m),earned:m.earned,progress:m.progress})),
+     ...(discovery?{code:discovery.modules.filter(m=>!/\.(test|spec)\./.test(m.file)).map(m=>({id:m.id,file:m.file}))}:{}),
+     ...(foxLive.modules?{modules:foxLive.modules.map(m=>({name:m.name,...(m.title?{title:m.title}:{}),status:m.status}))}:{}),
+     ...(persistedHistory?{history:persistedHistory.history.slice(0,16).map(h=>({id:h.id,kind:h.kind,to:h.to,at:h.at,label:(dateRu(h.at)||"—")+" · "+(h.kind==="install"?"установка":h.kind==="rollback"?"откат":"сбой")}))}:{}),
+   };
+   const tree=buildAtlas(input);
+   const leaves=countLeaves(tree);
+   const open=(n:AtlasNode)=>openAtlasNode(n,metrics,medals);
+   body.replaceChildren(el("div",{cls:"kt-map"},
+     el("header",{cls:"kt-map-head"},el("h2",{textContent:"Атлас"}),el("p",{textContent:`Всё проекта на одной карте: ствол JUUNIBI, ветви-кланы и венцы листьев — ${leaves} реальных узлов. Только то, что есть в данных.`})),
+     atlasView({tree,state:atlasState,onOpen:open})));
+   status.textContent="";
+ }
+ function infoSheet(title:string,sub:string,lines:string[],actions:[string,()=>void][]=[],tone:"ok"|"warn"|"off"|"bad"="ok"){
+   const rows=el("div",{cls:"kt-node-sheet"},...lines.map(l=>el("p",{textContent:l})),
+     actions.length?el("div",{cls:"kt-chip-row"},...actions.map(([label,run])=>{const b=el("button",{type:"button",cls:"kt-chip is-strong",textContent:label});b.addEventListener("click",()=>{run();});return b;})):null);
+   return openSheet({title,icon:"link",sub,tone,content:rows});
+ }
+ function openAtlasNode(n:AtlasNode,metrics:FoxMetric[],medals:MedalItem[]){
+   const go=(fn:()=>void)=>()=>{fn();render();};
+   switch(n.ref.type){
+     case "root":case "manifest":openNode(n.ref.key);render();return;
+     case "world":openWorld(Number(n.ref.key));return;
+     case "metric":{
+       const m=metrics.find(x=>x.id===n.ref.key);
+       if(!m)return;
+       const grid=el("div",{cls:"kt-fox-grid kt-world-grid"});
+       const ref:{close?:()=>void}={};
+       const paint=()=>grid.replaceChildren(foxCard(m,paint,()=>ref.close?.()));
+       paint();
+       const sheet=openSheet({title:m.name,icon:"spark",sub:FOX_WORLDS[m.world]?.title??"",tone:m.value===null?"off":"ok",content:grid});
+       ref.close=()=>sheet.close();return;
+     }
+     case "medal":{const item=medals.find(x=>x.id===n.ref.key);if(item)openMedal(item);return;}
+     case "medalGroup":{
+       const ids=new Set(allNodes(n).filter(x=>x.kind==="leaf").map(x=>x.ref.key));
+       const list=medals.filter(m=>ids.has(m.id));
+       openSheet({title:n.label,icon:"target",sub:n.note??"",tone:list.some(m=>m.earned)?"ok":"off",content:awardShelf(list,newShelfState())});return;
+     }
+     case "code":
+       if(n.ref.key.startsWith("area:"))infoSheet(n.label,n.note??"",["Группа файлов проекта по первому слову названия. Это область кода, а не подтверждённая возможность."],[["Открыть «Обнаружение»",go(()=>{mode="discovery";})]],"off");
+       else infoSheet(n.label,"Файл проекта",[n.note??n.ref.key,"Назначение файла требует проверки: сканер только читает код и ничего не запускает."],[["Открыть «Обнаружение»",go(()=>{mode="discovery";})]],"off");
+       return;
+     case "module":infoSheet(n.label,"Модуль JUUNIBI",["Состояние: "+(n.note==="started"||n.note==="running"?"работает":n.note==="failed"?"сбой":"остановлен")+"."],[["Открыть «Модули»",()=>{location.hash="#/modules";}]],n.state==="bad"?"bad":n.state==="ok"?"ok":"off");return;
+     case "history":infoSheet(n.label,"Журнал обновлений",["Запись из журнала Центра обновлений."],[["Открыть «Хронологию»",go(()=>{mode="history";})]]);return;
+     case "clan":{
+       const leaves=countLeaves(n);
+       const target:Record<string,()=>void>={forest:()=>{mode="fox";foxView="metrics";},awards:()=>{mode="fox";foxView="awards";},updates:()=>{mode="updates";},code:()=>{mode="discovery";},modules:()=>{location.hash="#/modules";}};
+       const run=target[n.ref.key];
+       infoSheet(n.label,`Узлов: ${leaves}`,[`В этой ветви ${leaves} листьев. Нажмите на хаб или лист, чтобы увидеть подробности.`],run?[["Открыть раздел",go(run)]]:[]);return;
+     }
+   }
+ }
  /** Главный экран: дерево одним рисунком, слой, ползунок времени, плоды-награды. */
  function renderMap(){
    const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
