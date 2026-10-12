@@ -45,6 +45,26 @@ describe("durable graph and benchmarks",()=>{
       expect((await graph.search("archive",2)).searchMode).toBe("lexical-fallback");
     }finally{await rm(dir,{recursive:true,force:true});}
   });
+  it("links confirmed decisions across goals without treating pending evidence as fact",async()=>{
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-relations-"));
+    try {
+      const graph=new BrainGraphSQLite(path.join(dir,"graph.sqlite3"),script);
+      await graph.sync([
+        {...record("one","archive alpha","inspect files","success"),taskType:"file-audit"},
+        {...record("two","archive beta","inspect files","failure"),taskType:"file-audit"},
+        {...record("three","archive gamma","delete files","success"),taskType:"file-audit"},
+        {...record("four","archive delta","inspect files"),taskType:"file-audit"}
+      ]);
+      const links=await graph.relatedDecisions("one",10);
+      expect(links.sourceFound).toBe(true);
+      expect(links.items.map((item:{id:string})=>item.id)).toEqual(["two","three"]);
+      expect(links.items[0].relationship).toEqual(["same-task-type","same-strategy"]);
+      expect(links.items[0].observed).toBe("failure");
+      expect(links.inferredOutcome).toBe(false);
+      expect((await graph.relatedDecisions("four",10)).sourceFound).toBe(false);
+      await expect(graph.relatedDecisions("one",21)).rejects.toThrow("Некорректные");
+    }finally{await rm(dir,{recursive:true,force:true});}
+  });
   it("reports all fixed plan quality checks",()=>{
     const result=evaluateBrainPlanBenchmarks();
     expect(result.total).toBeGreaterThanOrEqual(5);
