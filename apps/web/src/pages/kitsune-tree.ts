@@ -1,3 +1,5 @@
+import {foxBranches,BRANCH_TRACKS,type BranchTrack} from "./kitsune-fox-branches";
+import {eliteFoxAwards} from "./kitsune-fox-elite";
 import {synchronizeFoxHistory,type FoxHourly} from "./kitsune-fox-server";
 import {foxMotion,foxChangedMetrics,foxVerifiedReadings} from "./kitsune-fox-motion";
 import {forestAwards,forestStory,sparkPoints,forestEffects,mergeForestEvents,safeForestEvents,type ForestEvent} from "./kitsune-fox-life";
@@ -77,6 +79,9 @@ export function kitsuneTreePage():HTMLElement {
  let foxKnownNumbers=new Map<string,number>();
  let foxChanged=new Set<string>();
  let foxLimit=30;
+ let foxTrack:BranchTrack="update";
+ let foxEliteOnlyEarned=false;
+ let foxEliteLimit=20;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
