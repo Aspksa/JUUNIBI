@@ -16,14 +16,14 @@ describe("menu prefs", () => {
   });
   it("default: three groups, chat and tasks first, settings last", () => {
     const p = cleanPrefs(null);
-    expect(arrange(p).map((g) => g.items.map((n) => n.id))).toEqual([["chat", "tasks", "disk"], ["brain", "modules"], ["fox-network", "mobile", "update", "settings"]]);
+    expect(arrange(p).map((g) => g.items.map((n) => n.id))).toEqual([["chat", "tasks", "disk"], ["brain", "modules", "kitsune-tree"], ["fox-network", "mobile", "update", "settings"]]);
     expect(p.collapsed).toBe(false);
   });
   it("repairs stored junk: unknown ids dropped, missing ones added, settings never hidden", () => {
     const p = cleanPrefs({ collapsed: true, order: ["update", "nope", "update", 5], hidden: ["settings", "modules", "x"] });
     expect(p.collapsed).toBe(true);
     expect(p.order[0]).toBe("update");
-    expect(new Set(p.order).size).toBe(9);
+    expect(new Set(p.order).size).toBe(10);
     expect(p.hidden).toEqual(["modules"]);
     expect(cleanPrefs("garbage")).toEqual(cleanPrefs(null));
   });
@@ -44,7 +44,7 @@ describe("menu prefs", () => {
     const p = toggleHidden(cleanPrefs(null), "modules");
     expect(ids(p)).not.toContain("modules");
     expect(arrange(p, true)[1]!.items.map((n) => n.id)).toContain("modules");
-    expect(hotkeyLabel(p, "mobile")).toBe("Alt+6");
+    expect(hotkeyLabel(p, "mobile")).toBe("Alt+7");
     expect(toggleHidden(p, "modules").hidden).toEqual([]);
     expect(toggleHidden(p, "settings")).toBe(p);
   });
@@ -52,10 +52,10 @@ describe("menu prefs", () => {
     const p = cleanPrefs(null);
     expect(itemForDigit(p, "Digit1")?.id).toBe("chat");
     expect(itemForDigit(p, "Numpad2")?.id).toBe("tasks");
-    expect(itemForDigit(p, "Digit9")?.id).toBe("settings");
+    expect(itemForDigit(p, "Digit9")?.id).toBe("update");
     expect(itemForDigit(p, "Digit0")).toBeNull();
     expect(itemForDigit(p, "KeyA")).toBeNull();
-    expect(hotkeyLabel(p, "settings")).toBe("Alt+9");
+    expect(hotkeyLabel(p, "settings")).toBeNull();
   });
 });
 
