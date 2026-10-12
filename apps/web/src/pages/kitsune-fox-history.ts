@@ -13,7 +13,7 @@ export function sanitizeHistory(raw:unknown):FoxHistory{
    const point=item as Partial<FoxPoint>;
    if(typeof point.day==="string"&&point.day.length===10&&typeof point.value==="number"&&Number.isSafeInteger(point.value)&&point.value>=0)points.push({day:point.day,value:point.value});
   }
-  if(points.length)output[key]=points.slice(-30);
+  if(points.length)output[key]=points.slice(-90);
  }
  return output;
 }
@@ -23,11 +23,11 @@ export function recordMetrics(history:FoxHistory,metrics:FoxMetric[],day:string)
   const value=metric.value;
   if(value===null||!Number.isSafeInteger(value)||value<0)continue;
   const points=(result[metric.id]??[]).filter(p=>p.day!==day);
-  result[metric.id]=[...points,{day,value}].sort((a,b)=>a.day.localeCompare(b.day)).slice(-30);
+  result[metric.id]=[...points,{day,value}].sort((a,b)=>a.day.localeCompare(b.day)).slice(-90);
  }
  return result;
 }
-export function metricDelta(points:FoxPoint[],days:7|30):number|null{
+export function metricDelta(points:FoxPoint[],days:7|30|90):number|null{
  if(points.length<2)return null;
  const last=points[points.length-1]!;
  const cutoff=Date.parse(last.day+"T00:00:00Z")-(days-1)*86400000;

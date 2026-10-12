@@ -1,3 +1,4 @@
+import {foxSQLite} from "./fox-commotion-store";
 import {discoverProject} from "./kitsune-discovery";
 import { spawn } from "node:child_process";
 import path from "node:path";
@@ -6,6 +7,7 @@ import type { ProjectUpdater } from "./updater";
 
 export class KitsuneEvolution {
  constructor(private readonly root:string,private readonly updater:ProjectUpdater){}
+ foxHistory(payload:unknown){return foxSQLite(this.root,payload);}
  async snapshot(){
   const manifest=JSON.parse(await readFile(path.join(this.root,"apps","web","public","evolution.json"),"utf8")) as unknown;
   if(!manifest||typeof manifest!=="object"||!Array.isArray((manifest as {nodes?:unknown}).nodes))
