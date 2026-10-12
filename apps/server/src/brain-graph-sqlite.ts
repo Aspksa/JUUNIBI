@@ -12,7 +12,7 @@ const cosine=(a:number[],b:number[])=>{
 };
 /** Persistent local SQLite graph; optional configured embeddings rerank confirmed outcomes. */
 export class BrainGraphSQLite {
-  private embedding?:EmbeddingProvider;
+  private embedding:EmbeddingProvider|undefined;
   private queue:Promise<unknown>=Promise.resolve();
   private readonly vectors=new Map<string,{model:string;vector:number[]}>();
   constructor(private readonly file:string, private readonly script=join(process.cwd(),"scripts","brain-graph-sqlite.py")) {}
