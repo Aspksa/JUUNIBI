@@ -1,4 +1,4 @@
-import {FOX_WORLDS,foxMetrics} from "./kitsune-fox-metrics";
+import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
 import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
 import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
@@ -56,6 +56,9 @@ export function kitsuneTreePage():HTMLElement {
  let foxOnlyFavorite=false;
  let foxSearch="";
  let foxSnapshot:EvolutionSnapshot|null=null;
+ let foxLive:FoxLive={};
+ let foxLoading=true;
+ let foxReaction="";
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
@@ -93,12 +96,13 @@ export function kitsuneTreePage():HTMLElement {
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
    if(mode==="fox"){
-     const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth});
+     const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
      const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох — сто живых показателей"}});
      main.append(el("div",{cls:"kt-fox-hero"},
        el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / FOX COMMOTION"}),
        el("h2",{textContent:"🦊 Лисий переполох"}),
        el("p",{textContent:"100 лесных историй в 10 мирах. Значения берутся из подтверждённых данных; неизвестные показатели честно показывают «Нет данных»."})));
+     if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
      const view=el("div",{cls:"kt-fox-toolbar"});
      const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
      search.value=foxSearch;
@@ -146,7 +150,7 @@ export function kitsuneTreePage():HTMLElement {
        el("p",{textContent:"Каждый показатель знает источник. Число 0 означает подтверждённое отсутствие событий. «Нет данных» означает, что нужный источник пока не подключён."}),
        el("p",{textContent:"Избранные карточки сохраняются только в этом браузере. Никакие действия с проектом не выполняются."}));
      const availability=metrics.filter(x=>x.value!==null).length;
-     side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"}));
+     side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
      paint();status.textContent="Лисий переполох · 100 показателей, "+availability+" с подключёнными данными";return;
    }
@@ -384,6 +388,8 @@ export function kitsuneTreePage():HTMLElement {
    dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
    persistedHistory=snapshot.timeline;
    foxSnapshot=snapshot;
+   const latest=growth.find(x=>x.kind==="new"||x.kind==="rollback"||x.kind==="installed");
+   foxReaction=latest?latest.kind==="rollback"?"🦊 Уф! Лес вернулся к прежней версии. Всё под контролем.":latest.kind==="new"?"🌱 Ой, лапки! У нас появилась новая веточка: "+latest.title:"✨ Обновление установлено — проверим, что изменилось!":"";
    growth=growthEvents(snapshot);
    const eventKey=snapshot.timeline.activeVersion+":"+growth.map(x=>x.id).join(",");
    if(growth.length&&playedEvent!==eventKey){
@@ -399,5 +405,23 @@ export function kitsuneTreePage():HTMLElement {
    updatesLoading=false;
    render();
  }).catch(()=>{updatesLoading=false;render();});
+ void Promise.allSettled([
+   api.modules(),api.brainStatus(),api.achievements(),api.diskLife(),api.organizer(),api.updateStatus(),api.projectStats()
+ ]).then(results=>{
+   const read=<T,>(index:number):T|undefined=>{
+     const outcome=results[index];
+     if(outcome?.status!=="fulfilled"||!outcome.value.ok)return undefined;
+     return outcome.value.value as T;
+   };
+   foxLive={};
+   const modules=read<import("../api").ModuleInfo[]>(0);if(modules)foxLive.modules=modules;
+   const brain=read<import("../api").BrainStatus>(1);if(brain)foxLive.brain=brain;
+   const achievements=read<import("../api").AchievementsData>(2);if(achievements)foxLive.achievements=achievements;
+   const disk=read<import("../api").DiskLife>(3);if(disk)foxLive.disk=disk;
+   const organizer=read<import("../api").Organizer>(4);if(organizer)foxLive.organizer=organizer;
+   const updater=read<import("../api").UpdateStatus>(5);if(updater)foxLive.updater=updater;
+   const project=read<import("../api").ProjectStatsData>(6);if(project)foxLive.project=project;
+   foxLoading=false;if(mode==="fox")render();
+ }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
  render();return root;
 }
