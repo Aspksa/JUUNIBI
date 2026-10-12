@@ -9,7 +9,28 @@ export interface VerifiedKnowledge {
   id: string; topic: string; claim: string; source: string;
   verifiedAt: string; nextReviewAt: string; reviewCount: number;
   status: "verified" | "needs-review";
+  history?: { at: string; action: "created" | "reviewed" | "flagged"; status: "verified" | "needs-review"; source: string }[];
 }
+type KnowledgeHistory = NonNullable<VerifiedKnowledge["history"]>[number];
+const validHistory = (value: unknown): value is KnowledgeHistory => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const h = value as Record<string, unknown>;
+  return typeof h.at === "string" && h.at.length <= 40 &&
+    typeof h.source === "string" && h.source.length <= 300 &&
+    (h.action === "created" || h.action === "reviewed" || h.action === "flagged") &&
+    (h.status === "verified" || h.status === "needs-review");
+};
+const validKnowledge = (value: unknown): value is VerifiedKnowledge => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const x = value as Record<string, unknown>;
+  return typeof x.id === "string" && typeof x.claim === "string" && x.claim.length <= 1000 &&
+    typeof x.topic === "string" && typeof x.source === "string" &&
+    typeof x.verifiedAt === "string" && typeof x.nextReviewAt === "string" &&
+    Number.isInteger(x.reviewCount) && Number(x.reviewCount) >= 0 &&
+    (x.status === "verified" || x.status === "needs-review") &&
+    (x.history === undefined ||
+      (Array.isArray(x.history) && x.history.length <= 50 && x.history.every(validHistory)));
+};
 /** Isolated knowledge ledger: only exact deterministic evidence or human approval can promote facts. */
 export class KnowledgeLedger {
   private items: VerifiedKnowledge[] = [];
@@ -19,14 +40,11 @@ export class KnowledgeLedger {
     try {
       const state: unknown = JSON.parse(await readFile(this.filename, "utf8"));
       if (!Array.isArray(state) || state.length > 500 ||
-        !state.every((x) => x && typeof x.id === "string" && typeof x.claim === "string" && x.claim.length <= 1000 &&
-          typeof x.topic === "string" && typeof x.source === "string" && typeof x.verifiedAt === "string" &&
-          typeof x.nextReviewAt === "string" && Number.isInteger(x.reviewCount) && x.reviewCount >= 0 &&
-          ["verified", "needs-review"].includes(x.status))) throw new Error("Повреждён журнал знаний");
+        !state.every((x: unknown) => validKnowledge(x))) throw new Error("Повреждён журнал знаний");
       this.items = state;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
-  list() { return this.items.map(x => ({ ...x })); }
+  list() { return this.items.map(x => ({ ...x, ...(x.history ? {history:x.history.map(h=>({...h}))} : {}) })); }
   analyze(query = "") { return analyzeMemoryV4(this.list(), query); }
   /** Conservative live diagnostics; does not promote or rewrite memories. */
   diagnostics(at = new Date()) { return diagnoseKnowledgeGraph(this.list(), at); }
@@ -91,6 +109,7 @@ export class KnowledgeLedger {
       id: randomUUID(), topic: input.topic.trim(), claim: input.claim.trim(),
       source: input.source.trim(), verifiedAt: at.toISOString(),
       nextReviewAt: new Date(at.getTime() + 86400000).toISOString(), reviewCount: 0, status: "verified",
+      history: [{ at: at.toISOString(), action: "created", status: "verified", source: input.source.trim() }],
     };
     this.items.push(item);
     this.items = this.items.slice(-500);
@@ -102,6 +121,7 @@ export class KnowledgeLedger {
     if (!item) throw Object.assign(new Error("Знание не найдено"), { status: 404 });
     item.reviewCount++;
     item.status = correct ? "verified" : "needs-review";
+    item.history = [...(item.history ?? []), { at: new Date().toISOString(), action: correct ? "reviewed" as const : "flagged" as const, status: item.status, source: "knowledge-review" }].slice(-50);
     const hours = correct ? Math.min(24 * 30, 24 * 2 ** Math.min(item.reviewCount, 5)) : 24;
     item.nextReviewAt = new Date(Date.now() + hours * 3600000).toISOString();
     this.save().catch(() => {});
