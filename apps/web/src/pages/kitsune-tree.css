@@ -135,3 +135,12 @@
 @keyframes fox-tilt{0%{opacity:.5;transform:rotate(calc(-1*var(--fox-angle)))}100%{opacity:1;transform:rotate(0)}}
 @keyframes fox-wave{0%,100%{transform:translateX(0)}35%{transform:translateX(calc(-1*var(--fox-travel)))}70%{transform:translateX(var(--fox-travel))}}
 @media(prefers-reduced-motion:reduce){.kt-fox-changed{animation:none!important}}
+
+.kt-fox-more,.kt-fox-brain,.kt-fox-notice button{padding:10px 15px;border:1px solid var(--border,#8884);border-radius:12px;background:var(--bg,#fff);color:inherit;cursor:pointer}
+.kt-fox-more{margin:14px auto;display:block}
+.kt-fox-more[hidden]{display:none}
+.kt-fox-brain{margin-top:16px;max-width:100%}
+.kt-fox-notice{margin-top:18px;padding:14px;border:1px solid var(--border,#8884);border-radius:13px;background:var(--surface,#8881)}
+.kt-fox-notice h3{margin:0 0 8px}
+.kt-fox-notice p{font-size:12px;line-height:1.6}
+.kt-fox-easter{font-size:13px;padding:12px;border:1px solid var(--accent,#866bbd);border-radius:12px}
