@@ -29,7 +29,7 @@ export function readPositions(nodes:EvolutionNode[]):Positions {
 export function savePositions(p:Positions):void {
  try{localStorage.setItem(KEY,JSON.stringify(p));}catch{/* private storage disabled */}
 }
-export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1):HTMLElement {
+export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set()):HTMLElement {
  const positions=readPositions(nodes);
  const viewport=document.createElement("div");viewport.className="kt-canvas-viewport";
  viewport.setAttribute("aria-label","Интерактивная карта связей JUUNIBI");
@@ -54,10 +54,11 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
  lines();canvas.append(svg);
  for(const n of nodes){
    const node=document.createElement("button");node.type="button";
-   node.className="kt-canvas-node"+(n.id===selected?" selected":"")+(n.status==="planned"?" planned":"");
+   node.className="kt-canvas-node"+(n.id===selected?" selected":"")+(n.status==="planned"?" planned":"")+(newIds.has(n.id)?" kt-graph-new":"");
    node.textContent=n.title;node.style.left=positions[n.id]!.x+"px";node.style.top=positions[n.id]!.y+"px";
-   node.setAttribute("aria-label",n.title+", "+(n.status==="planned"?"запланировано":"реализовано")+". Перетащите, чтобы переместить");
+   node.setAttribute("aria-label",n.title+", "+(n.status==="planned"?"запланировано":"реализовано")+". Перетащите либо используйте Alt и стрелки, чтобы переместить");
    node.addEventListener("click",()=>{if(!suppressClick)onSelect(n.id);suppressClick=false;});
+   node.addEventListener("keydown",e=>{if(!e.altKey)return;const step=e.shiftKey?40:12;const p=positions[n.id]!;if(e.key==="ArrowLeft")p.x=Math.max(0,p.x-step);else if(e.key==="ArrowRight")p.x=Math.min(20000,p.x+step);else if(e.key==="ArrowUp")p.y=Math.max(0,p.y-step);else if(e.key==="ArrowDown")p.y=Math.min(20000,p.y+step);else return;e.preventDefault();node.style.left=p.x+"px";node.style.top=p.y+"px";lines();savePositions(positions);});
    let suppressClick=false;let start:Point|null=null;let origin:Point|null=null;
    node.addEventListener("pointerdown",e=>{
      if(e.button!==0)return;
