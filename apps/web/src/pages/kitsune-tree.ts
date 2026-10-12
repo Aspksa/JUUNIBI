@@ -1,3 +1,4 @@
+import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
 import { el } from "../dom";
 import { pageHead } from "./kit";
@@ -86,11 +87,12 @@ export function kitsuneTreePage():HTMLElement {
      status.textContent=advice.length+" направлений для развития";return;
    }
    const matched=allNodes.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
-   status.textContent=`${allNodes.filter(n=>n.status==="implemented").length} реализовано · ${TREE_NODES.filter(n=>n.status==="planned").length} запланировано · ${allNodes.flatMap(n=>n.dependsOn).length} связей`;
+   status.textContent=`${allNodes.filter(n=>n.status==="implemented").length} реализовано · ${allNodes.filter(n=>n.status==="planned").length} запланировано · ${allNodes.flatMap(n=>n.dependsOn).length} связей`;
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
-   graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);
+   if(mode==="development") {graph.style.transformOrigin="top left";graph.style.scale=String(graphZoom);}
    const nodes=mode==="development"?[...matched].sort((a,b)=>a.stage-b.stage):matched;
-   for(const node of nodes){
+   if(mode==="architecture"||mode==="connections") graph.append(buildGraph(nodes,selected,id=>{selected=id;render();},graphZoom));
+   else for(const node of nodes){
      const card=el("button",{cls:"kt-node "+(node.id===selected?"kt-selected ":"")+(node.status==="planned"?"kt-future":""),
        attrs:{"aria-pressed":String(node.id===selected)},
        title:node.description},el("span",{cls:"kt-node-title",textContent:node.title}),
