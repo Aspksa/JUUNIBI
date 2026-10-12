@@ -13,7 +13,7 @@ export function safeForestEvents(raw:unknown):ForestEvent[]{
     !["growth","warning","achievement","recovery","update"].includes(e.kind??"")||
     typeof e.title!=="string"||typeof e.detail!=="string")continue;
   result.push({id:e.id,day:e.day,kind:e.kind!,title:e.title.slice(0,180),detail:e.detail.slice(0,360),
-   metricId:typeof e.metricId==="string"&&ID_PATTERN.test(e.metricId)?e.metricId:undefined});
+   ...(typeof e.metricId==="string"&&ID_PATTERN.test(e.metricId)?{metricId:e.metricId}:{})});
  }
  return result;
 }
