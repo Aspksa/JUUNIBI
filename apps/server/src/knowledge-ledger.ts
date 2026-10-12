@@ -62,6 +62,16 @@ export class KnowledgeLedger {
     this.embeddingProvider = provider ? { id: provider.id, embed: (text: string) => this.vectorCache.embed(provider, text) } : undefined;
   }
   semanticSearch(query: string, provider?: EmbeddingProvider, limit = 10) { return searchKnowledgeSemantic(this.list(), query, provider ?? this.embeddingProvider, limit); }
+  /** Read-only graph snapshot for a future interactive viewer; no hidden or unverified facts are exposed. */
+  visualSnapshot() {
+    const nodes = this.list().filter(x => x.status === "verified").slice(-150).map(x => ({
+      id:x.id, topic:x.topic, claim:x.claim, source:x.source, due:x.nextReviewAt <= new Date().toISOString(),
+      reviewCount:x.reviewCount,
+    }));
+    const valid = new Set(nodes.map(x=>x.id));
+    const edges = this.graph().edges.filter(x=>valid.has(x.from)&&valid.has(x.to)).slice(0,300).map(x=>({...x,verified:false as const}));
+    return {nodes,edges,linksAreSuggestions:true as const};
+  }
   /** Unverified topical suggestions, never factual or causal claims. */
   suggestedLinks() {
     const entries=this.items.filter(x=>x.status==="verified");
