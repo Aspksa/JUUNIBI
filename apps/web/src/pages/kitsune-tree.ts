@@ -70,6 +70,7 @@ export function kitsuneTreePage():HTMLElement {
  let foxLastAward="";
  let foxKnownNumbers=new Map<string,number>();
  let foxChanged=new Set<string>();
+ let foxLimit=30;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
@@ -126,6 +127,11 @@ export function kitsuneTreePage():HTMLElement {
      const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
      const period=el("button",{textContent:foxPeriod+" дней"});
      period.addEventListener("click",()=>{foxPeriod=foxPeriod===7?30:7;period.textContent=foxPeriod+" дней";paint();});
+     const reload=el("button",{textContent:"↻ Обновить"});
+     reload.addEventListener("click",()=>{reload.disabled=true;foxLoading=true;void loadFox().finally(()=>{reload.disabled=false;});});
+     const first=el("button",{textContent:"★ Любимые сверху"});
+     first.addEventListener("click",()=>{foxFavoriteSort=!foxFavoriteSort;first.setAttribute("aria-pressed",String(foxFavoriteSort));paint();});
+     first.setAttribute("aria-pressed",String(foxFavoriteSort));
      const cards=el("div",{cls:"kt-fox-grid"});
      const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
      const paint=()=>{
@@ -168,7 +174,7 @@ export function kitsuneTreePage():HTMLElement {
      favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
      const compact=el("button",{textContent:foxCompact?"▦ Карточки":"☷ Компактно"});
      compact.addEventListener("click",()=>{foxCompact=!foxCompact;compact.textContent=foxCompact?"▦ Карточки":"☷ Компактно";paint();});
-     view.append(search,world,favoritesToggle,period,compact);
+     view.append(search,world,favoritesToggle,period,compact,first,reload);
      main.append(view,count,cards);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
