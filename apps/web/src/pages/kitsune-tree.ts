@@ -7,7 +7,7 @@ import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions" | "impact" | "comparison" | "brain-chat";
+export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions" | "impact" | "comparison" | "brain-chat" | "discovery";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -42,6 +42,7 @@ export function kitsuneTreePage():HTMLElement {
  let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
  let graphZoom=1;
  let updatesLoading=true;
+ let discovery:EvolutionSnapshot["discovery"]|null=null;
  let brainMessages:{role:"user"|"assistant";text:string}[]=[];
  let brainBusy=false;
  const body=el("div",{cls:"kt-layout"});
@@ -56,10 +57,37 @@ export function kitsuneTreePage():HTMLElement {
  controls.prepend(tabs);
  const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"],["impact","Влияние"],["comparison","Сравнение"],["brain-chat","Brain-диалог"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"],["impact","Влияние"],["comparison","Сравнение"],["brain-chat","Brain-диалог"],["discovery","Автообнаружение"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
+   if(mode==="discovery"){
+     const panel=el("div",{cls:"kt-graph"});
+     const data=discovery;
+     if(!data)panel.append(el("p",{textContent:"Данные сканирования недоступны. Обновите локальный сервер JUUNIBI."}));
+     else{
+       panel.append(el("p",{textContent:"Просканировано файлов: "+data.scanned+" · кандидатов: "+data.candidates.length+" · циклов: "+data.cycles.length+(data.truncated?" · лимит сканирования":"")}));
+       for(const item of data.candidates.filter(x=>(x.file+" "+x.id).toLowerCase().includes(filter)).slice(0,100))
+         panel.append(el("article",{cls:"kt-node kt-new-growth"},el("strong",{textContent:item.id}),
+           el("small",{textContent:item.file}),el("p",{textContent:"Обнаруженный модуль · "+item.imports.length+" локальных связей. Назначение требует проверки."})));
+     }
+     const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Автоматический аудит"}),
+       el("p",{textContent:"Сканер только читает код. Обнаруженные файлы — кандидаты, не подтверждённые способности. Древо не изменяет исходники и не запускает найденный код."}));
+     if(data){
+       side.append(el("h3",{textContent:"Циклические зависимости: "+data.cycles.length}));
+       for(const c of data.cycles.slice(0,6))side.append(el("p",{textContent:c.join(" → ")}));
+       side.append(el("h3",{textContent:"Ветви без прямого совпадения по файлу: "+data.manifestGaps.length}),
+         el("p",{textContent:data.manifestGaps.join(", ")||"Нет"}));
+       const prompt=el("button",{textContent:"Подготовить анализ Brain"});
+       prompt.addEventListener("click",()=>{
+         const context="Сделай архитектурный аудит JUUNIBI на основании кандидатов, не считая их реализованными возможностями: "+data.candidates.slice(0,20).map(x=>x.file).join(", ")+". Предложи проверки и связи; не меняй проект.";
+         const field=el("textarea",{textContent:context,attrs:{readonly:"true","aria-label":"Анализ новых кандидатов"}});
+         prompt.replaceWith(field);
+       });side.append(prompt);
+     }
+     body.replaceChildren(panel,side);
+     status.textContent=data?"Найдено "+data.candidates.length+" возможных новых модулей":"Сканер пока недоступен";return;
+   }
    if(mode==="impact"){
      const all=nodesOf(),target=all.find(n=>n.id===selected)??all[0]!;
      const affected=downstreamImpact(all,target.id);
@@ -244,6 +272,7 @@ export function kitsuneTreePage():HTMLElement {
    const snapshot=await response.json() as EvolutionSnapshot;
    dynamicNodes=validateEvolutionManifest(snapshot.manifest).nodes;
    persistedHistory=snapshot.timeline;
+   discovery=snapshot.discovery??null;
    render();
  }).catch(()=>{ /* Older server: use built-in verified catalog. */ });
  void Promise.all([api.updateStatus(),api.updateHistory()]).then(([st,h])=>{
