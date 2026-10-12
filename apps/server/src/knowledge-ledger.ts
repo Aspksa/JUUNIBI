@@ -11,6 +11,26 @@ export interface VerifiedKnowledge {
   status: "verified" | "needs-review";
   history?: { at: string; action: "created" | "reviewed" | "flagged"; status: "verified" | "needs-review"; source: string }[];
 }
+type KnowledgeHistory = NonNullable<VerifiedKnowledge["history"]>[number];
+const validHistory = (value: unknown): value is KnowledgeHistory => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const h = value as Record<string, unknown>;
+  return typeof h.at === "string" && h.at.length <= 40 &&
+    typeof h.source === "string" && h.source.length <= 300 &&
+    (h.action === "created" || h.action === "reviewed" || h.action === "flagged") &&
+    (h.status === "verified" || h.status === "needs-review");
+};
+const validKnowledge = (value: unknown): value is VerifiedKnowledge => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const x = value as Record<string, unknown>;
+  return typeof x.id === "string" && typeof x.claim === "string" && x.claim.length <= 1000 &&
+    typeof x.topic === "string" && typeof x.source === "string" &&
+    typeof x.verifiedAt === "string" && typeof x.nextReviewAt === "string" &&
+    Number.isInteger(x.reviewCount) && Number(x.reviewCount) >= 0 &&
+    (x.status === "verified" || x.status === "needs-review") &&
+    (x.history === undefined ||
+      (Array.isArray(x.history) && x.history.length <= 50 && x.history.every(validHistory)));
+};
 /** Isolated knowledge ledger: only exact deterministic evidence or human approval can promote facts. */
 export class KnowledgeLedger {
   private items: VerifiedKnowledge[] = [];
@@ -20,14 +40,11 @@ export class KnowledgeLedger {
     try {
       const state: unknown = JSON.parse(await readFile(this.filename, "utf8"));
       if (!Array.isArray(state) || state.length > 500 ||
-        !state.every((x) => x && typeof x.id === "string" && typeof x.claim === "string" && x.claim.length <= 1000 &&
-          typeof x.topic === "string" && typeof x.source === "string" && typeof x.verifiedAt === "string" &&
-          typeof x.nextReviewAt === "string" && Number.isInteger(x.reviewCount) && x.reviewCount >= 0 &&
-          ["verified", "needs-review"].includes(x.status) && (x.history === undefined || (Array.isArray(x.history) && x.history.length <= 50 && x.history.every((h: unknown) => h !== null && typeof h === "object" && typeof (h as {at?:unknown}).at === "string" && typeof (h as {source?:unknown}).source === "string" && ["created","reviewed","flagged"].includes(String((h as {action?:unknown}).action)) && ["verified","needs-review"].includes(String((h as {status?:unknown}).status))))))) throw new Error("Повреждён журнал знаний");
+        !state.every((x: unknown) => validKnowledge(x))) throw new Error("Повреждён журнал знаний");
       this.items = state;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
-  list() { return this.items.map(x => ({ ...x })); }
+  list() { return this.items.map(x => ({ ...x, ...(x.history ? {history:x.history.map(h=>({...h}))} : {}) })); }
   analyze(query = "") { return analyzeMemoryV4(this.list(), query); }
   /** Conservative live diagnostics; does not promote or rewrite memories. */
   diagnostics(at = new Date()) { return diagnoseKnowledgeGraph(this.list(), at); }
