@@ -184,10 +184,10 @@ let embeddingKey: { apiKey: string; baseUrl?: string } | undefined;
 /** Reuse the chat credential; embeddings use their own model (never the chat model). Any problem leaves word search in place. */
 function applyEmbeddings() {
   const e = settings.get().embeddings;
-  if (!embeddingKey || !e.enabled) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); return; }
+  if (!embeddingKey || !e.enabled) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); knowledge.setEmbeddingProvider(undefined); return; }
   const base = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? embeddingKey.baseUrl;
-  try { const embedding = new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) }); memory.setEmbeddingProvider(embedding); brainGraph.setEmbeddingProvider(embedding); }
-  catch (error) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
+  try { const embedding = new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) }); memory.setEmbeddingProvider(embedding); brainGraph.setEmbeddingProvider(embedding); knowledge.setEmbeddingProvider(embedding); }
+  catch (error) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); knowledge.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
 }
 settings.onChange((s) => { applyEmbeddings(); learningProvider?.setModels(s.chat); });
 let currentPersona = "";
