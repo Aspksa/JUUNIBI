@@ -1365,7 +1365,7 @@ export function diskPage(deps: DiskDeps = {}): HTMLElement {
   } else chatDrop.hidden = true;
 
   /* ---------------------------------------------------------------- assemble */
-  const life = diskLifePanel();
+  const life = diskLifePanel(() => loaded && !all.length && !trash.length);
   const layout = el("div", { cls: "dk-layout" + (treeHidden ? " no-tree" : "") }, side, main, life.root, info);
   page.append(el("h1", { cls: "sr-only", textContent: "Диск" }), bar, layout, scrim, uploader.root, picker, folderPicker, restorePicker, chatDrop);
   renderFiles();

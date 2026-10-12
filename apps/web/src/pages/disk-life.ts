@@ -56,7 +56,11 @@ function tile(m: DiskLifeMetric, color: string, i: number): HTMLElement {
   return t;
 }
 
-export function diskLifePanel(): { root: HTMLElement; refresh: () => void; reveal: () => void } {
+/** The six groups shown on the quiet card of an empty Disk. */
+const BLANK_GLYPHS: [string, string][] = [["kinds", "#38bdf8"], ["pulse", "#22c55e"], ["words", "#6366f1"], ["links", "#fb7185"], ["media", "#84cc16"], ["fun", "#ff6fa8"]];
+
+/** `isEmpty` says the Disk has no files at all (nor in the trash): then one quiet card instead of 150 dashes. */
+export function diskLifePanel(isEmpty: () => boolean = () => false): { root: HTMLElement; refresh: () => void; reveal: () => void } {
   const root = el("section", { cls: "dkl", attrs: { id: "disk-life", "aria-label": "Жизнь документов" } });
   let data: DiskLife | null = null, error = "", loading = false, stale = true, visible = false, timer = 0;
   let group = store.get();
@@ -74,9 +78,23 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
     t.focus({ preventScroll: true });
   }
 
+  const blank = el("div", { cls: "dkl-blank" },
+    el("span", { cls: "dkl-ic lg" }, lifeGlyph("pulse", "core", 26)),
+    el("div", { cls: "dkl-blank-text" },
+      el("b", { textContent: "Жизнь документов начнётся с первого файла" }),
+      el("small", { textContent: "150 показателей: типы файлов, пульс загрузок, слова, связи между документами и забавные рекорды" })),
+    el("div", { cls: "dkl-blank-glyphs", attrs: { "aria-hidden": "true" } }, ...BLANK_GLYPHS.map(([name, c]) => {
+      const i = el("span", { cls: "dkl-ic sm" }, lifeGlyph(name, "core", 18));
+      i.style.setProperty("--g", c);
+      return i;
+    })));
+
+  let blankShown = false;
   function render() {
     refreshBtn.classList.toggle("spin", loading);
     refreshBtn.disabled = loading;
+    blankShown = isEmpty();
+    if (blankShown) { body.replaceChildren(blank); return; }
     if (!data) {
       body.replaceChildren(error
         ? el("div", { cls: "life-empty dkl-empty" }, el("span", {}, icon("alert", 26)), el("p", { textContent: error }), refreshBtn)
@@ -132,6 +150,7 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
 
   async function load() {
     if (loading) return;
+    if (isEmpty()) { render(); return; }
     loading = true; stale = false; render();
     const r = await api.diskLife();
     loading = false;
@@ -145,7 +164,7 @@ export function diskLifePanel(): { root: HTMLElement; refresh: () => void; revea
   render();
   return {
     root,
-    refresh: () => { stale = true; clearTimeout(timer); if (visible) timer = window.setTimeout(() => void load(), data ? 1200 : 0); },
+    refresh: () => { stale = true; clearTimeout(timer); if (isEmpty() !== blankShown) render(); if (visible) timer = window.setTimeout(() => void load(), data ? 1200 : 0); },
     reveal: () => { root.scrollIntoView({ behavior: "smooth", block: "start" }); if (stale) void load(); },
   };
 }
