@@ -234,6 +234,48 @@ export function kitsuneTreePage():HTMLElement {
      notice.append(acknowledge);side.append(notice);
      const verifiedUpdate=foxEvents.filter(e=>e.kind==="update").length;
      if(verifiedUpdate>=5)side.append(el("p",{cls:"kt-fox-easter",textContent:"🎁 Тайный подарок лисичек: пять или больше подтверждённых записей об обновлениях! Лес благодарит своего хранителя."}));
+     const tracks=foxBranches(foxSnapshot,growth);
+     const branchPanel=el("section",{cls:"kt-fox-branches"});
+     branchPanel.append(el("h3",{textContent:"🌿 Лисьи ветки проекта"}));
+     const branchTabs=el("div",{cls:"kt-fox-branch-tabs"});
+     const branchList=el("div",{cls:"kt-fox-branch-list"});
+     const renderBranches=()=>{
+       branchTabs.replaceChildren();branchList.replaceChildren();
+       for(const track of BRANCH_TRACKS){
+         const amount=tracks.filter(item=>item.track===track.id).length;
+         const control=el("button",{textContent:track.emoji+" "+track.title+" ("+amount+")",attrs:{"aria-pressed":String(foxTrack===track.id)}});
+         control.addEventListener("click",()=>{foxTrack=track.id;renderBranches();});
+         branchTabs.append(control);
+       }
+       const selected=tracks.filter(item=>item.track===foxTrack);
+       for(const item of selected.slice(0,30))
+         branchList.append(el("article",{cls:"kt-fox-branch"},
+           el("strong",{textContent:item.title}),
+           el("p",{textContent:item.detail}),
+           el("small",{textContent:(item.status==="planned"?"Запланировано · ":"Подтверждено · ")+item.source+(item.at?" · "+item.at:"")+(item.version?" · "+item.version.slice(0,12):"")})));
+       if(!selected.length)branchList.append(el("p",{textContent:foxSnapshot?"Подтверждённых записей пока нет.":"Журнал проекта ещё не загружен."}));
+     };
+     renderBranches();branchPanel.append(branchTabs,branchList);main.append(branchPanel);
+     const legendary=eliteFoxAwards(metrics,foxHistory);
+     const legendaryPanel=el("section",{cls:"kt-fox-legendary"});
+     legendaryPanel.append(el("h3",{textContent:"👑 100 легендарных испытаний"}),el("p",{textContent:"Для каждой награды требуются два реальных показателя и подтверждённая история наблюдений. Недоступные источники никогда не дают награду."}));
+     const onlyEarned=el("button",{textContent:foxEliteOnlyEarned?"Показать все":"Только полученные"});
+     const legendaryGrid=el("div",{cls:"kt-fox-legendary-grid"});
+     const legendaryMore=el("button",{textContent:"Показать ещё 20",cls:"kt-fox-more"});
+     const paintLegendary=()=>{
+       const shown=legendary.filter(item=>!foxEliteOnlyEarned||item.earned);
+       legendaryGrid.replaceChildren();
+       for(const item of shown.slice(0,foxEliteLimit))
+         legendaryGrid.append(el("article",{cls:"kt-fox-legendary-card"+(item.earned?" kt-fox-earned":"")},
+          el("strong",{textContent:item.emoji+" "+item.name}),
+          el("small",{textContent:item.world+" · "+(item.earned?"Открыта":item.ready?"В процессе":"Ожидает источников")}),
+          el("p",{textContent:item.requirement}),
+          el("div",{cls:"kt-fox-progress",attrs:{role:"progressbar","aria-label":item.name,"aria-valuemin":"0","aria-valuemax":"100","aria-valuenow":String(Math.round(item.progress*100))}},el("span",{attrs:{style:"width:"+Math.round(item.progress*100)+"%"}}))));
+       legendaryMore.hidden=shown.length<=foxEliteLimit;
+     };
+     onlyEarned.addEventListener("click",()=>{foxEliteOnlyEarned=!foxEliteOnlyEarned;onlyEarned.textContent=foxEliteOnlyEarned?"Показать все":"Только полученные";paintLegendary();});
+     legendaryMore.addEventListener("click",()=>{foxEliteLimit=Math.min(100,foxEliteLimit+20);paintLegendary();});
+     legendaryPanel.append(onlyEarned,legendaryGrid,legendaryMore);main.append(legendaryPanel);paintLegendary();
      const availability=metrics.filter(x=>x.value!==null).length;
      side.append(el("p",{cls:"kt-state",textContent:"Доступно значений: "+availability+" из 100"+(foxLoading?" · Получение данных…":"")}));
      body.replaceChildren(main,side);
