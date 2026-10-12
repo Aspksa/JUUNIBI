@@ -1,3 +1,4 @@
+import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
 import { traceCapabilities, evolutionChronology, architecturePrompt } from "./kitsune-lineage";
 import { buildGraph } from "./kitsune-graph";
 import { validateEvolutionManifest, recommendEvolution, type EvolutionNode, type EvolutionSnapshot } from "./kitsune-evolution-model";
@@ -6,7 +7,7 @@ import { pageHead } from "./kit";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions";
+export type TreeMode = "architecture" | "development" | "connections" | "updates" | "architect" | "history" | "versions" | "impact" | "comparison" | "brain-chat";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -41,6 +42,8 @@ export function kitsuneTreePage():HTMLElement {
  let persistedHistory:EvolutionSnapshot["timeline"]|null=null;
  let graphZoom=1;
  let updatesLoading=true;
+ let brainMessages:{role:"user"|"assistant";text:string}[]=[];
+ let brainBusy=false;
  const body=el("div",{cls:"kt-layout"});
  const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
  const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","KITSUNE TREE · Живая карта архитектуры и развития JUUNIBI"),
@@ -53,10 +56,57 @@ export function kitsuneTreePage():HTMLElement {
  controls.prepend(tabs);
  const nodesOf=()=>dynamicNodes??TREE_NODES;
  function render(){
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"],["architect","ИИ-архитектор"],["history","Хронология"],["versions","Версии ветвей"],["impact","Влияние"],["comparison","Сравнение"],["brain-chat","Brain-диалог"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
+   if(mode==="impact"){
+     const all=nodesOf(),target=all.find(n=>n.id===selected)??all[0]!;
+     const affected=downstreamImpact(all,target.id);
+     const pane=el("div",{cls:"kt-graph"});
+     const choose=el("select",{attrs:{"aria-label":"Исходная ветвь"}});
+     for(const n of all){const opt=el("option",{textContent:n.title,attrs:{value:n.id}});if(n.id===target.id)opt.selected=true;choose.append(opt);}
+     choose.addEventListener("change",()=>{selected=choose.value;render();});
+     pane.append(choose,el("p",{textContent:"Зависимые ветви: "+affected.length}));
+     for(const a of affected)pane.append(el("article",{cls:"kt-node"},el("strong",{textContent:a.title}),
+        el("small",{textContent:"Глубина связи: "+a.distance+" · "+a.status})));
+     body.replaceChildren(pane,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Анализ влияния"}),
+       el("p",{textContent:"Показывает все транзитивные зависимости. Это структурный анализ манифеста, не прогноз фактического сбоя."})));
+     status.textContent=affected.length+" ветвей зависят от "+target.title;return;
+   }
+   if(mode==="comparison"){
+     const versions=persistedHistory?.history.filter(h=>h.kind==="install")??[];
+     const pane=el("div",{cls:"kt-graph"},el("p",{textContent:"Доступен текущий манифест. Для достоверного сравнения двух версий необходимы сохранённые манифесты обеих версий."}));
+     const diff=compareManifests(nodesOf(),nodesOf());
+     pane.append(el("p",{textContent:"Текущий снимок: "+diff.unchanged.length+" ветвей; известных установок: "+versions.length}));
+     body.replaceChildren(pane,el("aside",{cls:"kt-detail"},el("h2",{textContent:"Сравнение версий"}),
+       el("p",{textContent:"История установок отображается отдельно. Совпадение коммитов или названий без исторического манифеста не доказывает различия способностей."})));
+     status.textContent="Сравнение по проверенным манифестам";return;
+   }
+   if(mode==="brain-chat"){
+     const pane=el("div",{cls:"kt-brain-panel"});
+     const dialog=el("div",{cls:"kt-brain-messages",attrs:{"aria-live":"polite"}});
+     for(const m of brainMessages)dialog.append(el("p",{cls:"kt-brain-"+m.role,textContent:(m.role==="user"?"Вы: ":"Brain: ")+m.text}));
+     const node=nodesOf().find(n=>n.id===selected)??nodesOf()[0]!;
+     const question=el("textarea",{cls:"kt-brain-input",attrs:{placeholder:"Вопрос по развитию "+node.title,"aria-label":"Вопрос Brain"}});
+     const ask=el("button",{textContent:brainBusy?"Анализ выполняется…":"Спросить Brain",attrs:{type:"button"}});
+     ask.disabled=brainBusy;
+     ask.addEventListener("click",()=>{
+       const text=question.value.trim();if(!text||brainBusy)return;
+       const prompt=architectureQuestion(nodesOf(),selected,text);
+       brainMessages.push({role:"user",text});brainBusy=true;render();
+       void api.chat(prompt).then(r=>{
+         brainMessages.push({role:"assistant",text:r.ok?r.value.reply:"Ошибка Brain: "+r.error.message});
+       }).catch(()=>brainMessages.push({role:"assistant",text:"Brain недоступен"})).finally(()=>{brainBusy=false;render();});
+     });
+     pane.append(el("p",{textContent:"Контекст ветви: "+node.title}),dialog,question,ask);
+     const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Brain-диалог"}),
+       el("p",{textContent:"Запрос отправляется только по нажатию кнопки. Действия помощницы могут требовать отдельного разрешения; этот экран не выполняет изменения проекта."}));
+     const change=el("select",{attrs:{"aria-label":"Ветка для Brain"}});
+     for(const n of nodesOf()){const opt=el("option",{textContent:n.title,attrs:{value:n.id}});if(n.id===selected)opt.selected=true;change.append(opt);}
+     change.addEventListener("change",()=>{selected=change.value;render();});side.append(change);
+     body.replaceChildren(pane,side);status.textContent="Диалог с Brain по выбранной ветви";return;
+   }
    if(mode==="history"||mode==="versions"){
      const history=persistedHistory?.history??[];
      const list=el("div",{cls:"kt-graph"});
