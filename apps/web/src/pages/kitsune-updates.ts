@@ -28,7 +28,7 @@ export function evolutionFromUpdater(status:UpdateStatus|null,history:UpdateHist
       rolledBack.has(item.to)&&item.to!==local?"rolled-back":item.to===local?"installed":"rolled-back";
    result.push({id:"history:"+item.id,title:titleOf(item.to),version:item.to,
       description:item.message|| (item.kind==="rollback"?"Возврат к предыдущей версии":"Установка из Центра обновлений"),
-      date:item.at,state,relatedBranches:[],evidence:null});
+      date:item.at,state,relatedBranches:inferBranches(item.message??""),evidence:null});
  }
  const latest=status?.latest;
  if(latest && latest.sha!==local){
