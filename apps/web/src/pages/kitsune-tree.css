@@ -624,3 +624,10 @@
 .kt-fox-main>.km-lead{margin:0 0 12px 60px;max-width:78ch}
 .kt-connect-steps{margin:6px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;line-height:1.5}
 .kt-fox-card.is-empty .kt-fox-open{color:var(--kt-brand);font-weight:650}
+
+/* живой статус на листьях карты */
+.km-val-bg{fill:color-mix(in srgb,var(--c) 30%,var(--surface));stroke:color-mix(in srgb,var(--c) 70%,transparent);stroke-width:1}
+.km-val{fill:var(--fg);font-size:11px;font-weight:800;pointer-events:none;font-variant-numeric:tabular-nums}
+.km-node.is-live .km-dot{fill:#4ec28a;animation:km-live 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes km-live{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.6)}}
+@media(prefers-reduced-motion:reduce){.km-node.is-live .km-dot{animation:none}}

@@ -9,14 +9,19 @@ export interface MindLink{from:string;to:string;clan:number;depth:number;d:strin
 export interface MindLayout{boxes:MindBox[];links:MindLink[];byId:Map<string,MindBox>;bounds:{x:number;y:number;w:number;h:number}}
 
 export const ROW_H=38,BOX_H=30,COL_GAP=84,GROUP_GAP=16,ROOT_W=150,ROOT_H=56;
-const CHAR_W=6.7,PAD=34;
+const CHAR_W=7.7,PAD=34;
 export const MAX_LABEL=30;
 
 export const shortLabel=(s:string)=>s.length>MAX_LABEL?s.slice(0,MAX_LABEL-1)+"…":s;
+/** Живое значение на листе: у подтверждённого показателя — число из данных. */
+export const liveValue=(n:AtlasNode):string|null=>n.kind==="leaf"&&n.ref.type==="metric"&&n.state==="ok"&&n.note?n.note:null;
+/** Лист «работает прямо сейчас»: запущенный модуль. */
+export const isLive=(n:AtlasNode):boolean=>n.kind==="leaf"&&n.ref.type==="module"&&n.state==="ok";
 const sizeOfNode=(n:AtlasNode,depth:number)=>{
  if(depth===0)return {w:ROOT_W,h:ROOT_H};
  const text=shortLabel(n.label).length*(depth===1?8.7:CHAR_W);
- return {w:Math.round(PAD+(n.emoji?18:0)+text+(n.children.length?22:0)),h:depth===1?BOX_H+6:BOX_H};
+ const value=liveValue(n);
+ return {w:Math.round(PAD+(n.emoji?18:0)+text+(n.children.length?22:0)+(value?14+value.length*7.4:0)),h:depth===1?BOX_H+6:BOX_H};
 };
 export const countBelow=(n:AtlasNode):number=>n.children.reduce((s,c)=>s+1+countBelow(c),0);
 

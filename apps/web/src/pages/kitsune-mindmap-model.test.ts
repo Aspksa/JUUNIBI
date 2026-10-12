@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildAtlas, type AtlasInput } from "./kitsune-atlas-model";
-import { countBelow, degrees, downstreamDepths, defaultExpanded, expandToDepth, layoutMind, maxDepth, pathTo, revealHits, ROW_H, shortLabel } from "./kitsune-mindmap-model";
+import { buildAtlas, type AtlasInput, type AtlasNode } from "./kitsune-atlas-model";
+import { isLive, liveValue, countBelow, degrees, downstreamDepths, defaultExpanded, expandToDepth, layoutMind, maxDepth, pathTo, revealHits, ROW_H, shortLabel } from "./kitsune-mindmap-model";
 
 const input:AtlasInput={
  nodes:[
@@ -81,5 +81,24 @@ describe("слои карты", () => {
   const d=degrees(nodes);
   expect(d.get("a")).toEqual({up:0,down:2});
   expect(d.get("d")).toEqual({up:2,down:0});
+ });
+});
+
+describe("живой статус на листьях", () => {
+ const leaf=(over:Partial<AtlasNode>):AtlasNode=>({id:"l",label:"Лист",kind:"leaf",clan:0,state:"ok",ref:{type:"metric",key:"x"},children:[],...over});
+ it("подтверждённый показатель показывает значение, пустой — нет", () => {
+  expect(liveValue(leaf({note:"150"}))).toBe("150");
+  expect(liveValue(leaf({state:"empty",note:"Нет данных"}))).toBeNull();
+  expect(liveValue(leaf({ref:{type:"medal",key:"m"},note:"Получена"}))).toBeNull();
+ });
+ it("работает прямо сейчас — только запущенный модуль", () => {
+  expect(isLive(leaf({ref:{type:"module",key:"brain"}}))).toBe(true);
+  expect(isLive(leaf({ref:{type:"module",key:"brain"},state:"bad"}))).toBe(false);
+  expect(isLive(leaf({}))).toBe(false);
+ });
+ it("лист со значением шире такого же листа без значения", () => {
+  const mk=(note?:string)=>({...tree,children:[{id:"h",label:"Хаб",kind:"hub" as const,clan:0,state:"ok" as const,ref:{type:"clan" as const,key:"c"},children:[leaf(note?{note}:{state:"empty"})]}]});
+  const w=(t:AtlasNode)=>layoutMind(t,new Set([t.id,"h"])).byId.get("l")!.w;
+  expect(w(mk("12345"))).toBeGreaterThan(w(mk()));
  });
 });

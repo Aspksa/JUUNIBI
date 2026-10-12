@@ -1,6 +1,6 @@
 import {el,icon,iconButton,type IconName} from "../dom";
 import {CLANS,allNodes,clanColor,clansInUse,searchAtlas,type AtlasNode} from "./kitsune-atlas-model";
-import {defaultExpanded,degrees,downstreamDepths,expandToDepth,layoutMind,maxDepth,pathTo,revealHits,shortLabel,type MindBox,type MindLayout,type MindMode} from "./kitsune-mindmap-model";
+import {defaultExpanded,degrees,isLive,liveValue,downstreamDepths,expandToDepth,layoutMind,maxDepth,pathTo,revealHits,shortLabel,type MindBox,type MindLayout,type MindMode} from "./kitsune-mindmap-model";
 import {LAYER_TEXT} from "./kitsune-sections";
 
 /**
@@ -129,6 +129,12 @@ export function mindView(o:MindOptions):HTMLElement{
    let tx=26;
    if(n.emoji){g.append(s("text",{class:"km-emoji",x:26,y:5,"font-size":14,"text-anchor":"middle"},n.emoji));tx=40;}
    g.append(s("text",{class:"km-label",x:tx,y:4.6},shortLabel(n.label)));
+   const live=liveValue(n);
+   if(live){
+    const vw=10+live.length*7.4;
+    g.append(s("rect",{class:"km-val-bg",x:w-vw-6,y:-9,width:vw,height:18,rx:9}),s("text",{class:"km-val",x:w-6-vw/2,y:4,"text-anchor":"middle"},live));
+   }
+   if(isLive(n))g.classList.add("is-live");
    if(n.children.length){
     const chev=s("g",{class:"km-chev",transform:`translate(${w-4} 0)`});
     chev.append(s("circle",{r:10,class:"km-chev-bg"}),s("path",{d:"M-2.6 -4 L2.6 0 L-2.6 4",class:"km-chev-mark",fill:"none"}));
