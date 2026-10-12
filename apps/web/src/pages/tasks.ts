@@ -120,7 +120,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   const attHost = el("div", { cls: "tasks-attn" });
   const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
-  const goalsHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "Цели" } });
+  const goalsHost = el("section", { cls: "pg-card tasks-side-card tasks-goals-card", attrs: { "aria-label": "Цели" } });
   const forecastHost = el("section", { cls: "pg-card tasks-side-card tasks-forecast", attrs: { "aria-label": "Прогноз нагрузки на неделю" } });
   let scenarioMinutes = 0;
   /** «Автоматика» lives in its own window (it is settings, not a plan), opened from the hero. */
@@ -1772,8 +1772,10 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
         eveHost,
         listHead,
         bulkHost,
-        listHost),
-      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, forecastHost, goalsHost, datesHost)));
+        listHost,
+        // goals sit under the list: the calendar column was twice as tall as the list on every screen
+        goalsHost),
+      el("aside", { cls: "tasks-side", attrs: { "aria-label": "Календарь и планы" } }, calHost, dayHost, forecastHost, datesHost)));
   root.addEventListener("keydown", (e) => {
     // Esc inside a small menu closes it and puts the focus back on its button
     const d = (e.target as HTMLElement).closest?.<HTMLDetailsElement>("details.tasks-menu[open]");

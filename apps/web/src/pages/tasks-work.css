@@ -240,3 +240,29 @@
 .tasks-editor-files{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:2px 0 8px}
 .tasks-projfiles{padding:2px 0 8px}
 .tasks-file-count{display:inline-flex;align-items:center;gap:3px}
+
+/* «Дела» on a laptop (the page is 901–1379 px wide): the list leads on the left, the calendar column stays on the right,
+   projects sit right above the list and «Дела и достижения» goes under it as one low card, picture beside the numbers.
+   Before, a narrow left column carried projects, the kitsune and the whole calendar column one under another,
+   so the calendar sat a screen below the list. */
+@container tasks (min-width:901px) and (max-width:1379px){
+  .tasks-page:not(.board-mode) .tasks-layout{grid-template-columns:minmax(0,1fr) 320px;grid-template-areas:"proj side" "main side" "ach side";grid-template-rows:auto auto 1fr;gap:0 24px}
+  .tasks-page:not(.board-mode) .tasks-ach{display:contents}
+  .tasks-page:not(.board-mode) .tasks-ach>.tasks-projects-card{grid-area:proj;margin-bottom:16px}
+  .tasks-page:not(.board-mode) .tasks-ach>.ach-panel{grid-area:ach;margin-top:20px}
+  .tasks-page:not(.board-mode) .ach-panel:not(.folded){display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:10px 16px;align-content:start}
+  .tasks-page:not(.board-mode) .ach-panel:not(.folded)>*{grid-column:2;min-width:0}
+  .tasks-page:not(.board-mode) .ach-panel:not(.folded)>.ach-panel-head{grid-column:1/-1}
+  .tasks-page:not(.board-mode) .ach-panel:not(.folded)>.ach-panel-scene{grid-column:1;grid-row:2/span 5;align-self:start}
+  .tasks-page:not(.board-mode) .ach-panel-actions{grid-template-columns:minmax(0,220px)}
+  .tasks-page:not(.board-mode) .ach-panel-act{flex-direction:row;min-height:40px;gap:8px}
+}
+/* a narrower laptop list: the side column gives up a little width */
+@container tasks (min-width:901px) and (max-width:1060px){
+  .tasks-page:not(.board-mode) .tasks-layout{grid-template-columns:minmax(0,1fr) 296px;column-gap:20px}
+  .tasks-page .tasks-layout .tasks-side-card{padding:12px 14px}
+}
+/* «Цели» under the list: goal cards side by side, the head, the hint and the new-goal row across */
+.tasks-main>.tasks-goals-card{margin-top:20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0 12px;align-items:start}
+.tasks-main>.tasks-goals-card>:not(.tasks-goal){grid-column:1/-1}
+.tasks-main>.tasks-goals-card .tasks-goal-empty{max-width:560px;justify-self:center}
