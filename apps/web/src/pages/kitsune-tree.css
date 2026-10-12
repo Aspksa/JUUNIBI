@@ -156,3 +156,18 @@
 .kt-fox-mascot-working .kt-fox-mascot-tail{animation:fox-tail-swish .75s ease-in-out 1}
 @keyframes fox-tail-swish{0%,100%{transform:rotate(0)}35%{transform:rotate(-15deg)}70%{transform:rotate(10deg)}}
 @media(prefers-reduced-motion:reduce){.kt-fox-mascot-working .kt-fox-mascot-tail{animation:none}}
+
+/* Four real change tracks and 100 multi-condition legendary achievements */
+.kt-fox-branches,.kt-fox-legendary{margin:20px 8px 6px;border-top:1px solid var(--border,#8884);padding-top:14px}
+.kt-fox-branch-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.kt-fox-branch-tabs button,.kt-fox-legendary>button{border:1px solid var(--border,#8884);border-radius:12px;padding:9px 11px;background:var(--bg,#fff);color:inherit;cursor:pointer}
+.kt-fox-branch-tabs button[aria-pressed="true"]{border-color:var(--accent,#866bbd);background:color-mix(in srgb,var(--accent,#866bbd) 12%,transparent)}
+.kt-fox-branch-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.kt-fox-branch,.kt-fox-legendary-card{border:1px solid var(--border,#8884);border-radius:15px;padding:12px;min-width:0;overflow-wrap:anywhere}
+.kt-fox-branch strong,.kt-fox-legendary-card strong{display:block;font-size:13px}
+.kt-fox-branch p,.kt-fox-legendary-card p{font-size:12px;line-height:1.6;opacity:.8}
+.kt-fox-branch small,.kt-fox-legendary-card small{font-size:11px;opacity:.65}
+.kt-fox-legendary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:12px}
+.kt-fox-progress{margin-top:10px;border-radius:10px;height:5px;overflow:hidden;background:var(--border,#8884)}
+.kt-fox-progress span{display:block;height:100%;background:var(--accent,#866bbd);transition:width .2s}
+@media(prefers-reduced-motion:reduce){.kt-fox-progress span{transition:none}}
