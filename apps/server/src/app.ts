@@ -707,6 +707,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "POST" && p === "/api/brain/graph-search") {
           if(!deps.brain) return send(res,503,{error:"Мозг недоступен"});
           const b=await readJson(req);
+          if(typeof b.query!=="string") return send(res,400,{error:"Укажите поисковый запрос"});
           return send(res,200,await deps.brain.searchGraphMemory(b.query,b.limit??8));
         }
         if (req.method === "GET" && p === "/api/brain/evaluation")
