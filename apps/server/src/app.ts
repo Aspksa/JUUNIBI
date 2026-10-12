@@ -708,7 +708,8 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if(!deps.brain) return send(res,503,{error:"Мозг недоступен"});
           const b=await readJson(req);
           if(typeof b.query!=="string") return send(res,400,{error:"Укажите поисковый запрос"});
-          return send(res,200,await deps.brain.searchGraphMemory(b.query,b.limit??8));
+          if(b.limit!==undefined && typeof b.limit!=="number") return send(res,400,{error:"Некорректный лимит"});
+          return send(res,200,await deps.brain.searchGraphMemory(b.query,typeof b.limit==="number"?b.limit:8));
         }
         if (req.method === "GET" && p === "/api/brain/evaluation")
           return send(res, deps.brain ? 200 : 503, deps.brain?.brainEvaluation() ?? { error: "Мозг недоступен" });
