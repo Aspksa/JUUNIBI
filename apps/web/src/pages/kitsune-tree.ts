@@ -114,11 +114,22 @@ export function kitsuneTreePage():HTMLElement {
    const active=document.activeElement;
    const label=active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement||active instanceof HTMLSelectElement?active.getAttribute("aria-label"):null;
    const caret=active instanceof HTMLInputElement||active instanceof HTMLTextAreaElement?active.selectionStart:null;
+   const hadFocus=document.activeElement===query,caretAt=query.selectionStart;
+   if(query.parentElement!==controls)controls.prepend(query);
    draw();
    const sectionKey=mode+":"+(mode==="fox"?foxView:"");
    if(sectionKey!==lastSection){
      lastSection=sectionKey;
      body.classList.remove("is-enter");void body.offsetWidth;body.classList.add("is-enter");
+   }
+   if(mode!=="mindmap"&&mode!=="fox"){
+     const head=sectionHead(mode,status.textContent?.trim()??"");
+     body.prepend(head);status.textContent="";
+     if(SEARCHABLE.has(mode)){
+       // поиск живёт в шапке раздела, а не отдельной строкой над ней
+       head.append(query);query.hidden=false;controls.hidden=true;
+       if(hadFocus){query.focus();if(caretAt!==null)try{query.setSelectionRange(caretAt,caretAt);}catch{/* не поле ввода */}}
+     }
    }
    status.hidden=!status.textContent?.trim();
    if(label&&root.contains(active)===false){
@@ -241,47 +252,38 @@ export function kitsuneTreePage():HTMLElement {
    }
    if(mode==="history"||mode==="versions"){
      const history=persistedHistory?.history??[];
-     const list=el("div",{cls:"kt-graph"});
+     let feed:HTMLElement;
      if(mode==="history"){
-       for(const event of evolutionChronology(history)){
-         if(!(event.description+" "+event.version).toLowerCase().includes(filter))continue;
-         list.append(el("article",{cls:"kt-node"},el("strong",{textContent:event.kind==="install"?"Установка":event.kind==="rollback"?"Откат":"Событие"}),
-           el("small",{textContent:(dateRu(event.at)||event.at)+" · "+shortVersion(event.version)}),el("p",{textContent:event.description})));
-       }
+       const events=evolutionChronology(history).filter(e=>(e.description+" "+e.version).toLowerCase().includes(filter));
+       feed=timeline(events.map(e=>({tone:e.kind==="install"?"ok":e.kind==="rollback"?"warn":"bad",title:e.kind==="install"?"Установка":e.kind==="rollback"?"Откат":"Сбой",meta:(dateRu(e.at)||e.at)+" · "+shortVersion(e.version),text:e.description})),
+         {title:"Пока тихо",text:"Установки и откаты появятся здесь после первого обновления через Центр обновлений."});
+       status.textContent=events.length+" записей";
      }else{
-       for(const item of traceCapabilities(nodesOf(),persistedHistory?.activeVersion??"",history)){
-         if(!item.title.toLowerCase().includes(filter))continue;
-         const card=el("article",{cls:"kt-node"},el("strong",{textContent:item.title}),
-           el("small",{textContent:item.origin?"Изменение #"+item.origin.pr+" · "+item.origin.sha.slice(0,7):"Точный код версии неизвестен"}),
-           el("p",{textContent:item.installation==="current"?"Совпадает с установленной версией":item.installation==="recorded"?"Версия есть в журнале":"Наличие способности в установленной версии не подтверждено"}));
-         if(item.origin)card.append(el("a",{textContent:"Исходное изменение",attrs:{href:"https://github.com/Aspksa/JUUNIBI/pull/"+item.origin.pr,target:"_blank",rel:"noopener noreferrer"}}));
-         list.append(card);
-       }
+       const traced=traceCapabilities(nodesOf(),persistedHistory?.activeVersion??"",history).filter(i=>i.title.toLowerCase().includes(filter));
+       feed=timeline(traced.map(i=>({tone:i.installation==="current"?"ok":i.installation==="recorded"?"info":"muted",title:i.title,
+         meta:i.origin?"Изменение #"+i.origin.pr+" · "+i.origin.sha.slice(0,7):"Точный код версии неизвестен",
+         text:i.installation==="current"?"Совпадает с установленной версией":i.installation==="recorded"?"Версия есть в журнале":"Наличие способности в установленной версии не подтверждено",
+         ...(i.origin?{link:{href:"https://github.com/Aspksa/JUUNIBI/pull/"+i.origin.pr,label:"Исходное изменение ↗"}}:{})})),
+         {title:"Нет подтверждённых записей",text:"Происхождение появится, когда будут сохранены снимки архитектуры."});
+       status.textContent=traced.length+" возможностей";
      }
-     if(!list.childNodes.length)list.append(el("p",{textContent:"Нет подтверждённых записей."}));
-     body.replaceChildren(list,el("aside",{cls:"kt-detail"},el("h2",{textContent:mode==="history"?"Хронология обновлений":"Происхождение возможностей"}),
+     body.replaceChildren(feed,el("aside",{cls:"kt-detail"},el("h2",{textContent:mode==="history"?"Хронология обновлений":"Происхождение возможностей"}),
        el("p",{textContent:"Данные подтверждаются журналом Центра обновлений и точным кодом версии. Совпадение названия не означает подтверждённую установку."})));
-     status.textContent=mode==="history"?"История установок и откатов":"Происхождение ветвей по версиям и изменениям";return;
+     return;
    }
    if(mode==="updates"){
-     status.textContent=updatesLoading?"Загружаю историю Центра обновлений…":
-       "История установок и текущая версия из Центра обновлений";
-     const timeline=el("div",{cls:"kt-graph"});
-     if(!releases.length)timeline.append(el("p",{cls:"muted",textContent:updatesLoading?"Загрузка…":"Установок в истории пока нет. Откройте Центр обновлений для проверки версии."}));
-     for(const release of releases.filter(x=>(x.title+" "+x.description+" "+x.version).toLocaleLowerCase("ru").includes(filter))){
-       const card=el("article",{cls:"kt-node"},
-         el("strong",{textContent:release.title}),
-         el("small",{textContent:evolutionStateLabel[release.state]+" · "+shortVersion(release.version)}),
-         el("p",{textContent:release.description}),
-         el("small",{textContent:branchLine(release)}));
-       if(release.evidence)card.append(el("a",{textContent:"Изменение в GitHub ↗",attrs:{href:release.evidence,target:"_blank",rel:"noopener noreferrer"}}));
-       timeline.append(card);
-     }
-     if(persistedHistory)timeline.prepend(el("p",{cls:"muted",textContent:"Журнал: "+persistedHistory.history.length+" событий · активная версия "+shortVersion(persistedHistory.activeVersion)}));
+     status.textContent=updatesLoading?"Загружаю историю…":releases.length+" "+(releases.length===1?"версия":"версий");
+     const filtered=releases.filter(x=>(x.title+" "+x.description+" "+x.version).toLocaleLowerCase("ru").includes(filter));
+     const tone=(s:EvolutionRelease["state"]):TimelineItem["tone"]=>s==="installed"?"ok":s==="failed"?"bad":s==="rolled-back"?"muted":s==="available"?"info":"warn";
+     const feed=updatesLoading&&!releases.length?el("p",{cls:"muted",textContent:"Загрузка…"}):timeline(filtered.map(r=>({
+       tone:tone(r.state),title:r.title,meta:evolutionStateLabel[r.state]+" · "+shortVersion(r.version),
+       text:r.description+"\n"+branchLine(r),...(r.evidence?{link:{href:r.evidence,label:"Изменение в GitHub ↗"}}:{})})),
+       {title:"Установок пока нет",text:"Откройте Центр обновлений: проверка версии и история появятся здесь."});
      const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Центр обновлений"}),
-       el("p",{textContent:"Скачивание само по себе не активирует ветку. Статус «Установлено» появляется только после записи об установке; откат сохраняется в истории."}));
-     const link=el("a",{textContent:"Открыть Центр обновлений →",attrs:{href:"#update"}});
-     side.append(link);body.replaceChildren(timeline,side);return;
+       persistedHistory?el("p",{cls:"muted",textContent:"Журнал: "+persistedHistory.history.length+" событий · активная версия "+shortVersion(persistedHistory.activeVersion)}):null,
+       el("p",{textContent:"Скачивание само по себе не активирует ветку. Статус «Установлено» появляется только после записи об установке; откат сохраняется в истории."}),
+       el("a",{cls:"kt-chip is-strong",textContent:"Открыть Центр обновлений →",attrs:{href:"#update"}}));
+     body.replaceChildren(feed,side);return;
    }
    const allNodes=nodesOf();
    if(mode==="architect"){
@@ -416,8 +418,6 @@ export function kitsuneTreePage():HTMLElement {
    const today=el("section",{cls:"kt-today",attrs:{"aria-label":"Сегодня"}},
      el("div",{cls:"kt-rail-title"},el("h2",{textContent:"Сегодня"}),help),
      foxCompanion(mood),
-     el("div",{cls:"kt-today-count"},miniRing(availability/100,String(availability)),el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
-     nextMedalTile(medals),
      diary);
    const current=activeItem(mode,foxView);
    const badge=(id:string)=>id==="awards"?String(medals.filter(m=>m.earned).length):id==="metrics"?String(availability):"";
@@ -435,6 +435,24 @@ export function kitsuneTreePage():HTMLElement {
        return b;
      }))));
    rail.replaceChildren(today,nav);
+ }
+ /** Обзор леса: главная цифра, три факта и ближайшая награда — над картой, а не в боковой панели. */
+ function overviewStrip(metrics:FoxMetric[],medals:MedalItem[]):HTMLElement{
+   const availability=metrics.filter(x=>x.value!==null).length;
+   const earned=medals.filter(m=>m.earned).length;
+   const all=nodesOf();
+   const planned=all.filter(n=>n.status==="planned").length;
+   const last=evolutionChronology(persistedHistory?.history??[])[0];
+   const stat=(name:IconName,value:string,label:string)=>el("div",{cls:"kt-stat"},
+     el("span",{cls:"kt-stat-ico",attrs:{"aria-hidden":"true"}},icon(name,18)),el("strong",{textContent:value}),el("small",{textContent:label}));
+   return el("section",{cls:"kt-overview-strip",attrs:{"aria-label":"Обзор леса"}},
+     el("div",{cls:"kt-ov-ring"},miniRing(availability/100,String(availability)),
+       el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
+     el("div",{cls:"kt-stats"},
+       stat("trophy",earned+" / "+medals.length,"наград"),
+       stat("modules",String(all.length-planned)+(planned?" + "+planned:""),planned?"ветвей + план":"ветвей"),
+       stat("clock",last?(dateRu(last.at)||"—"):"нет",last?"обновление":"обновлений")),
+     nextMedalTile(medals));
  }
  function openSection(item:(typeof RAIL_ITEMS)[number]){
    mode=item.mode;if(item.foxView)foxView=item.foxView;
@@ -460,6 +478,28 @@ export function kitsuneTreePage():HTMLElement {
    }
  };
  document.addEventListener("keydown",hotkeys);
+ interface TimelineItem{tone:"ok"|"warn"|"bad"|"info"|"muted";title:string;meta:string;text?:string;link?:{href:string;label:string}}
+ /** Лента: вертикальная линия времени, цветные точки, у каждой записи заголовок, дата и пояснение. */
+ function timeline(items:TimelineItem[],empty:{title:string;text:string}):HTMLElement{
+   if(!items.length)return emptyState(empty.title,empty.text);
+   return el("ol",{cls:"kt-tl"},...items.map(i=>el("li",{cls:"kt-tl-item tone-"+i.tone},
+     el("span",{cls:"kt-tl-dot",attrs:{"aria-hidden":"true"}}),
+     el("div",{cls:"kt-tl-card"},
+       el("div",{cls:"kt-tl-top"},el("strong",{textContent:i.title}),el("small",{cls:"muted",textContent:i.meta})),
+       i.text?el("p",{textContent:i.text}):null,
+       i.link?el("a",{textContent:i.link.label,attrs:{href:i.link.href,target:i.link.href.startsWith("#")?"_self":"_blank",rel:"noopener noreferrer"}}):null))));
+ }
+ function emptyState(title:string,text:string):HTMLElement{
+   return el("div",{cls:"kt-empty-state"},el("span",{cls:"kt-empty-fox",attrs:{"aria-hidden":"true"},textContent:"🦊"}),el("strong",{textContent:title}),el("p",{textContent:text}));
+ }
+ /** Общая шапка раздела: значок, название, пояснение и счётчик. */
+ function sectionHead(mode:TreeMode,count:string):HTMLElement{
+   const item=activeItem(mode,foxView);
+   return el("header",{cls:"kt-sec-head"},
+     el("span",{cls:"kt-sec-ico",attrs:{"aria-hidden":"true"}},icon(item?RAIL_ICON[item.id]??"spark":"spark",22)),
+     el("div",{cls:"kt-sec-text"},el("h2",{textContent:item?.label??"Лисье древо"}),el("p",{textContent:item?.hint??""})),
+     count?el("span",{cls:"km-count",textContent:count}):null);
+ }
  const RAIL_ICON:Record<string,IconName>={mindmap:"modules",metrics:"pulse",awards:"trophy",branches:"flame",updates:"download",history:"clock",versions:"archive",comparison:"rows",growth:"spark",discovery:"search",architect:"wand","brain-chat":"brain"};
  function foxCompanion(mood:{emoji:string;label:string;detail:string}){
    const state=mood.label.includes("помощи")?"warning":mood.label.includes("трудятся")?"working":mood.label.includes("ждёт")?"sleeping":"calm";
@@ -533,6 +573,7 @@ export function kitsuneTreePage():HTMLElement {
      more);
    body.replaceChildren(el("div",{cls:"kt-map"},
      el("header",{cls:"kt-map-head km-head"},el("h2",{textContent:"Карта проекта"}),el("span",{cls:"km-count",textContent:countLeaves(tree)+" узлов"})),
+     overviewStrip(metrics,medals),
      mindView({tree,state:mindState,onOpen:open,deps,stages}),
      el("div",{cls:"km-below"},timeControl(frames,index),fruits)));
    status.textContent="";
