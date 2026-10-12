@@ -1,3 +1,4 @@
+import {readHistory,saveHistory,recordMetrics,metricDelta,forestMood,type FoxHistory} from "./kitsune-fox-history";
 import {FOX_WORLDS,foxMetrics,type FoxLive} from "./kitsune-fox-metrics";
 import {growthEvents,type GrowthEvent} from "./kitsune-growth";
 import {downstreamImpact,compareManifests,architectureQuestion} from "./kitsune-impact";
@@ -59,6 +60,9 @@ export function kitsuneTreePage():HTMLElement {
  let foxLive:FoxLive={};
  let foxLoading=true;
  let foxReaction="";
+ let foxPeriod:7|30=7;
+ let foxHistory:FoxHistory=readHistory();
+ let foxFavoriteSort=false;
  const favoritesKey="juunibi:fox-commotion:favorites:v1";
  let foxFavorites=new Set<string>();
  try{const saved=JSON.parse(localStorage.getItem(favoritesKey)??"[]") as unknown;if(Array.isArray(saved))foxFavorites=new Set(saved.filter((x):x is string=>typeof x==="string"&&/^fox-(?:[0-9]|[1-9][0-9])$/.test(x)));}catch{/* Private storage disabled */}
@@ -97,11 +101,13 @@ export function kitsuneTreePage():HTMLElement {
    }));
    if(mode==="fox"){
      const metrics=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+     const mood=forestMood(metrics);
      const main=el("section",{cls:"kt-fox-main",attrs:{"aria-label":"Лисий переполох — сто живых показателей"}});
      main.append(el("div",{cls:"kt-fox-hero"},
        el("span",{cls:"kt-eyebrow",textContent:"JUUNIBI / FOX COMMOTION"}),
        el("h2",{textContent:"🦊 Лисий переполох"}),
        el("p",{textContent:"100 лесных историй в 10 мирах. Значения берутся из подтверждённых данных; неизвестные показатели честно показывают «Нет данных»."})));
+     main.append(el("p",{cls:"kt-fox-reaction",textContent:mood.emoji+" "+mood.label+" · "+mood.detail}));
      if(foxReaction)main.append(el("p",{cls:"kt-fox-reaction",attrs:{"aria-live":"polite"},textContent:foxReaction}));
      const view=el("div",{cls:"kt-fox-toolbar"});
      const search=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Поиск среди 100 показателей…","aria-label":"Поиск показателя"}});
@@ -111,6 +117,8 @@ export function kitsuneTreePage():HTMLElement {
      FOX_WORLDS.forEach((x,i)=>world.append(el("option",{textContent:x.emoji+" "+x.title,attrs:{value:String(i)}})));
      world.value=String(foxWorld);
      const favoritesToggle=el("button",{textContent:foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное",attrs:{"aria-pressed":String(foxOnlyFavorite)}});
+     const period=el("button",{textContent:foxPeriod+" дней"});
+     period.addEventListener("click",()=>{foxPeriod=foxPeriod===7?30:7;period.textContent=foxPeriod+" дней";paint();});
      const cards=el("div",{cls:"kt-fox-grid"});
      const count=el("p",{cls:"kt-fox-count",attrs:{"aria-live":"polite"}});
      const paint=()=>{
@@ -125,6 +133,8 @@ export function kitsuneTreePage():HTMLElement {
            try{localStorage.setItem(favoritesKey,JSON.stringify([...foxFavorites]));}catch{/* Private storage disabled */}
            paint();
          });
+         const delta=metricDelta(foxHistory[m.id]??[],foxPeriod);
+         const label=delta===null?"История накапливается":(delta>0?"+":"")+delta+" за "+foxPeriod+" дней";
          const open=el("button",{cls:"kt-fox-open",textContent:"Открыть источник →"});
          open.disabled=m.value===null;
          open.addEventListener("click",()=>{mode=m.target;render();});
@@ -132,6 +142,7 @@ export function kitsuneTreePage():HTMLElement {
            el("div",{cls:"kt-fox-card-header"},el("span",{cls:"kt-fox-emoji",textContent:m.emoji}),favorite),
            el("strong",{cls:"kt-fox-value",textContent:m.value===null?"—":String(m.value)}),
            el("h3",{textContent:m.name}),
+           el("small",{cls:"kt-fox-delta",textContent:label}),
            el("p",{textContent:m.description}),
            el("small",{textContent:m.value===null?"Нет данных · "+m.source:m.source}),
            open
@@ -142,7 +153,7 @@ export function kitsuneTreePage():HTMLElement {
      search.addEventListener("input",()=>{foxSearch=search.value;paint();});
      world.addEventListener("change",()=>{foxWorld=Number(world.value);paint();});
      favoritesToggle.addEventListener("click",()=>{foxOnlyFavorite=!foxOnlyFavorite;favoritesToggle.textContent=foxOnlyFavorite?"♥ Избранное":"♡ Показать избранное";favoritesToggle.setAttribute("aria-pressed",String(foxOnlyFavorite));paint();});
-     view.append(search,world,favoritesToggle);
+     view.append(search,world,favoritesToggle,period);
      main.append(view,count,cards);
      const side=el("aside",{cls:"kt-detail"},
        el("span",{cls:"kt-eyebrow",textContent:"10 МИРОВ · 100 ПОКАЗАТЕЛЕЙ"}),
@@ -421,7 +432,10 @@ export function kitsuneTreePage():HTMLElement {
    const organizer=read<import("../api").Organizer>(4);if(organizer)foxLive.organizer=organizer;
    const updater=read<import("../api").UpdateStatus>(5);if(updater)foxLive.updater=updater;
    const project=read<import("../api").ProjectStatsData>(6);if(project)foxLive.project=project;
-   foxLoading=false;if(mode==="fox")render();
+   foxLoading=false;
+   foxHistory=recordMetrics(foxHistory,foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive}),new Date().toISOString().slice(0,10));
+   saveHistory(foxHistory);
+   if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
  render();return root;
 }

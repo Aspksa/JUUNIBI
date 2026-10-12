@@ -97,3 +97,5 @@
 @media(prefers-reduced-motion:reduce){.kt-fox-card{transition:none}.kt-fox-card:hover{transform:none}}
 
 .kt-fox-reaction{margin:0 10px 15px;padding:12px 15px;border:1px solid color-mix(in srgb,var(--accent,#866bbd) 24%,transparent);border-radius:14px;background:color-mix(in srgb,var(--accent,#866bbd) 9%,transparent);line-height:1.5;font-size:13px}
+
+.kt-fox-delta{font-variant-numeric:tabular-nums;color:var(--accent,#866bbd)}
