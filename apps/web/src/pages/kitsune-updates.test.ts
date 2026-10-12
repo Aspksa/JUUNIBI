@@ -22,4 +22,13 @@ describe("Kitsune update integration",()=>{
   expect(evolutionFromUpdater(status("idle"),null)[0]?.relatedBranches).toContain("brain");
   expect(evolutionFromUpdater(null,null)).toEqual([]);
  });
+ it("показывает неудачные установки и возврат после сбоя запуска, но не считает их установленными",()=>{
+  const h:UpdateHistory={rollbackPending:false,canRollback:null,items:[
+   {id:"f1",at:"2026-10-12",kind:"failed",from:"old",to:"bad",message:"хеш не совпал"},
+   {id:"f2",at:"2026-10-12",kind:"startup_failed",from:"old",to:"worse"}]};
+  const list=evolutionFromUpdater(status("idle","old"),h);
+  expect(list.filter(x=>x.id.startsWith("history:")).map(x=>x.state)).toEqual(["failed","failed"]);
+  expect(list.find(x=>x.id==="history:f1")?.description).toBe("хеш не совпал");
+  expect(list.find(x=>x.id==="history:f2")?.title).toBe("Версия не запустилась");
+ });
 });

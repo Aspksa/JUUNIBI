@@ -27,12 +27,13 @@ export function parseFoxCI(raw:unknown):FoxPull["ci"]{
  const latest=runs.filter(x=>x&&typeof x==="object").sort((a,b)=>String((b as {created_at?:string}).created_at??"").localeCompare(String((a as {created_at?:string}).created_at??"")))[0] as {status?:string;conclusion?:string}|undefined;
  return latest?.status!=="completed"?"pending":latest.conclusion==="success"?"passed":latest.conclusion==="failure"?"failed":"unknown";
 }
+/** The page may not call GitHub directly (its security policy forbids it); the local server fetches and caches it. */
 export async function getFoxPulls():Promise<FoxPull[]|null>{
  try{
   const controller=new AbortController();
-  const t=setTimeout(()=>controller.abort(),8500);
+  const t=setTimeout(()=>controller.abort(),12000);
   let response:Response;
-  try{response=await fetch("https://api.github.com/repos/Aspksa/JUUNIBI/pulls?state=all&per_page=30",{headers:{Accept:"application/vnd.github+json"},signal:controller.signal});}
+  try{response=await fetch("/api/kitsune/github/pulls",{signal:controller.signal});}
   finally{clearTimeout(t);}
   if(!response.ok)return null;
   return parseFoxPulls(await response.json() as unknown);
@@ -42,7 +43,7 @@ export async function refreshFoxChecks(pulls:FoxPull[]):Promise<FoxPull[]>{
  const matched=pulls.filter(p=>p.sha&&(p.state==="merged"||p.state==="open")).slice(0,6);
  const entries=await Promise.all(matched.map(async p=>{
   try{
-   const response=await fetch("https://api.github.com/repos/Aspksa/JUUNIBI/actions/runs?head_sha="+encodeURIComponent(p.sha)+"&per_page=5",{headers:{Accept:"application/vnd.github+json"}});
+   const response=await fetch("/api/kitsune/github/runs?sha="+encodeURIComponent(p.sha));
    return [p.number,response.ok?parseFoxCI(await response.json() as unknown):"unknown"] as const;
   }catch{return [p.number,"unknown"] as const;}
  }));

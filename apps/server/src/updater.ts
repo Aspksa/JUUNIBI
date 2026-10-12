@@ -581,6 +581,11 @@ export class ProjectUpdater {
     }
     return JSON.parse(text);
   }
+  /** Read-only GitHub API call for other features: shares the token, the ETag cache and the rate-limit handling. */
+  async githubGet(apiPath: string): Promise<any> {
+    if (!/^\/[\w/?=&.,-]{1,200}$/.test(apiPath) || apiPath.includes("..")) throw new Error("Недопустимый путь GitHub");
+    return this.getJson(API + apiPath);
+  }
   private rateLimitMessage() {
     const at = new Date(this.rateLimitUntil).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
     return `Лимит запросов GitHub исчерпан — повторите после ${at}.${this.token ? "" : " Чтобы лимит стал выше, добавьте токен GitHub в разделе «Обновление»."}`;

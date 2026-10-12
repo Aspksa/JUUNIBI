@@ -24,3 +24,10 @@
 - Existing interfaces remain available; no destructive layout migration.
 - All motion may be disabled through system settings.
 - CI verifies both web and server on Linux and Windows.
+
+## v10 · calm redesign (no looping animation)
+- **Four sections instead of thirteen tabs:** Карта (Дерево, Граф, Связи, Этапы), История (Обновления, Хронология, Происхождение, Сравнение, Рост), Анализ (Влияние, Обнаружение, Архитектор, Диалог с Brain), Лисичка (Сегодня, Показатели, Награды, Ветки). The grouping lives in `kitsune-sections.ts` and is tested so every mode belongs to exactly one section.
+- **The tree as a still picture** (`kitsune-tree-art.ts`): trunk at the bottom, later stages upward; filled leaf = confirmed, dashed outline = planned, green ring = new branch. Layout is deterministic and tested; nodes are keyboard-operable buttons. Details open in the centered window used elsewhere in the app.
+- **One award shelf** (`kitsune-medals.ts`): 200 awards (10 special, 90 keepers, 100 legendary) as round medals with a progress ring. Tier = difficulty (bronze keepers, silver special, gold/legend by rank inside a legendary theme); locked awards are silhouettes; an award never shows progress that is not measured.
+- **Fixes found while reviewing the page:** the browser could not call GitHub (CSP) so PR/CI branches never loaded — the server now proxies and caches two read-only calls (`/api/kitsune/github/pulls|runs`, with the update centre's token, ETag cache and rate-limit handling); the active tab was unreadable (light text on a light pill); discovery listed test files as "new modules" and counted type-only imports as cycles; failed/rolled-back-at-start installs were missing from the Updates view; focus was lost when async data redrew the page; long hashes overlapped neighbouring cells.
+
