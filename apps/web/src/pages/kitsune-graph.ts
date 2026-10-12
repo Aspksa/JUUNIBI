@@ -29,9 +29,10 @@ export function readPositions(nodes:EvolutionNode[]):Positions {
 export function savePositions(p:Positions):void {
  try{localStorage.setItem(KEY,JSON.stringify(p));}catch{/* private storage disabled */}
 }
-export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set(),motion:"bloom"|"pulse"|"recovery"|"none"="none"):HTMLElement {
+export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:string)=>void,zoom=1,newIds:ReadonlySet<string>=new Set(),motion:"bloom"|"pulse"|"recovery"|"none"="none",focus=false):HTMLElement {
  const positions=readPositions(nodes);
- const moving=motion!=="none"&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+ const reducedMotion=typeof window.matchMedia==="function"&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+ const moving=motion!=="none"&&!reducedMotion;
  const viewport=document.createElement("div");viewport.className="kt-canvas-viewport";
  viewport.setAttribute("aria-label","Интерактивная карта связей JUUNIBI");
  const canvas=document.createElement("div");canvas.className="kt-canvas";
@@ -39,6 +40,8 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
  const maxX=Math.max(1000,...Object.values(positions).map(p=>p.x+240));
  const maxY=Math.max(600,...Object.values(positions).map(p=>p.y+120));
  canvas.style.width=maxX+"px";canvas.style.height=maxY+"px";
+ const scrollArea=document.createElement("div");scrollArea.className="kt-canvas-scroll-area";
+ scrollArea.style.width=Math.ceil(maxX*zoom)+"px";scrollArea.style.height=Math.ceil(maxY*zoom)+"px";
  const ns="http://www.w3.org/2000/svg";
  const svg=document.createElementNS(ns,"svg");svg.setAttribute("class","kt-canvas-edges");
  svg.setAttribute("viewBox",`0 0 ${maxX} ${maxY}`);svg.setAttribute("aria-hidden","true");
@@ -81,11 +84,11 @@ export function buildGraph(nodes:EvolutionNode[], selected:string,onSelect:(id:s
    node.addEventListener("pointerup",end);node.addEventListener("pointercancel",end);
    canvas.append(node);
  }
- viewport.append(canvas);
+ scrollArea.append(canvas);viewport.append(scrollArea);
  const target=positions[selected];
- if(target&&typeof requestAnimationFrame==="function")requestAnimationFrame(()=>{
+ if(target&&focus&&typeof requestAnimationFrame==="function")requestAnimationFrame(()=>{
   if(!viewport.isConnected)return;
-  viewport.scrollTo({left:Math.max(0,(target.x+90)*zoom-viewport.clientWidth/2),top:Math.max(0,(target.y+36)*zoom-viewport.clientHeight/2),behavior:moving?"smooth":"instant"});
+  viewport.scrollTo({left:Math.max(0,(target.x+90)*zoom-viewport.clientWidth/2),top:Math.max(0,(target.y+36)*zoom-viewport.clientHeight/2),behavior:reducedMotion?"instant":"smooth"});
  });
  return viewport;
 }
