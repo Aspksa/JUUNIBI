@@ -1,3 +1,4 @@
+import { evaluateStrategyCalibration, type StrategyCalibrationPolicy } from "./brain-strategy-calibration";
 import { evaluateBrainPlanBenchmarks } from "./brain-plan-benchmarks";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
 import { inspectCognitiveEngine } from "./brain-cognitive-engine";
@@ -50,6 +51,9 @@ export class BrainCore {
   resolveRevision(id:string,outcome:"accepted"|"rejected") { const r=this.revisions.resolve(id,outcome);this.persist();return r; }
   private readonly decisions = new DecisionMemory();
   decisionHistory() { return { records: this.decisions.snapshot(), summary: this.decisions.summary() }; }
+  previewStrategyCalibration(policy:StrategyCalibrationPolicy) {
+    return evaluateStrategyCalibration(policy);
+  }
   evaluatePlanBenchmarks() { return evaluateBrainPlanBenchmarks(); }
   async searchGraphMemory(query:string,limit=8) { if (!this.graph) throw Object.assign(new Error("SQLite граф памяти недоступен"),{status:503}); await this.graph.sync(this.decisions.snapshot()); return this.graph.search(query,limit); }
   async relatedGraphDecisions(decisionId:string,limit=10) {
