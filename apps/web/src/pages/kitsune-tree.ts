@@ -1,8 +1,9 @@
 import { el } from "../dom";
 import { pageHead } from "./kit";
-import { app } from "../state";
+import { api } from "../api";
+import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
 
-export type TreeMode = "architecture" | "development" | "connections";
+export type TreeMode = "architecture" | "development" | "connections" | "updates";
 export interface TreeNode {
  id:string; title:string; description:string; how:string; status:"implemented"|"planned";
  dependsOn:string[]; evidence?:string; stage:number;
@@ -32,10 +33,12 @@ export const TREE_NODES:TreeNode[]=[
 export const treeConnections=()=>TREE_NODES.flatMap(node=>node.dependsOn.map(from=>({from,to:node.id})));
 export function kitsuneTreePage():HTMLElement {
  let mode:TreeMode="architecture",selected="brain",filter="";
+ let releases:EvolutionRelease[]=[];
+ let updatesLoading=true;
  const body=el("div",{cls:"kt-layout"});
  const status=el("p",{cls:"muted",attrs:{"aria-live":"polite"}});
  const root=el("div",{cls:"page kitsune-tree"},pageHead("link","Лисье древо","KITSUNE TREE · Живая карта архитектуры и развития JUUNIBI"),
-   el("p",{cls:"muted",textContent:"Карта основана на известных компонентах проекта и подтверждённых PR. Будущие возможности отмечены отдельно. Автоматическая синхронизация с GitHub ещё не подключена."}),status,body);
+   el("p",{cls:"muted",textContent:"Карта основана на известных компонентах проекта и подтверждённых PR. Будущие возможности отмечены отдельно. Установленные версии берутся из Центра обновлений; связи новых релизов с ветвями определяются предположительно по описанию."}),status,body);
  const query=el("input",{cls:"kt-search",attrs:{type:"search",placeholder:"Найти ветвь…","aria-label":"Поиск ветви"}});
  query.addEventListener("input",()=>{filter=query.value.toLocaleLowerCase("ru");render();});
  const controls=el("div",{cls:"kt-controls"},query);
@@ -43,10 +46,30 @@ export function kitsuneTreePage():HTMLElement {
  const tabs=el("div",{cls:"kt-tabs"});
  controls.prepend(tabs);
  function render(){
-   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"]] as [TreeMode,string][]).map(([value,label])=>{
+   tabs.replaceChildren(...([["architecture","Архитектура"],["development","Развитие"],["connections","Связи"],["updates","Обновления"]] as [TreeMode,string][]).map(([value,label])=>{
      const b=el("button",{cls:mode===value?"kt-active":"",textContent:label,attrs:{"aria-pressed":String(mode===value)}});
      b.addEventListener("click",()=>{mode=value;render();});return b;
    }));
+   if(mode==="updates"){
+     status.textContent=updatesLoading?"Загружаю историю Центра обновлений…":
+       "История установок и текущая версия из Центра обновлений";
+     const timeline=el("div",{cls:"kt-graph"});
+     if(!releases.length)timeline.append(el("p",{cls:"muted",textContent:updatesLoading?"Загрузка…":"Установок в истории пока нет. Откройте Центр обновлений для проверки версии."}));
+     for(const release of releases.filter(x=>(x.title+" "+x.description+" "+x.version).toLocaleLowerCase("ru").includes(filter))){
+       const card=el("article",{cls:"kt-node"},
+         el("strong",{textContent:release.title}),
+         el("small",{textContent:evolutionStateLabel[release.state]+" · "+release.version}),
+         el("p",{textContent:release.description}),
+         el("small",{textContent:release.relatedBranches.length?
+           "Предполагаемые ветви: "+release.relatedBranches.join(", "):"Ветви не определены"}));
+       if(release.evidence)card.append(el("a",{textContent:"Изменение в GitHub ↗",attrs:{href:release.evidence,target:"_blank",rel:"noopener noreferrer"}}));
+       timeline.append(card);
+     }
+     const side=el("aside",{cls:"kt-detail"},el("h2",{textContent:"Центр обновлений"}),
+       el("p",{textContent:"Скачивание само по себе не активирует ветку. Статус «Установлено» появляется только после записи об установке; откат сохраняется в истории."}));
+     const link=el("a",{textContent:"Открыть Центр обновлений →",attrs:{href:"#update"}});
+     side.append(link);body.replaceChildren(timeline,side);return;
+   }
    const matched=TREE_NODES.filter(n=>(n.title+" "+n.description).toLocaleLowerCase("ru").includes(filter));
    status.textContent=`${TREE_NODES.filter(n=>n.status==="implemented").length} реализовано · ${TREE_NODES.filter(n=>n.status==="planned").length} запланировано · ${treeConnections().length} связей`;
    const graph=el("div",{cls:"kt-graph",attrs:{"aria-label":"Ветви эволюции"}});
@@ -82,5 +105,10 @@ export function kitsuneTreePage():HTMLElement {
    }
    body.replaceChildren(graph,details);
  }
+ void Promise.all([api.updateStatus(),api.updateHistory()]).then(([st,h])=>{
+   releases=evolutionFromUpdater(st.ok?st.value:null,h.ok?h.value:null);
+   updatesLoading=false;
+   render();
+ }).catch(()=>{updatesLoading=false;render();});
  render();return root;
 }
