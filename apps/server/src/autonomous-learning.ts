@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { chooseLearningTopic } from "./learning-priorities";
 import { chooseGoal, updateGoal, restoreGoal, type Goal } from "./self-development";
 import { LearningProgress } from "./learning-progress";
+import { LearningBenchmark, type AssessmentKind } from "./learning-benchmark";
 import { LearningSkillTracker, type Skill, type Phase } from "./learning-skill-tracker";
 import { ReasoningEvaluation } from "./reasoning-evaluation";
 import { makeReasoningTask, checkReasoningAnswer } from "./reasoning-assessment";
@@ -56,6 +57,7 @@ export class AutonomousLearning {
   private mathRetry: { left: number; right: number; attempts: number } | null = null;
   private retryResults = { attempted: 0, corrected: 0 };
   private readonly progress = new LearningProgress();
+  private readonly benchmark = new LearningBenchmark();
   private readonly skills = new LearningSkillTracker();
   private readonly reasoningEvaluation = new ReasoningEvaluation();
   private readonly areas = ["архитектура JUUNIBI", "логика и планирование", "математика", "наука", "история", "русский язык", "языки", "творчество"];
@@ -78,6 +80,7 @@ export class AutonomousLearning {
       if (v.lastOutcome === "success" || v.lastOutcome === "error") this.lastOutcome = v.lastOutcome;
       this.developmentGoal = restoreGoal(v.developmentGoal);
       this.progress.load(v.progress);
+      this.benchmark.load(v.benchmark);
       this.skills.load(v.skillHistory);
       this.reasoningEvaluation.load(v.reasoningEvaluation);
       if (Array.isArray(v.events)) this.events = v.events.filter((e): e is LearningEvent =>
@@ -131,7 +134,7 @@ export class AutonomousLearning {
     if (this.day !== today) { this.day = today; this.used = 0; this.tokens = 0; }
   }
   private save() {
-    const raw = JSON.stringify({ developmentGoal: this.developmentGoal, lastAttemptAt: this.lastAttemptAt, lastError: this.lastError, lastOutcome: this.lastOutcome, settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, transferChecks: this.transferChecks, transferMetrics: this.transferMetrics, transferSeries: this.transferSeries, retryResults: this.retryResults, progress: this.progress.snapshot(), skillHistory: this.skills.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
+    const raw = JSON.stringify({ developmentGoal: this.developmentGoal, lastAttemptAt: this.lastAttemptAt, lastError: this.lastError, lastOutcome: this.lastOutcome, settings: this.settings, events: this.events.slice(-150), day: this.day, used: this.used, tokens: this.tokens, cursor: this.cursor, mathRetry: this.mathRetry, logicRetry: this.logicRetry, logicRetryResults: this.logicRetryResults, retention: this.retention, retentionMetrics: this.retentionMetrics, transferChecks: this.transferChecks, transferMetrics: this.transferMetrics, transferSeries: this.transferSeries, retryResults: this.retryResults, progress: this.progress.snapshot(), benchmark: this.benchmark.snapshot(), skillHistory: this.skills.snapshot(), reasoningEvaluation: this.reasoningEvaluation.snapshot() });
     this.queue = this.queue.catch(() => {}).then(async () => {
       await mkdir(path.dirname(this.file), { recursive: true });
       const tmp = this.file + ".tmp";
@@ -143,7 +146,7 @@ export class AutonomousLearning {
   flush() { return this.queue; }
   status() {
     this.resetDay();
-    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
+    return { settings: { ...this.settings }, used: this.used, tokens: this.tokens, day: this.day, diary: this.diary(), progress: this.progress.summary(), benchmark: this.benchmark.summary(), reasoningMetrics: this.reasoningEvaluation.summary(),
       busy: this.busy, developmentGoal: this.developmentGoal ? { ...this.developmentGoal } : null, lastAttemptAt: this.lastAttemptAt, lastOutcome: this.lastOutcome, lastError: this.lastError, skills: this.skills.summary(), weakestSkill: this.skills.weakest(), retryResults: { ...this.retryResults }, pendingMathRetry: this.mathRetry !== null, pendingLogicRetry: this.logicRetry !== null, logicRetryResults: { ...this.logicRetryResults }, retentionMetrics: { ...this.retentionMetrics }, pendingRetention: this.retention.length, transferMetrics: { ...this.transferMetrics }, transferSeries: { ...this.transferSeries, passRate: this.transferSeries.completed ? Math.round(this.transferSeries.passed / this.transferSeries.completed * 100) : null }, pendingTransfer: this.transferChecks.length, events: this.events.slice(-100), remaining: Math.max(0, this.settings.dailyLimit - this.used) };
   }
   diary() {
@@ -201,7 +204,12 @@ export class AutonomousLearning {
       // Check deterministic arithmetic without trusting the model; all other material remains quarantined.
       const graded = structured ? this.reasoningEvaluation.evaluate(structured, result.text) : null;
       const verified = graded ? graded.correct : reasoning ? checkReasoningAnswer(reasoning, result.text) : !!check && result.text.trim() === String(check.left * check.right);
-      if (check || reasoning || structured) this.progress.record(verified);
+      if (check || reasoning || structured) {
+        this.progress.record(verified);
+        const kind: AssessmentKind = check ? "arithmetic" : structured ? "structured" : reasoning!.kind === "logic" ? "logic" : "transfer";
+        const phase = retry || logicRetry ? "retry" : due ? "retention" : transferDue ? "generalization" : "practice";
+        this.benchmark.record(kind, phase, verified);
+      }
       // Only independently graded tasks count; research answers remain in quarantine.
       if (check || reasoning) {
         const skill:Skill=check?"arithmetic":reasoning!.kind;
