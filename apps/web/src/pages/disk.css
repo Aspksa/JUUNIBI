@@ -418,15 +418,16 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 
 /* group tabs: fifteen equal cards in rows of five (glyph beside the name; above it in the narrow column), a bar along the bottom fills with the share of figures that have data */
 .dkl-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
-.dkl-tab{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;min-width:0;padding:10px 12px 14px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast)}
+.dkl-tab{position:relative;overflow:hidden;display:flex;align-items:center;gap:10px;min-width:0;padding:8px 10px 12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer;transition:border-color var(--dur-fast),background var(--dur-fast)}
 .dkl-tab:hover{border-color:color-mix(in srgb,var(--g) 45%,var(--line));background:color-mix(in srgb,var(--g) 6%,var(--surface))}
 .dkl-tab:hover .dkl-ic{transform:rotate(-8deg) scale(1.08)}
 .dkl-tab:focus-visible{outline:none;border-color:var(--g)}
 .dkl-tab[aria-selected=true]{border-color:var(--g);background:color-mix(in srgb,var(--g) 12%,var(--surface));box-shadow:0 0 0 1px var(--g) inset}
-.dkl-tab .dkl-ic{width:38px;height:38px;border-radius:10px}
-.dkl-tab-name{font-size:var(--fs-xs);font-weight:600;line-height:1.25;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dkl-tab .dkl-ic{width:32px;height:32px;border-radius:10px}
+.dkl-tab .dkl-ic svg{width:18px;height:18px}
+.dkl-tab-name{min-width:0;font-size:var(--fs-sm);font-weight:600;line-height:1.2;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dkl-tab:hover .dkl-tab-name,.dkl-tab[aria-selected=true] .dkl-tab-name{color:var(--fg)}
-.dkl-tab-bar{position:absolute;left:12px;right:12px;bottom:6px;height:3px;border-radius:3px;background:color-mix(in srgb,var(--fg) 8%,transparent);overflow:hidden}
+.dkl-tab-bar{position:absolute;left:10px;right:10px;bottom:5px;height:3px;border-radius:3px;background:color-mix(in srgb,var(--fg) 8%,transparent);overflow:hidden}
 .dkl-tab-bar::after{content:"";position:absolute;inset:0;width:calc(var(--p)*1%);border-radius:inherit;background:var(--g)}
 
 .dkl-group-head{display:flex;align-items:center;gap:12px;min-width:0}
@@ -460,12 +461,28 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
 .dkl-tile.is-empty .dkl-value{color:var(--muted)}
 .dkl-skeleton{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}
 .dkl-skeleton i{height:150px;border-radius:var(--r-lg);background:linear-gradient(90deg,var(--hover),color-mix(in srgb,var(--fg) 6%,transparent),var(--hover));background-size:200% 100%;animation:dk-shimmer 1.2s linear infinite}
+/* an empty Disk: one quiet card instead of 150 dashes */
+.dkl-blank{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 20px;border:1px dashed var(--line);border-radius:var(--r-lg);--g:var(--brand)}
+.dkl-blank-text{flex:1 1 260px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.dkl-blank-text b{font-size:var(--fs-base)}
+.dkl-blank-text small{color:var(--muted);font-size:var(--fs-sm);line-height:1.4}
+.dkl-blank-glyphs{display:flex;gap:8px}
 .dkl-empty{display:flex;align-items:center;gap:12px;padding:18px}
 .dkl-empty p{margin:0;color:var(--muted)}
 
 /* ten tiles a group: rows of five, two or one, never a lonely last row */
-@container (max-width:1100px){.dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@container (max-width:980px){.dkl-grid,.dkl-skeleton{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* laptops (the block under the files, 900–1150 px wide) keep one row of highlights and five tiles a row */
+@container (max-width:1150px){
+  .dkl-hl-card{padding:12px}
+  .dkl-hl-card .dkl-ic{width:34px;height:34px;margin-bottom:4px}
+  .dkl-hl-card b{font-size:var(--fs-lg)}
+  .dkl-tile{padding:14px}
+  .dkl-tile .dkl-ic{width:34px;height:34px}
+  .dkl-tile-top{gap:8px}
+  .dkl-tab{gap:8px}
+  .dkl-tab-name{font-size:var(--fs-xs)}
+}
+@container (max-width:760px){.dkl-hl{grid-template-columns:repeat(3,minmax(0,1fr))}.dkl-grid,.dkl-skeleton{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* the narrow right column: one 10 px gap everywhere, highlights without charts, two tiles a row */
 @container (max-width:520px){
   .dkl-body{gap:16px}
@@ -480,7 +497,8 @@ button.dk-crumb:hover{background:var(--hover);color:var(--fg)}
   .dkl-tile .dkl-ic{width:34px;height:34px}
   .dkl-value{font-size:var(--fs-base)}
   .dkl-tab{flex-direction:column;justify-content:flex-start;padding:10px 2px 13px;gap:6px;text-align:center}
-  .dkl-tab-name{letter-spacing:-.01em;min-height:2.5em}
+  .dkl-tab .dkl-ic svg{width:20px;height:20px}
+  .dkl-tab-name{letter-spacing:-.01em;min-height:2.4em}
   .dkl-tab-bar{left:8px;right:8px}
   .dkl-tab .dkl-ic{width:34px;height:34px}
 }
