@@ -21,7 +21,11 @@
         "core"
       ],
       "stage": 1,
-      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269"
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269",
+      "introducedIn": {
+        "sha": "c6e12f2ddfc2479f18cd229833f7c912f222652d",
+        "pr": 269
+      }
     },
     {
       "id": "memory",
@@ -33,7 +37,11 @@
         "brain"
       ],
       "stage": 2,
-      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/265"
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/265",
+      "introducedIn": {
+        "sha": "3aadf16d97624ca79baf03ef036a986c5fe4a69e",
+        "pr": 267
+      }
     },
     {
       "id": "search",
@@ -45,7 +53,11 @@
         "memory"
       ],
       "stage": 3,
-      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269"
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269",
+      "introducedIn": {
+        "sha": "c6e12f2ddfc2479f18cd229833f7c912f222652d",
+        "pr": 269
+      }
     },
     {
       "id": "strategy",
@@ -58,7 +70,11 @@
         "memory"
       ],
       "stage": 3,
-      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/268"
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/268",
+      "introducedIn": {
+        "sha": "ae5cb257357dd68e7f3413162c718ba34a306a93",
+        "pr": 268
+      }
     },
     {
       "id": "benchmark",
@@ -71,7 +87,11 @@
         "strategy"
       ],
       "stage": 4,
-      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269"
+      "evidence": "https://github.com/Aspksa/JUUNIBI/pull/269",
+      "introducedIn": {
+        "sha": "c6e12f2ddfc2479f18cd229833f7c912f222652d",
+        "pr": 269
+      }
     },
     {
       "id": "tasks",
@@ -115,7 +135,11 @@
       "dependsOn": [
         "core"
       ],
-      "stage": 2
+      "stage": 2,
+      "introducedIn": {
+        "sha": "0934182a679da1bb2db612737fa8815ec31dcd20",
+        "pr": 270
+      }
     },
     {
       "id": "evolution3",
