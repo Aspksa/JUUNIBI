@@ -620,3 +620,14 @@
 .kt-fox-value{background:linear-gradient(135deg,var(--fg),hsl(var(--wh,140) 70% 62%));-webkit-background-clip:text;background-clip:text;color:transparent}
 .kt-fox-card.is-empty .kt-fox-value{background:none;color:var(--muted)}
 @media(prefers-reduced-motion:reduce){.kt-medal-card,.kt-fox-card{transition:none}.kt-medal-card:hover,.kt-fox-card:hover{transform:none}.kt-medal-card.tier-legend.is-earned::after{animation:none;display:none}}
+.kt-fox-main .kt-sec-head{margin-bottom:2px}
+.kt-fox-main>.km-lead{margin:0 0 12px 60px;max-width:78ch}
+.kt-connect-steps{margin:6px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:6px;line-height:1.5}
+.kt-fox-card.is-empty .kt-fox-open{color:var(--kt-brand);font-weight:650}
+
+/* живой статус на листьях карты */
+.km-val-bg{fill:color-mix(in srgb,var(--c) 30%,var(--surface));stroke:color-mix(in srgb,var(--c) 70%,transparent);stroke-width:1}
+.km-val{fill:var(--fg);font-size:11px;font-weight:800;pointer-events:none;font-variant-numeric:tabular-nums}
+.km-node.is-live .km-dot{fill:#4ec28a;animation:km-live 1.8s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+@keyframes km-live{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.6)}}
+@media(prefers-reduced-motion:reduce){.km-node.is-live .km-dot{animation:none}}
