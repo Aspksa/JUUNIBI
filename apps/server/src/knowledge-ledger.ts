@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { analyzeMemoryV4 } from "./memory-v4-engine";
+import { diagnoseKnowledgeGraph } from "./knowledge-graph-diagnostics";
 
 export interface VerifiedKnowledge {
   id: string; topic: string; claim: string; source: string;
@@ -26,6 +27,8 @@ export class KnowledgeLedger {
   }
   list() { return this.items.map(x => ({ ...x })); }
   analyze(query = "") { return analyzeMemoryV4(this.list(), query); }
+  /** Conservative live diagnostics; does not promote or rewrite memories. */
+  diagnostics(at = new Date()) { return diagnoseKnowledgeGraph(this.list(), at); }
   /** Unverified topical suggestions, never factual or causal claims. */
   suggestedLinks() {
     const entries=this.items.filter(x=>x.status==="verified");
