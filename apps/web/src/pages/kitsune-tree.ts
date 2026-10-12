@@ -438,7 +438,7 @@ export function kitsuneTreePage():HTMLElement {
    updatesLoading=false;
    render();
  }).catch(()=>{updatesLoading=false;render();});
- void Promise.allSettled([
+ const loadFox=()=>Promise.allSettled([
    api.modules(),api.brainStatus(),api.achievements(),api.diskLife(),api.organizer(),api.updateStatus(),api.projectStats()
  ]).then(results=>{
    const read=<T,>(index:number):T|undefined=>{
@@ -455,9 +455,13 @@ export function kitsuneTreePage():HTMLElement {
    const updater=read<import("../api").UpdateStatus>(5);if(updater)foxLive.updater=updater;
    const project=read<import("../api").ProjectStatsData>(6);if(project)foxLive.project=project;
    foxLoading=false;
+   const fresh=foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive});
+   foxChanged=foxChangedMetrics(foxKnownNumbers,fresh);
+   foxKnownNumbers=foxVerifiedReadings(fresh);
    foxHistory=recordMetrics(foxHistory,foxMetrics({nodes:nodesOf(),snapshot:foxSnapshot,growth,live:foxLive}),new Date().toISOString().slice(0,10));
    saveHistory(foxHistory);
    if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
+ void loadFox();
  render();return root;
 }
