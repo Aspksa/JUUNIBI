@@ -22,6 +22,7 @@ import { timeFrames, canTravel, frameDiff } from "./kitsune-time";
 import { awardShelf, medalItems, medalSvg, newShelfState, nextMedalTile, openMedal, RING_RADIUS, ringDash, TIER_LABEL, type MedalItem } from "./kitsune-medals";
 import { api } from "../api";
 import { evolutionFromUpdater, evolutionStateLabel, type EvolutionRelease } from "./kitsune-updates";
+import { assessTreeHealth } from "./kitsune-tree-health";
 
 export type { TreeMode };
 export interface TreeNode {
@@ -437,6 +438,25 @@ export function kitsuneTreePage():HTMLElement {
      }))));
    rail.replaceChildren(today,nav);
  }
+ /** Read-only diagnosis of visible manifest branches. Proposed work is never presented as installed. */
+ function openTreeHealth() {
+   const nodes=nodesOf();
+   const health=assessTreeHealth(nodes);
+   const title=(id:string)=>nodes.find(x=>x.id===id)?.title??id;
+   const panel=el("div",{cls:"kt-node-sheet"},
+     el("p",{textContent:"Известно ветвей: "+health.total+" · реализовано по манифесту: "+health.implemented+" · запланировано: "+health.planned}),
+     el("h3",{textContent:"Готовы к следующему этапу: "+health.ready.length}),
+     el("p",{textContent:health.ready.map(title).join(", ")||"Нет ветвей без незавершённых зависимостей"}),
+     el("h3",{textContent:"Ожидают зависимостей: "+health.blocked.length}),
+     ...health.blocked.slice(0,12).map(x=>el("p",{textContent:title(x.id)+" ← "+x.dependencies.map(title).join(", ")})),
+     el("h3",{textContent:"Проблемы связей: "+(health.missing.length+health.cycles.length)}),
+     el("p",{textContent:health.missing.length?"Не найдены зависимости: "+health.missing.map(x=>x.id+" → "+x.dependency).join(", "):"Отсутствующих зависимостей нет"}),
+     el("p",{textContent:health.cycles.length?"Циклы: "+health.cycles.map(x=>x.join(" → ")).join("; "):"Циклов в известных связях нет"}),
+     el("h3",{textContent:"Ключевые ветви по числу прямых зависимых"}),
+     ...health.hotspots.slice(0,5).map(x=>el("p",{textContent:title(x.id)+" · "+x.dependents})),
+     el("p",{cls:"muted",textContent:"Это диагностика манифеста, не подтверждение локальной установки. Древо ничего не меняет автоматически."}));
+   openSheet({title:"Здоровье Лисьего древа",icon:"modules",tone:health.missing.length||health.cycles.length?"warn":"ok",content:panel});
+ }
  /** Обзор леса: главная цифра, три факта и ближайшая награда — над картой, а не в боковой панели. */
  function overviewStrip(metrics:FoxMetric[],medals:MedalItem[]):HTMLElement{
    const availability=metrics.filter(x=>x.value!==null).length;
@@ -446,6 +466,8 @@ export function kitsuneTreePage():HTMLElement {
    const last=evolutionChronology(persistedHistory?.history??[])[0];
    const stat=(name:IconName,value:string,label:string)=>el("div",{cls:"kt-stat"},
      el("span",{cls:"kt-stat-ico",attrs:{"aria-hidden":"true"}},icon(name,18)),el("strong",{textContent:value}),el("small",{textContent:label}));
+   const healthButton=el("button",{cls:"kt-chip kt-mini",textContent:"🌳 Здоровье древа",attrs:{type:"button","aria-label":"Проверить здоровье Лисьего древа"}});
+   healthButton.addEventListener("click",openTreeHealth);
    return el("section",{cls:"kt-overview-strip",attrs:{"aria-label":"Обзор леса"}},
      el("div",{cls:"kt-ov-ring"},miniRing(availability/100,String(availability)),
        el("div",{},el("strong",{textContent:availability+" из 100"}),el("small",{cls:"muted",textContent:foxLoading?"получаем данные…":"показателей подтверждено"}))),
@@ -453,7 +475,7 @@ export function kitsuneTreePage():HTMLElement {
        stat("trophy",earned+" / "+medals.length,"наград"),
        stat("modules",String(all.length-planned)+(planned?" + "+planned:""),planned?"ветвей + план":"ветвей"),
        stat("clock",last?(dateRu(last.at)||"—"):"нет",last?"обновление":"обновлений")),
-     nextMedalTile(medals));
+     nextMedalTile(medals),healthButton);
  }
  function openSection(item:(typeof RAIL_ITEMS)[number]){
    mode=item.mode;if(item.foxView)foxView=item.foxView;
