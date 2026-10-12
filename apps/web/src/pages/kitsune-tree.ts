@@ -582,6 +582,11 @@ export function kitsuneTreePage():HTMLElement {
    });
    if(mode==="fox")render();
  }).catch(()=>{foxLoading=false;if(mode==="fox")render();});
+ void getFoxPulls().then(async prs=>{
+   foxPulls=prs;foxPullsLoading=false;
+   if(mode==="fox")render();
+   if(prs?.length){foxPulls=await refreshFoxChecks(prs);if(mode==="fox")render();}
+ }).catch(()=>{foxPullsLoading=false;if(mode==="fox")render();});
  void loadFox();
  render();return root;
 }
