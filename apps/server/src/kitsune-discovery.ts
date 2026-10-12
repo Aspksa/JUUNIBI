@@ -39,7 +39,7 @@ export function analyzeModuleGraph(files:Record<string,string>, manifestIds:stri
  const modules=keys.map(file=>{
   const base=path.posix.basename(file).replace(/\.(tsx?|jsx?)$/,"");
   const id=base.toLowerCase().replace(/[^a-z0-9-]/g,"-");
-  const candidate=!(manifestIds.includes(id)||manifestIds.some(m=>base.toLowerCase().includes(m)));
+  const candidate=!manifestIds.includes(id);
   return {id,file,imports:resolved.get(file)??[],candidate};
  });
  return {scanned:keys.length,modules,candidates:modules.filter(m=>m.candidate).slice(0,150),cycles:cycles.slice(0,40),
