@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { isWorkday, nextHoliday, prodDay } from "@juunibi/core";
+import { isWorkday } from "@juunibi/core";
 import { OrganizerRepository } from "./organizer-repository";
 import { TaskService } from "./task-service";
 import { ReminderService } from "./reminder-service";
 import { AutomationEngine } from "./automation-engine";
 import { PlanningService } from "./planning-service";
+import { BriefService } from "./brief-service";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -214,10 +215,6 @@ export function alignStart(at: number, repeat: Repeat | undefined, workday: (d: 
 /** Monday to Friday; with the production calendar, holidays are skipped and working Saturdays count. */
 export const weekday = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6;
 const localKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-const dayStart = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
-const hhmm = (t: number) => new Date(t).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-/** A to-do due at 23:59 has a date and no time of its own. */
-const dateOnly = (iso: string) => { const d = new Date(iso); return d.getHours() === 23 && d.getMinutes() === 59; };
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const minsOf = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h! * 60 + m!; };
 const minsNow = (t: number) => { const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
@@ -254,9 +251,6 @@ function cleanAutomation(v: unknown): Automation {
   if (minsOf(a.workFrom) >= minsOf(a.workTo)) { a.workFrom = DEFAULT_AUTOMATION.workFrom; a.workTo = DEFAULT_AUTOMATION.workTo; }
   return a;
 }
-const hoursText = (min: number) => (Math.round(min / 6) / 10).toLocaleString("ru-RU") + " ч";
-const dayWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "день" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "дня" : "дней");
-const timesWord = (n: number) => (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "раза" : "раз");
 const text = (v: unknown, label: string) => {
   if (typeof v !== "string" || !v.trim() || v.trim().length > MAX_TEXT) throw bad(`${label}: от 1 до ${MAX_TEXT} символов`);
   return v.trim();
@@ -299,6 +293,7 @@ export class Organizer {
   private readonly taskService: TaskService;
   private readonly reminderService: ReminderService;
   private readonly automationEngine: AutomationEngine;
+  private readonly briefService: BriefService;
   private readonly planningService: PlanningService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
@@ -314,7 +309,6 @@ export class Organizer {
   private projects: ProjectMeta[] = [];
   private templates: TaskTemplate[] = [];
   private daysOff: DayOff[] = [];
-  private briefing = false;
   /**
    * Writes the morning brief in words (the assistant, when Cloud.ru is configured); returns null to keep the plain one.
    * Set by the server after the assistant is ready.
@@ -364,14 +358,31 @@ export class Organizer {
       isWork: (note) => this.isWork(note),
       record: (kind, note, extra) => this.record(kind, note, extra),
     });
-    this.planningService = new PlanningService({
+    let planning!: PlanningService;
+    this.briefService = new BriefService({
+      getNotes: () => this.notes,
+      replaceNotes: (notes) => { this.notes = notes; },
+      getReminders: () => this.reminders,
+      getAutomation: () => this.automation,
+      getAutoState: () => this.autoState,
+      now: this.now,
+      awayOn: (day) => this.awayOn(day),
+      isWork: (note) => this.isWork(note),
+      dayLoad: (day, now) => planning.dayLoad(day, now),
+      missionBoard: () => this.missionBoard(),
+      addLog: (kind, text, undo) => this.automationEngine.addLog(kind, text, undo),
+      pruneReminders: () => this.reminderService.pruneDone(),
+      save: () => this.save(),
+      getComposer: () => this.composeBrief,
+    });
+    planning = new PlanningService({
       getNotes: () => this.notes,
       getReminders: () => this.reminders,
       getAutomation: () => this.automation,
       getMoveRequests: () => this.moveRequests,
       replaceMoveRequests: (requests) => { this.moveRequests = requests; },
       now: this.now,
-      dayKind: (day) => this.dayKind(day),
+      dayKind: (day) => this.briefService.dayKind(day),
       isWork: (note) => this.isWork(note),
       workday: (date) => this.workday(date),
       workDayFor: (date) => this.workDayFor(date),
@@ -380,6 +391,7 @@ export class Organizer {
       describeNames: (ids) => this.automationEngine.describeNames(ids),
       save: () => this.save(),
     });
+    this.planningService = planning;
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
@@ -641,13 +653,13 @@ export class Organizer {
       await this.save();
     }
 
-    if (a.brief && !this.briefing && this.briefDue(now)) {
+    if (a.brief && this.briefService.shouldRunBrief(now)) {
       await this.runBrief(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Brief", e));
     }
-    if (a.evening && !this.briefing && this.autoState.eveningDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) {
+    if (a.evening && this.briefService.shouldRunEvening(now)) {
       await this.runEvening(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Evening", e));
     }
-    if (a.weekly && !this.briefing && new Date(now).getDay() === 0 && this.autoState.weekDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) {
+    if (a.weekly && this.briefService.shouldRunWeek(now)) {
       await this.runWeek(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Week", e));
     }
     return fired;
@@ -676,208 +688,37 @@ export class Organizer {
   /** «Что сделала автоматика», newest first. */
   listLog(): AutoLogEntry[] { return this.automationEngine.listLog(); }
 
-  private addLog(kind: AutoLogEntry["kind"], text: string, undo?: AutoLogEntry["undo"]) {
-    this.automationEngine.addLog(kind, text, undo);
-  }
-
   /** Takes back one action of the automation: due dates and marks as they were, created reminders and notes removed. */
   undoLog(id: string): Promise<AutoLogEntry> { return this.automationEngine.undoLog(id); }
 
-  /** The brief runs once a day, from its time until 15:00 (a brief at night would be no use). */
-  private briefDue(now: number): boolean {
-    if (this.autoState.briefDay === localKey(now)) return false;
-    const b = minsOf(this.automation.briefTime), mins = minsNow(now);
-    return mins >= b && mins < Math.max(15 * 60, b + 60);
-  }
-  private dayKind(key: string): { work: boolean; short: boolean; label: string; note?: string; away?: DayOff } {
-    const off = this.awayOn(key);
-    if (off) return { work: false, short: false, label: (off.kind === "sick" ? "больничный" : "отпуск") + " до " + new Date(off.to + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" }), away: off };
-    const pd = prodDay(key);
-    const work = pd ? pd.kind === "work" || pd.kind === "short" : weekday(new Date(key + "T12:00"));
-    const label = pd ? (pd.kind === "holiday" ? "праздник" : pd.kind === "off" ? "выходной (перенос)" : pd.kind === "weekend" ? "выходной" : pd.kind === "short" ? "сокращённый рабочий день" : "рабочий день") : work ? "рабочий день" : "выходной";
-    return { work, short: pd?.kind === "short", label, ...(pd?.note ? { note: pd.note } : {}) };
-  }
-  /** Facts for the morning brief, in plain Russian. On a day off it is short and calm. */
+  /** Facts for the morning brief, in plain Russian. */
   briefFacts(now = this.now()): { text: string; short: string } {
-    const a = this.automation, today = localKey(now), start = dayStart(now), end = start + 86_400_000;
-    const dk = this.dayKind(today);
-    const kind = dk.label + (dk.note && dk.label === "праздник" ? ` (${dk.note})` : "");
-    const dayName = new Date(now).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    const open = this.notes.filter((n) => n.kind === "todo" && !n.done);
-    const todays = open.filter((n) => n.dueAt && Date.parse(n.dueAt) >= start && Date.parse(n.dueAt) < end).sort((x, y) => x.dueAt!.localeCompare(y.dueAt!));
-    const overdue = open.filter((n) => n.dueAt && Date.parse(n.dueAt) < start);
-    const rems = this.reminders.filter((r) => r.status === "scheduled" && !r.rule && Date.parse(r.at) >= now && Date.parse(r.at) < end).sort((x, y) => x.at.localeCompare(y.at));
-    const rolled = open.filter((n) => n.rolled && n.dueAt && Date.parse(n.dueAt) >= start && Date.parse(n.dueAt) < end).length;
-    const important = open.filter((n) => n.priority === "high" && !todays.includes(n)).slice(0, 2);
-    const item = (n: Note) => (n.dueAt && !dateOnly(n.dueAt) ? hhmm(Date.parse(n.dueAt)) + " " : "") + n.text;
-    const lines = [dayName[0]!.toUpperCase() + dayName.slice(1) + " — " + kind + "."];
-    // a working day starts with work: meetings, work deadlines and the answers waited for
-    const work = dk.work ? todays.filter(this.isWork) : [];
-    const waiting = dk.work ? open.filter((n) => n.status === "waiting" && this.isWork(n)) : [];
-    if (work.length || waiting.length) {
-      const meet = work.filter((n) => n.meeting && !dateOnly(n.dueAt!));
-      const due = work.filter((n) => !meet.includes(n));
-      const span = (n: Note) => hhmm(Date.parse(n.dueAt!)) + (n.estimateMinutes ? "–" + hhmm(Date.parse(n.dueAt!) + n.estimateMinutes * 60_000) : "");
-      const parts = [
-        meet.length ? "встречи: " + meet.slice(0, 4).map((n) => span(n) + " " + n.text).join("; ") : "",
-        due.length ? "сроки: " + due.slice(0, 4).map(item).join("; ") : "",
-        waiting.length ? `жду ответа: ${waiting.length} (` + waiting.slice(0, 2).map((n) => (n.waitingFor ? n.waitingFor + " — " : "") + n.text).join("; ") + ")" : "",
-      ].filter(Boolean);
-      lines.push("Работа: " + parts.join("; ") + ".");
-    }
-    const rest = work.length ? todays.filter((n) => !work.includes(n)) : todays;
-    if (!work.length || rest.length) lines.push(rest.length ? `${work.length ? "Личные дела" : "Дела"} на сегодня (${rest.length}): ` + rest.slice(0, 5).map(item).join("; ") + (rest.length > 5 ? "…" : ".") : dk.work ? "На сегодня дел со сроком нет." : "Дел на сегодня нет.");
-    if (rolled) lines.push(`Из них перенесено со вчера: ${rolled}.`);
-    if (overdue.length) lines.push(dk.work ? `Просрочено: ${overdue.length} (${overdue.slice(0, 3).map((n) => n.text).join("; ")}).` : `Просрочено: ${overdue.length}.`);
-    if (rems.length) lines.push("Напоминания: " + rems.slice(0, 4).map((r) => hhmm(Date.parse(r.at)) + " " + r.text).join("; ") + ".");
-    if (dk.work) {
-      if (important.length) lines.push("Важное без срока на сегодня: " + important.map((n) => n.text).join("; ") + ".");
-      const load = this.dayLoad(today, now);
-      if (load.over) lines.push(`День перегружен: дел примерно на ${hoursText(load.planned)} при ${hoursText(load.capacity)} свободных.`);
-    }
-    if (a.stuckAfter) {
-      const stuck = open.filter((n) => (n.rolled ?? 0) >= a.stuckAfter).slice(0, 2);
-      if (stuck.length) lines.push("Застряло: " + stuck.map((n) => `«${n.text}» (перенесено ${n.rolled} ${timesWord(n.rolled!)})`).join("; ") + ". Может, разбить на шаги или убрать?");
-    }
-    if (a.streaks) {
-      const s = todays.filter((n) => n.repeat && (n.streak ?? 0) >= 3).slice(0, 2);
-      if (s.length) lines.push("Серии: " + s.map((n) => `«${n.text}» ${n.streak} подряд`).join("; ") + ", не прервите.");
-    }
-    if (a.goalNudge && dk.work) {
-      const g = this.missionBoard().filter((m) => m.status === "active" && m.idleDays >= a.goalNudge && m.next).slice(0, 1);
-      for (const m of g) lines.push(`Цель «${m.title}» стоит ${m.idleDays} ${dayWord(m.idleDays)}. Следующий шаг: ${m.next!.text}.`);
-    }
-    if (a.holidayWarn) { const w = this.tomorrowWarning(now); if (w) lines.push(w); }
-    if (!dk.work) lines.push(...this.dayOffAhead(now));
-    const text = lines.join("\n").slice(0, MAX_AUTO_TEXT);
-    const short = `Сегодня ${todays.length ? "дел: " + todays.length : "дел со сроком нет"}` + (overdue.length ? `, просрочено: ${overdue.length}` : "") + (rems.length ? `, напоминаний: ${rems.length}` : "") + ` · ${kind}`;
-    return { text, short };
+    return this.briefService.briefFacts(now);
   }
-  /** On a day off, a look ahead instead of «можно отдохнуть»: the next working day, a goal's next step, the next holiday. */
-  private dayOffAhead(now: number): string[] {
-    const out: string[] = [];
-    let d = dayStart(now) + 86_400_000 + 3_600_000;
-    for (let i = 0; i < 14 && !this.dayKind(localKey(d)).work; i++) d += 86_400_000;
-    const key = localKey(d);
-    const todos = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localKey(Date.parse(n.dueAt)) === key).sort((x, y) => x.dueAt!.localeCompare(y.dueAt!));
-    const when = key === localKey(dayStart(now) + 86_400_000 + 3_600_000) ? "завтра" : new Date(d).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    out.push(`Следующий рабочий день — ${when}: ` + (todos.length ? `дел ${todos.length}, первое — ${todos[0]!.text}.` : "дел со сроком пока нет."));
-    const g = this.missionBoard().find((m) => m.status === "active" && m.next);
-    if (g) out.push(`Цель «${g.title}»: следующий шаг — ${g.next!.text}.`);
-    const h = nextHoliday(localKey(now), 60);
-    if (h) out.push(`Ближайший праздник: ${new Date(h.key + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}, ${h.note}, через ${h.days} ${dayWord(h.days)}.`);
-    return out;
-  }
-  /** «Завтра праздник…» when tomorrow is a holiday, a moved day off or a short day; null otherwise. */
+
+  /** «Завтра праздник…» when tomorrow is a holiday, moved day off or short day. */
   tomorrowWarning(now = this.now()): string | null {
-    const end = dayStart(now) + 86_400_000, key = localKey(end + 3_600_000);
-    const pd = prodDay(key);
-    if (!pd || (pd.kind !== "holiday" && pd.kind !== "off" && pd.kind !== "short")) return null;
-    const due = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localKey(Date.parse(n.dueAt)) === key).length;
-    if (pd.kind === "short") return "Завтра сокращённый рабочий день, на час короче." + (due ? ` На него назначено дел: ${due}.` : "");
-    return `Завтра ${pd.kind === "holiday" ? "праздник" + (pd.note ? ` (${pd.note})` : "") : "выходной (перенос)"}.` + (due ? ` На него назначено дел: ${due}, их можно сдвинуть на рабочий день.` : "");
+    return this.briefService.tomorrowWarning(now);
   }
-  /** Writes an automatic note (replacing the previous one of its kind) and, unless asked for by hand, rings once. */
-  private async writeAuto(kind: AutoNote, body: string, ring: string, now: number, force: boolean): Promise<Note> {
-    this.notes = this.notes.filter((n) => n.auto !== kind);
-    const note: Note = { id: randomUUID(), kind: "note", text: body.slice(0, MAX_AUTO_TEXT), done: false, createdAt: new Date(now).toISOString(), auto: kind };
-    this.notes.push(note);
-    const stamp = new Date(now).toISOString();
-    // yesterday's «Итог дня» nobody pressed «Готово» on is out of date once today's rings
-    if (!force) for (const r of this.reminders) if (r.source === kind && r.status === "due") r.status = "done";
-    if (!force) this.reminders.push({ id: randomUUID(), text: ring.slice(0, MAX_TEXT), at: stamp, createdAt: stamp, status: "due", firedAt: stamp, source: kind });
-    const what = kind === "brief" ? "утреннюю сводку" : kind === "evening" ? "итог дня" : "обзор недели";
-    if (!force) this.addLog(kind, "Составила " + what, { created: [note.id] });
-    this.reminderService.pruneDone();
-    await this.save();
-    return { ...note };
+
+  runBrief(now = this.now(), force = false): Promise<Note | null> {
+    return this.briefService.runBrief(now, force);
   }
-  /** Writes the morning brief note (replacing yesterday's) and announces it. `force` runs it again today. */
-  async runBrief(now = this.now(), force = false): Promise<Note | null> {
-    if (this.briefing || (!force && this.autoState.briefDay === localKey(now))) return null;
-    this.briefing = true;
-    try {
-      this.autoState.briefDay = localKey(now);
-      const facts = this.briefFacts(now);
-      // the date and the kind of day are in the page's header already: the brief starts with what matters
-      let body = facts.text.split("\n").slice(1).join("\n") || facts.text;
-      if (this.composeBrief) {
-        const words = await Promise.race([this.composeBrief(facts.text).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 25_000))]);
-        if (words && words.trim()) body = words.trim().slice(0, MAX_AUTO_TEXT);
-      }
-      // the morning one also rings; one asked for by hand is just shown
-      return await this.writeAuto("brief", body, "Утренняя сводка. " + facts.short, now, force);
-    } finally { this.briefing = false; }
-  }
-  /** Facts for the evening: done today, what is left, and what tomorrow brings. */
+
   eveningFacts(now = this.now()): { text: string; short: string; left: number } {
-    const start = dayStart(now), end = start + 86_400_000, tKey = localKey(end + 3_600_000);
-    const done = this.notes.filter((n) => n.kind === "todo" && n.done && n.completedAt && Date.parse(n.completedAt) >= start && Date.parse(n.completedAt) < end);
-    const left = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && Date.parse(n.dueAt) < end);
-    const tomorrow = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localKey(Date.parse(n.dueAt)) === tKey).sort((x, y) => x.dueAt!.localeCompare(y.dueAt!));
-    const rems = this.reminders.filter((r) => r.status === "scheduled" && !r.rule && localKey(Date.parse(r.at)) === tKey);
-    const dayName = new Date(now).toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
-    // «…» already ends the sentence, so no full stop after it
-    const list = (xs: Note[]) => xs.slice(0, 4).map((n) => n.text).join("; ") + (xs.length > 4 ? "…" : "");
-    const stop = (x: string) => (x.endsWith("…") ? x : x + ".");
-    const lines = [`Итог дня: ${dayName}.`];
-    lines.push(done.length ? stop(`Сделано: ${done.length} — ${list(done)}`) : "Сегодня ничего не отмечено сделанным.");
-    if (left.length) lines.push(stop(`Не успели: ${left.length} — ${list(left)}`) + " Их можно перенести на завтра одной кнопкой.");
-    else if (done.length) lines.push("Всё, что было на сегодня, сделано. Отличный день!");
-    const tk = this.dayKind(tKey);
-    lines.push(stop(`Завтра ${tk.label}: ` + (tomorrow.length ? `дел ${tomorrow.length} — ${list(tomorrow)}` : "дел со сроком пока нет") + (rems.length ? `, напоминаний: ${rems.length}` : "")));
-    if (this.automation.holidayWarn) { const w = this.tomorrowWarning(now); if (w && !w.startsWith("Завтра праздник") && !w.startsWith("Завтра выходной")) lines.push(w); }
-    const short = `Сделано: ${done.length}` + (left.length ? `, не успели: ${left.length}` : "") + `. Завтра дел: ${tomorrow.length}`;
-    return { text: lines.join("\n"), short, left: left.length };
+    return this.briefService.eveningFacts(now);
   }
-  async runEvening(now = this.now(), force = false): Promise<Note | null> {
-    if (this.briefing || (!force && this.autoState.eveningDay === localKey(now))) return null;
-    this.autoState.eveningDay = localKey(now);
-    const f = this.eveningFacts(now);
-    return this.writeAuto("evening", f.text, "Итог дня. " + f.short, now, force);
+
+  runEvening(now = this.now(), force = false): Promise<Note | null> {
+    return this.briefService.runEvening(now, force);
   }
-  /** The week that ends today (seven days): what was done, what got stuck, how the goals moved, what is next. */
+
   weekFacts(now = this.now()): { text: string; short: string } {
-    const end = dayStart(now) + 86_400_000, start = end - 7 * 86_400_000;
-    const todos = this.notes.filter((n) => n.kind === "todo");
-    const done = todos.filter((n) => n.done && n.completedAt && Date.parse(n.completedAt) >= start && Date.parse(n.completedAt) < end);
-    const byDay = new Map<string, number>();
-    for (const n of done) { const k = new Date(n.completedAt!).toLocaleDateString("ru-RU", { weekday: "long" }); byDay.set(k, (byDay.get(k) ?? 0) + 1); }
-    const best = [...byDay].sort((x, y) => y[1] - x[1])[0];
-    const open = todos.filter((n) => !n.done);
-    const stuck = open.filter((n) => (n.rolled ?? 0) >= Math.max(2, this.automation.stuckAfter || 3));
-    const overdue = open.filter((n) => n.dueAt && Date.parse(n.dueAt) < end - 86_400_000);
-    const next = open.filter((n) => n.dueAt && Date.parse(n.dueAt) >= end && Date.parse(n.dueAt) < end + 7 * 86_400_000);
-    const nextBy = new Map<string, number>();
-    for (const n of next) { const k = new Date(n.dueAt!).toLocaleDateString("ru-RU", { weekday: "long" }); nextBy.set(k, (nextBy.get(k) ?? 0) + 1); }
-    const busiest = [...nextBy].sort((x, y) => y[1] - x[1])[0];
-    const goals = this.missionBoard().filter((m) => m.status === "active");
-    const from = new Date(start).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }), to = new Date(end - 1).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-    const lines = [`Обзор недели: ${from} — ${to}.`];
-    lines.push(done.length ? `Сделано дел: ${done.length}` + (best && best[1] > 1 ? `, больше всего — ${best[0]} (${best[1]})` : "") + "." : "За неделю ничего не отмечено сделанным.");
-    if (stuck.length) lines.push(`Застряло: ${stuck.slice(0, 3).map((n) => `«${n.text}»`).join(", ")}. Стоит разбить на шаги или убрать.`);
-    if (overdue.length) lines.push(`Просрочено: ${overdue.length}.`);
-    for (const m of goals.slice(0, 3)) {
-      const moved = m.stages.filter((s) => { const n = this.notes.find((x) => x.id === s.id); return n?.completedAt && Date.parse(n.completedAt) >= start; }).length;
-      lines.push(`Цель «${m.title}»: ${m.percent}%` + (moved ? `, за неделю шагов: ${moved}` : ", за неделю не двигалась") + ".");
-    }
-    if (this.automation.streaks) {
-      const s = open.filter((n) => n.repeat && (n.streak ?? 0) >= 3).sort((x, y) => (y.streak ?? 0) - (x.streak ?? 0))[0];
-      if (s) lines.push(`Лучшая серия: «${s.text}» — ${s.streak} подряд.`);
-    }
-    const work = todos.filter((n) => this.isWork(n) && n.dueAt && Date.parse(n.dueAt) >= start && Date.parse(n.dueAt) < end);
-    if (work.length) {
-      const mins = (xs: Note[]) => xs.reduce((sum, n) => sum + (n.estimateMinutes ?? 30), 0);
-      lines.push(`Рабочие часы: запланировано ${hoursText(mins(work))}, сделано ${hoursText(mins(work.filter((n) => n.done)))}.`);
-    }
-    lines.push(next.length ? `На следующую неделю дел: ${next.length}` + (busiest && busiest[1] > 1 ? `, самый загруженный день — ${busiest[0]} (${busiest[1]})` : "") + "." : "На следующую неделю дел со сроком пока нет.");
-    return { text: lines.join("\n"), short: `Сделано за неделю: ${done.length}` + (stuck.length ? `, застряло: ${stuck.length}` : "") };
+    return this.briefService.weekFacts(now);
   }
-  async runWeek(now = this.now(), force = false): Promise<Note | null> {
-    if (this.briefing || (!force && this.autoState.weekDay === localKey(now))) return null;
-    this.autoState.weekDay = localKey(now);
-    const f = this.weekFacts(now);
-    return this.writeAuto("week", f.text, "Обзор недели. " + f.short, now, force);
+
+  runWeek(now = this.now(), force = false): Promise<Note | null> {
+    return this.briefService.runWeek(now, force);
   }
 
   /** How full a day is: task minutes against configured capacity. */
