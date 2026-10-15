@@ -74,7 +74,7 @@ export class SmartPriorityService {
   constructor(private readonly options: SmartPriorityServiceOptions) {}
 
   rank(limit = 5, now = this.options.now()): SmartPriorityResult {
-    const max = Number.isInteger(limit) ? Math.min(10, Math.max(1, limit)) : 5;
+    const max = Number.isInteger(limit) ? Math.min(100, Math.max(1, limit)) : 5;
     const notes = this.options.getNotes();
     const open = notes.filter((note) => note.kind === "todo" && !note.done);
     const missions = this.options.getMissions();
