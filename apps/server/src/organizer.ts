@@ -3,6 +3,7 @@ import { isWorkday, nextHoliday, prodDay } from "@juunibi/core";
 import { OrganizerRepository } from "./organizer-repository";
 import { TaskService } from "./task-service";
 import { ReminderService } from "./reminder-service";
+import { AutomationEngine } from "./automation-engine";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -255,7 +256,6 @@ function cleanAutomation(v: unknown): Automation {
 const hoursText = (min: number) => (Math.round(min / 6) / 10).toLocaleString("ru-RU") + " ч";
 const dayWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "день" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "дня" : "дней");
 const timesWord = (n: number) => (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "раза" : "раз");
-const ruleBefore = (m: number) => (m === 1440 ? "сутки" : m >= 60 ? m / 60 + " ч" : m + " мин");
 const text = (v: unknown, label: string) => {
   if (typeof v !== "string" || !v.trim() || v.trim().length > MAX_TEXT) throw bad(`${label}: от 1 до ${MAX_TEXT} символов`);
   return v.trim();
@@ -297,6 +297,7 @@ export class Organizer {
   private readonly repository: OrganizerRepository;
   private readonly taskService: TaskService;
   private readonly reminderService: ReminderService;
+  private readonly automationEngine: AutomationEngine;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
@@ -341,6 +342,25 @@ export class Organizer {
       alignStart,
       nextOccurrence,
       inQuiet,
+    });
+    this.automationEngine = new AutomationEngine({
+      getNotes: () => this.notes,
+      replaceNotes: (notes) => { this.notes = notes; },
+      getReminders: () => this.reminders,
+      replaceReminders: (reminders) => { this.reminders = reminders; },
+      getAutomation: () => this.automation,
+      getAutoState: () => this.autoState,
+      getLog: () => this.log,
+      replaceLog: (log) => { this.log = log; },
+      getAutoCount: () => this.autoCount,
+      getHistory: () => this.history,
+      save: () => this.save(),
+      now: this.now,
+      isQuiet: (now) => this.isQuiet(now),
+      awayOn: (day) => this.awayOn(day),
+      workDayFor: (date) => this.workDayFor(date),
+      isWork: (note) => this.isWork(note),
+      record: (kind, note, extra) => this.record(kind, note, extra),
     });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
@@ -388,7 +408,7 @@ export class Organizer {
 
   /** «Дела и достижения» read the whole story: events oldest first, and how often the automation did each thing. */
   listHistory(): TaskEvent[] { return this.history.map((e) => ({ ...e })); }
-  autoCounts(): Partial<Record<AutoLogEntry["kind"], number>> { return { ...this.autoCount }; }
+  autoCounts(): Partial<Record<AutoLogEntry["kind"], number>> { return this.automationEngine.counts(); }
   listMissions(): Mission[] { return this.missions.map((m) => ({ ...m })); }
   private record(kind: TaskEvent["kind"], n: Note, extra: Partial<TaskEvent> = {}) {
     if (n.auto) return;
@@ -622,10 +642,10 @@ export class Organizer {
     let changed = reminderTick.changed;
 
     if (reminderTick.releasedFromQuiet) {
-      this.addLog("quiet", `Тихие часы: придержала напоминаний до утра: ${reminderTick.releasedFromQuiet}`);
+      this.automationEngine.addLog("quiet", `Тихие часы: придержала напоминаний до утра: ${reminderTick.releasedFromQuiet}`);
     }
 
-    changed = this.automate(now, fired) || changed;
+    changed = this.automationEngine.run(now, fired) || changed;
     if (fired.length || changed) {
       this.reminderService.pruneDone();
       await this.save();
@@ -661,157 +681,17 @@ export class Organizer {
   isQuiet(now = this.now()): boolean { const a = this.automation; return a.quiet && inQuiet(now, a.quietFrom, a.quietTo); }
 
   /** Brain evidence: deterministic audit metrics, not a claim of model training. */
-  automationEvidence() {
-    const active = this.log.filter(e => !e.undone);
-    const undone = this.log.filter(e => e.undone);
-    const automaticMoves = this.history.filter(h => h.kind === "move" && h.auto);
-    const totals = { logged:this.log.length, active:active.length, undone:undone.length,
-      automaticMoves:automaticMoves.length, taskCompletion:this.notes.filter(n=>n.kind==="todo"&&n.done).length };
-    const warnings: string[] = [];
-    if (this.automation.rollOverdue) warnings.push("Автоперенос включён: просроченные сроки могут меняться без отдельного подтверждения");
-    const frequent = this.notes.filter(n=>n.kind==="todo"&&!n.done&&(n.rolled??0)>=3);
-    if (frequent.length) warnings.push("Дела с тремя и более переносами: "+frequent.length);
-    return { totals, permissions: { rollOverdue:this.automation.rollOverdue, reminders:this.automation.dueReminder!=="off",
-      brief:this.automation.brief, rules:this.automation.rules.length },
-      warnings, evidence:"task-history-and-automation-log", advisoryOnly:true as const };
-  }
+  automationEvidence() { return this.automationEngine.evidence(); }
+
   /** «Что сделала автоматика», newest first. */
-  listLog(): AutoLogEntry[] { return this.log.map((e) => ({ ...e })).reverse(); }
+  listLog(): AutoLogEntry[] { return this.automationEngine.listLog(); }
+
   private addLog(kind: AutoLogEntry["kind"], text: string, undo?: AutoLogEntry["undo"]) {
-    this.log.push({ id: randomUUID(), at: new Date(this.now()).toISOString(), kind, text: text.slice(0, 300), ...(undo ? { undo } : {}) });
-    this.autoCount[kind] = (this.autoCount[kind] ?? 0) + 1;
-    if (this.log.length > MAX_LOG) this.log = this.log.slice(-MAX_LOG);
-  }
-  /** Takes back one action of the automation: due dates and marks as they were, created reminders and notes removed. */
-  async undoLog(id: string): Promise<AutoLogEntry> {
-    const e = this.log.find((x) => x.id === id);
-    if (!e) throw bad("Запись журнала не найдена", 404);
-    if (e.undone) throw bad("Уже отменено", 409);
-    if (!e.undo) throw bad("Это действие нельзя отменить", 409);
-    // All-or-nothing: do not overwrite changes the owner made after an automatic move.
-    for (const u of e.undo.notes ?? []) {
-      const n = this.notes.find((x) => x.id === u.id);
-      if (!n || n.done || (u.expectedDueAt !== undefined && (n.dueAt ?? null) !== u.expectedDueAt)) throw bad("Отмена невозможна: дело изменено после действия. Проверьте его вручную.", 409);
-    }
-    for (const u of e.undo.notes ?? []) {
-      const n = this.notes.find((x) => x.id === u.id);
-      if (!n || n.done) continue;
-      if (u.dueAt === null) delete n.dueAt; else n.dueAt = u.dueAt;
-      if (u.rolled === null) delete n.rolled; else n.rolled = u.rolled;
-      if (u.priority !== undefined) { if (u.priority === null) delete n.priority; else n.priority = u.priority; }
-      delete n.remindedFor;
-    }
-    const drop = new Set([...(e.undo.reminders ?? [])]);
-    this.reminders = this.reminders.filter((r) => !drop.has(r.id));
-    const gone = new Set(e.undo.created ?? []);
-    this.notes = this.notes.filter((n) => !gone.has(n.id));
-    e.undone = true;
-    await this.save();
-    return { ...e };
+    this.automationEngine.addLog(kind, text, undo);
   }
 
-  /** Overdue roll-over, "срок скоро" reminders and the owner's rules; returns whether anything changed. Fired reminders go into `fired`. */
-  private automate(now: number, fired: Reminder[]): boolean {
-    const a = this.automation, today = localKey(now), start = dayStart(now);
-    let changed = false;
-    if (a.rollOverdue && this.autoState.rollDay !== today) {
-      this.autoState.rollDay = today; changed = true;
-      const undo: NonNullable<AutoLogEntry["undo"]>["notes"] = [];
-      const away = this.awayOn(today);
-      // on a vacation day a work to-do goes to the first working day after it instead of today
-      let back = start;
-      if (away) { const b = new Date(start + 12 * 3_600_000); for (let i = 0; i < 400 && !this.workDayFor(b); i++) b.setDate(b.getDate() + 1); back = dayStart(b.getTime()); }
-      for (const n of this.notes) {
-        if (n.kind !== "todo" || n.done || !n.dueAt || Date.parse(n.dueAt) >= start) continue;
-        undo.push({ id: n.id, dueAt: n.dueAt, rolled: n.rolled ?? null });
-        const d = new Date(n.dueAt), t = new Date(away && this.isWork(n) ? back : start);
-        t.setHours(d.getHours(), d.getMinutes(), 0, 0);
-        // a time that is already behind us today (rolled at 10:00 for 08:00) becomes the end of today
-        const was = n.dueAt;
-        n.dueAt = (t.getTime() < now ? new Date(start + (23 * 60 + 59) * 60_000) : t).toISOString();
-        n.rolled = (n.rolled ?? 0) + 1;
-        undo[undo.length - 1]!.expectedDueAt = n.dueAt;
-        this.record("move", n, { from: was, to: n.dueAt, auto: true });
-        if (n.repeat) n.streak = 0; // a missed repeating to-do breaks its streak
-        delete n.remindedFor;
-      }
-      if (undo.length) this.addLog("roll", `Перенесла на сегодня просроченные (${undo.length}): ` + this.names(undo.map((u) => u.id)), { notes: undo });
-    }
-    if (a.dueReminder !== "off" && !this.isQuiet(now)) {
-      for (const n of this.notes) {
-        if (n.kind !== "todo" || n.done || !n.dueAt || dateOnly(n.dueAt) || n.remindedFor === n.dueAt) continue;
-        const due = Date.parse(n.dueAt);
-        const at = a.dueReminder === "morning" ? dayStart(due) + minsOf(a.briefTime) * 60_000 : due - Number(a.dueReminder) * 60_000;
-        if (now < at) continue;
-        n.remindedFor = n.dueAt; changed = true;
-        if (now > due) continue; // created or edited after its time: nothing to warn about
-        const when = localKey(due) === today ? "в " + hhmm(due) : new Date(due).toLocaleDateString("ru-RU", { day: "numeric", month: "long" }) + " в " + hhmm(due);
-        const r: Reminder = { id: randomUUID(), text: `Срок ${when}: ${n.text}`.slice(0, MAX_TEXT), at: new Date(now).toISOString(), createdAt: new Date(now).toISOString(), status: "due", firedAt: new Date(now).toISOString(), source: n.id };
-        this.reminders.push(r);
-        fired.push({ ...r });
-        this.addLog("remind", "Напомнила о сроке: " + n.text, { reminders: [r.id] });
-      }
-    }
-    // «Жду ответа»: one reminder to ask again at the chosen moment
-    if (!this.isQuiet(now)) for (const n of this.notes) {
-      if (n.kind !== "todo" || n.done || n.status !== "waiting" || !n.followUpAt || n.followedUp === n.followUpAt || Date.parse(n.followUpAt) > now) continue;
-      n.followedUp = n.followUpAt; changed = true;
-      const r: Reminder = { id: randomUUID(), text: (`Спросить${n.waitingFor ? " у " + n.waitingFor : ""}: ${n.text}`).slice(0, MAX_TEXT), at: new Date(now).toISOString(), createdAt: new Date(now).toISOString(), status: "due", firedAt: new Date(now).toISOString(), source: n.id };
-      this.reminders.push(r);
-      fired.push({ ...r });
-      this.addLog("remind", "Напомнила спросить ответ: " + n.text, { reminders: [r.id] });
-    }
-    if (a.rules.length && this.applyRules(now)) changed = true;
-    return changed;
-  }
-  private names(ids: string[]): string {
-    const t = ids.map((id) => this.notes.find((n) => n.id === id)?.text).filter(Boolean) as string[];
-    return t.slice(0, 3).map((x) => "«" + x.slice(0, 40) + "»").join(", ") + (t.length > 3 ? ` и ещё ${t.length - 3}` : "");
-  }
-  /** Does the rule fit this to-do? */
-  private ruleMatches(r: AutoRule, n: Note): boolean {
-    const v = r.value.toLowerCase();
-    if (r.match === "important") return n.priority === "high";
-    if (r.match === "tag") return n.project?.toLowerCase() === v || n.text.toLowerCase().includes("#" + v);
-    return n.text.toLowerCase().includes(v);
-  }
-  /** Runs each rule once per to-do and due date. */
-  private applyRules(now: number): boolean {
-    let changed = false;
-    for (const n of this.notes) {
-      if (n.kind !== "todo" || n.done) continue;
-      for (const rule of this.automation.rules) {
-        const key = `${rule.id}@${n.dueAt ?? ""}`;
-        if (n.ruled?.includes(key) || !this.ruleMatches(rule, n)) continue;
-        n.ruled = [...(n.ruled ?? []).filter((x) => !x.startsWith(rule.id + "@")), key].slice(-20);
-        changed = true;
-        if (rule.action === "important") {
-          if (n.priority === "high") continue;
-          this.addLog("rule", "Правило: отметила важным " + n.text, { notes: [{ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null, priority: n.priority ?? null }] });
-          n.priority = "high";
-          continue;
-        }
-        let at: number;
-        if (rule.action === "before") {
-          if (!n.dueAt || dateOnly(n.dueAt)) continue;
-          at = Date.parse(n.dueAt) - rule.minutes! * 60_000;
-        } else {
-          const d = new Date(now), [h, m] = rule.time!.split(":").map(Number);
-          d.setHours(h!, m!, 0, 0);
-          while (d.getDay() !== rule.weekday || d.getTime() <= now) d.setDate(d.getDate() + 1);
-          at = d.getTime();
-        }
-        if (at <= now || this.reminders.filter((r) => r.status !== "done").length >= MAX_REMINDERS) continue;
-        // the rule's reminder for an earlier due date is replaced
-        this.reminders = this.reminders.filter((r) => !(r.rule === rule.id && r.source === n.id && r.status === "scheduled"));
-        const label = rule.action === "before" ? `Через ${ruleBefore(rule.minutes!)} срок: ` : "";
-        const r: Reminder = { id: randomUUID(), text: (label + n.text).slice(0, MAX_TEXT), at: new Date(at).toISOString(), createdAt: new Date(now).toISOString(), status: "scheduled", source: n.id, rule: rule.id };
-        this.reminders.push(r);
-        this.addLog("rule", `Правило: напомню ${new Date(at).toLocaleString("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} — ${n.text}`, { reminders: [r.id] });
-      }
-    }
-    return changed;
-  }
+  /** Takes back one action of the automation: due dates and marks as they were, created reminders and notes removed. */
+  undoLog(id: string): Promise<AutoLogEntry> { return this.automationEngine.undoLog(id); }
 
   /** The brief runs once a day, from its time until 15:00 (a brief at night would be no use). */
   private briefDue(now: number): boolean {
@@ -1118,7 +998,7 @@ export class Organizer {
     }
     if (!out.length) throw bad("Нечего переносить", 409);
     const where = to === "tomorrow" ? "на завтра" : to === "workday" ? "на рабочий день" : "на " + new Date(toDay + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-    this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.names(out.map((n) => n.id)), { notes: undo });
+    this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.automationEngine.describeNames(out.map((n) => n.id)), { notes: undo });
     if (requestId) this.moveRequests = [...this.moveRequests, requestId].slice(-200);
     await this.save();
     return out;
