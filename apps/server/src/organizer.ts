@@ -4,6 +4,7 @@ import { OrganizerRepository } from "./organizer-repository";
 import { TaskService } from "./task-service";
 import { ReminderService } from "./reminder-service";
 import { AutomationEngine } from "./automation-engine";
+import { PlanningService } from "./planning-service";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -298,6 +299,7 @@ export class Organizer {
   private readonly taskService: TaskService;
   private readonly reminderService: ReminderService;
   private readonly automationEngine: AutomationEngine;
+  private readonly planningService: PlanningService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
@@ -361,6 +363,22 @@ export class Organizer {
       workDayFor: (date) => this.workDayFor(date),
       isWork: (note) => this.isWork(note),
       record: (kind, note, extra) => this.record(kind, note, extra),
+    });
+    this.planningService = new PlanningService({
+      getNotes: () => this.notes,
+      getReminders: () => this.reminders,
+      getAutomation: () => this.automation,
+      getMoveRequests: () => this.moveRequests,
+      replaceMoveRequests: (requests) => { this.moveRequests = requests; },
+      now: this.now,
+      dayKind: (day) => this.dayKind(day),
+      isWork: (note) => this.isWork(note),
+      workday: (date) => this.workday(date),
+      workDayFor: (date) => this.workDayFor(date),
+      record: (kind, note, extra) => this.record(kind, note, extra),
+      addLog: (kind, text, undo) => this.automationEngine.addLog(kind, text, undo),
+      describeNames: (ids) => this.automationEngine.describeNames(ids),
+      save: () => this.save(),
     });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
@@ -552,18 +570,8 @@ export class Organizer {
   }
 
   /** Advisory only: never modifies tasks or schedules. */
-  planToday(now = this.now()) {
-    const start = new Date(now); start.setHours(0,0,0,0);
-    const end = new Date(start); end.setDate(end.getDate()+1);
-    const open = this.notes.filter(n=>n.kind==="todo"&&!n.done);
-    const due = (n: Note) => n.dueAt ? Date.parse(n.dueAt) : Infinity;
-    const score = (n: Note) => (n.priority==="high"?30:n.priority==="low"?0:10) + (due(n)<now?50:due(n)<end.getTime()?35:0);
-    const ordered = [...open].sort((a,b)=>score(b)-score(a)||due(a)-due(b)||a.createdAt.localeCompare(b.createdAt));
-    return { generatedAt:new Date(now).toISOString(), total:open.length, overdue:open.filter(n=>due(n)<now).length,
-      estimatedMinutes:open.reduce((sum,n)=>sum+(n.estimateMinutes??0),0),
-      suggested:ordered.slice(0,10).map(n=>({id:n.id,text:n.text,score:score(n),reason:due(n)<now?"Просрочено":due(n)<end.getTime()?"Срок сегодня":n.priority==="high"?"Высокий приоритет":"Очередь задач"})),
-      advisoryOnly:true as const };
-  }
+  planToday(now = this.now()) { return this.planningService.planToday(now); }
+
   /** Calendar, statistics and deterministic Brain-compatible recommendations: no network, no side effects. */
   insights(month: string, now = this.now()) {
     if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month)) throw bad("Месяц: YYYY-MM");
@@ -605,27 +613,9 @@ export class Organizer {
     return this.reminderService.snooze(id, minutes);
   }
 
-  /** Suggest a finite working-day schedule without modifying the task list or promising external calendar availability. */
+  /** Suggest a finite working-day schedule without modifying tasks or schedules. */
   timeBlocks(day: string, startHour = 9, endHour = 18) {
-    if (!/^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(day)) throw bad("День: YYYY-MM-DD");
-    const d = new Date(day + "T12:00:00");
-    if (Number.isNaN(d.getTime()) || [d.getFullYear(), d.getMonth()+1, d.getDate()].join("-") !== day.split("-").map(Number).join("-")) throw bad("Недопустимая дата");
-    if (!Number.isInteger(startHour) || !Number.isInteger(endHour) || startHour < 0 || endHour > 24 || endHour <= startHour) throw bad("Неверные рабочие часы");
-    const minutes = (endHour-startHour)*60;
-    const tasks = this.notes.filter(n=>n.kind==="todo"&&!n.done && !n.parentId);
-    const ordered = [...tasks].sort((a,b)=>(b.priority==="high"?2:b.priority==="normal"?1:0)-(a.priority==="high"?2:a.priority==="normal"?1:0) || (a.dueAt??"9999").localeCompare(b.dueAt??"9999"));
-    let used = 0;
-    const blocks: { id:string; text:string; start:string; end:string; minutes:number }[] = [];
-    for (const task of ordered) {
-      const duration = task.estimateMinutes ?? 30;
-      if (used + duration > minutes) continue;
-      const from = new Date(d); from.setHours(startHour, used, 0, 0);
-      const to = new Date(from.getTime()+duration*60_000);
-      blocks.push({id:task.id,text:task.text,start:from.toISOString(),end:to.toISOString(),minutes:duration});
-      used += duration;
-    }
-    return {day, workingMinutes:minutes, plannedMinutes:used, remainingMinutes:minutes-used, blocks,
-      note:"Предложение по задачам; занятость внешнего календаря не проверялась", advisoryOnly:true as const};
+    return this.planningService.timeBlocks(day, startHour, endHour);
   }
   dismissReminder(id: string): Promise<Reminder> { return this.reminderService.dismiss(id); }
   removeReminder(id: string): Promise<void> { return this.reminderService.remove(id); }
@@ -890,118 +880,17 @@ export class Organizer {
     return this.writeAuto("week", f.text, "Обзор недели. " + f.short, now, force);
   }
 
-  /** How full a day is: minutes of to-dos due that day (30 when not set) against the free hours; what to move when it is too much. */
-  dayLoad(day: string, now = this.now()) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw bad("День: YYYY-MM-DD");
-    const dk = this.dayKind(day), hours = this.automation.dayHours;
-    const capacity = hours ? (dk.work ? (dk.short ? Math.max(1, hours - 1) : hours) : Math.ceil(hours / 2)) * 60 : 0;
-    const items = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && localKey(Date.parse(n.dueAt)) === day);
-    const mins = (n: Note) => n.estimateMinutes ?? 30;
-    const planned = items.reduce((s, n) => s + mins(n), 0);
-    const over = capacity > 0 && planned > capacity;
-    const move: { id: string; text: string; minutes: number }[] = [];
-    if (over) {
-      const rank = (n: Note) => (n.priority === "low" ? 0 : 1) * 2 + (n.dueAt && dateOnly(n.dueAt) ? 0 : 1);
-      let rest = planned;
-      for (const n of items.filter((x) => x.priority !== "high").sort((x, y) => rank(x) - rank(y) || mins(y) - mins(x))) {
-        if (rest <= capacity) break;
-        move.push({ id: n.id, text: n.text, minutes: mins(n) });
-        rest -= mins(n);
-      }
-    }
-    void now;
-    return { day, capacity, planned, over, count: items.length, work: dk.work, move };
+  /** How full a day is: task minutes against configured capacity. */
+  dayLoad(day: string, now = this.now()) { return this.planningService.dayLoad(day, now); }
+
+  /** «Разложить день»: advisory by default, explicit apply mutates selected tasks. */
+  arrangeDay(day: string, apply = false, ids?: string[]) {
+    return this.planningService.arrangeDay(day, apply, ids);
   }
 
-  /**
-   * «Разложить день»: to-dos without a time of their own get one in the free windows of the day
-   * (09:00 to the end of the working hours, lunch 13–14; a day off 10:00 to the afternoon), around what already has a time.
-   * With `apply` the chosen ones are saved; otherwise it is only a proposal.
-   */
-  async arrangeDay(day: string, apply = false, ids?: string[]) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw bad("День: YYYY-MM-DD");
-    const now = this.now(), today = localKey(now) === day;
-    if (day < localKey(now)) throw bad("Этот день уже прошёл", 409);
-    const dk = this.dayKind(day), hours = this.automation.dayHours || 8;
-    const base = new Date(day + "T00:00").getTime();
-    const from = dk.work ? 9 * 60 : 10 * 60;
-    const lunch = dk.work && hours >= 6;
-    const to = Math.min(23 * 60, from + (dk.work ? (dk.short ? hours - 1 : hours) : Math.ceil(hours / 2)) * 60 + (lunch ? 60 : 0));
-    const busy: [number, number][] = lunch ? [[13 * 60, 14 * 60]] : [];
-    const minOf = (iso: string) => Math.round((Date.parse(iso) - base) / 60_000);
-    const open = this.notes.filter((n) => n.kind === "todo" && !n.done);
-    for (const n of open) if (n.dueAt && !dateOnly(n.dueAt) && localKey(Date.parse(n.dueAt)) === day) busy.push([minOf(n.dueAt), minOf(n.dueAt) + (n.estimateMinutes ?? 30)]);
-    for (const r of this.reminders) if (r.status === "scheduled" && !r.rule && localKey(Date.parse(r.at)) === day) busy.push([minOf(r.at), minOf(r.at) + 15]);
-    const dayStartMs = base;
-    const reasonOf = (n: Note) => n.dueAt && Date.parse(n.dueAt) < dayStart(now) ? "просрочено" : n.dueAt ? "срок в этот день" : n.priority === "high" ? "важное без срока" : "без срока";
-    const order = (n: Note) => (n.dueAt && Date.parse(n.dueAt) < dayStartMs ? 0 : n.dueAt ? 1 : n.priority === "high" ? 2 : n.priority === "low" ? 4 : 3);
-    const cands = open.filter((n) => !this.notes.some((k) => k.parentId === n.id && !k.done) && !(dk.away && this.isWork(n)) && (
-      (n.dueAt && dateOnly(n.dueAt) && localKey(Date.parse(n.dueAt)) === day) ||
-      (today && n.dueAt && Date.parse(n.dueAt) < dayStart(now)) ||
-      (!n.dueAt && n.priority !== "low")))
-      .sort((x, y) => order(x) - order(y) || x.createdAt.localeCompare(y.createdAt));
-    let cursor = from;
-    if (today) cursor = Math.max(from, Math.ceil((minsNow(now) + 5) / 15) * 15);
-    const placed: { id: string; text: string; start: string; minutes: number; reason: string }[] = [];
-    let left = 0;
-    for (const n of cands) {
-      const dur = n.estimateMinutes ?? 30;
-      let t = cursor, ok = false;
-      while (t + dur <= to) {
-        const clash = busy.find(([s, e]) => t < e && t + dur > s);
-        if (!clash) { ok = true; break; }
-        t = Math.ceil(clash[1] / 15) * 15;
-      }
-      if (!ok) { left++; continue; }
-      busy.push([t, t + dur]);
-      placed.push({ id: n.id, text: n.text, start: new Date(base + t * 60_000).toISOString(), minutes: dur, reason: reasonOf(n) });
-    }
-    placed.sort((x, y) => x.start.localeCompare(y.start));
-    const window = { from: `${String(Math.floor(from / 60)).padStart(2, "0")}:${String(from % 60).padStart(2, "0")}`, to: `${String(Math.floor(to / 60)).padStart(2, "0")}:${String(to % 60).padStart(2, "0")}` };
-    if (!apply) return { day, window, placed, left, applied: 0 };
-    const pick = ids ? placed.filter((p) => ids.includes(p.id)) : placed;
-    const undo: NonNullable<AutoLogEntry["undo"]>["notes"] = [];
-    for (const p of pick) {
-      const n = this.notes.find((x) => x.id === p.id)!;
-      undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
-      this.record("move", n, { from: n.dueAt ?? null, to: p.start, auto: true });
-      n.dueAt = p.start; delete n.rolled; delete n.remindedFor;
-      undo[undo.length - 1]!.expectedDueAt = n.dueAt;
-    }
-    if (pick.length) { this.addLog("arrange", `Разложила день ${new Date(base + 12 * 3_600_000).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}: дел ${pick.length}`, { notes: undo }); await this.save(); }
-    return { day, window, placed, left, applied: pick.length };
-  }
-
-  /** Moves to-dos to tomorrow or to the next working day after their own day, keeping their time. Logged, so it can be undone. */
-  async moveTasks(ids: unknown, to: unknown, requestId?: unknown): Promise<Note[]> {
-    if (requestId !== undefined && (typeof requestId !== "string" || !/^[a-zA-Z0-9_-]{8,100}$/.test(requestId))) throw bad("Некорректный идентификатор операции");
-    if (requestId && this.moveRequests.includes(requestId)) throw bad("Этот перенос уже выполнен", 409);
-    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every((x) => typeof x === "string")) throw bad("Список дел: от 1 до 100");
-    const toDay = typeof to === "string" && DAY_RE.test(to) && Number.isFinite(Date.parse(to + "T12:00")) ? to : null;
-    if (to !== "tomorrow" && to !== "workday" && !toDay) throw bad("Куда: tomorrow, workday или день YYYY-MM-DD");
-    const now = this.now(), undo: NonNullable<AutoLogEntry["undo"]>["notes"] = [], out: Note[] = [];
-    for (const id of ids as string[]) {
-      const n = this.notes.find((x) => x.id === id && x.kind === "todo" && !x.done);
-      if (!n) continue;
-      const from = n.dueAt ? new Date(n.dueAt) : new Date(dayStart(now) + (23 * 60 + 59) * 60_000);
-      const d = toDay ? new Date(toDay + "T00:00") : new Date(Math.max(dayStart(from.getTime()), dayStart(now)));
-      d.setHours(from.getHours(), from.getMinutes(), 0, 0);
-      if (!toDay) d.setDate(d.getDate() + 1);
-      // a work to-do never lands on a vacation or sick day
-      const ok = (x: Date) => this.isWork(n) ? this.workDayFor(x) : this.workday(x);
-      if (to === "workday") for (let i = 0; i < 400 && !ok(d); i++) d.setDate(d.getDate() + 1);
-      undo.push({ id: n.id, dueAt: n.dueAt ?? null, rolled: n.rolled ?? null });
-      this.record("move", n, { from: n.dueAt ?? null, to: d.toISOString() });
-      n.dueAt = d.toISOString(); delete n.rolled; delete n.remindedFor;
-      undo[undo.length - 1]!.expectedDueAt = n.dueAt;
-      out.push({ ...n });
-    }
-    if (!out.length) throw bad("Нечего переносить", 409);
-    const where = to === "tomorrow" ? "на завтра" : to === "workday" ? "на рабочий день" : "на " + new Date(toDay + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-    this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.automationEngine.describeNames(out.map((n) => n.id)), { notes: undo });
-    if (requestId) this.moveRequests = [...this.moveRequests, requestId].slice(-200);
-    await this.save();
-    return out;
+  /** Move to-dos while preserving their time; logged so the move can be undone. */
+  moveTasks(ids: unknown, to: unknown, requestId?: unknown): Promise<Note[]> {
+    return this.planningService.moveTasks(ids, to, requestId);
   }
 
 }
