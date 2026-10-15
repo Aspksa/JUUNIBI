@@ -25,7 +25,7 @@ describe("RequestContextBuilder", () => {
     });
 
     const result = await builder.prepare({
-      text: "Продолжай",
+      text: "Расскажи про чай",
       session: "s",
       history: Array.from({ length: 24 }, (_, i) => ({
         role: (i % 2 ? "assistant" : "user") as "user" | "assistant",
@@ -50,7 +50,7 @@ describe("RequestContextBuilder", () => {
     expect(String(result.messages[0]?.content)).toContain("Ранее обсуждали проект.");
     expect(String(result.messages[1]?.content)).toContain("Сложная задача");
     expect(String(result.messages[1]?.content)).toContain("warning");
-    expect(result.messages.at(-1)).toEqual({ role: "user", content: "Продолжай" });
+    expect(result.messages.at(-1)).toEqual({ role: "user", content: "Расскажи про чай" });
   });
 
   it("falls back to server session history only when client history is absent", async () => {
