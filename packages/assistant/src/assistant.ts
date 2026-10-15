@@ -107,7 +107,6 @@ export class Assistant {
   private readonly diagnosticCache = new Map<string, { at: number; results: { name: string; status: ToolStatus; text: string; at: number }[] }>();
   private activeAsks = 0;
   private askWaiters: (() => void)[] = [];
-  private readonly summaryRetryAfter = new Map<string, number>();
 
   constructor(private readonly o: AssistantOptions) {
     this.tools = o.tools ?? new ToolRegistry();
