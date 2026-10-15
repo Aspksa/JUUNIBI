@@ -885,6 +885,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
             return send(res, 200, { steps });
           }
           if (req.method === "GET" && p === "/api/organizer/plan") return send(res, 200, o.planToday());
+          if (req.method === "GET" && p === "/api/organizer/now") return send(res, 200, o.smartPriority(Number(url.searchParams.get("limit") ?? 5)));
           if (req.method === "GET" && p === "/api/organizer/time-blocks") return send(res, 200, o.timeBlocks(url.searchParams.get("day") ?? new Date().toISOString().slice(0,10)));
           if (req.method === "GET" && p === "/api/organizer/insights") { const month = url.searchParams.get("month") ?? new Date().toISOString().slice(0,7); return send(res, 200, o.insights(month)); }
           if (req.method === "POST" && p === "/api/organizer/notes") { const b = await readJson(req); return send(res, 201, await o.addNote(b.kind ?? "note", b.text)); }
