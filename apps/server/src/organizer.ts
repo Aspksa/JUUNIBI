@@ -256,7 +256,6 @@ function cleanAutomation(v: unknown): Automation {
 const hoursText = (min: number) => (Math.round(min / 6) / 10).toLocaleString("ru-RU") + " ч";
 const dayWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? "день" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "дня" : "дней");
 const timesWord = (n: number) => (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "раза" : "раз");
-const ruleBefore = (m: number) => (m === 1440 ? "сутки" : m >= 60 ? m / 60 + " ч" : m + " мин");
 const text = (v: unknown, label: string) => {
   if (typeof v !== "string" || !v.trim() || v.trim().length > MAX_TEXT) throw bad(`${label}: от 1 до ${MAX_TEXT} символов`);
   return v.trim();
@@ -999,7 +998,7 @@ export class Organizer {
     }
     if (!out.length) throw bad("Нечего переносить", 409);
     const where = to === "tomorrow" ? "на завтра" : to === "workday" ? "на рабочий день" : "на " + new Date(toDay + "T12:00").toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-    this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.names(out.map((n) => n.id)), { notes: undo });
+    this.addLog("move", `Перенесла ${where} (${out.length}): ` + this.automationEngine.describeNames(out.map((n) => n.id)), { notes: undo });
     if (requestId) this.moveRequests = [...this.moveRequests, requestId].slice(-200);
     await this.save();
     return out;
