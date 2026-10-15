@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { isWorkday } from "@juunibi/core";
 import { OrganizerRepository } from "./organizer-repository";
 import { TaskService } from "./task-service";
@@ -6,6 +5,7 @@ import { ReminderService } from "./reminder-service";
 import { AutomationEngine } from "./automation-engine";
 import { PlanningService } from "./planning-service";
 import { BriefService } from "./brief-service";
+import { MissionService } from "./mission-service";
 import {
   WorkspaceService,
   areaOf,
@@ -248,11 +248,6 @@ function cleanAutomation(v: unknown): Automation {
   if (minsOf(a.workFrom) >= minsOf(a.workTo)) { a.workFrom = DEFAULT_AUTOMATION.workFrom; a.workTo = DEFAULT_AUTOMATION.workTo; }
   return a;
 }
-const text = (v: unknown, label: string) => {
-  if (typeof v !== "string" || !v.trim() || v.trim().length > MAX_TEXT) throw bad(`${label}: от 1 до ${MAX_TEXT} символов`);
-  return v.trim();
-};
-
 /** Optional fields from the file are kept only when they make sense, so one bad value cannot break the page. */
 function cleanNote(n: Note): Note {
   const c: Note = { ...n };
@@ -291,6 +286,7 @@ export class Organizer {
   private readonly reminderService: ReminderService;
   private readonly automationEngine: AutomationEngine;
   private readonly briefService: BriefService;
+  private readonly missionService: MissionService;
   private readonly planningService: PlanningService;
   private readonly workspaceService: WorkspaceService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
@@ -336,6 +332,14 @@ export class Organizer {
       workday: (date) => this.workday(date),
       nextOccurrence,
       cleanLinks,
+    });
+    this.missionService = new MissionService({
+      getMissions: () => this.missions,
+      getNotes: () => this.notes,
+      save: () => this.save(),
+      now: this.now,
+      addNote: (_kind, body) => this.taskService.addNote("todo", body),
+      updateTask: (id, patch) => this.taskService.updateTask(id, patch),
     });
     this.reminderService = new ReminderService({
       getReminders: () => this.reminders,
@@ -449,7 +453,7 @@ export class Organizer {
   /** «Дела и достижения» read the whole story: events oldest first, and how often the automation did each thing. */
   listHistory(): TaskEvent[] { return this.history.map((e) => ({ ...e })); }
   autoCounts(): Partial<Record<AutoLogEntry["kind"], number>> { return this.automationEngine.counts(); }
-  listMissions(): Mission[] { return this.missions.map((m) => ({ ...m })); }
+  listMissions(): Mission[] { return this.missionService.list(); }
   private record(kind: TaskEvent["kind"], n: Note, extra: Partial<TaskEvent> = {}) {
     if (n.auto) return;
     this.history.push({ at: new Date(this.now()).toISOString(), id: n.id, kind, text: n.text.slice(0, 120), todo: n.kind === "todo", ...extra });
@@ -471,52 +475,20 @@ export class Organizer {
   }
 
   /** Read-only Mission Control. Existing tasks remain the canonical progress source. */
-  missionBoard() {
-    return this.missions.map(m => {
-      const tasks = this.notes.filter(n => n.kind === "todo" && n.project === m.id);
-      const done = tasks.filter(n => n.done).length;
-      const open = tasks.filter(n => !n.done);
-      const blocked = open.filter(n => n.parentId && this.notes.some(p => p.id === n.parentId && !p.done));
-      const available = open.filter(n => !blocked.some(b => b.id === n.id));
-      const priority = (n: Note) => n.priority === "high" ? 2 : n.priority === "normal" ? 1 : 0;
-      available.sort((a,b)=>priority(b)-priority(a)||(a.dueAt??"9999").localeCompare(b.dueAt??"9999"));
-      const next = available[0];
-      return { ...m, total:tasks.length, done, percent:tasks.length?Math.round(done*100/tasks.length):0, idleDays: this.goalIdleDays(m),
-        blocked:blocked.length, next:next ? {id:next.id,text:next.text,reason:next.dueAt?"Ближайший срок и приоритет":"Доступный этап"} : null,
-        stages:tasks.map(t=>({id:t.id,text:t.text,done:t.done,parentId:t.parentId??null,priority:t.priority??"normal"})) };
-    });
+  missionBoard() { return this.missionService.board(); }
+
+  addMission(title: unknown, description: unknown = ""): Promise<Mission> {
+    return this.missionService.add(title, description);
   }
-  /** Whole days since anything happened to a goal: a step added or ticked off, or the goal created. */
-  private goalIdleDays(m: Mission, now = this.now()): number {
-    let last = Date.parse(m.createdAt);
-    for (const n of this.notes) if (n.kind === "todo" && n.project === m.id) last = Math.max(last, Date.parse(n.createdAt), n.completedAt ? Date.parse(n.completedAt) : 0);
-    return Number.isFinite(last) ? Math.max(0, Math.floor((now - last) / 86_400_000)) : 0;
+
+  updateMission(id: string, status: unknown): Promise<Mission> {
+    return this.missionService.updateStatus(id, status);
   }
-  async addMission(title: unknown, description: unknown = ""): Promise<Mission> {
-    const name = text(title,"Название миссии");
-    if (this.missions.length >= 100) throw bad("Достигнут лимит миссий",409);
-    if (this.missions.some(m=>m.title.toLowerCase()===name.toLowerCase())) throw bad("Миссия с таким названием уже существует",409);
-    if (typeof description !== "string" || description.length > 1000) throw bad("Описание до 1000 символов");
-    const mission: Mission = {id:randomUUID(),title:name,description:description.trim(),createdAt:new Date(this.now()).toISOString(),status:"active"};
-    this.missions.push(mission);
-    await this.save();
-    return {...mission};
+
+  addMissionStage(id: string, description: unknown): Promise<Note> {
+    return this.missionService.addStage(id, description);
   }
-  async updateMission(id:string,status:unknown): Promise<Mission> {
-    const mission=this.missions.find(m=>m.id===id);
-    if (!mission) throw bad("Миссия не найдена",404);
-    if (!["active","paused","complete"].includes(String(status))) throw bad("Некорректный статус");
-    mission.status=status as Mission["status"];
-    await this.save();
-    return {...mission};
-  }
-  async addMissionStage(id:string,description:unknown):Promise<Note>{
-    const mission=this.missions.find(m=>m.id===id);
-    if (!mission) throw bad("Миссия не найдена",404);
-    if (mission.status!=="active") throw bad("Миссия приостановлена",409);
-    const stage=await this.addNote("todo",description);
-    return this.updateTask(stage.id,{project:id});
-  }
+
   // ---------- projects, templates, days away ----------
   listProjects(): ProjectMeta[] { return this.workspaceService.listProjects(); }
   setProject(name: unknown, patch: Record<string, unknown>): Promise<ProjectMeta> {
