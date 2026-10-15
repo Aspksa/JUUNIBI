@@ -22,6 +22,7 @@ import {
 
 export { areaOf, PROJECT_COLORS } from "./workspace-service";
 export type { Area, ProjectMeta, TaskTemplate, DayOff } from "./workspace-service";
+export type TaskStatus = "doing" | "waiting";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
