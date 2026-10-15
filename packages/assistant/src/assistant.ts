@@ -5,27 +5,16 @@ import { guardToolClaims, type ToolEvidence } from "./evidence-guard";
 import { formatFunctionalHealthReport } from "./functional-health-report";
 import { taskExecutionInstructions } from "./task-intent";
 import type { LlmProvider, Message } from "./llm";
-import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
+import { Memory, type MemoryEntry, type StorageAdapter } from "./memory";
 import { ToolRegistry, type Risk } from "./tools";
 import { ToolExecutor, type ApprovalRequest, type ToolStatus } from "./tool-executor";
-import { redactSensitive } from "./redact";
 import { buildAssistantSystemPrompt, HISTORY_LIMIT, prepareConversationContext } from "./context-builder";
 import { ConversationSummaryService } from "./conversation-summary";
 import { MemoryLearningService } from "./memory-learning";
+import { TurnJournal, type Turn } from "./turn-journal";
 
 export type { ApprovalRequest, ToolStatus } from "./tool-executor";
-export interface Turn {
-  id: string;
-  session: string;
-  user: string;
-  reply: string;
-  tools: string[];
-  memoryIds: string[];
-  rating?: 1 | -1;
-  /** Lessons were already proposed for this turn: another vote must not propose them again. */
-  reflected?: boolean;
-  at: number;
-}
+export type { Turn } from "./turn-journal";
 export type AskEvent =
   | { type: "delta"; text: string }
   /** The model is reasoning before it answers (sent once per model call). */
@@ -91,7 +80,6 @@ export function nowLine(d: Date): string {
   const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   return `Сейчас: ${date}, ${time} (${tz}).`;
 }
-const TURNS_LIMIT = 1000;
 
 export class Assistant {
   readonly tools: ToolRegistry;
@@ -100,10 +88,8 @@ export class Assistant {
   private readonly toolExecutor: ToolExecutor;
   private readonly summaryService: ConversationSummaryService;
   private readonly memoryLearning: MemoryLearningService;
+  private readonly turnJournal: TurnJournal;
   private readonly sessions = new Map<string, Message[]>();
-  private turns: Turn[] = [];
-  private turnsReady: Promise<void>;
-  private readonly turnsStore: StorageAdapter;
   private readonly diagnosticCache = new Map<string, { at: number; results: { name: string; status: ToolStatus; text: string; at: number }[] }>();
   private activeAsks = 0;
   private askWaiters: (() => void)[] = [];
@@ -130,16 +116,18 @@ export class Assistant {
       log: this.log,
       waitForChatIdle: () => this.chatIdle(),
     });
-    this.turnsStore = o.turnsStore ?? new MemoryAdapter();
-    this.turnsReady = this.turnsStore.load().then((raw) => {
-      try { const a = raw ? JSON.parse(raw) : []; if (Array.isArray(a)) this.turns = a; } catch { /* start empty */ }
+    this.turnJournal = new TurnJournal({
+      llm: o.llm,
+      memory: this.memory,
+      ...(o.turnsStore ? { store: o.turnsStore } : {}),
+      log: this.log,
     });
     this.registerBuiltins();
   }
   /** Resolves when background work (conversation summaries) is finished. Mostly for tests. */
   idle(): Promise<void> { return Promise.all([this.summaryService.idle(), this.memoryLearning.idle()]).then(() => {}); }
   /** Rated and unrated turns, newest last, as plain copies (for the quality report). */
-  turnsSnapshot(): Turn[] { return this.turns.map((t) => ({ ...t, tools: [...t.tools], memoryIds: [...t.memoryIds] })); }
+  turnsSnapshot(): Turn[] { return this.turnJournal.snapshot(); }
 
   private registerBuiltins() {
     this.tools.register({
@@ -247,11 +235,13 @@ export class Assistant {
       toolEvidence.push({ name, status: result.status, at: Date.now() });
       const report = result.status === "ok" ? formatFunctionalHealthReport(result.text) : "**Функциональная диагностика не выполнена:** " + result.text;
       const reply = guardToolClaims(report, toolEvidence, text);
-      await this.turnsReady;
-      const turn: Turn = { id: crypto.randomUUID(), session, user: text, reply, tools: used, memoryIds: mem.map(m => m.id), at: Date.now() };
-      this.turns.push(turn);
-      this.turns = this.turns.slice(-TURNS_LIMIT);
-      await this.saveTurns();
+      const turn = await this.turnJournal.record({
+        session,
+        user: text,
+        reply,
+        tools: used,
+        memoryIds: mem.map((m) => m.id),
+      });
       if (!clientHistory) {
         const keep = this.sessions.get(session) ?? [];
         keep.push({ role: "user", content: text }, { role: "assistant", content: reply });
@@ -348,11 +338,13 @@ export class Assistant {
       this.sessions.set(session, keep.slice(-HISTORY_LIMIT * 2));
     }
 
-    await this.turnsReady;
-    const turn: Turn = { id: crypto.randomUUID(), session, user: text, reply, tools: used, memoryIds: mem.map((m) => m.id), at: Date.now() };
-    this.turns.push(turn);
-    this.turns = this.turns.slice(-TURNS_LIMIT);
-    await this.saveTurns();
+    const turn = await this.turnJournal.record({
+      session,
+      user: text,
+      reply,
+      tools: used,
+      memoryIds: mem.map((m) => m.id),
+    });
     this.memoryLearning.queue(text, prefs.suggestions);
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
@@ -362,48 +354,18 @@ export class Assistant {
   }
 
   /** Thumbs up/down: tunes the memories that were used and records the label for training data. */
-  async feedback(turnId: string, rating: 1 | -1): Promise<boolean> {
-    await this.turnsReady;
-    const t = this.turns.find((x) => x.id === turnId);
-    if (!t) return false;
-    if (t.rating) await this.memory.feedback(t.memoryIds, -t.rating); // undo previous vote
-    t.rating = rating;
-    await this.memory.feedback(t.memoryIds, rating);
-    await this.saveTurns();
-    return true;
+  feedback(turnId: string, rating: 1 | -1): Promise<boolean> {
+    return this.turnJournal.feedback(turnId, rating);
   }
 
   /** Ask the model what is worth learning from a turn. Results are PENDING until the user approves. */
-  async reflect(turnId: string): Promise<MemoryEntry[]> {
-    await this.turnsReady;
-    const t = this.turns.find((x) => x.id === turnId);
-    if (!t || t.reflected) return [];
-    t.reflected = true;
-    let r: Awaited<ReturnType<LlmProvider["chat"]>>;
-    try {
-      r = await this.o.llm.chat([
-        { role: "system", content: 'Извлеки до 3 коротких переиспользуемых уроков/предпочтений пользователя из диалога. Ответ — только JSON-массив строк, например ["..."]. Если учиться нечему — [].' },
-        { role: "user", content: `Пользователь: ${t.user}\nПомощник: ${t.reply}\nОценка: ${t.rating ?? "нет"}` },
-      ]);
-    } catch (e) { t.reflected = false; throw e; } // the model did not answer: a later vote may try again
-    await this.saveTurns();
-    let items: unknown;
-    try { items = JSON.parse((r.content ?? "[]").replace(/^```(?:json)?|```$/gm, "").trim()); } catch { return []; }
-    if (!Array.isArray(items)) return [];
-    const out: MemoryEntry[] = [];
-    for (const s of items.slice(0, 3)) if (typeof s === "string" && s.trim()) out.push(await this.memory.add("lesson", s, "pending"));
-    return out;
+  reflect(turnId: string): Promise<MemoryEntry[]> {
+    return this.turnJournal.reflect(turnId);
   }
 
   /** Turns rated 👍 as JSONL (chat format) — material for later fine-tuning on Cloud.ru. */
-  async exportDataset(opts: { redact?: boolean } = {}): Promise<string> {
-    await this.turnsReady;
-    const clean = (t: string) => (opts.redact ? redactSensitive(t) : t);
-    return this.turns
-      .filter((t) => t.rating === 1)
-      .map((t) => JSON.stringify({ messages: [{ role: "user", content: clean(t.user) }, { role: "assistant", content: clean(t.reply) }] }))
-      .join("\n");
+  exportDataset(opts: { redact?: boolean } = {}): Promise<string> {
+    return this.turnJournal.exportDataset(opts);
   }
 
-  private saveTurns() { return this.turnsStore.save(JSON.stringify(this.turns)).catch((e) => this.log.warn("turns save failed", e)); }
 }
