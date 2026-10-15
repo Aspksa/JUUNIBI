@@ -6,6 +6,7 @@ import { AutomationEngine } from "./automation-engine";
 import { PlanningService } from "./planning-service";
 import { BriefService } from "./brief-service";
 import { MissionService } from "./mission-service";
+import { InsightsService } from "./insights-service";
 import {
   WorkspaceService,
   areaOf,
@@ -211,7 +212,6 @@ export function alignStart(at: number, repeat: Repeat | undefined, workday: (d: 
 }
 /** Monday to Friday; with the production calendar, holidays are skipped and working Saturdays count. */
 export const weekday = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6;
-const localKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const minsOf = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h! * 60 + m!; };
 const minsNow = (t: number) => { const d = new Date(t); return d.getHours() * 60 + d.getMinutes(); };
@@ -287,6 +287,7 @@ export class Organizer {
   private readonly automationEngine: AutomationEngine;
   private readonly briefService: BriefService;
   private readonly missionService: MissionService;
+  private readonly insightsService: InsightsService;
   private readonly planningService: PlanningService;
   private readonly workspaceService: WorkspaceService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
@@ -406,6 +407,12 @@ export class Organizer {
       save: () => this.save(),
     });
     this.planningService = planning;
+    this.insightsService = new InsightsService({
+      getNotes: () => this.notes,
+      getReminders: () => this.reminders,
+      planToday: (now) => this.planningService.planToday(now),
+      dayLoad: (day, now) => this.planningService.dayLoad(day, now),
+    });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
@@ -526,26 +533,9 @@ export class Organizer {
 
   /** Calendar, statistics and deterministic Brain-compatible recommendations: no network, no side effects. */
   insights(month: string, now = this.now()) {
-    if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month)) throw bad("Месяц: YYYY-MM");
-    const [year, m] = month.split("-").map(Number);
-    const begin = new Date(year!,m!-1,1).getTime(), end = new Date(year!,m!,1).getTime();
-    const items = [
-      ...this.notes.filter(n=>n.kind==="todo"&&n.dueAt&&Date.parse(n.dueAt)>=begin&&Date.parse(n.dueAt)<end)
-        .map(n=>({id:n.id,text:n.text,at:n.dueAt!,kind:"todo" as const,done:n.done})),
-      ...this.reminders.filter(r=>Date.parse(r.at)>=begin&&Date.parse(r.at)<end)
-        .map(r=>({id:r.id,text:r.text,at:r.at,kind:"reminder" as const,done:r.status==="done"}))
-    ].sort((a,b)=>a.at.localeCompare(b.at));
-    const todos=this.notes.filter(n=>n.kind==="todo"), finished=todos.filter(n=>n.done);
-    const overdue=todos.filter(n=>!n.done&&n.dueAt&&Date.parse(n.dueAt)<now);
-    const completedThisMonth=finished.filter(n=>n.completedAt&&Date.parse(n.completedAt)>=begin&&Date.parse(n.completedAt)<end).length;
-    const plan=this.planToday(now);
-    // days whose to-dos take more time than there is (the calendar marks them)
-    const heavyDays = [...new Set(items.filter(x=>x.kind==="todo"&&!x.done).map(x=>localKey(Date.parse(x.at))))].filter(d=>this.dayLoad(d,now).over);
-    return {month,items,heavyDays,statistics:{all:todos.length,completed:finished.length,open:todos.length-finished.length,
-      overdue:overdue.length,completedThisMonth,completionPercent:todos.length?Math.round(100*finished.length/todos.length):0},
-      brainRecommendations:plan.suggested.slice(0,5).map(x=>({...x,evidence:"Срок и приоритет задачи",source:"local-task-metrics" as const})),
-      advisoryOnly:true as const};
+    return this.insightsService.month(month, now);
   }
+
   /** The board's order: the to-dos of one column in the order they were dragged to (ranks 0, 1, 2…). */
   orderTasks(ids: unknown): Promise<{ ok: true }> { return this.taskService.orderTasks(ids); }
   setDone(id: string, done: boolean): Promise<Note> { return this.taskService.setDone(id, done); }
