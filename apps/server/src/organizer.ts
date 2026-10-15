@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isWorkday, nextHoliday, prodDay } from "@juunibi/core";
 import { OrganizerRepository } from "./organizer-repository";
 import { TaskService } from "./task-service";
+import { ReminderService } from "./reminder-service";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -161,7 +162,7 @@ export interface Reminder { id: string; text: string; at: string; createdAt: str
   source?: string;
   /** The rule that created it (its reminder is dropped when the to-do is done). */
   rule?: string }
-const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_DONE_REMINDERS = 100, MAX_AUTO_TEXT = 1500, MAX_LOG = 60, MAX_HISTORY = 4000;
+const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_AUTO_TEXT = 1500, MAX_LOG = 60, MAX_HISTORY = 4000;
 const YEAR = 366 * 86_400_000;
 const MAX_PROJECTS = 100, MAX_TEMPLATES = 30, MAX_DAYS_OFF = 50;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -177,11 +178,6 @@ function cleanProject(v: unknown): ProjectMeta | null {
   return p;
 }
 const bad = (message: string, status = 400) => Object.assign(new Error(message), { status });
-const repeatOf = (v: unknown): Repeat | undefined => {
-  if (v === undefined || v === null || v === "" || v === "none") return undefined;
-  if (!REPEATS.includes(v as Repeat)) throw bad("Повтор: daily, weekdays, weekly, monthly, every3days, yearly или none");
-  return v as Repeat;
-};
 /** The first occurrence of a repeating reminder strictly after `now`, keeping the local time of day of `at`. */
 export function nextOccurrence(at: number, repeat: Repeat, now: number, anchorDay?: number, workday: (d: Date) => boolean = weekday, anchorMonth?: number): number {
   const d = new Date(at);
@@ -300,6 +296,7 @@ export class Organizer {
   private reminders: Reminder[] = [];
   private readonly repository: OrganizerRepository;
   private readonly taskService: TaskService;
+  private readonly reminderService: ReminderService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
@@ -332,6 +329,18 @@ export class Organizer {
       workday: (date) => this.workday(date),
       nextOccurrence,
       cleanLinks,
+    });
+    this.reminderService = new ReminderService({
+      getReminders: () => this.reminders,
+      replaceReminders: (reminders) => { this.reminders = reminders; },
+      getNotes: () => this.notes,
+      getAutomation: () => this.automation,
+      save: () => this.save(),
+      now: this.now,
+      workday: (date) => this.workday(date),
+      alignStart,
+      nextOccurrence,
+      inQuiet,
     });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
@@ -563,51 +572,19 @@ export class Organizer {
   removeNote(id: string): Promise<void> { return this.taskService.removeNote(id); }
 
   // ---------- reminders ----------
-  listReminders(): Reminder[] { return this.reminders.map((r) => ({ ...r })).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)); }
-  private when(at: unknown): number {
-    const ms = typeof at === "string" ? Date.parse(at) : NaN;
-    if (Number.isNaN(ms)) throw bad("Время: дата и время в формате ISO 8601, например 2026-10-10T10:00:00+03:00");
-    if (ms < this.now() - 60_000) throw bad("Это время уже прошло");
-    if (ms > this.now() + YEAR) throw bad("Дальше чем на год вперёд напоминания не ставятся");
-    return ms;
-  }
-  async addReminder(body: unknown, at: unknown, repeat?: unknown): Promise<Reminder> {
-    const t = text(body, "Текст");
-    const rep = repeatOf(repeat);
-    const ms = alignStart(this.when(at), rep, this.workday);
-    if (this.reminders.filter((r) => r.status !== "done").length >= MAX_REMINDERS) throw bad(`Достигнут предел: ${MAX_REMINDERS} активных напоминаний`, 409);
-    const r: Reminder = { id: randomUUID(), text: t, at: new Date(ms).toISOString(), createdAt: new Date(this.now()).toISOString(), status: "scheduled", ...(rep ? { repeat: rep, ...(rep === "monthly" || rep === "yearly" ? { repeatDay: new Date(ms).getDate() } : {}), ...(rep === "yearly" ? { repeatMonth: new Date(ms).getMonth() } : {}) } : {}) };
-    this.reminders.push(r);
-    await this.save();
-    return { ...r };
+  listReminders(): Reminder[] { return this.reminderService.list(); }
+  addReminder(body: unknown, at: unknown, repeat?: unknown): Promise<Reminder> {
+    return this.reminderService.add(body, at, repeat);
   }
   /** Changes the text, time or repeat of a reminder that has not fired yet. Missing fields stay as they are. */
-  async editReminder(id: string, patch: { text?: unknown; at?: unknown; repeat?: unknown }): Promise<Reminder> {
-    const r = this.reminders.find((x) => x.id === id);
-    if (!r) throw bad("Напоминание не найдено", 404);
-    if (r.status !== "scheduled") throw bad("Изменить можно только запланированное напоминание", 409);
-    const t = patch.text === undefined ? r.text : text(patch.text, "Текст");
-    const rep = patch.repeat === undefined ? r.repeat : repeatOf(patch.repeat);
-    const at = new Date(alignStart(patch.at === undefined ? Date.parse(r.at) : this.when(patch.at), rep, this.workday)).toISOString();
-    r.text = t; r.at = at;
-    delete r.repeatDay; delete r.repeatMonth;
-    if (rep) { r.repeat = rep; if (rep === "monthly" || rep === "yearly") r.repeatDay = new Date(at).getDate(); if (rep === "yearly") r.repeatMonth = new Date(at).getMonth(); } else delete r.repeat;
-    await this.save();
-    return { ...r };
+  editReminder(id: string, patch: { text?: unknown; at?: unknown; repeat?: unknown }): Promise<Reminder> {
+    return this.reminderService.edit(id, patch);
   }
   /** Snoozes a fired one-off occurrence, never silently shifts its repeating series. */
-  async snoozeReminder(id: string, minutes: unknown): Promise<Reminder> {
-    if (minutes !== "tomorrow" && (!Number.isInteger(minutes) || ![5, 10, 15, 30, 60, 180, 1440].includes(Number(minutes)))) throw bad("Отложить можно на 5, 10, 15, 30 минут, 1 или 3 часа, сутки или до завтра");
-    const r = this.reminders.find(x => x.id === id);
-    if (!r) throw bad("Напоминание не найдено", 404);
-    if (r.status !== "due") throw bad("Отложить можно только сработавшее напоминание", 409);
-    // «до завтра» is tomorrow at the brief time, when the day starts
-    r.at = new Date(minutes === "tomorrow" ? dayStart(this.now()) + 86_400_000 + minsOf(this.automation.briefTime) * 60_000 : this.now() + Number(minutes) * 60_000).toISOString();
-    r.status = "scheduled";
-    delete r.firedAt;
-    await this.save();
-    return { ...r };
+  snoozeReminder(id: string, minutes: unknown): Promise<Reminder> {
+    return this.reminderService.snooze(id, minutes);
   }
+
   /** Suggest a finite working-day schedule without modifying the task list or promising external calendar availability. */
   timeBlocks(day: string, startHour = 9, endHour = 18) {
     if (!/^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])$/.test(day)) throw bad("День: YYYY-MM-DD");
@@ -630,51 +607,39 @@ export class Organizer {
     return {day, workingMinutes:minutes, plannedMinutes:used, remainingMinutes:minutes-used, blocks,
       note:"Предложение по задачам; занятость внешнего календаря не проверялась", advisoryOnly:true as const};
   }
-  async dismissReminder(id: string): Promise<Reminder> {
-    const r = this.reminders.find((x) => x.id === id);
-    if (!r) throw bad("Напоминание не найдено", 404);
-    r.status = "done";
-    this.pruneDone();
-    await this.save();
-    return { ...r };
-  }
-  async removeReminder(id: string) {
-    const n = this.reminders.length;
-    this.reminders = this.reminders.filter((x) => x.id !== id);
-    if (this.reminders.length === n) throw bad("Напоминание не найдено", 404);
-    await this.save();
-  }
+  dismissReminder(id: string): Promise<Reminder> { return this.reminderService.dismiss(id); }
+  removeReminder(id: string): Promise<void> { return this.reminderService.remove(id); }
   /**
    * Marks reminders whose time has come as "due" and returns the newly due ones. Safe to call as often as you like.
    * A repeating reminder fires as a separate one-off copy and moves on to its next time; occurrences missed while
    * JUUNIBI was closed fire once, not once per missed day. Automatic reminders wait out the quiet hours.
    */
   async tick(): Promise<Reminder[]> {
-    const fired: Reminder[] = [];
-    const now = this.now(), firedAt = new Date(now).toISOString();
-    const a = this.automation, quiet = this.isQuiet(now);
-    let released = 0, changed = false;
-    for (const r of [...this.reminders]) {
-      if (r.status !== "scheduled" || Date.parse(r.at) > now) continue;
-      // a rule's reminder about a to-do that is already done (or gone) is no longer needed
-      if (r.rule) {
-        const n = this.notes.find((x) => x.id === r.source);
-        if (!n || n.done) { r.status = "done"; r.firedAt = firedAt; changed = true; continue; }
-      }
-      if (r.source && quiet) continue; // automatic ones wait for the morning
-      if (r.source && a.quiet && inQuiet(Date.parse(r.at), a.quietFrom, a.quietTo)) released++;
-      if (!r.repeat) { r.status = "due"; r.firedAt = firedAt; fired.push({ ...r }); continue; }
-      const copy: Reminder = { id: randomUUID(), text: r.text, at: r.at, createdAt: firedAt, status: "due", firedAt, seriesId: r.id };
-      this.reminders.push(copy);
-      fired.push({ ...copy });
-      r.at = new Date(nextOccurrence(Date.parse(r.at), r.repeat, now, r.repeatDay, this.workday, r.repeatMonth)).toISOString();
+    const now = this.now();
+    const a = this.automation;
+    const reminderTick = this.reminderService.processDue(now);
+    const fired = reminderTick.fired;
+    let changed = reminderTick.changed;
+
+    if (reminderTick.releasedFromQuiet) {
+      this.addLog("quiet", `Тихие часы: придержала напоминаний до утра: ${reminderTick.releasedFromQuiet}`);
     }
-    if (released) this.addLog("quiet", `Тихие часы: придержала напоминаний до утра: ${released}`);
+
     changed = this.automate(now, fired) || changed;
-    if (fired.length || changed) { this.pruneDone(); await this.save(); }
-    if (a.brief && !this.briefing && this.briefDue(now)) await this.runBrief(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Brief", e));
-    if (a.evening && !this.briefing && this.autoState.eveningDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) await this.runEvening(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Evening", e));
-    if (a.weekly && !this.briefing && new Date(now).getDay() === 0 && this.autoState.weekDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) await this.runWeek(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Week", e));
+    if (fired.length || changed) {
+      this.reminderService.pruneDone();
+      await this.save();
+    }
+
+    if (a.brief && !this.briefing && this.briefDue(now)) {
+      await this.runBrief(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Brief", e));
+    }
+    if (a.evening && !this.briefing && this.autoState.eveningDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) {
+      await this.runEvening(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Evening", e));
+    }
+    if (a.weekly && !this.briefing && new Date(now).getDay() === 0 && this.autoState.weekDay !== localKey(now) && minsNow(now) >= minsOf(a.eveningTime)) {
+      await this.runWeek(now).catch((e: unknown) => console.error("Дела: ошибка автоматизации Week", e));
+    }
     return fired;
   }
 
@@ -1158,13 +1123,7 @@ export class Organizer {
     await this.save();
     return out;
   }
-  /** Old finished reminders are dropped so a daily reminder does not fill the list over the months. */
-  private pruneDone() {
-    const done = this.reminders.filter((r) => r.status === "done");
-    if (done.length <= MAX_DONE_REMINDERS) return;
-    const drop = new Set(done.sort((a, b) => Date.parse(a.firedAt ?? a.at) - Date.parse(b.firedAt ?? b.at)).slice(0, done.length - MAX_DONE_REMINDERS).map((r) => r.id));
-    this.reminders = this.reminders.filter((r) => !drop.has(r.id));
-  }
+
 }
 
 export interface Brief {
