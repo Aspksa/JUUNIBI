@@ -230,7 +230,7 @@ export class AutomationEngine {
       if (undo.length) {
         this.addLog(
           "roll",
-          `Перенесла на сегодня просроченные (${undo.length}): ` + this.names(undo.map((item) => item.id)),
+          `Перенесла на сегодня просроченные (${undo.length}): ` + this.describeNames(undo.map((item) => item.id)),
           { notes: undo },
         );
       }
@@ -306,7 +306,7 @@ export class AutomationEngine {
     return changed;
   }
 
-  private names(ids: string[]): string {
+  describeNames(ids: string[]): string {
     const names = ids
       .map((id) => this.options.getNotes().find((note) => note.id === id)?.text)
       .filter(Boolean) as string[];
