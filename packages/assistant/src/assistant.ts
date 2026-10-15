@@ -1,6 +1,6 @@
 import { Logger } from "@juunibi/core";
-import { guardToolClaims, type ToolEvidence } from "./evidence-guard";
 import { DiagnosticCoordinator, type DiagnosticBatch } from "./diagnostic-coordinator";
+import { AgentLoop, type AgentLoopEvent } from "./agent-loop";
 import { taskExecutionInstructions } from "./task-intent";
 import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter } from "./memory";
@@ -15,12 +15,7 @@ import { SessionHistory } from "./session-history";
 
 export type { ApprovalRequest, ToolStatus } from "./tool-executor";
 export type { Turn } from "./turn-journal";
-export type AskEvent =
-  | { type: "delta"; text: string }
-  /** The model is reasoning before it answers (sent once per model call). */
-  | { type: "thinking" }
-  | { type: "tool"; phase: "start"; id: string; name: string; args: string }
-  | { type: "tool"; phase: "end"; id: string; name: string; status: ToolStatus; ms: number };
+export type AskEvent = AgentLoopEvent;
 export interface AskOptions {
   /** Client-held conversation so far (the client is the source of truth). Replaces server-side session memory. */
   history?: { role: "user" | "assistant"; content: string }[];
@@ -84,6 +79,7 @@ export class Assistant {
   readonly memory: Memory;
   private readonly log: Logger;
   private readonly toolExecutor: ToolExecutor;
+  private readonly agentLoop: AgentLoop;
   private readonly diagnostics: DiagnosticCoordinator;
   private readonly summaryService: ConversationSummaryService;
   private readonly memoryLearning: MemoryLearningService;
@@ -101,6 +97,13 @@ export class Assistant {
       ...(o.approve ? { approve: o.approve } : {}),
       ...(o.toolPolicy ? { toolPolicy: o.toolPolicy } : {}),
       log: this.log,
+    });
+    this.agentLoop = new AgentLoop({
+      llm: o.llm,
+      tools: this.tools,
+      executor: this.toolExecutor,
+      log: this.log,
+      ...(o.onToolOutcome ? { onToolOutcome: o.onToolOutcome } : {}),
     });
     this.diagnostics = new DiagnosticCoordinator({
       tools: this.tools,
@@ -177,9 +180,6 @@ export class Assistant {
     const msgs: Message[] = [{ role: "system", content: this.system(mem, summary) + "\n\n" + taskExecutionInstructions(text) },
       ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
       ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
-    const used: string[] = [];
-    const toolEvidence: ToolEvidence[] = [];
-    let reply: string | null = null;
     // The automatic brain review already ran for this message, so its tool would only add a model round trip;
     // the other brain tools are offered only when the review says the task needs planning.
     const toolAllowed = (name: string) => this.o.toolPolicy?.(name) !== false &&
@@ -203,52 +203,26 @@ export class Assistant {
     let diagnostics: DiagnosticBatch = { active: false, used: [], evidence: [] };
     if (!opts.ephemeral) {
       diagnostics = await this.diagnostics.prepareBatch(text, session, hist, signal, opts.onEvent);
-      used.push(...diagnostics.used);
-      toolEvidence.push(...diagnostics.evidence);
       if (diagnostics.systemMessage) msgs.push({ role: "system", content: diagnostics.systemMessage });
     }
-    const t0 = Date.now();
-    let firstTextAt = 0, calls = 0, model: string | undefined;
-    /** Text the model wrote before calling tools ("Сейчас посмотрю…") is part of the reply the user saw. */
-    const said: string[] = [];
 
-    for (let step = 0; step < (this.o.maxSteps ?? 6); step++) {
-      let thinking = false;
-      calls++;
-      const r = await this.o.llm.chat(msgs, {
-        tools: this.tools.specs().filter((t) => toolAllowed(t.name) && !(diagnostics.active && this.diagnostics.isDiagnosticTool(t.name))), ...(signal ? { signal } : {}),
-        timeoutMs: this.diagnostics.modelTimeout(this.o.chatTimeoutMs ?? CHAT_TIMEOUT_MS, diagnostics.active), retries: this.o.chatRetries ?? CHAT_RETRIES,
-        ...(opts.onEvent ? {
-          onText: (text: string) => { firstTextAt ||= Date.now(); opts.onEvent!({ type: "delta", text }); },
-          onReasoning: () => { if (!thinking) { thinking = true; opts.onEvent!({ type: "thinking" }); } },
-        } : {}),
-      });
-      model = r.model ?? model;
-      if (r.content) firstTextAt ||= Date.now();
-      if (!r.toolCalls.length) { reply = [...said, r.content ?? ""].map((x) => x.trim()).filter(Boolean).join("\n\n"); break; }
-      if (r.content?.trim()) said.push(r.content);
-      msgs.push({ role: "assistant", content: r.content, tool_calls: r.toolCalls });
-      for (const call of r.toolCalls) {
-        used.push(call.name);
-        opts.onEvent?.({ type: "tool", phase: "start", id: call.id, name: call.name, args: call.arguments.slice(0, 300) });
-        const t0 = Date.now();
-        const result = await this.runTool(call.name, call.arguments, signal, opts.ephemeral);
-        const elapsedMs = Date.now() - t0;
-        toolEvidence.push({ name: call.name, status: result.status, at: Date.now() });
-        try { this.o.onToolOutcome?.({tool: call.name, status: result.status, risk: this.tools.get(call.name)?.risk ?? "read", elapsedMs}); }
-        catch (error) { this.log.warn("tool observer failed", error); }
-        opts.onEvent?.({ type: "tool", phase: "end", id: call.id, name: call.name, status: result.status, ms: elapsedMs });
-        msgs.push({ role: "tool", tool_call_id: call.id, content: result.text });
-      }
-    }
-    reply ??= "Не удалось завершить задачу за отведённое число шагов.";
-    reply = guardToolClaims(reply, toolEvidence, text);
+    const agent = await this.agentLoop.run({
+      messages: msgs,
+      request: text,
+      ...(signal ? { signal } : {}),
+      ...(opts.onEvent ? { onEvent: opts.onEvent } : {}),
+      readOnly: opts.ephemeral ?? false,
+      maxSteps: this.o.maxSteps ?? 6,
+      timeoutMs: this.diagnostics.modelTimeout(this.o.chatTimeoutMs ?? CHAT_TIMEOUT_MS, diagnostics.active),
+      retries: this.o.chatRetries ?? CHAT_RETRIES,
+      toolAllowed: (name) => toolAllowed(name) && !(diagnostics.active && this.diagnostics.isDiagnosticTool(name)),
+      initialUsed: diagnostics.used,
+      initialEvidence: diagnostics.evidence,
+      logPerformance: !opts.ephemeral,
+    });
+    const reply = agent.reply;
+    const used = agent.used;
     this.diagnostics.complete(diagnostics);
-    if (!opts.ephemeral) {
-      const sec = (ms: number) => (ms / 1000).toFixed(1);
-      this.log.info(`ответ за ${sec(Date.now() - t0)} с: первый текст через ${firstTextAt ? sec(firstTextAt - t0) + " с" : "—"}, ` +
-        `запросов к модели ${calls}${used.length ? ", инструменты: " + used.join(", ") : ""}${model ? ", запасная модель " + model : ""}`);
-    }
     // The running summary is refreshed only after the reply, so it never competes with it for Cloud.ru.
     if (prefs.summaries && older.length && !opts.ephemeral) this.summaryService.queue(session, older);
 
@@ -264,10 +238,6 @@ export class Assistant {
     });
     this.memoryLearning.queue(text, prefs.suggestions);
     return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
-  }
-
-  private runTool(name: string, rawArgs: string, signal?: AbortSignal, readOnly = false) {
-    return this.toolExecutor.run(name, rawArgs, signal, readOnly);
   }
 
   /** Thumbs up/down: tunes the memories that were used and records the label for training data. */
