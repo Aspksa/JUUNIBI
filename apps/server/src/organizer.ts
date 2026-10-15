@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isWorkday, nextHoliday, prodDay } from "@juunibi/core";
 import { OrganizerRepository } from "./organizer-repository";
+import { TaskService } from "./task-service";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -298,6 +299,7 @@ export class Organizer {
   private missions: Mission[] = [];
   private reminders: Reminder[] = [];
   private readonly repository: OrganizerRepository;
+  private readonly taskService: TaskService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
@@ -320,6 +322,17 @@ export class Organizer {
   composeBrief?: (facts: string) => Promise<string | null>;
   constructor(file: string, private readonly now: () => number = Date.now) {
     this.repository = new OrganizerRepository(file);
+    this.taskService = new TaskService({
+      getNotes: () => this.notes,
+      replaceNotes: (notes) => { this.notes = notes; },
+      save: () => this.save(),
+      now: this.now,
+      makeRoom: () => this.makeRoom(),
+      record: (kind, note, extra) => this.record(kind, note, extra),
+      workday: (date) => this.workday(date),
+      nextOccurrence,
+      cleanLinks,
+    });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
@@ -497,118 +510,18 @@ export class Organizer {
   private isWork = (n: Note) => areaOf(n, this.projects) === "work";
 
   // ---------- notes and to-dos ----------
-  listNotes(): Note[] { return this.notes.map((n) => ({ ...n })); }
-  async addNote(kind: unknown, body: unknown): Promise<Note> {
-    if (kind !== "note" && kind !== "todo") throw bad("Тип: note или todo");
-    const t = text(body, "Текст");
-    if (!this.makeRoom()) throw bad(`Достигнут предел: ${MAX_NOTES} записей`, 409);
-    const n: Note = { id: randomUUID(), kind, text: t, done: false, createdAt: new Date(this.now()).toISOString() };
-    this.notes.push(n);
-    this.record("add", n);
-    await this.save();
-    return { ...n };
-  }
+  listNotes(): Note[] { return this.taskService.listNotes(); }
+  addNote(kind: unknown, body: unknown): Promise<Note> { return this.taskService.addNote(kind, body); }
   /** A to-do with its date, importance and repeat in one step (the assistant's add_note). */
-  async addTask(body: unknown, opts: { dueAt?: unknown; priority?: unknown; repeat?: unknown } = {}): Promise<Note> {
-    const n = await this.addNote("todo", body);
-    const patch: Record<string, unknown> = {};
-    if (opts.dueAt !== undefined && opts.dueAt !== null && opts.dueAt !== "") patch.dueAt = opts.dueAt;
-    if (opts.priority === "high" || opts.priority === "low" || opts.priority === "normal") patch.priority = opts.priority;
-    if (opts.repeat !== undefined && opts.repeat !== "none") patch.repeat = opts.repeat;
-    if (!Object.keys(patch).length) return n;
-    try { return await this.updateTask(n.id, patch); } catch (e) { await this.removeNote(n.id); throw e; }
+  addTask(body: unknown, opts: { dueAt?: unknown; priority?: unknown; repeat?: unknown } = {}): Promise<Note> {
+    return this.taskService.addTask(body, opts);
   }
-  async editNote(id: string, body: unknown): Promise<Note> {
-    const n = this.notes.find((x) => x.id === id);
-    if (!n) throw bad("Запись не найдена", 404);
-    const t = text(body, "Текст");
-    if (t !== n.text) { n.text = t; this.record("edit", n); }
-    await this.save();
-    return { ...n };
-  }
+  editNote(id: string, body: unknown): Promise<Note> { return this.taskService.editNote(id, body); }
   /** Optional task details; older stored notes remain readable without migration. */
-  async updateTask(id: string, patch: Record<string, unknown>): Promise<Note> {
-    const n = this.notes.find(x => x.id === id);
-    if (!n) throw bad("Дело не найдено", 404);
-    if (n.kind !== "todo") throw bad("Поля планирования доступны только делам", 409);
-    const next = { ...n };
-    if ("priority" in patch) {
-      if (!["low", "normal", "high"].includes(String(patch.priority))) throw bad("Недопустимый приоритет");
-      next.priority = patch.priority as "low" | "normal" | "high";
-    }
-    if ("project" in patch) {
-      if (patch.project === null || patch.project === "") delete next.project;
-      else if (typeof patch.project === "string" && patch.project.trim().length <= 80) next.project = patch.project.trim();
-      else throw bad("Некорректный проект");
-    }
-    if ("dueAt" in patch) {
-      if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt;
-      else if (typeof patch.dueAt === "string" && Number.isFinite(Date.parse(patch.dueAt))) next.dueAt = new Date(patch.dueAt).toISOString();
-      else throw bad("Некорректный срок");
-      // a date set by hand is a fresh start: no "перенесено" mark, and the "срок скоро" reminder may come again
-      if (next.dueAt !== n.dueAt) { delete next.rolled; delete next.remindedFor; }
-    }
-    if ("estimateMinutes" in patch) {
-      if (patch.estimateMinutes === null) delete next.estimateMinutes;
-      else if (Number.isInteger(patch.estimateMinutes) && Number(patch.estimateMinutes) >= 1 && Number(patch.estimateMinutes) <= 1440) next.estimateMinutes = Number(patch.estimateMinutes);
-      else throw bad("Оценка времени: 1–1440 минут");
-    }
-    if ("repeat" in patch) {
-      const rep = repeatOf(patch.repeat);
-      if (rep) {
-        next.repeat = rep;
-        const base = next.dueAt ? new Date(next.dueAt) : new Date(this.now());
-        if (rep === "monthly" || rep === "yearly") next.repeatDay = base.getDate(); else delete next.repeatDay;
-      } else { delete next.repeat; delete next.repeatDay; }
-    }
-    if ("area" in patch) {
-      if (patch.area === null || patch.area === "") delete next.area;
-      else if (patch.area === "work" || patch.area === "personal") next.area = patch.area;
-      else throw bad("Сфера: work или personal");
-    }
-    if ("status" in patch) {
-      if (patch.status === null || patch.status === "" || patch.status === "todo") delete next.status;
-      else if (patch.status === "doing" || patch.status === "waiting") next.status = patch.status;
-      else throw bad("Статус: todo, doing или waiting");
-    }
-    if ("waitingFor" in patch) {
-      if (patch.waitingFor === null || patch.waitingFor === "") delete next.waitingFor;
-      else if (typeof patch.waitingFor === "string" && patch.waitingFor.trim() && patch.waitingFor.trim().length <= 80) next.waitingFor = patch.waitingFor.trim();
-      else throw bad("От кого ответ: до 80 символов");
-    }
-    if ("followUpAt" in patch) {
-      if (patch.followUpAt === null || patch.followUpAt === "") delete next.followUpAt;
-      else if (typeof patch.followUpAt === "string" && Number.isFinite(Date.parse(patch.followUpAt))) next.followUpAt = new Date(patch.followUpAt).toISOString();
-      else throw bad("Когда спросить снова: дата и время");
-      if (next.followUpAt !== n.followUpAt) delete next.followedUp;
-    }
-    // asking someone is part of «Жду ответа»: setting who or when puts the to-do there
-    if ((next.waitingFor || next.followUpAt) && !("status" in patch)) next.status = "waiting";
-    if (next.status !== "waiting") { delete next.waitingFor; delete next.followUpAt; delete next.followedUp; }
-    if ((next.status ?? null) !== (n.status ?? null)) { if (next.status) next.statusAt = new Date(this.now()).toISOString(); else delete next.statusAt; }
-    if ("files" in patch) {
-      if (patch.files !== null && !Array.isArray(patch.files)) throw bad("Файлы: список");
-      const f = cleanLinks(patch.files);
-      if (f) next.files = f; else delete next.files;
-    }
-    if ("meeting" in patch) {
-      if (patch.meeting === true) next.meeting = true;
-      else if (patch.meeting === false || patch.meeting === null) delete next.meeting;
-      else throw bad("Встреча: true или false");
-    }
-    if ("parentId" in patch) {
-      if (patch.parentId === null || patch.parentId === "") delete next.parentId;
-      else if (typeof patch.parentId === "string" && patch.parentId !== id && this.notes.some(x=>x.id === patch.parentId && x.kind === "todo" && !x.parentId)) next.parentId = patch.parentId;
-      else throw bad("Родительское дело не найдено или вложенность недопустима");
-    }
-    // fields removed above must go from the stored note too (Object.assign alone would keep them)
-    for (const k of Object.keys(n) as (keyof Note)[]) if (!(k in next)) delete n[k];
-    const moved = (n.dueAt ?? null) !== (next.dueAt ?? null) ? { from: n.dueAt ?? null, to: next.dueAt ?? null } : null;
-    Object.assign(n, next);
-    if (moved) this.record("move", n, moved);
-    await this.save();
-    return { ...n };
+  updateTask(id: string, patch: Record<string, unknown>): Promise<Note> {
+    return this.taskService.updateTask(id, patch);
   }
+
   /** Advisory only: never modifies tasks or schedules. */
   planToday(now = this.now()) {
     const start = new Date(now); start.setHours(0,0,0,0);
@@ -645,63 +558,9 @@ export class Organizer {
       advisoryOnly:true as const};
   }
   /** The board's order: the to-dos of one column in the order they were dragged to (ranks 0, 1, 2…). */
-  async orderTasks(ids: unknown): Promise<{ ok: true }> {
-    if (!Array.isArray(ids) || !ids.length || ids.length > 500 || !ids.every((x) => typeof x === "string")) throw bad("Порядок: от 1 до 500 дел");
-    let i = 0;
-    for (const id of ids as string[]) {
-      const n = this.notes.find((x) => x.id === id && x.kind === "todo");
-      if (n) n.rank = i++;
-    }
-    await this.save();
-    return { ok: true };
-  }
-  async setDone(id: string, done: boolean): Promise<Note> {
-    const n = this.notes.find((x) => x.id === id);
-    if (!n) throw bad("Запись не найдена", 404);
-    if (n.kind !== "todo") throw bad("Отметить выполненным можно только дело", 409);
-    if (n.done === done) return { ...n };
-    n.done = done;
-    this.record(done ? "done" : "undone", n);
-    if (done) {
-      n.completedAt = new Date(this.now()).toISOString();
-      if (n.repeat && !n.nextId && this.makeRoom()) {
-        // a repeating to-do: the next one appears as soon as this one is ticked off
-        const now = this.now();
-        const from = n.dueAt ? Date.parse(n.dueAt) : dayStart(now) + (23 * 60 + 59) * 60_000;
-        const nextAt = nextOccurrence(from, n.repeat, Math.max(now, from), n.repeatDay, this.workday);
-        // done on its day (or before) continues the streak; a late tick starts a new one
-        const onTime = !n.dueAt || now < dayStart(Date.parse(n.dueAt)) + 86_400_000;
-        const streak = onTime ? (n.streak ?? 0) + 1 : 1;
-        const copy: Note = { id: randomUUID(), kind: "todo", text: n.text, done: false, createdAt: new Date(now).toISOString(), dueAt: new Date(nextAt).toISOString(), repeat: n.repeat, streak,
-          ...(n.repeatDay ? { repeatDay: n.repeatDay } : {}), ...(n.priority ? { priority: n.priority } : {}), ...(n.project ? { project: n.project } : {}),
-          ...(n.estimateMinutes ? { estimateMinutes: n.estimateMinutes } : {}), ...(n.parentId ? { parentId: n.parentId } : {}),
-          ...(n.area ? { area: n.area } : {}), ...(n.meeting ? { meeting: true as const } : {}), ...(n.files ? { files: n.files.map((f) => ({ ...f })) } : {}) };
-        this.notes.push(copy);
-        n.nextId = copy.id;
-        n.nextSnapshot = JSON.stringify(copy);
-      }
-    } else {
-      delete n.completedAt;
-      // undoing the tick takes back the next copy, unless it was already worked on
-      const next = n.nextId ? this.notes.find((x) => x.id === n.nextId) : undefined;
-      // An edited occurrence belongs to the owner. Even a change of priority or due date must survive undo.
-      if (next && n.nextSnapshot && JSON.stringify(next) === n.nextSnapshot) this.notes = this.notes.filter((x) => x !== next);
-      delete n.nextId;
-      delete n.nextSnapshot;
-    }
-    await this.save();
-    return { ...n };
-  }
-  async removeNote(id: string) {
-    const gone = this.notes.find((x) => x.id === id);
-    if (!gone) throw bad("Запись не найдена", 404);
-    this.notes = this.notes.filter((x) => x !== gone);
-    this.record("remove", gone, gone.kind === "todo" && gone.done ? { from: gone.completedAt ?? null } : {});
-    // Subtasks of a removed to-do become ordinary to-dos instead of pointing at nothing
-    // (such orphans were hidden from the day plan and counted as stages of a missing task).
-    for (const x of this.notes) if (x.parentId === id) delete x.parentId;
-    await this.save();
-  }
+  orderTasks(ids: unknown): Promise<{ ok: true }> { return this.taskService.orderTasks(ids); }
+  setDone(id: string, done: boolean): Promise<Note> { return this.taskService.setDone(id, done); }
+  removeNote(id: string): Promise<void> { return this.taskService.removeNote(id); }
 
   // ---------- reminders ----------
   listReminders(): Reminder[] { return this.reminders.map((r) => ({ ...r })).sort((a, b) => Date.parse(a.at) - Date.parse(b.at)); }
