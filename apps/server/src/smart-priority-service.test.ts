@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Automation, Mission, Note } from "./organizer";
+import type { Automation, Note } from "./organizer";
 import { DEFAULT_AUTOMATION } from "./organizer";
 import type { MissionBoardItem } from "./mission-service";
 import { SmartPriorityService } from "./smart-priority-service";
