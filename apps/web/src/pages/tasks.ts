@@ -1384,7 +1384,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const rel = isToday ? "Сегодня" : UI.day === localDay(new Date(Date.now() + 86_400_000)) ? "Завтра" : null;
     const head = () => cardHead(dayHost, "day", rel ?? dayName[0]!.toUpperCase() + dayName.slice(1), rel === "Завтра" ? el("small", { cls: "muted", textContent: dayName }) : null);
     if (folded.has("day")) { dayHost.replaceChildren(head()); return; }
-    const [plan, blocks] = await Promise.all([isToday ? api.taskPlan() : Promise.resolve(null), api.timeBlocks(UI.day)]);
+    const [smart, blocks] = await Promise.all([isToday ? api.smartPriority(5) : Promise.resolve(null), api.timeBlocks(UI.day)]);
     if (run !== dayRun) return; // another day was picked meanwhile
     const sel = prodDay(UI.day);
     const dayItems = data ? monthItems(visibleOrg(), UI.day.slice(0, 7), 0).items.filter((x) => localDay(x.at) === UI.day) : [];
@@ -1399,9 +1399,32 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       : el("p", { cls: "muted small", textContent: "В этот день ничего не запланировано." }));
     if (open.length) parts.push(pick);
     parts.push(arrangeBox());
-    if (plan?.ok && plan.value.suggested.length) {
-      parts.push(el("h3", { textContent: "Что сделать сначала" }),
-        el("ol", { cls: "tasks-plan-list numbered" }, ...plan.value.suggested.slice(0, 3).map((x) => el("li", {}, el("span", { cls: "grow", textContent: x.text }), el("span", { cls: "br-tag", textContent: x.reason })))));
+    if (smart?.ok) {
+      const mode = smart.value.mode === "work" ? "рабочее время" : smart.value.mode === "personal" ? "личное время" : "общий режим";
+      if (smart.value.recommended.length) {
+        parts.push(
+          el("h3", {}, "Что делать сейчас", el("small", { cls: "muted", textContent: " · " + mode })),
+          el("ol", { cls: "tasks-plan-list numbered" }, ...smart.value.recommended.slice(0, 3).map((x) => {
+            const note = data?.notes.find((n) => n.id === x.id);
+            const why = x.reasons.join(" · ");
+            return el("li", { title: why },
+              el("span", { cls: "grow" },
+                el("span", { textContent: x.text }),
+                el("small", { cls: "muted", textContent: " " + x.estimateMinutes + " мин · " + why })),
+              el("span", { cls: "br-tag", textContent: x.primaryReason }),
+              note ? btn("Фокус", () => startFocus(note), { small: true, icon: "clock", title: "Начать 25 минут фокуса на этом деле" }) : null);
+          })),
+        );
+      } else if (smart.value.considered) {
+        const ex = smart.value.excluded;
+        const why = [
+          ex.waiting ? `ждут ответа: ${ex.waiting}` : "",
+          ex.blocked ? `заблокировано: ${ex.blocked}` : "",
+          ex.inactiveMission ? `цели на паузе: ${ex.inactiveMission}` : "",
+          ex.scheduledLater ? `встречи позже: ${ex.scheduledLater}` : "",
+        ].filter(Boolean).join(", ");
+        parts.push(el("p", { cls: "muted small", textContent: "Сейчас нет доступного следующего дела" + (why ? " — " + why + "." : ".") }));
+      }
     }
     if (blocks.ok && blocks.value.blocks.length) {
       const v = blocks.value;
