@@ -918,7 +918,7 @@ export class Organizer {
     if (!force) this.reminders.push({ id: randomUUID(), text: ring.slice(0, MAX_TEXT), at: stamp, createdAt: stamp, status: "due", firedAt: stamp, source: kind });
     const what = kind === "brief" ? "утреннюю сводку" : kind === "evening" ? "итог дня" : "обзор недели";
     if (!force) this.addLog(kind, "Составила " + what, { created: [note.id] });
-    this.pruneDone();
+    this.reminderService.pruneDone();
     await this.save();
     return { ...note };
   }
