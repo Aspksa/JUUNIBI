@@ -1,7 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import { isWorkday, nextHoliday, prodDay } from "@juunibi/core";
+import { OrganizerRepository } from "./organizer-repository";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -215,19 +214,6 @@ export function alignStart(at: number, repeat: Repeat | undefined, workday: (d: 
 }
 /** Monday to Friday; with the production calendar, holidays are skipped and working Saturdays count. */
 export const weekday = (d: Date) => d.getDay() !== 0 && d.getDay() !== 6;
-/**
- * Windows (antivirus, OneDrive, an open editor) can hold the file for a moment: a rename that fails then
- * would leave the old file on disk, and a dismissed reminder would come back after a restart.
- */
-async function renameRetry(from: string, to: string, tries = 6) {
-  for (let i = 1; ; i++) {
-    try { return await rename(from, to); } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (i >= tries || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) throw e;
-      await new Promise((r) => setTimeout(r, 40 * i));
-    }
-  }
-}
 const localKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const dayStart = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const hhmm = (t: number) => new Date(t).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
@@ -311,7 +297,7 @@ export class Organizer {
   private notes: Note[] = [];
   private missions: Mission[] = [];
   private reminders: Reminder[] = [];
-  private writes: Promise<void> = Promise.resolve();
+  private readonly repository: OrganizerRepository;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
@@ -332,38 +318,15 @@ export class Organizer {
    * Set by the server after the assistant is ready.
    */
   composeBrief?: (facts: string) => Promise<string | null>;
-  constructor(private readonly file: string, private readonly now: () => number = Date.now) {}
+  constructor(file: string, private readonly now: () => number = Date.now) {
+    this.repository = new OrganizerRepository(file);
+  }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
 
-  /** Fall back to the previous valid snapshot after a partial or corrupted main file. */
-  private async readRecoverable(): Promise<string> {
-    try {
-      const value = await readFile(this.file, "utf8");
-      JSON.parse(value);
-      return value;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") {
-        // A missing main file may still have a valid snapshot after interrupted recovery.
-        try { const backup = await readFile(this.file + ".bak", "utf8"); JSON.parse(backup); return backup; }
-        catch { throw error; }
-      }
-      if (!(error instanceof SyntaxError)) throw error;
-      try {
-        const backup = await readFile(this.file + ".bak", "utf8");
-        JSON.parse(backup);
-        return backup;
-      } catch {
-        // Preserve the original parse error: an absent backup is not a first launch.
-        throw error;
-      }
-    }
-  }
-
   async load() {
     try {
-      const raw = JSON.parse(await this.readRecoverable()) as { notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown };
+      const raw = await this.repository.load<{ notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown }>();
       if (Array.isArray(raw.projects)) this.projects = raw.projects.map(cleanProject).filter((x): x is ProjectMeta => !!x).slice(0, MAX_PROJECTS);
       if (Array.isArray(raw.templates)) this.templates = raw.templates.filter((t): t is TaskTemplate => !!t && typeof t.id === "string" && typeof t.text === "string" && !!t.text.trim() && t.text.length <= MAX_TEXT).slice(0, MAX_TEMPLATES);
       if (Array.isArray(raw.daysOff)) this.daysOff = raw.daysOff.filter((d): d is DayOff => !!d && typeof d.id === "string" && DAY_RE.test(d.from) && DAY_RE.test(d.to) && d.from <= d.to && (d.kind === "vacation" || d.kind === "sick")).slice(-MAX_DAYS_OFF);
@@ -384,26 +347,22 @@ export class Organizer {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
   }
   private save() {
-    const data = JSON.stringify({ notes: this.notes, reminders: this.reminders, missions: this.missions, automation: this.automation, autoState: this.autoState, log: this.log, history: this.history, autoCount: this.autoCount, moveRequests: this.moveRequests, projects: this.projects, templates: this.templates, daysOff: this.daysOff });
-    this.writes = this.writes.catch(() => {}).then(async () => {
-      await mkdir(path.dirname(this.file), { recursive: true });
-      const tmp = this.file + "." + randomUUID() + ".tmp";
-      await writeFile(tmp, data, { mode: 0o600 });
-      // Never replace a known-good backup with corrupt data.
-      try {
-        const previous = await readFile(this.file, "utf8");
-        JSON.parse(previous);
-        const backupTmp = this.file + "." + randomUUID() + ".bak.tmp";
-        await writeFile(backupTmp, previous, { mode: 0o600 });
-        await renameRetry(backupTmp, this.file + ".bak");
-      } catch (error) {
-        if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-      await renameRetry(tmp, this.file);
+    return this.repository.save({
+      notes: this.notes,
+      reminders: this.reminders,
+      missions: this.missions,
+      automation: this.automation,
+      autoState: this.autoState,
+      log: this.log,
+      history: this.history,
+      autoCount: this.autoCount,
+      moveRequests: this.moveRequests,
+      projects: this.projects,
+      templates: this.templates,
+      daysOff: this.daysOff,
     });
-    return this.writes;
   }
-  flush() { return this.writes; }
+  flush() { return this.repository.flush(); }
 
   /** «Дела и достижения» read the whole story: events oldest first, and how often the automation did each thing. */
   listHistory(): TaskEvent[] { return this.history.map((e) => ({ ...e })); }
