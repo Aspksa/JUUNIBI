@@ -8,6 +8,7 @@ import { BriefService } from "./brief-service";
 import { MissionService } from "./mission-service";
 import { InsightsService } from "./insights-service";
 import { SmartPriorityService } from "./smart-priority-service";
+import { SmartDayPlannerService } from "./smart-day-planner";
 import {
   WorkspaceService,
   areaOf,
@@ -290,6 +291,7 @@ export class Organizer {
   private readonly missionService: MissionService;
   private readonly insightsService: InsightsService;
   private readonly smartPriorityService: SmartPriorityService;
+  private readonly smartDayPlannerService: SmartDayPlannerService;
   private readonly planningService: PlanningService;
   private readonly workspaceService: WorkspaceService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
@@ -423,6 +425,18 @@ export class Organizer {
       workDayFor: (date) => this.workDayFor(date),
       now: this.now,
     });
+    this.smartDayPlannerService = new SmartDayPlannerService({
+      getNotes: () => this.notes,
+      getReminders: () => this.reminders,
+      getAutomation: () => this.automation,
+      now: this.now,
+      dayKind: (day) => this.briefService.dayKind(day),
+      rank: (limit, now) => this.smartPriorityService.rank(limit, now),
+      isWork: (note) => this.isWork(note),
+      record: (kind, note, extra) => this.record(kind, note, extra),
+      addLog: (kind, text, undo) => this.automationEngine.addLog(kind, text, undo),
+      save: () => this.save(),
+    });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
@@ -543,7 +557,12 @@ export class Organizer {
 
   /** Explainable, read-only ranking for «Что делать сейчас». */
   smartPriority(limit = 5, now = this.now()) {
-    return this.smartPriorityService.rank(limit, now);
+    return this.smartPriorityService.rank(Math.min(10, Math.max(1, limit)), now);
+  }
+
+  /** Preview/apply Smart Day Planner. Apply requires the preview fingerprint. */
+  smartDayPlan(day: string, apply = false, ids?: string[], fingerprint?: string) {
+    return this.smartDayPlannerService.plan(day, apply, ids, fingerprint);
   }
 
   /** Calendar, statistics and deterministic Brain-compatible recommendations: no network, no side effects. */
