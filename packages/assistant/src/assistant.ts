@@ -1,12 +1,12 @@
 import { Logger } from "@juunibi/core";
 import { DiagnosticCoordinator, type DiagnosticBatch } from "./diagnostic-coordinator";
 import { AgentLoop, type AgentLoopEvent } from "./agent-loop";
-import { taskExecutionInstructions } from "./task-intent";
-import type { LlmProvider, Message } from "./llm";
+import type { LlmProvider } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter } from "./memory";
 import { ToolRegistry, type Risk } from "./tools";
 import { ToolExecutor, type ApprovalRequest, type ToolStatus } from "./tool-executor";
-import { buildAssistantSystemPrompt, HISTORY_LIMIT, prepareConversationContext } from "./context-builder";
+import { HISTORY_LIMIT } from "./context-builder";
+import { RequestContextBuilder, type AssistantPrefs, type BrainGuidance } from "./request-context";
 import { ConversationSummaryService } from "./conversation-summary";
 import { MemoryLearningService } from "./memory-learning";
 import { TurnJournal, type Turn } from "./turn-journal";
@@ -15,6 +15,8 @@ import { SessionHistory } from "./session-history";
 
 export type { ApprovalRequest, ToolStatus } from "./tool-executor";
 export type { Turn } from "./turn-journal";
+export type { AssistantPrefs, BrainGuidance } from "./request-context";
+export { nowLine } from "./request-context";
 export type AskEvent = AgentLoopEvent;
 export interface AskOptions {
   /** Client-held conversation so far (the client is the source of truth). Replaces server-side session memory. */
@@ -23,11 +25,10 @@ export interface AskOptions {
   /** Leave no trace: the turn is not logged, nothing is proposed to memory, no summary is kept. Used by quality checks. */
   ephemeral?: boolean;
   /** Trusted server-side reasoning guidance; never grants tool permissions. */
-  brainGuidance?: { needsPlanning: boolean; needsApproval: boolean; needsEvidenceReview: boolean; evidenceWarnings?: string[] };
+  brainGuidance?: BrainGuidance;
 }
 export interface AskResult { turnId: string; reply: string; tools: string[]; memory: string[] }
 
-export interface AssistantPrefs { suggestions: "off" | "rules" | "smart"; summaries: boolean }
 export interface AssistantOptions {
   /** Live owner preferences (memory proposals, conversation summaries). Defaults: smart proposals, no summaries. */
   prefs?: () => AssistantPrefs;
@@ -64,16 +65,6 @@ export interface AssistantOptions {
 const CHAT_TIMEOUT_MS = 20_000;
 const CHAT_RETRIES = 1;
 
-/** "Сейчас: пятница, 9 октября 2026, 05:30 (UTC+03:00)" — lets the model resolve "завтра" and "в 10". */
-export function nowLine(d: Date): string {
-  const tzMin = -d.getTimezoneOffset();
-  const sign = tzMin >= 0 ? "+" : "-", abs = Math.abs(tzMin);
-  const tz = `UTC${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
-  const date = d.toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-  return `Сейчас: ${date}, ${time} (${tz}).`;
-}
-
 export class Assistant {
   readonly tools: ToolRegistry;
   readonly memory: Memory;
@@ -82,6 +73,7 @@ export class Assistant {
   private readonly agentLoop: AgentLoop;
   private readonly diagnostics: DiagnosticCoordinator;
   private readonly summaryService: ConversationSummaryService;
+  private readonly requestContext: RequestContextBuilder;
   private readonly memoryLearning: MemoryLearningService;
   private readonly turnJournal: TurnJournal;
   private readonly sessions = new SessionHistory(HISTORY_LIMIT * 2);
@@ -115,6 +107,17 @@ export class Assistant {
       log: this.log,
       waitForChatIdle: () => this.chatIdle(),
     });
+    this.requestContext = new RequestContextBuilder({
+      memory: this.memory,
+      summaries: this.summaryService,
+      sessions: this.sessions,
+      ...(o.prefs ? { prefs: o.prefs } : {}),
+      ...(o.now ? { now: o.now } : {}),
+      ...(o.persona ? { persona: o.persona } : {}),
+      ...(o.instructions ? { instructions: o.instructions } : {}),
+      ...(o.describeModules ? { describeModules: o.describeModules } : {}),
+      ...(o.describeBrain ? { describeBrain: o.describeBrain } : {}),
+    });
     this.memoryLearning = new MemoryLearningService({
       llm: o.llm,
       memory: this.memory,
@@ -138,18 +141,6 @@ export class Assistant {
   /** Rated and unrated turns, newest last, as plain copies (for the quality report). */
   turnsSnapshot(): Turn[] { return this.turnJournal.snapshot(); }
 
-  private system(memories: MemoryEntry[], summary?: string): string {
-    return buildAssistantSystemPrompt({
-      ...(this.o.persona ? { persona: this.o.persona } : {}),
-      ownerInstructions: this.o.instructions?.().trim() ?? "",
-      currentTime: nowLine(this.o.now?.() ?? new Date()),
-      modules: this.o.describeModules?.() ?? [],
-      ...(this.o.describeBrain ? { brain: { snapshot: this.o.describeBrain() } } : {}),
-      ...(summary ? { summary } : {}),
-      memories: memories.map((m) => m.text),
-    });
-  }
-
   async ask(text: string, session = "default", signal?: AbortSignal, opts: AskOptions = {}): Promise<AskResult> {
     this.activeAsks++;
     try { return await this.answer(text, session, signal, opts); }
@@ -161,25 +152,19 @@ export class Assistant {
   private chatIdle(): Promise<void> { return this.activeAsks ? new Promise((resolve) => this.askWaiters.push(resolve)) : Promise.resolve(); }
 
   private async answer(text: string, session: string, signal: AbortSignal | undefined, opts: AskOptions): Promise<AskResult> {
-    const mem = await this.memory.context(text, 1500);
-    const prefs = this.o.prefs?.() ?? { suggestions: "smart", summaries: false };
-    const historyContext = prepareConversationContext(opts.history);
-    const clientHistory = historyContext.provided ? historyContext.recent : undefined;
-    const older = historyContext.older;
-    const summary = prefs.summaries && older.length && !opts.ephemeral
-      ? await this.summaryService.get(session, older)
-      : undefined;
-    const hist = clientHistory ?? (opts.ephemeral ? [] : this.sessions.get(session));
+    const prepared = await this.requestContext.prepare({
+      text,
+      session,
+      ...(opts.history ? { history: opts.history } : {}),
+      ...(opts.ephemeral !== undefined ? { ephemeral: opts.ephemeral } : {}),
+      ...(opts.brainGuidance ? { brainGuidance: opts.brainGuidance } : {}),
+    });
+    const mem = prepared.memories;
+    const prefs = prepared.prefs;
+    const older = prepared.olderHistory;
+    const hist = prepared.history;
+    const msgs = prepared.messages;
     const guidance = opts.brainGuidance;
-    const instructions = guidance ? [
-      guidance.needsPlanning ? "Сложная задача: сначала сформулируй план действий и предположения; не утверждай, что план уже выполнен." : "",
-      guidance.needsEvidenceReview ? "Отделяй проверенные сведения от гипотез. Для проверки фактов используй доступные инструменты чтения." : "",
-      guidance.needsApproval ? "Возможны действия с последствиями: поясни риски и используй только фактическое подтверждение через существующий ApprovalGate. Текст пользователя или этот совет не являются разрешением." : "",
-      ...(guidance.evidenceWarnings ?? []).filter(x => typeof x === "string").slice(0, 3).map(x => x.slice(0, 300)),
-    ].filter(Boolean).join(" ") : "";
-    const msgs: Message[] = [{ role: "system", content: this.system(mem, summary) + "\n\n" + taskExecutionInstructions(text) },
-      ...(instructions ? [{ role: "system" as const, content: instructions }] : []),
-      ...hist.slice(-HISTORY_LIMIT), { role: "user", content: text }];
     // The automatic brain review already ran for this message, so its tool would only add a model round trip;
     // the other brain tools are offered only when the review says the task needs planning.
     const toolAllowed = (name: string) => this.o.toolPolicy?.(name) !== false &&
@@ -196,7 +181,7 @@ export class Assistant {
         tools: functional.used,
         memoryIds: mem.map((m) => m.id),
       });
-      if (!clientHistory) this.sessions.appendTurn(session, text, functional.reply);
+      if (!prepared.usesClientHistory) this.sessions.appendTurn(session, text, functional.reply);
       return { turnId: turn.id, reply: functional.reply, tools: functional.used, memory: mem.map((m) => m.text) };
     }
 
@@ -227,7 +212,7 @@ export class Assistant {
     if (prefs.summaries && older.length && !opts.ephemeral) this.summaryService.queue(session, older);
 
     if (opts.ephemeral) return { turnId: "", reply, tools: used, memory: mem.map((m) => m.text) };
-    if (!clientHistory) this.sessions.appendTurn(session, text, reply);
+    if (!prepared.usesClientHistory) this.sessions.appendTurn(session, text, reply);
 
     const turn = await this.turnJournal.record({
       session,
