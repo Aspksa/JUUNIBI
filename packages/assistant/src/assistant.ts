@@ -7,13 +7,12 @@ import { taskExecutionInstructions } from "./task-intent";
 import type { LlmProvider, Message } from "./llm";
 import { Memory, type MemoryEntry, type StorageAdapter, MemoryAdapter } from "./memory";
 import { ToolRegistry, type Risk } from "./tools";
-import { validateToolArgs } from "./security";
-import { reviewDangerousTool } from "./action-review";
+import { ToolExecutor, type ApprovalRequest, type ToolStatus } from "./tool-executor";
 import { createHash } from "node:crypto";
 import { redactSensitive } from "./redact";
 import { buildAssistantSystemPrompt, HISTORY_LIMIT, prepareConversationContext } from "./context-builder";
 
-export interface ApprovalRequest { tool: string; args: Record<string, unknown>; risk: Risk; signal?: AbortSignal }
+export type { ApprovalRequest, ToolStatus } from "./tool-executor";
 export interface Turn {
   id: string;
   session: string;
@@ -26,7 +25,6 @@ export interface Turn {
   reflected?: boolean;
   at: number;
 }
-export type ToolStatus = "ok" | "error" | "denied";
 export type AskEvent =
   | { type: "delta"; text: string }
   /** The model is reasoning before it answers (sent once per model call). */
@@ -77,7 +75,6 @@ export interface AssistantOptions {
   instructions?: () => string;
 }
 
-const MAX_TOOL_OUTPUT = 8000;
 const SUMMARY_MIN_NEW = 4;
 /** A waiting user hears about a Cloud.ru outage within ~1 minute instead of ~3 (background work keeps the provider's longer retries). */
 const CHAT_TIMEOUT_MS = 20_000;
@@ -104,6 +101,7 @@ export class Assistant {
   readonly tools: ToolRegistry;
   readonly memory: Memory;
   private readonly log: Logger;
+  private readonly toolExecutor: ToolExecutor;
   private readonly sessions = new Map<string, Message[]>();
   private turns: Turn[] = [];
   private turnsReady: Promise<void>;
@@ -121,6 +119,12 @@ export class Assistant {
     this.tools = o.tools ?? new ToolRegistry();
     this.memory = o.memory ?? new Memory();
     this.log = o.log ?? new Logger("assistant");
+    this.toolExecutor = new ToolExecutor({
+      tools: this.tools,
+      ...(o.approve ? { approve: o.approve } : {}),
+      ...(o.toolPolicy ? { toolPolicy: o.toolPolicy } : {}),
+      log: this.log,
+    });
     this.turnsStore = o.turnsStore ?? new MemoryAdapter();
     this.turnsReady = this.turnsStore.load().then((raw) => {
       try { const a = raw ? JSON.parse(raw) : []; if (Array.isArray(a)) this.turns = a; } catch { /* start empty */ }
@@ -406,38 +410,8 @@ export class Assistant {
     });
   }
 
-  private async runTool(name: string, rawArgs: string, signal?: AbortSignal, readOnly = false): Promise<{ text: string; status: ToolStatus }> {
-    const err = (text: string) => ({ text, status: "error" as const });
-    const tool = this.tools.get(name);
-    if (!tool) return err(`Ошибка: инструмента "${name}" нет.`);
-    let args: Record<string, unknown>;
-    try {
-      const p = JSON.parse(rawArgs || "{}");
-      if (typeof p !== "object" || p === null || Array.isArray(p)) throw new Error("not an object");
-      args = p;
-    } catch { return err("Ошибка: аргументы должны быть JSON-объектом."); }
-    const invalid = validateToolArgs(tool.parameters, args);
-    if (invalid) return err(`Ошибка: ${invalid.charAt(0).toLowerCase() + invalid.slice(1)}.`);
-    if (this.o.toolPolicy?.(name) === false) return { text: "Отказано: инструмент отключён владельцем в разделе «Модули».", status: "denied" };
-    const preflight = reviewDangerousTool(tool);
-    if (!preflight.valid) {
-      this.log.warn(`tool ${name} denied by structured preflight: ${preflight.blockers.join("; ")}`);
-      return { text: "Отказано: " + preflight.blockers.join("; "), status: "denied" };
-    }
-    if (readOnly && tool.risk !== "read") return { text: "Отказано: проверка качества не выполняет действий.", status: "denied" };
-    if (tool.risk !== "read") {
-      const ok = this.o.approve ? await this.o.approve({ tool: name, args, risk: tool.risk, ...(signal ? { signal } : {}) }) : false;
-      this.log.info(`tool ${name} (${tool.risk}) ${ok ? "approved" : "denied"}`);
-      if (!ok) return { text: "Отказано: действие не одобрено супервайзером/пользователем.", status: "denied" };
-    }
-    try {
-      const out = await tool.run(args);
-      const s = typeof out === "string" ? out : JSON.stringify(out) ?? "null";
-      return { text: s.length > MAX_TOOL_OUTPUT ? s.slice(0, MAX_TOOL_OUTPUT) + "…[обрезано]" : s, status: "ok" };
-    } catch (e) {
-      this.log.warn(`tool ${name} failed`, e);
-      return err(`Ошибка инструмента: ${(e as Error).message}`);
-    }
+  private runTool(name: string, rawArgs: string, signal?: AbortSignal, readOnly = false) {
+    return this.toolExecutor.run(name, rawArgs, signal, readOnly);
   }
 
   /** Consult the existing chat model only for a pending preference and relevant confirmed history. */
