@@ -6,6 +6,23 @@ import { ReminderService } from "./reminder-service";
 import { AutomationEngine } from "./automation-engine";
 import { PlanningService } from "./planning-service";
 import { BriefService } from "./brief-service";
+import {
+  WorkspaceService,
+  areaOf,
+  PROJECT_COLORS,
+  MAX_PROJECTS,
+  MAX_TEMPLATES,
+  MAX_DAYS_OFF,
+  DAY_RE,
+  type Area,
+  type ProjectMeta,
+  type TaskTemplate,
+  type DayOff,
+} from "./workspace-service";
+
+export { areaOf, PROJECT_COLORS } from "./workspace-service";
+export type { Area, ProjectMeta, TaskTemplate, DayOff } from "./workspace-service";
+export type TaskStatus = "doing" | "waiting";
 
 export interface Mission { id: string; title: string; description: string; createdAt: string; status: "active" | "paused" | "complete" }
 export interface Note {
@@ -57,23 +74,6 @@ export function cleanLinks(v: unknown): FileLink[] | undefined {
     if (out.length >= MAX_LINKS) break;
   }
   return out.length ? out : undefined;
-}
-export type Area = "work" | "personal";
-export type TaskStatus = "doing" | "waiting";
-/** A project's look and plan: colour, deadline and whether it is work. Projects themselves are the `project` names of to-dos. */
-export interface ProjectMeta { name: string; color?: string; dueAt?: string; area?: Area; files?: FileLink[] }
-export const PROJECT_COLORS = ["gold", "blue", "green", "violet", "red", "teal", "orange", "gray"];
-/** A saved quick-entry line («отчёт по пятницам в 17:00 #работа»), added again with one click. */
-export interface TaskTemplate { id: string; text: string }
-/** Days away from work: on them work to-dos are not planned and not moved in. */
-export interface DayOff { id: string; from: string; to: string; kind: "vacation" | "sick" }
-/** A to-do's sphere: its own, else its project's, else «work» for a project named работа/work. */
-export function areaOf(n: Pick<Note, "area" | "project">, projects: ProjectMeta[] = []): Area {
-  if (n.area) return n.area;
-  if (!n.project) return "personal";
-  const p = projects.find((x) => x.name.toLowerCase() === n.project!.toLowerCase());
-  if (p?.area) return p.area;
-  return /^(работа|work|рабочее)$/i.test(n.project) ? "work" : "personal";
 }
 export type AutoNote = "brief" | "evening" | "week";
 /**
@@ -166,9 +166,6 @@ export interface Reminder { id: string; text: string; at: string; createdAt: str
   /** The rule that created it (its reminder is dropped when the to-do is done). */
   rule?: string }
 const MAX_NOTES = 500, MAX_REMINDERS = 200, MAX_TEXT = 500, MAX_AUTO_TEXT = 1500, MAX_LOG = 60, MAX_HISTORY = 4000;
-const YEAR = 366 * 86_400_000;
-const MAX_PROJECTS = 100, MAX_TEMPLATES = 30, MAX_DAYS_OFF = 50;
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 function cleanProject(v: unknown): ProjectMeta | null {
   const o = v as Partial<ProjectMeta> | null;
   if (!o || typeof o.name !== "string" || !o.name.trim() || o.name.length > 80) return null;
@@ -295,6 +292,7 @@ export class Organizer {
   private readonly automationEngine: AutomationEngine;
   private readonly briefService: BriefService;
   private readonly planningService: PlanningService;
+  private readonly workspaceService: WorkspaceService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
   /** The local days the brief, the overdue roll-over, the evening summary and the weekly review last ran. */
   private autoState: { briefDay?: string; rollDay?: string; eveningDay?: string; weekDay?: string } = {};
@@ -316,6 +314,18 @@ export class Organizer {
   composeBrief?: (facts: string) => Promise<string | null>;
   constructor(file: string, private readonly now: () => number = Date.now) {
     this.repository = new OrganizerRepository(file);
+    this.workspaceService = new WorkspaceService({
+      getProjects: () => this.projects,
+      replaceProjects: (projects) => { this.projects = projects; },
+      getTemplates: () => this.templates,
+      replaceTemplates: (templates) => { this.templates = templates; },
+      getDaysOff: () => this.daysOff,
+      replaceDaysOff: (daysOff) => { this.daysOff = daysOff; },
+      getNotes: () => this.notes,
+      save: () => this.save(),
+      workday: (date) => this.workday(date),
+      cleanLinks,
+    });
     this.taskService = new TaskService({
       getNotes: () => this.notes,
       replaceNotes: (notes) => { this.notes = notes; },
@@ -508,65 +518,23 @@ export class Organizer {
     return this.updateTask(stage.id,{project:id});
   }
   // ---------- projects, templates, days away ----------
-  listProjects(): ProjectMeta[] { return this.projects.map((p) => ({ ...p })); }
-  /** Colour, deadline (YYYY-MM-DD) or sphere of a project; null clears a field. A project with nothing set is forgotten. */
-  async setProject(name: unknown, patch: Record<string, unknown>): Promise<ProjectMeta> {
-    if (typeof name !== "string" || !name.trim() || name.trim().length > 80) throw bad("Название проекта: от 1 до 80 символов");
-    const key = name.trim();
-    const cur = this.projects.find((p) => p.name.toLowerCase() === key.toLowerCase()) ?? { name: key };
-    const next: ProjectMeta = { ...cur };
-    if ("color" in patch) { if (patch.color === null || patch.color === "") delete next.color; else if (typeof patch.color === "string" && PROJECT_COLORS.includes(patch.color)) next.color = patch.color; else throw bad("Цвет: " + PROJECT_COLORS.join(", ")); }
-    if ("dueAt" in patch) { if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt; else if (typeof patch.dueAt === "string" && DAY_RE.test(patch.dueAt)) next.dueAt = patch.dueAt; else throw bad("Срок проекта: YYYY-MM-DD"); }
-    if ("area" in patch) { if (patch.area === null || patch.area === "") delete next.area; else if (patch.area === "work" || patch.area === "personal") next.area = patch.area; else throw bad("Сфера: work или personal"); }
-    if ("files" in patch) { if (patch.files !== null && !Array.isArray(patch.files)) throw bad("Файлы: список"); const f = cleanLinks(patch.files); if (f) next.files = f; else delete next.files; }
-    this.projects = this.projects.filter((p) => p !== cur);
-    if (next.color || next.dueAt || next.area || next.files) {
-      if (this.projects.length >= MAX_PROJECTS) throw bad(`Достигнут предел: ${MAX_PROJECTS} проектов`, 409);
-      this.projects.push(next);
-    }
-    await this.save();
-    return { ...next };
+  listProjects(): ProjectMeta[] { return this.workspaceService.listProjects(); }
+  setProject(name: unknown, patch: Record<string, unknown>): Promise<ProjectMeta> {
+    return this.workspaceService.setProject(name, patch);
   }
-  listTemplates(): TaskTemplate[] { return this.templates.map((t) => ({ ...t })); }
-  async addTemplate(body: unknown): Promise<TaskTemplate> {
-    const t = text(body, "Шаблон");
-    if (this.templates.some((x) => x.text.toLowerCase() === t.toLowerCase())) throw bad("Такой шаблон уже есть", 409);
-    if (this.templates.length >= MAX_TEMPLATES) throw bad(`Достигнут предел: ${MAX_TEMPLATES} шаблонов`, 409);
-    const tpl = { id: randomUUID(), text: t };
-    this.templates.push(tpl);
-    await this.save();
-    return { ...tpl };
+  listTemplates(): TaskTemplate[] { return this.workspaceService.listTemplates(); }
+  addTemplate(body: unknown): Promise<TaskTemplate> { return this.workspaceService.addTemplate(body); }
+  removeTemplate(id: string): Promise<void> { return this.workspaceService.removeTemplate(id); }
+  listDaysOff(): DayOff[] { return this.workspaceService.listDaysOff(); }
+  addDayOff(from: unknown, to: unknown, kind: unknown): Promise<{ dayOff: DayOff; clash: string[] }> {
+    return this.workspaceService.addDayOff(from, to, kind);
   }
-  async removeTemplate(id: string) {
-    if (!this.templates.some((t) => t.id === id)) throw bad("Шаблон не найден", 404);
-    this.templates = this.templates.filter((t) => t.id !== id);
-    await this.save();
-  }
-  listDaysOff(): DayOff[] { return this.daysOff.map((d) => ({ ...d })).sort((a, b) => a.from.localeCompare(b.from)); }
-  /** A vacation or sick leave from `from` to `to` (local days, inclusive). Returns it with the open work to-dos due inside it. */
-  async addDayOff(from: unknown, to: unknown, kind: unknown): Promise<{ dayOff: DayOff; clash: string[] }> {
-    if (typeof from !== "string" || !DAY_RE.test(from) || typeof to !== "string" || !DAY_RE.test(to) || !Number.isFinite(Date.parse(from + "T12:00")) || !Number.isFinite(Date.parse(to + "T12:00"))) throw bad("Даты: YYYY-MM-DD");
-    if (to < from) throw bad("Конец раньше начала");
-    if (Date.parse(to + "T12:00") - Date.parse(from + "T12:00") > YEAR) throw bad("Не длиннее года");
-    if (kind !== "vacation" && kind !== "sick") throw bad("Вид: vacation или sick");
-    if (this.daysOff.some((d) => d.from <= to && from <= d.to)) throw bad("Эти дни уже отмечены", 409);
-    if (this.daysOff.length >= MAX_DAYS_OFF) this.daysOff = this.daysOff.slice(1);
-    const d: DayOff = { id: randomUUID(), from, to, kind };
-    this.daysOff.push(d);
-    await this.save();
-    const clash = this.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt && areaOf(n, this.projects) === "work" && localKey(Date.parse(n.dueAt)) >= from && localKey(Date.parse(n.dueAt)) <= to).map((n) => n.id);
-    return { dayOff: { ...d }, clash };
-  }
-  async removeDayOff(id: string) {
-    if (!this.daysOff.some((d) => d.id === id)) throw bad("Не найдено", 404);
-    this.daysOff = this.daysOff.filter((d) => d.id !== id);
-    await this.save();
-  }
+  removeDayOff(id: string): Promise<void> { return this.workspaceService.removeDayOff(id); }
   /** The vacation or sick leave on a local day, if any. */
-  awayOn(key: string): DayOff | undefined { return this.daysOff.find((d) => d.from <= key && key <= d.to); }
-  /** A working day for work to-dos: a working day of the calendar the owner is not away on. */
-  private workDayFor = (d: Date) => this.workday(d) && !this.awayOn(localKey(d.getTime()));
-  private isWork = (n: Note) => areaOf(n, this.projects) === "work";
+  awayOn(key: string): DayOff | undefined { return this.workspaceService.awayOn(key); }
+  /** A working day for work to-dos: production calendar plus explicit days away. */
+  private workDayFor = (date: Date) => this.workspaceService.workDayFor(date);
+  private isWork = (note: Note) => this.workspaceService.isWork(note);
 
   // ---------- notes and to-dos ----------
   listNotes(): Note[] { return this.taskService.listNotes(); }
