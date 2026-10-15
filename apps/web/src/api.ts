@@ -125,6 +125,14 @@ export interface SmartPriorityResult {
   recommended: SmartPriorityItem[]; advisoryOnly: true;
 }
 export interface ArrangePlan { day: string; window: { from: string; to: string }; placed: { id: string; text: string; start: string; minutes: number; reason: string }[]; left: number; applied: number }
+export interface SmartDayPlan {
+  day: string; generatedAt: string; fingerprint: string; mode: "work" | "personal" | "mixed";
+  window: { from: string; to: string };
+  fixed: { id: string; text: string; start: string; end: string; minutes: number; kind: "meeting" | "task" | "reminder" }[];
+  placed: { id: string; text: string; start: string; end: string; minutes: number; score: number; reason: string; reasons: string[]; area: Area }[];
+  left: number; unscheduled: { id: string; text: string; reason: string }[];
+  applied: number; warnings: string[]; advisoryOnly: boolean;
+}
 export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; source?: string; rule?: string }
 export interface Brief {
   now: string; due: { id: string; text: string; at: string }[]; today: { id: string; text: string; at: string }[];
@@ -341,6 +349,7 @@ export const api = {
   undoAuto: (id: string) => attemptAsync(() => call<AutoLogEntry>(`/api/organizer/log/${encodeURIComponent(id)}/undo`, post({}))),
   dayLoad: (day: string) => attemptAsync(() => call<DayLoad>(`/api/organizer/load?day=${encodeURIComponent(day)}`)),
   arrangeDay: (day: string, apply = false, ids?: string[]) => attemptAsync(() => call<ArrangePlan>("/api/organizer/arrange", post({ day, apply, ...(ids ? { ids } : {}) }))),
+  smartDayPlan: (day: string, apply = false, ids?: string[], fingerprint?: string) => attemptAsync(() => call<SmartDayPlan>("/api/organizer/smart-day", post({ day, apply, ...(ids ? { ids } : {}), ...(fingerprint ? { fingerprint } : {}) }))),
   orderTasks: (ids: string[]) => attemptAsync(() => call<{ ok: true }>("/api/organizer/order", post({ ids }))),
   moveTasks: (ids: string[], to: "tomorrow" | "workday" | `${number}-${number}-${number}`) => { const requestId = "move_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2); return attemptAsync(() => call<Note[]>("/api/organizer/move", post({ ids, to, requestId }))); },
   runEvening: () => attemptAsync(() => call<Note>("/api/organizer/evening", post({}))),
