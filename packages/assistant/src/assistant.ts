@@ -12,6 +12,7 @@ import { MemoryLearningService } from "./memory-learning";
 import { TurnJournal, type Turn } from "./turn-journal";
 import { registerAssistantBuiltins } from "./assistant-builtins";
 import { SessionHistory } from "./session-history";
+import { TurnFinalizer } from "./turn-finalizer";
 
 export type { ApprovalRequest, ToolStatus } from "./tool-executor";
 export type { Turn } from "./turn-journal";
@@ -76,6 +77,7 @@ export class Assistant {
   private readonly requestContext: RequestContextBuilder;
   private readonly memoryLearning: MemoryLearningService;
   private readonly turnJournal: TurnJournal;
+  private readonly turnFinalizer: TurnFinalizer;
   private readonly sessions = new SessionHistory(HISTORY_LIMIT * 2);
   private activeAsks = 0;
   private askWaiters: (() => void)[] = [];
@@ -130,6 +132,12 @@ export class Assistant {
       ...(o.turnsStore ? { store: o.turnsStore } : {}),
       log: this.log,
     });
+    this.turnFinalizer = new TurnFinalizer({
+      sessions: this.sessions,
+      journal: this.turnJournal,
+      summaries: this.summaryService,
+      memoryLearning: this.memoryLearning,
+    });
     registerAssistantBuiltins({
       tools: this.tools,
       memory: this.memory,
@@ -174,15 +182,18 @@ export class Assistant {
       ? null
       : await this.diagnostics.runFunctional(text, signal, opts.onEvent);
     if (functional) {
-      const turn = await this.turnJournal.record({
+      return this.turnFinalizer.finalize({
         session,
         user: text,
         reply: functional.reply,
         tools: functional.used,
-        memoryIds: mem.map((m) => m.id),
+        memories: mem,
+        prefs,
+        olderHistory: older,
+        usesClientHistory: prepared.usesClientHistory,
+        ephemeral: false,
+        background: "none",
       });
-      if (!prepared.usesClientHistory) this.sessions.appendTurn(session, text, functional.reply);
-      return { turnId: turn.id, reply: functional.reply, tools: functional.used, memory: mem.map((m) => m.text) };
     }
 
     let diagnostics: DiagnosticBatch = { active: false, used: [], evidence: [] };
@@ -208,21 +219,18 @@ export class Assistant {
     const reply = agent.reply;
     const used = agent.used;
     this.diagnostics.complete(diagnostics);
-    // The running summary is refreshed only after the reply, so it never competes with it for Cloud.ru.
-    if (prefs.summaries && older.length && !opts.ephemeral) this.summaryService.queue(session, older);
-
-    if (opts.ephemeral) return { turnId: "", reply, tools: used, memory: mem.map((m) => m.text) };
-    if (!prepared.usesClientHistory) this.sessions.appendTurn(session, text, reply);
-
-    const turn = await this.turnJournal.record({
+    return this.turnFinalizer.finalize({
       session,
       user: text,
       reply,
       tools: used,
-      memoryIds: mem.map((m) => m.id),
+      memories: mem,
+      prefs,
+      olderHistory: older,
+      usesClientHistory: prepared.usesClientHistory,
+      ephemeral: opts.ephemeral ?? false,
+      background: "full",
     });
-    this.memoryLearning.queue(text, prefs.suggestions);
-    return { turnId: turn.id, reply, tools: used, memory: mem.map((m) => m.text) };
   }
 
   /** Thumbs up/down: tunes the memories that were used and records the label for training data. */
