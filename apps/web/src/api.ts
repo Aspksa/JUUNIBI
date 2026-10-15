@@ -115,6 +115,15 @@ export interface AutoRule { id: string; match: "tag" | "word" | "important"; val
 /** One line of «Что сделала автоматика». */
 export interface AutoLogEntry { id: string; at: string; kind: "roll" | "remind" | "brief" | "evening" | "week" | "quiet" | "arrange" | "move" | "rule"; text: string; undo?: unknown; undone?: boolean }
 export interface DayLoad { day: string; capacity: number; planned: number; over: boolean; count: number; work: boolean; move: { id: string; text: string; minutes: number }[] }
+export interface SmartPriorityItem {
+  id: string; text: string; score: number; primaryReason: string; reasons: string[];
+  estimateMinutes: number; area: Area; dueAt?: string; project?: string; missionTitle?: string; status?: "doing";
+}
+export interface SmartPriorityResult {
+  generatedAt: string; mode: "work" | "personal" | "mixed"; considered: number; eligible: number;
+  excluded: { waiting: number; blocked: number; inactiveMission: number; scheduledLater: number };
+  recommended: SmartPriorityItem[]; advisoryOnly: true;
+}
 export interface ArrangePlan { day: string; window: { from: string; to: string }; placed: { id: string; text: string; start: string; minutes: number; reason: string }[]; left: number; applied: number }
 export interface Reminder { id: string; text: string; at: string; createdAt: string; status: "scheduled" | "due" | "done"; firedAt?: string; repeat?: Repeat; seriesId?: string; source?: string; rule?: string }
 export interface Brief {
@@ -338,6 +347,7 @@ export const api = {
   runWeek: () => attemptAsync(() => call<Note>("/api/organizer/week", post({}))),
   snoozeReminder: (id:string,minutes:number|"tomorrow") => attemptAsync(() => call<Reminder>(`/api/organizer/reminders/${encodeURIComponent(id)}/snooze`,post({minutes}))),
   taskPlan: () => attemptAsync(() => call<{ generatedAt:string; total:number; overdue:number; estimatedMinutes:number; suggested:{id:string;text:string;score:number;reason:string}[]; advisoryOnly:boolean }>("/api/organizer/plan")),
+  smartPriority: (limit = 5) => attemptAsync(() => call<SmartPriorityResult>(`/api/organizer/now?limit=${encodeURIComponent(String(limit))}`)),
   updateTask: (id:string, patch: {priority?:Note["priority"];dueAt?:string|null;project?:string|null;parentId?:string|null;estimateMinutes?:number|null;repeat?:Repeat|"none";area?:Area|null;status?:TaskStatus|"todo"|null;waitingFor?:string|null;followUpAt?:string|null;meeting?:boolean;files?:FileLink[]|null}) => attemptAsync(() => call<Note>(`/api/organizer/notes/${encodeURIComponent(id)}/plan`,post(patch))),
   automation: () => attemptAsync(() => call<Automation>("/api/organizer/automation")),
   setAutomation: (patch: Partial<Automation>) => attemptAsync(() => call<Automation>("/api/organizer/automation", post(patch))),
