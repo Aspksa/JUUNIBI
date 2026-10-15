@@ -7,6 +7,7 @@ import { PlanningService } from "./planning-service";
 import { BriefService } from "./brief-service";
 import { MissionService } from "./mission-service";
 import { InsightsService } from "./insights-service";
+import { SmartPriorityService } from "./smart-priority-service";
 import {
   WorkspaceService,
   areaOf,
@@ -288,6 +289,7 @@ export class Organizer {
   private readonly briefService: BriefService;
   private readonly missionService: MissionService;
   private readonly insightsService: InsightsService;
+  private readonly smartPriorityService: SmartPriorityService;
   private readonly planningService: PlanningService;
   private readonly workspaceService: WorkspaceService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
@@ -413,6 +415,14 @@ export class Organizer {
       planToday: (now) => this.planningService.planToday(now),
       dayLoad: (day, now) => this.planningService.dayLoad(day, now),
     });
+    this.smartPriorityService = new SmartPriorityService({
+      getNotes: () => this.notes,
+      getAutomation: () => this.automation,
+      getMissions: () => this.missionService.board(),
+      isWork: (note) => this.isWork(note),
+      workDayFor: (date) => this.workDayFor(date),
+      now: this.now,
+    });
   }
   /** A working day for "по будням": the production calendar when the owner keeps it on, else Monday to Friday. */
   private workday = (d: Date) => this.automation.workdays ? isWorkday(d) : weekday(d);
@@ -530,6 +540,11 @@ export class Organizer {
 
   /** Advisory only: never modifies tasks or schedules. */
   planToday(now = this.now()) { return this.planningService.planToday(now); }
+
+  /** Explainable, read-only ranking for «Что делать сейчас». */
+  smartPriority(limit = 5, now = this.now()) {
+    return this.smartPriorityService.rank(limit, now);
+  }
 
   /** Calendar, statistics and deterministic Brain-compatible recommendations: no network, no side effects. */
   insights(month: string, now = this.now()) {
