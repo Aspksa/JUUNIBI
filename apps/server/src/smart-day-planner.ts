@@ -95,7 +95,7 @@ export class SmartDayPlannerService {
     ids?: string[],
     expectedFingerprint?: string,
   ): Promise<SmartDayPlan> {
-    const date = this.validDay(day);
+    this.validDay(day);
     const now = this.options.now();
     const today = localKey(now);
     if (day < today) throw bad("Этот день уже прошёл", 409);
@@ -237,6 +237,10 @@ export class SmartDayPlannerService {
       day,
       kind: { work: kind.work, short: kind.short, away: kind.away?.id ?? null },
       window: [from, to],
+      cursor,
+      mode: ranked.mode,
+      placed: placed.map((item) => ({ id: item.id, start: item.start, end: item.end })),
+      unscheduled: unscheduled.map((item) => item.id),
       notes: notes
         .filter((note) => note.kind === "todo" && !note.done)
         .map((note) => ({
