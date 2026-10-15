@@ -13,7 +13,7 @@ const memory = (id = "m1", text = "remembered"): MemoryEntry => ({
 
 function make() {
   const appendTurn = vi.fn();
-  const record = vi.fn(async (input) => ({ ...input, id: "t1", at: 1 }));
+  const record = vi.fn(async (input: { session: string; user: string; reply: string; tools: string[]; memoryIds: string[] }) => ({ ...input, id: "t1", at: 1 }));
   const summaryQueue = vi.fn();
   const memoryQueue = vi.fn();
   return {
