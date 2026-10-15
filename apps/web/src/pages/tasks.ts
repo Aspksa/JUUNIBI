@@ -2,7 +2,7 @@
  * "Дела" — the start page: quick entry in one line, one timeline of to-dos and reminders by day,
  * notes; beside it (below on a phone) a calendar with the production calendar, the day plan and goals.
  */
-import { api, type Area, type ArrangePlan, type AutoLogEntry, type AutoRule, type Automation, type DayOff, type FileLink, type Note, type Organizer, type Reminder, type Repeat, type TaskStatus } from "../api";
+import { api, type Area, type AutoLogEntry, type AutoRule, type Automation, type DayOff, type FileLink, type Note, type Organizer, type Reminder, type Repeat, type SmartDayPlan, type TaskStatus } from "../api";
 import { el, icon, iconButton } from "../dom";
 import { app, dismissSuggestion, refreshBrief, type AppState, type Route } from "../state";
 import { showToast } from "../toast";
@@ -142,8 +142,8 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   });
   let achTimer: ReturnType<typeof setTimeout> | undefined;
   let automation: Automation | null = null;
-  /** The «Разложить день» proposal for the selected day. */
-  let arrange: { day: string; plan: ArrangePlan | null; error?: string; picked: Set<string> } | null = null;
+  /** The Smart Day Planner preview for the selected day. */
+  let arrange: { day: string; plan: SmartDayPlan | null; error?: string; picked: Set<string> } | null = null;
   /** The evening review is open (by the header button or the prompt after 18:00). */
   let evening = false;
   /** «Разбить на шаги»: the steps the assistant suggested, by to-do or goal id; null while it thinks. */
@@ -1474,30 +1474,30 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     const run = async () => {
       arrange = { day: UI.day, plan: null, picked: new Set() };
       void renderDay();
-      const r = await api.arrangeDay(UI.day);
+      const r = await api.smartDayPlan(UI.day);
       if (!arrange || arrange.day !== UI.day) return;
       arrange = r.ok ? { day: UI.day, plan: r.value, picked: new Set(r.value.placed.map((p) => p.id)) } : { day: UI.day, plan: null, error: r.error.message, picked: new Set() };
       void renderDay();
     };
-    if (!st) return el("div", { cls: "tasks-arrange-start" }, btn("Разложить день", () => void run(), { small: true, icon: "wand", disabled: past, title: past ? "Этот день уже прошёл" : "Расставить дела без времени по свободным окнам этого дня" }));
+    if (!st) return el("div", { cls: "tasks-arrange-start" }, btn("Умно разложить день", () => void run(), { small: true, icon: "wand", disabled: past, title: past ? "Этот день уже прошёл" : "Расставить доступные дела по приоритету вокруг встреч, напоминаний и свободных окон" }));
     const close = () => { arrange = null; void renderDay(); };
     if (!st.plan) return el("div", { cls: "tasks-arrange" + (st.error ? " error" : "") }, el("p", { cls: "small grow", textContent: st.error ?? "Подбираю свободные окна…" }), iconButton("x", "Закрыть", close, "icon-btn sm"));
     const p = st.plan;
-    if (!p.placed.length) return el("div", { cls: "tasks-arrange" }, el("p", { cls: "small grow", textContent: p.left ? "Свободных окон не хватает: день уже занят." : "Нечего раскладывать: у всех дел этого дня уже есть время." }), iconButton("x", "Закрыть", close, "icon-btn sm"));
+    if (!p.placed.length) return el("div", { cls: "tasks-arrange" }, el("p", { cls: "small grow", textContent: p.left ? "Свободных окон не хватает для доступных приоритетных дел." : "Сейчас нет доступных дел для умного планирования." }), iconButton("x", "Закрыть", close, "icon-btn sm"));
     const apply = btn("Применить", async () => {
       const ids = [...st.picked];
       if (!ids.length) { showToast("Отметьте хотя бы одно дело."); return; }
       apply.disabled = true;
-      const ok = await act(() => api.arrangeDay(p.day, true, ids), `Разложено дел: ${ids.length}. Отменить можно в «Автоматика → Журнал»`);
+      const ok = await act(() => api.smartDayPlan(p.day, true, ids, p.fingerprint), `Умный план применён: ${ids.length}. Отменить можно в «Автоматика → Журнал»`);
       if (ok) arrange = null;
       void renderDay();
     }, { small: true, primary: true });
     return el("div", { cls: "tasks-arrange" },
-      el("p", { cls: "small muted", textContent: `Свободные окна с ${p.window.from} до ${p.window.to}` + (p.left ? `; не поместилось: ${p.left}` : "") + "." }),
+      el("p", { cls: "small muted", textContent: `Свободные окна с ${p.window.from} до ${p.window.to}` + (p.fixed.length ? `; фиксировано событий: ${p.fixed.length}` : "") + (p.left ? `; не поместилось: ${p.left}` : "") + "." }),
       el("ol", { cls: "tasks-arrange-list" }, ...p.placed.map((x) => {
         const box = el("input", { type: "checkbox", checked: st.picked.has(x.id), attrs: { "aria-label": "Поставить: " + x.text } });
         box.addEventListener("change", () => { if (box.checked) st.picked.add(x.id); else st.picked.delete(x.id); });
-        return el("li", {}, el("label", {}, box, el("span", { cls: "tasks-plan-time", textContent: hm(x.start) }), el("span", { cls: "grow" }, el("span", { textContent: x.text }), el("small", { cls: "muted", textContent: `${x.minutes} мин · ${x.reason}` }))));
+        return el("li", {}, el("label", {}, box, el("span", { cls: "tasks-plan-time", textContent: hm(x.start) }), el("span", { cls: "grow" }, el("span", { textContent: x.text }), el("small", { cls: "muted", textContent: `${x.minutes} мин · ${x.reasons.join(" · ")}` }))));
       })),
       el("div", { cls: "row" }, apply, btn("Отмена", close, { small: true })));
   }
