@@ -10,6 +10,8 @@ import { buildAssistantSystemPrompt, HISTORY_LIMIT, prepareConversationContext }
 import { ConversationSummaryService } from "./conversation-summary";
 import { MemoryLearningService } from "./memory-learning";
 import { TurnJournal, type Turn } from "./turn-journal";
+import { registerAssistantBuiltins } from "./assistant-builtins";
+import { SessionHistory } from "./session-history";
 
 export type { ApprovalRequest, ToolStatus } from "./tool-executor";
 export type { Turn } from "./turn-journal";
@@ -86,7 +88,7 @@ export class Assistant {
   private readonly summaryService: ConversationSummaryService;
   private readonly memoryLearning: MemoryLearningService;
   private readonly turnJournal: TurnJournal;
-  private readonly sessions = new Map<string, Message[]>();
+  private readonly sessions = new SessionHistory(HISTORY_LIMIT * 2);
   private activeAsks = 0;
   private askWaiters: (() => void)[] = [];
 
@@ -122,48 +124,16 @@ export class Assistant {
       ...(o.turnsStore ? { store: o.turnsStore } : {}),
       log: this.log,
     });
-    this.registerBuiltins();
+    registerAssistantBuiltins({
+      tools: this.tools,
+      memory: this.memory,
+      ...(o.describeModules ? { describeModules: o.describeModules } : {}),
+    });
   }
   /** Resolves when background work (conversation summaries) is finished. Mostly for tests. */
   idle(): Promise<void> { return Promise.all([this.summaryService.idle(), this.memoryLearning.idle()]).then(() => {}); }
   /** Rated and unrated turns, newest last, as plain copies (for the quality report). */
   turnsSnapshot(): Turn[] { return this.turnJournal.snapshot(); }
-
-  private registerBuiltins() {
-    this.tools.register({
-      name: "list_modules", risk: "read", description: "Список модулей проекта JUUNIBI и их состояние.",
-      parameters: { type: "object", properties: {} },
-      run: () => this.o.describeModules?.() ?? [],
-    });
-    this.tools.register({
-      name: "search_memory", risk: "read", description: "Поиск по долгой памяти ассистента.",
-      parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
-      run: async (a) => (await this.memory.searchHybrid(String(a.query), 8)).map((m) => ({ id: m.id, text: m.text })),
-    });
-    this.tools.register({
-      name: "propose_memory_revision", risk: "read",
-      description: "Предложить исправление старого факта, ожидающее подтверждения пользователя.",
-      parameters: { type: "object", properties: { oldId: { type: "string" }, newText: { type: "string" } }, required: ["oldId", "newText"] },
-      run: async args => {
-        const result = await this.memory.proposeRevision(String(args.oldId), String(args.newText));
-        return result ? "Ожидает подтверждения: " + result.id : "Не создано";
-      },
-    });
-    this.tools.register({
-      name: "remember", risk: "read",
-      description: "Предложить запомнить факт/предпочтение. Запись станет активной только после подтверждения пользователя.",
-      parameters: {
-        type: "object",
-        properties: { text: { type: "string" }, kind: { type: "string", enum: ["fact", "preference", "lesson"] } },
-        required: ["text"],
-      },
-      run: async (a) => {
-        const kind = a.kind === "preference" || a.kind === "lesson" ? a.kind : "fact";
-        await this.memory.add(kind, String(a.text), "pending");
-        return "Предложено; ждёт подтверждения пользователя.";
-      },
-    });
-  }
 
   private system(memories: MemoryEntry[], summary?: string): string {
     return buildAssistantSystemPrompt({
@@ -196,7 +166,7 @@ export class Assistant {
     const summary = prefs.summaries && older.length && !opts.ephemeral
       ? await this.summaryService.get(session, older)
       : undefined;
-    const hist = clientHistory ?? (opts.ephemeral ? [] : this.sessions.get(session) ?? []);
+    const hist = clientHistory ?? (opts.ephemeral ? [] : this.sessions.get(session));
     const guidance = opts.brainGuidance;
     const instructions = guidance ? [
       guidance.needsPlanning ? "Сложная задача: сначала сформулируй план действий и предположения; не утверждай, что план уже выполнен." : "",
@@ -226,11 +196,7 @@ export class Assistant {
         tools: functional.used,
         memoryIds: mem.map((m) => m.id),
       });
-      if (!clientHistory) {
-        const keep = this.sessions.get(session) ?? [];
-        keep.push({ role: "user", content: text }, { role: "assistant", content: functional.reply });
-        this.sessions.set(session, keep.slice(-HISTORY_LIMIT * 2));
-      }
+      if (!clientHistory) this.sessions.appendTurn(session, text, functional.reply);
       return { turnId: turn.id, reply: functional.reply, tools: functional.used, memory: mem.map((m) => m.text) };
     }
 
@@ -287,11 +253,7 @@ export class Assistant {
     if (prefs.summaries && older.length && !opts.ephemeral) this.summaryService.queue(session, older);
 
     if (opts.ephemeral) return { turnId: "", reply, tools: used, memory: mem.map((m) => m.text) };
-    if (!clientHistory) {
-      const keep = this.sessions.get(session) ?? [];
-      keep.push({ role: "user", content: text }, { role: "assistant", content: reply });
-      this.sessions.set(session, keep.slice(-HISTORY_LIMIT * 2));
-    }
+    if (!clientHistory) this.sessions.appendTurn(session, text, reply);
 
     const turn = await this.turnJournal.record({
       session,
