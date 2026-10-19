@@ -19,9 +19,9 @@ export function foxNetworkPage(): HTMLElement {
       field("Предполагаемый адрес роутера", s.router?.detected ?? "Не найден"),
       field("Доступность веб-порта", s.router?.detected ? "Есть ответ TCP на порту 80" : "Нет ответа на проверенных адресах"),
       el("p",{cls:"muted",textContent:"Проверены только 192.168.0.1 и 192.168.1.1. Отклик не подтверждает модель Tenda RE3L, не означает доступности интернета и не требует пароля. Настройки роутера не меняются."}),
-      ...(s.router?.candidates??[]).map(x=>el("small",{cls:"muted",textContent:x.address+" · "+(x.reachable ? "порт открыт, "+x.latencyMs+" мс" : "нет ответа")}))
+      el("ul",{},...(s.router?.candidates??[]).map(x=>el("li",{},el("small",{cls:"muted",textContent:x.address+" · "+(x.reachable ? "порт открыт, "+x.latencyMs+" мс" : "нет ответа")}))))
     );
-    if (!s.supported) { content.replaceChildren(router,field("Wi-Fi адаптер", s.error ?? "Адаптер Wi-Fi не обнаружен")); return; }
+    if (!s.supported) { content.replaceChildren(router,field("Wi-Fi адаптер", s.error ?? "Адаптер Wi-Fi не обнаружен"),section("Как проверить",el("p",{textContent:"Если ПК подключён через Ethernet, роутер может работать нормально. Для диагностики сигнала требуется Wi-Fi-адаптер с драйвером Windows."}),el("p",{textContent:"Проверьте Wi-Fi в диспетчере устройств и службу «Автонастройка WLAN» (WlanSvc). Перезапуск роутера не требуется."}))); return; }
     const info = s.interfaces;
     const quality = find(info, /(?:Signal|Сигнал)\s*:\s*([^\r\n]+)/i);
     const channel = find(info, /(?:Channel|Канал)\s*:\s*([^\r\n]+)/i);
@@ -31,7 +31,7 @@ export function foxNetworkPage(): HTMLElement {
     const cards = el("div", { cls: "fox-grid" }, field("Сеть (SSID)", ssid), field("Сигнал", quality), field("Канал", channel), field("Стандарт", radio), field("Точка доступа (BSSID)", bssid), field("Проверено", s.checkedAt));
     const networkText = el("pre", { cls: "fox-pre", textContent: s.networks || "Соседние точки доступа не обнаружены." });
     const details = el("details", {}, el("summary", { textContent: "Технические сведения адаптера" }), el("pre", { cls: "fox-pre", textContent: info }));
-    content.replaceChildren(router,cards, section("Wi-Fi и Mesh", el("p", { textContent: s.meshNote }), el("p", { cls: "muted", textContent: "Для точной топологии Mesh и качества связи между узлами необходимы данные самого роутера. Повторяйте замеры по комнатам." })), section("Обнаруженные сети и BSSID", networkText), details);
+    content.replaceChildren(router,...(s.error?[field("Предупреждение диагностики",s.error)]:[]),cards, section("Wi-Fi и Mesh", el("p", { textContent: s.meshNote }), el("p", { cls: "muted", textContent: "Для точной топологии Mesh и качества связи между узлами необходимы данные самого роутера. Повторяйте замеры по комнатам." })), section("Обнаруженные сети и BSSID", networkText), details);
   }
   void load();
   return root;
