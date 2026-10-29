@@ -2,6 +2,8 @@
 # Hashes: https://www.python.org/downloads/release/python-31410/
 param([Parameter(Mandatory)][string]$Dest, [ValidateSet('x64','arm64','ia32')][string]$Arch = 'x64', [string]$ArchivePath)
 $ErrorActionPreference = 'Stop'
+# Node may inherit PowerShell 7's module path before starting Windows PowerShell 5.1.
+$env:PSModulePath = (Join-Path $PSHOME 'Modules') + [IO.Path]::PathSeparator + $env:PSModulePath
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $version = '3.14.10'
 $packages = @{
@@ -30,7 +32,11 @@ try {
     $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 90
   }
-  if ((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $package[1]) {
+  $sha256 = [Security.Cryptography.SHA256]::Create()
+  $zipStream = [IO.File]::OpenRead($zip)
+  try { $actualHash = [BitConverter]::ToString($sha256.ComputeHash($zipStream)).Replace('-', '').ToLowerInvariant() }
+  finally { $zipStream.Dispose(); $sha256.Dispose() }
+  if ($actualHash -ne $package[1]) {
     throw 'Python SHA-256 mismatch. Installation cancelled.'
   }
   $unpacked = Join-Path $temporary 'unpacked'
