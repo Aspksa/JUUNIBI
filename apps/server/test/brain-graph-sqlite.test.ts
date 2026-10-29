@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { rm } from "./temp-files";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,6 +44,15 @@ describe("durable graph and benchmarks",()=>{
       expect(result.items[0].chosen).toBe("inspect files");
       graph.setEmbeddingProvider({id:"broken",embed:async()=>{throw new Error("offline");}});
       expect((await graph.search("archive",2)).searchMode).toBe("lexical-fallback");
+    }finally{await rm(dir,{recursive:true,force:true});}
+  });
+  it("round-trips Russian decisions through Python stdin and stdout",async()=>{
+    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-graph-русский-"));
+    try {
+      const graph=new BrainGraphSQLite(path.join(dir,"граф.sqlite3"),script);
+      await graph.sync([record("ru","Проверить документы","Сохранить копию","success")]);
+      const found=await graph.search("документы",5);
+      expect(found.items[0]).toMatchObject({id:"ru",goal:"Проверить документы",chosen:"Сохранить копию"});
     }finally{await rm(dir,{recursive:true,force:true});}
   });
   it("links confirmed decisions across goals without treating pending evidence as fact",async()=>{

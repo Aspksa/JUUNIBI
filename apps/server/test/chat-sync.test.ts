@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type http from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { rm } from "./temp-files";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { LlmProvider } from "@juunibi/assistant";

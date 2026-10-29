@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import os from "node:os";
 import path from "node:path";
 import { Organizer, alignStart, buildBrief, nextOccurrence } from "./organizer";

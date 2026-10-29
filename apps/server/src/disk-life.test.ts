@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { deflateSync } from "node:zlib";

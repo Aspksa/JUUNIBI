@@ -30,7 +30,8 @@ describe("Brain 7.0 safe knowledge suggestions", () => {
 });
 
 import { describe, it, expect } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import path from "node:path";
 import os from "node:os";
 import { KnowledgeLedger } from "./knowledge-ledger";

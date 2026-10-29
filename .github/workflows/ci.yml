@@ -30,6 +30,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Переносной Python с SQLite (реальная установка Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/bootstrap-python.ps1 -Dest "$PWD/.runtime" -Arch x64
       - name: Версии среды
         run: node --version && npm --version
       - name: Установка зависимостей

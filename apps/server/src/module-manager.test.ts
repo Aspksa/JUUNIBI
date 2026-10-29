@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import os from "node:os";
 import path from "node:path";
 import { ModuleManager, moduleOfTool, type ModuleDef } from "./module-manager";

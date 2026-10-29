@@ -2,7 +2,8 @@ import { expect, it } from 'vitest';
 import { makeReasoningTask, checkReasoningAnswer } from './reasoning-assessment';
 it('checks deterministic logic retries', () => { const task=makeReasoningTask('logic',2); expect(checkReasoningAnswer(task,task.expected)).toBe(true); });
 import { AutonomousLearning } from './autonomous-learning';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import os from 'node:os';
 import path from 'node:path';
 it('retries the exact failed logic question',async()=>{

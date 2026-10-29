@@ -1,5 +1,6 @@
 import {describe,it,expect} from "vitest";
-import {mkdtemp,readFile,rm} from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {KnowledgeVectorCache} from "./knowledge-vector-cache";

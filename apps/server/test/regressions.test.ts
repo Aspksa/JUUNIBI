@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type http from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { rm } from "./temp-files";
 import os from "node:os";
 import path from "node:path";
 import { createApp } from "../src/app";
