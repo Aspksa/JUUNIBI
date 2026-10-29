@@ -39,7 +39,7 @@ describe("Local Disk",()=>{
    await afterDelete.purge(uploaded.id);
    expect(afterDelete.list().trash).toHaveLength(0);
    await expect(afterDelete.restore(uploaded.id)).rejects.toMatchObject({status:404});
-  }finally{await rm(dir,{recursive:true,force:true});}
+  }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
  it("validates and persists batch operations without partial changes",async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-"));
@@ -60,7 +60,7 @@ describe("Local Disk",()=>{
    await restored.bulk([a.id,b.id],"restore");
    expect(restored.list("Работа").files).toHaveLength(2);
    await expect(restored.bulk([a.id,a.id],"trash")).rejects.toMatchObject({status:400});
-  }finally{await rm(dir,{recursive:true,force:true});}
+  }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
  it("limits sizes and refuses unknown folders",async()=>{
   const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-"));
@@ -69,7 +69,7 @@ describe("Local Disk",()=>{
    await expect(disk.upload("x.txt","missing","YQ==")).rejects.toMatchObject({status:404});
    await expect(disk.upload("x.txt","","")).rejects.toMatchObject({status:413});
    await expect(disk.upload("x.txt","","!!!")).rejects.toMatchObject({status:413});
-  }finally{await rm(dir,{recursive:true,force:true});}
+  }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
  it("supports nested folders, raw byte uploads and verified local text search",async()=>{
    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-nested-"));
@@ -86,7 +86,7 @@ describe("Local Disk",()=>{
      expect(Buffer.from((await disk.download(binary.id)).base64,"base64")).toEqual(Buffer.from([1,2,3,4]));
      const fresh=new LocalDisk(dir);await fresh.load();
      expect(fresh.list("Проекты/JUUNIBI").files).toHaveLength(2);
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("renames a nested folder and updates file paths without losing bytes",async()=>{
@@ -100,7 +100,7 @@ describe("Local Disk",()=>{
      expect(disk.list("Проекты/Новое").files[0]?.id).toBe(e.id);
      expect(Buffer.from((await disk.download(e.id)).base64,"base64").toString()).toBe("data");
      await expect(disk.renameFolder("Проекты","Проекты/Новое/Сломано")).rejects.toMatchObject({status:400});
-   } finally {await rm(dir,{recursive:true,force:true});}
+   } finally {await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("tracks exact duplicates, metadata and detects corrupt objects",async()=>{
@@ -116,7 +116,7 @@ describe("Local Disk",()=>{
      expect(disk.snapshot().folders).toEqual([]);
      expect((await disk.audit()).ok).toBe(2);
      await expect(disk.setMetadata(a.id,{color:"red"})).rejects.toMatchObject({status:400});
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("copies, moves, styles and trashes nested folder branches",async()=>{
@@ -144,7 +144,7 @@ describe("Local Disk",()=>{
      expect(restored.files).toBe(2);
      expect(loaded.list("Главная/Внутри/Главная - копия/Внутри").files).toHaveLength(1);
      expect(Buffer.from((await disk.download(a.id)).base64,"base64").toString()).toBe("hello");
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("copies verified bytes and persists undo across reload",async()=>{
@@ -164,7 +164,7 @@ describe("Local Disk",()=>{
      expect(loaded.list("").files.some(x=>x.id===a.id&&x.name==="renamed.txt")).toBe(true);
      await loaded.undoFileChange();
      expect(loaded.list("").files.some(x=>x.id===a.id&&x.name==="original.txt")).toBe(true);
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("stores immutable file revisions, restores old bytes and reloads history",async()=>{
@@ -185,7 +185,7 @@ describe("Local Disk",()=>{
      expect(reloaded.fileVersions(original.id).map(v=>v.revision)).toEqual([1,2,3]);
      const copy=await reloaded.copyFile(original.id,"");
      expect(Buffer.from((await reloaded.download(copy.id)).base64,"base64").toString()).toBe("first");
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("exports and restores a portable full-content backup with old versions",async()=>{
@@ -213,7 +213,7 @@ describe("Local Disk",()=>{
      const bad=new LocalDisk(broken);
      await expect(bad.importBackup((async function*(){for(const line of altered)yield line.trimEnd();})())).rejects.toThrow();
      expect(bad.list().files).toHaveLength(0);
-   }finally{await rm(source,{recursive:true,force:true});await rm(target,{recursive:true,force:true});await rm(broken,{recursive:true,force:true});}
+   }finally{await rm(source,{recursive:true,force:true,maxRetries:5,retryDelay:100});await rm(target,{recursive:true,force:true,maxRetries:5,retryDelay:100});await rm(broken,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("previews local folder sync and refuses conflicting filenames without overwrite",async()=>{
@@ -236,7 +236,7 @@ describe("Local Disk",()=>{
      const target=disk.list("Target").files.filter(e=>e.name==="conflict.txt");
      expect(target).toHaveLength(1);
      expect(Buffer.from((await disk.download(target[0]!.id)).base64,"base64").toString()).toBe("two");
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("opens an older index without revision metadata and upgrades safely on first change",async()=>{
@@ -256,7 +256,7 @@ describe("Local Disk",()=>{
      const again=new LocalDisk(dir);await again.load();
      expect(again.fileVersions(e.id)).toHaveLength(2);
      expect(Buffer.from((await again.download(e.id)).base64,"base64").toString()).toBe("new");
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("round-trips nested folders, file revisions and bytes through a streamed backup",async()=>{
@@ -279,7 +279,7 @@ describe("Local Disk",()=>{
      expect(Buffer.from((await restored.download(entry.id)).base64,"base64").toString()).toBe("first");
      const reopened=new LocalDisk(target);await reopened.load();
      expect(reopened.fileVersions(entry.id)).toHaveLength(3);
-   }finally{await rm(dir,{recursive:true,force:true});await rm(target,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});await rm(target,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
  it("refuses a tampered backup without importing partial files",async()=>{
    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-backup-src-"));
@@ -297,7 +297,7 @@ describe("Local Disk",()=>{
      expect(restored.list().files).toHaveLength(0);
      const check=new LocalDisk(target);await check.load();
      expect(check.list().files).toHaveLength(0);
-   }finally{await rm(dir,{recursive:true,force:true});await rm(target,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});await rm(target,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
  it("rejects corrupted index entries and malformed revision metadata without losing good files",async()=>{
@@ -315,7 +315,7 @@ describe("Local Disk",()=>{
      expect(loaded.list().files).toHaveLength(1);
      expect(loaded.fileVersions(good.id)).toHaveLength(1);
      expect(Buffer.from((await loaded.download(good.id)).base64,"base64").toString()).toBe("content");
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
  it("bounds preview text and rejects invalid preview limits",async()=>{
    const dir=await mkdtemp(path.join(os.tmpdir(),"juunibi-disk-preview-"));
@@ -326,7 +326,7 @@ describe("Local Disk",()=>{
      const view=await disk.readText(entry.id,128);
      expect(view.text).toHaveLength(128);
      expect(view.truncated).toBe(true);
-   }finally{await rm(dir,{recursive:true,force:true});}
+   }finally{await rm(dir,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
  });
 
 });

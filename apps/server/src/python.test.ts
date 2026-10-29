@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPython, missingPythonMessage, pythonCandidates, pythonInfo, resetPythonCache, runPythonJson, PythonUnavailableError, type Probe } from "./python";
+import { detectPython, missingPythonMessage, pythonCandidates, pythonInfo, resetPythonCache, runPythonJson, PythonUnavailableError, SQLITE_PROBE, type Probe } from "./python";
 
 const probeOf = (table: Record<string, { code: number | null; output: string } | "missing">): Probe => async (command, args) => {
   const hit = table[[command, ...args].join(" ")];
@@ -12,17 +12,41 @@ describe("поиск Python 3", () => {
     expect(pythonCandidates("win32").map(([c, a]) => [c, ...a].join(" "))).toEqual(["python", "py -3", "python3"]);
   });
   it("находит подходящий Python и версию", async () => {
-    const r = await detectPython(probeOf({ "python3 --version": { code: 0, output: "Python 3.12.3\n" } }), "linux");
+    const r = await detectPython(probeOf({
+      "python3 --version": { code: 0, output: "Python 3.12.3\n" },
+      ["python3 -c " + SQLITE_PROBE]: { code: 0, output: "JUUNIBI_SQLITE_OK\n" },
+    }), "linux");
     expect(r).toMatchObject({ ok: true, command: "python3", version: "3.12.3" });
   });
   it("заглушка Microsoft Store не считается Python, берётся следующий вариант", async () => {
     const store = { code: 9009, output: "Python was not found; run without arguments to install from the Microsoft Store" };
-    const r = await detectPython(probeOf({ "python --version": store, "py -3 --version": { code: 0, output: "Python 3.11.9" } }), "win32");
+    const r = await detectPython(probeOf({
+      "python --version": store,
+      "py -3 --version": { code: 0, output: "Python 3.11.9" },
+      ["py -3 -c " + SQLITE_PROBE]: { code: 0, output: "JUUNIBI_SQLITE_OK\n" },
+    }), "win32");
     expect(r).toMatchObject({ ok: true, command: "py", args: ["-3"], version: "3.11.9" });
   });
   it("заглушка с нулевым кодом тоже отклоняется: нет строки версии", async () => {
     const r = await detectPython(probeOf({ "python --version": { code: 0, output: "Python was not found" } }), "win32");
     expect(r.ok).toBe(false);
+  });
+  it("обходит повреждённый Python и сохраняет аргументы рабочего py -3 для SQLite", async () => {
+    const r = await detectPython(probeOf({
+      "python --version": { code: 0, output: "Python 3.14.0" },
+      ["python -c " + SQLITE_PROBE]: { code: 1, output: "Failed to launch Python (0x80070002)" },
+      "py -3 --version": { code: 0, output: "Python 3.13.7" },
+      ["py -3 -c " + SQLITE_PROBE]: { code: 0, output: "JUUNIBI_SQLITE_OK\n" },
+    }), "win32");
+    expect(r).toEqual({ ok: true, command: "py", args: ["-3"], version: "3.13.7" });
+  });
+  it("не принимает Python без рабочего sqlite3 даже при подходящей версии", async () => {
+    const r = await detectPython(probeOf({
+      "python3 --version": { code: 0, output: "Python 3.12.3" },
+      ["python3 -c " + SQLITE_PROBE]: { code: 1, output: "ModuleNotFoundError: sqlite3" },
+    }), "linux");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/SQLite/);
   });
   it("слишком старый Python и Python 2 не подходят", async () => {
     expect((await detectPython(probeOf({ "python3 --version": { code: 0, output: "Python 3.6.9" } }), "linux")).ok).toBe(false);

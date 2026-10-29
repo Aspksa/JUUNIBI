@@ -3,6 +3,7 @@ import type { Automation, Note, Reminder, Repeat } from "./organizer";
 import { DEFAULT_AUTOMATION } from "./organizer";
 import { ReminderService } from "./reminder-service";
 
+// Calendar scenarios use local wall-clock time in every host timezone.
 function make(start = Date.parse("2026-10-09T08:00:00Z")) {
   let now = start;
   let reminders: Reminder[] = [];
@@ -93,16 +94,16 @@ describe("ReminderService", () => {
   });
 
   it("holds automatic reminders during quiet hours but not owner reminders", async () => {
-    const x = make(Date.parse("2026-10-09T22:00:00Z"));
+    const x = make(Date.parse("2026-10-09T22:00:00"));
     x.setAutomation({ quiet: true, quietFrom: "23:00", quietTo: "08:00" });
-    const automatic = await x.service.add("Авто", "2026-10-09T23:30:00Z");
+    const automatic = await x.service.add("Авто", "2026-10-09T23:30:00");
     x.reminders.find((item) => item.id === automatic.id)!.source = "task-1";
-    await x.service.add("Своё", "2026-10-09T23:30:00Z");
-    x.setNow(Date.parse("2026-10-09T23:45:00Z"));
+    await x.service.add("Своё", "2026-10-09T23:30:00");
+    x.setNow(Date.parse("2026-10-09T23:45:00"));
 
     expect(x.service.processDue().fired.map((item) => item.text)).toEqual(["Своё"]);
 
-    x.setNow(Date.parse("2026-10-10T08:01:00Z"));
+    x.setNow(Date.parse("2026-10-10T08:01:00"));
     const released = x.service.processDue();
     expect(released.fired.map((item) => item.text)).toEqual(["Авто"]);
     expect(released.releasedFromQuiet).toBe(1);

@@ -27,7 +27,7 @@ describe("«Готово» на «Итоге дня» и «Обзоре неде
       await again.load();
       await again.tick();
       expect(again.listReminders().filter((r) => r.status === "due")).toEqual([]);
-    } finally { await rm(dir, { recursive: true, force: true }); }
+    } finally { await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
   });
   it("вчерашний «Итог дня» без «Готово» закрывается, когда приходит сегодняшний", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-dismiss-"));
@@ -41,6 +41,6 @@ describe("«Готово» на «Итоге дня» и «Обзоре неде
       const eve = o.listReminders().filter((r) => r.source === "evening");
       expect(eve).toHaveLength(2);
       expect(eve.filter((r) => r.status === "due")).toHaveLength(1);
-    } finally { await rm(dir, { recursive: true, force: true }); }
+    } finally { await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
   });
 });

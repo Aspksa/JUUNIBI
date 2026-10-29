@@ -9,7 +9,7 @@ async function setup(start = Date.parse("2026-10-09T05:00:00+03:00")) {
   let t = start;
   const o = new Organizer(path.join(dir, "o.json"), () => t);
   await o.load();
-  return { o, dir, advance: (ms: number) => { t += ms; }, file: path.join(dir, "o.json"), done: () => rm(dir, { recursive: true, force: true }) };
+  return { o, dir, advance: (ms: number) => { t += ms; }, file: path.join(dir, "o.json"), done: () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }) };
 }
 
 describe("заметки и дела", () => {

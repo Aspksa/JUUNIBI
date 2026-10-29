@@ -3,6 +3,7 @@ import type { AutoLogEntry, Automation, Note, Reminder, TaskEvent } from "./orga
 import { DEFAULT_AUTOMATION } from "./organizer";
 import { AutomationEngine, type AutomationState } from "./automation-engine";
 
+// Calendar scenarios use local wall-clock time in every host timezone.
 function make(start = Date.parse("2026-10-15T10:00:00Z")) {
   let now = start;
   let notes: Note[] = [];
@@ -101,22 +102,22 @@ describe("AutomationEngine", () => {
   });
 
   it("creates due and waiting-for reminders without repeating them", () => {
-    const x = make(Date.parse("2026-10-15T09:50:00Z"));
-    x.addNote(todo("due", "Созвон", "2026-10-15T10:00:00Z"));
+    const x = make(Date.parse("2026-10-15T09:50:00"));
+    x.addNote(todo("due", "Созвон", "2026-10-15T10:00:00"));
     x.addNote({
       ...todo("wait", "Ответ по договору"),
       status: "waiting",
       waitingFor: "Анна",
-      followUpAt: "2026-10-15T09:45:00Z",
+      followUpAt: "2026-10-15T09:45:00",
     });
 
     const fired: Reminder[] = [];
-    x.engine.run(Date.parse("2026-10-15T09:50:00Z"), fired);
+    x.engine.run(Date.parse("2026-10-15T09:50:00"), fired);
     expect(fired.map((item) => item.text)).toEqual([
       "Срок в 10:00: Созвон",
       "Спросить у Анна: Ответ по договору",
     ]);
-    expect(x.engine.run(Date.parse("2026-10-15T09:55:00Z"), fired)).toBe(false);
+    expect(x.engine.run(Date.parse("2026-10-15T09:55:00"), fired)).toBe(false);
     expect(fired).toHaveLength(2);
   });
 
