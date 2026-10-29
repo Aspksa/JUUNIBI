@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import os from "node:os";
 import path from "node:path";
 import { FileAccessError, MAX_READ_BYTES, cleanRelative, deniedPath, listDir, readText, searchText, writeText } from "./safe-files";

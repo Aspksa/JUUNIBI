@@ -125,7 +125,7 @@ def main() -> int:
     node = find_node()
     # make npm (used for dependency install) resolvable from the portable runtime
     node_bin = str(Path(node).parent)
-    env = {**os.environ, "PATH": node_bin + os.pathsep + os.environ.get("PATH", "")}
+    env = {**os.environ, "PATH": node_bin + os.pathsep + os.environ.get("PATH", ""), "JUUNIBI_PYTHON": sys.executable}
     print("Node.js", subprocess.run([node, "-v"], capture_output=True, text=True).stdout.strip())
     try:
         return subprocess.call([node, str(ROOT / "scripts" / "launch.mjs"), *sys.argv[1:]], cwd=ROOT, env=env)

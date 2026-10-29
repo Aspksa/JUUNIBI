@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { rm } from "./temp-files";
 import os from "node:os";
 import path from "node:path";
 import { ProjectUpdater } from "../src/updater";

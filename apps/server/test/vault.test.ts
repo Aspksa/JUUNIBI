@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { rm } from "./temp-files";
 import os from "node:os";
 import path from "node:path";
 import { Vault } from "../src/vault";

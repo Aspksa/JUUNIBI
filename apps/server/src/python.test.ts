@@ -8,8 +8,8 @@ const probeOf = (table: Record<string, { code: number | null; output: string } |
 };
 describe("поиск Python 3", () => {
   it("на Linux и macOS сначала python3, потом python", () => {
-    expect(pythonCandidates("linux").map(([c]) => c)).toEqual(["python3", "python"]);
-    expect(pythonCandidates("win32").map(([c, a]) => [c, ...a].join(" "))).toEqual(["python", "py -3", "python3"]);
+    expect(pythonCandidates("linux", { env: {}, exists: () => false }).map(([c]) => c)).toEqual(["python3", "python"]);
+    expect(pythonCandidates("win32", { env: {}, exists: () => false }).map(([c, a]) => [c, ...a].join(" "))).toEqual(["python", "py -3", "python3"]);
   });
   it("находит подходящий Python и версию", async () => {
     const r = await detectPython(probeOf({
@@ -55,10 +55,10 @@ describe("поиск Python 3", () => {
   it("если ничего нет — понятное сообщение для своей системы", async () => {
     const win = await detectPython(probeOf({}), "win32");
     expect(win).toMatchObject({ ok: false });
-    expect(win.reason).toMatch(/python\.org/);
+    expect(win.reason).toMatch(/\.runtime\/python/);
     expect(missingPythonMessage("linux")).toMatch(/apt install python3/);
     expect(missingPythonMessage("darwin")).toMatch(/brew/);
-    expect(win.reason).toMatch(/всё остальное работает/);
+    expect(win.reason).toMatch(/без прав администратора/);
   });
   it("результат кэшируется: найденный надолго, отсутствующий ненадолго", async () => {
     resetPythonCache();

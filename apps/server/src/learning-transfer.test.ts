@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
 import { AutonomousLearning } from "./autonomous-learning";
 import { makeReasoningTask } from "./reasoning-assessment";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { rm } from "../test/temp-files";
 import os from "node:os";
 import path from "node:path";
 

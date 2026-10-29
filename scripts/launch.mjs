@@ -2,6 +2,7 @@
 // Usage: node scripts/launch.mjs [--dev] [--no-open] [--skip-checks] [--port N]
 import { spawn, spawnSync } from "node:child_process";
 import { missingWorkspaceLinks } from "./workspace-health.mjs";
+import { pythonInfo, resetPythonCache } from "./python-runtime.mjs";
 import { applyPreparedUpdate, applyRollbackRequest, confirmUpdate, rollbackFailedStart } from "./apply-update.mjs";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -121,6 +122,19 @@ function openBrowser(url) {
 
 // --- main ---
 if (Number(process.versions.node.split(".")[0]) < 20) await fail(`Нужен Node.js 20+, найден ${process.version}.`);
+// All subprocesses (including workspace tests and update staging) resolve the same local runtime.
+process.env.JUUNIBI_ROOT = root;
+let python = await pythonInfo();
+if (!python.ok && process.platform === "win32") {
+  await run("Восстановление Python: переносная версия с SQLite в .runtime/python", "powershell.exe", [
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(root, "scripts", "bootstrap-python.ps1"),
+    "-Dest", path.join(root, ".runtime"), "-Arch", process.arch,
+  ]);
+  resetPythonCache();
+  python = await pythonInfo();
+}
+if (!python.ok && !flag("--skip-checks")) await fail(python.reason);
+if (python.ok) console.log(`Python ${python.version}: ${[python.command, ...python.args].join(" ")}`);
 
 // Dependencies are reinstalled when they are missing, when an update/rollback changed package-lock.json,
 // or after an automatic rollback. Scripts of dependencies are never run.
