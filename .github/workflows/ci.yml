@@ -12,8 +12,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            timezone: UTC
+          - os: windows-latest
+            timezone: Asia/Vladivostok
     runs-on: ${{ matrix.os }}
+    env:
+      TZ: ${{ matrix.timezone }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +27,9 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Версии среды
         run: node --version && npm --version
       - name: Установка зависимостей

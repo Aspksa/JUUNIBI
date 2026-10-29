@@ -3,7 +3,8 @@ import type { AutoLogEntry, Automation, Note, Reminder, TaskEvent } from "./orga
 import { DEFAULT_AUTOMATION } from "./organizer";
 import { PlanningService } from "./planning-service";
 
-function make(start = Date.parse("2026-10-12T07:00:00Z")) {
+// Calendar scenarios use local wall-clock time in every host timezone.
+function make(start = Date.parse("2026-10-12T07:00:00")) {
   let notes: Note[] = [];
   const reminders: Reminder[] = [];
   let moveRequests: string[] = [];
@@ -56,7 +57,7 @@ const todo = (id: string, text: string, patch: Partial<Note> = {}): Note => ({
   kind: "todo",
   text,
   done: false,
-  createdAt: "2026-10-10T09:00:00Z",
+  createdAt: "2026-10-10T09:00:00",
   ...patch,
 });
 
@@ -64,7 +65,7 @@ describe("PlanningService", () => {
   it("builds deterministic advisory priority and time-block plans without mutation", () => {
     const x = make();
     x.notes = [
-      todo("a", "Просрочено", { dueAt: "2026-10-11T10:00:00Z", estimateMinutes: 60 }),
+      todo("a", "Просрочено", { dueAt: "2026-10-11T10:00:00", estimateMinutes: 60 }),
       todo("b", "Важное", { priority: "high", estimateMinutes: 90 }),
     ];
 
@@ -79,8 +80,8 @@ describe("PlanningService", () => {
     const x = make();
     x.setAutomation({ dayHours: 2 });
     x.notes = [
-      todo("big", "Большой отчёт", { dueAt: "2026-10-12T23:59:00Z", estimateMinutes: 90 }),
-      todo("high", "Важный звонок", { dueAt: "2026-10-12T11:00:00Z", estimateMinutes: 60, priority: "high" }),
+      todo("big", "Большой отчёт", { dueAt: "2026-10-12T23:59:00", estimateMinutes: 90 }),
+      todo("high", "Важный звонок", { dueAt: "2026-10-12T11:00:00", estimateMinutes: 60, priority: "high" }),
     ];
 
     expect(x.service.dayLoad("2026-10-12")).toMatchObject({
@@ -94,13 +95,13 @@ describe("PlanningService", () => {
   it("arranges around fixed work and lunch, applying only selected placements", async () => {
     const x = make();
     x.notes = [
-      todo("fixed", "Созвон", { dueAt: "2026-10-12T09:00:00Z" }),
-      todo("letters", "Письма", { dueAt: "2026-10-12T23:59:00Z", estimateMinutes: 60 }),
+      todo("fixed", "Созвон", { dueAt: "2026-10-12T09:00:00" }),
+      todo("letters", "Письма", { dueAt: "2026-10-12T23:59:00", estimateMinutes: 60 }),
       todo("gift", "Купить подарок", { priority: "high", estimateMinutes: 180 }),
     ];
 
     const plan = await x.service.arrangeDay("2026-10-12");
-    expect(plan.placed.map((item) => [item.id, new Date(item.start).getUTCHours()])).toEqual([
+    expect(plan.placed.map((item) => [item.id, new Date(item.start).getHours()])).toEqual([
       ["letters", 9],
       ["gift", 14],
     ]);
@@ -115,12 +116,12 @@ describe("PlanningService", () => {
   it("moves tasks idempotently by request id and keeps local task time", async () => {
     const x = make();
     x.notes = [
-      todo("a", "Встреча", { dueAt: "2026-10-12T15:30:00Z" }),
+      todo("a", "Встреча", { dueAt: "2026-10-12T15:30:00" }),
     ];
 
     const moved = await x.service.moveTasks(["a"], "2026-10-20", "request_1234");
-    expect(new Date(moved[0]!.dueAt!).getUTCDate()).toBe(20);
-    expect(new Date(moved[0]!.dueAt!).getUTCHours()).toBe(15);
+    expect(new Date(moved[0]!.dueAt!).getDate()).toBe(20);
+    expect(new Date(moved[0]!.dueAt!).getHours()).toBe(15);
     expect(x.moveRequests).toEqual(["request_1234"]);
     await expect(x.service.moveTasks(["a"], "tomorrow", "request_1234")).rejects.toMatchObject({ status: 409 });
   });

@@ -42,16 +42,28 @@ describe("обновление: гонка запусков", () => {
   });
   it("HTTP: параллельные запросы дают 202 и 409, сервер жив", async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), "juunibi-race-"));
-    globalThis.fetch = Object.assign(vi.fn(async () => new Response("{}", { status: 403 })), {});
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    // Keep the real background operation busy until all concurrent HTTP requests return.
+    globalThis.fetch = vi.fn(async () => { await gate; return new Response("{}", { status: 403 }); });
     const real = oldFetch;
-    const server = createApp({ updater: new ProjectUpdater(dir), modules: () => [], configured: {} });
+    const updater = new ProjectUpdater(dir);
+    const start = vi.spyOn(updater, "start");
+    const server = createApp({ updater, modules: () => [], configured: {} });
     const port = await listen(server);
     try {
       const codes = await Promise.all([1, 2, 3].map(() => real(`http://127.0.0.1:${port}/api/update/download`, { method: "POST" }).then((r) => r.status)));
       expect(codes.filter((c) => c === 202)).toHaveLength(1);
       expect(codes.filter((c) => c === 409)).toHaveLength(2);
+      expect(start).toHaveBeenCalledTimes(1);
       expect((await real(`http://127.0.0.1:${port}/api/status`)).status).toBe(200);
-    } finally { server.close(); await new Promise((r) => setTimeout(r, 50)); await rm(dir, { recursive: true, force: true }); }
+    } finally {
+      release();
+      // HTTP 202 precedes completion: wait for the actual writes, not an arbitrary 50 ms.
+      await Promise.allSettled(start.mock.results.filter((result) => result.type === "return").map((result) => result.value));
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
   });
 });
 

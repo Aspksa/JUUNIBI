@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
+import { runPythonJson } from "./python";
 import { join } from "node:path";
 import type { DecisionRecord } from "./decision-memory";
 import type { EmbeddingProvider } from "@juunibi/assistant";
@@ -19,17 +19,7 @@ export class BrainGraphSQLite {
   constructor(private readonly file:string, private readonly script=join(process.cwd(),"scripts","brain-graph-sqlite.py")) {}
   setEmbeddingProvider(provider?:EmbeddingProvider){this.embedding=provider;this.vectors.clear();}
   private call(request:unknown):Promise<any>{
-    return new Promise((resolve,reject)=>{
-      const child=spawn(process.platform==="win32"?"python":"python3",[this.script,this.file],{stdio:["pipe","pipe","pipe"],windowsHide:true});
-      let output="",errors="";
-      child.stdout.setEncoding("utf8").on("data",(v:string)=>{output+=v;if(output.length>1_000_000)child.kill();});
-      child.stderr.setEncoding("utf8").on("data",(v:string)=>{errors+=v;if(errors.length>4000)child.kill();});
-      child.on("error",reject);
-      child.on("close",code=>{if(code!==0){reject(new Error("SQLite graph: "+(errors||output).slice(0,250)));return;}
-        try{resolve(JSON.parse(output));}catch{reject(new Error("Некорректный ответ SQLite"));}});
-      child.stdin.on("error",()=>{});
-      child.stdin.end(JSON.stringify(request));
-    });
+    return runPythonJson(this.script,this.file,request);
   }
   sync(records:DecisionRecord[]){
     const items=records.filter(r=>r.observed!==undefined).map(r=>({...r,observedAt:r.observedAt??r.at}));

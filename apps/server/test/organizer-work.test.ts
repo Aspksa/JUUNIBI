@@ -5,7 +5,7 @@ import path from "node:path";
 import { Organizer, areaOf } from "../src/organizer";
 
 const dirs: string[] = [];
-afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }); });
+afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
 async function tmp() { const d = await mkdtemp(path.join(os.tmpdir(), "juunibi-work-")); dirs.push(d); return path.join(d, "o.json"); }
 /** A local moment: «2026-10-13 10:00» (a Tuesday, a working day). */
 const at = (day: string, hm = "12:00") => new Date(`${day}T${hm}:00`).getTime();
