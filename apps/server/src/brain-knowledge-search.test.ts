@@ -20,4 +20,8 @@ describe("brain knowledge retrieval", () => {
     expect(searchVerifiedKnowledge(values, "ежик", 1)).toHaveLength(1);
     expect(JSON.stringify(values)).toBe(original);
   });
+  it("returns one canonical fact when verified records differ only in case and ё", () => {
+    const records = [make("a", "Ёжик считает"), make("b", "ежик считает"), make("c", "Ёжик умножает")];
+    expect(searchVerifiedKnowledge(records, "ежик", 10).map(x => x.id)).toEqual(["a", "c"]);
+  });
 });
