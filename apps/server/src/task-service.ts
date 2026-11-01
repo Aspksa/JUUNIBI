@@ -24,7 +24,7 @@ const repeatOf = (value: unknown): Repeat | undefined => {
 
 /** Require an explicit timezone: otherwise Date.parse silently uses the server's timezone. */
 const taskDate = (value: unknown, label: string): string => {
-  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:\\d{2})$/i.test(value)) throw bad(label);
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) throw bad(label);
   const ms = Date.parse(value);
   if (!Number.isFinite(ms)) throw bad(label);
   return new Date(ms).toISOString();
@@ -100,7 +100,7 @@ export class TaskService {
     }
     if (opts.repeat !== undefined) patch.repeat = opts.repeat;
     // Validate metadata before touching shared state or recording events.
-    if ("dueAt" in patch && (typeof patch.dueAt !== "string" || !Number.isFinite(Date.parse(patch.dueAt)))) throw bad("Некорректный срок");
+    if ("dueAt" in patch) patch.dueAt = taskDate(patch.dueAt, "Некорректный срок");
     const repeat = repeatOf(patch.repeat);
     if (!this.options.makeRoom()) throw bad(`Достигнут предел: ${MAX_NOTES} записей`, 409);
     const now = this.options.now();
