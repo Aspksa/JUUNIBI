@@ -36,10 +36,8 @@ export class DeliveryOutbox {
       attempted++;
       try {
         await send({ ...entry });
-        if (entry.state === "acknowledged") continue;
-        entry.state = "sent"; entry.lastError = undefined;
+        entry.state = "sent"; delete entry.lastError;
       } catch (error) {
-        if (entry.state === "acknowledged") continue;
         entry.state = "pending"; entry.lastError = String(error).slice(0, 300);
       }
       entry.attempts++;
