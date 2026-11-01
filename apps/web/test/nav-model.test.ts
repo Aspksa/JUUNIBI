@@ -44,7 +44,7 @@ describe("menu prefs", () => {
     const p = toggleHidden(cleanPrefs(null), "modules");
     expect(ids(p)).not.toContain("modules");
     expect(arrange(p, true)[1]!.items.map((n) => n.id)).toContain("modules");
-    expect(hotkeyLabel(p, "mobile")).toBe("Alt+6");
+    expect(hotkeyLabel(p, "mobile")).toBe("Alt+5");
     expect(toggleHidden(p, "modules").hidden).toEqual([]);
     expect(toggleHidden(p, "settings")).toBe(p);
   });
