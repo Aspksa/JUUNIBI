@@ -667,7 +667,7 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           const draft=await readJson(req);
           return send(res,200,deps.brain.audit25StagePlan(draft as unknown as import("./plan-25-audit").DraftPlan));
         }
-        if (req.method === "POST" && p === "/api/brain/plans") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 201, deps.brain.plan(b.goal, b.steps)); }
+        if (req.method === "POST" && p === "/api/brain/plans") { if (!deps.brain) return send(res, 503, { error: "Мозг недоступен" }); const b = await readJson(req); return send(res, 201, deps.brain.plan(b.goal, b.steps, b.session)); }
         if (req.method === "GET" && p === "/api/brain/experience-learning") return send(res, deps.brain ? 200 : 503, deps.brain?.experienceLearningReport() ?? { error: "Мозг недоступен" });
         if (req.method === "GET" && p === "/api/brain/recovery-strategies") {
           if (!deps.brain) return send(res,503,{error:"Мозг недоступен"});
