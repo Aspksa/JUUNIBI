@@ -257,7 +257,7 @@ export class Assistant {
   /** Thumbs up/down: tunes the memories that were used and records the label for training data. */
   async feedback(turnId: string, rating: 1 | -1): Promise<boolean> {
     const recorded = await this.turnJournal.feedback(turnId, rating);
-    if (recorded && rating === -1 && (this.o.prefs?.().suggestions ?? "smart") === "smart") {
+    if (recorded && rating === -1 && this.o.prefs?.().suggestions === "smart") {
       // Only explicit negative feedback starts reflection. Owner approval still gates all lessons.
       this.feedbackLearning = this.feedbackLearning.catch(() => {}).then(async () => {
         await this.chatIdle();
