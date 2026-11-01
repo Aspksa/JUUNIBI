@@ -267,6 +267,9 @@ export class Assistant {
     return recorded;
   }
 
+  /** Observational learning statistics, not proof of causal improvement. */
+  learningOutcomes(session?: string) { return this.turnJournal.learningOutcomes(session); }
+
   /** Ask the model what is worth learning from a turn. Results are PENDING until the user approves. */
   reflect(turnId: string): Promise<MemoryEntry[]> {
     return this.turnJournal.reflect(turnId);
