@@ -9,7 +9,7 @@ describe("RamoEvolution", () => {
     const engine = new RamoEvolution(store, () => chats, () => 100000);
     await engine.run(true);
     expect((await engine.snapshot()).queue).toEqual([]);
-    await engine.configure({ enabled: true, intervalMinutes: 15 });
+    await engine.configure({ enabled: true, intervalMinutes: 15, night: false });
     await engine.run(true);
     const state = await engine.snapshot();
     expect(state.queue).toHaveLength(1);
