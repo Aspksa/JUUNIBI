@@ -156,6 +156,52 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
         return { valid: errors.length === 0, goal: a.goal, steps, errors, ready: steps.filter((s) => !s.dependsOn.length).map((s) => s.id),
           note: "Только анализ черновика. Для сохранения или выполнения плана требуется отдельное подтверждение." };
       } },
+    { name: "search_all_knowledge", risk: "read", description: "Единый поиск по заметкам и документам на Диске владельца с указанием источника. Подтверждённую долгую память ищи отдельным search_memory; неподтверждённые записи не включаются." + DATA,
+      parameters: { type: "object", properties: { query: str("Поисковая фраза", { minLength: 2, maxLength: 160 }) }, required: ["query"] },
+      run: async (a) => {
+        const q = String(a.query).trim().toLocaleLowerCase();
+        if (q.length < 2) return { error: "Укажите минимум два символа" };
+        const words = q.split(/\\s+/).filter(Boolean);
+        const notes = d.organizer.listNotes().filter((n) => words.every((w) => JSON.stringify(n).toLocaleLowerCase().includes(w))).slice(0, 20)
+          .map((n) => ({ source: "organizer", id: n.id, text: n.text }));
+        if (!d.disk) return { notes, documents: [], note: "Диск не подключён. Долгую память можно искать инструментом search_memory." };
+        const files = d.disk.list().files;
+        const inside = new Set(await d.disk.searchContent(q).catch(() => [] as string[]));
+        const documents = files.filter((f) => inside.has(f.id) || words.every((w) => [f.name, f.note ?? "", f.folder, ...(f.tags ?? [])].join(" ").toLocaleLowerCase().includes(w)))
+          .slice(0, 20).map((f) => ({ source: "disk", id: f.id, name: f.name, folder: f.folder, matchInText: inside.has(f.id) }));
+        return { notes, documents, note: "Для поиска по подтверждённой долгой памяти используйте search_memory." };
+      } },
+    { name: "tool_diagnostics", risk: "read", description: "Показать доступность и риск встроенных инструментов, настройки и причины ограничений без запуска действий.",
+      parameters: { type: "object", properties: {} },
+      run: () => {
+        const settings = d.settings();
+        return { fileRootConfigured: !!settings.files.root, fileWriteAllowed: !!settings.files.root && settings.files.allowWrite,
+          webEnabled: settings.web, diskConnected: !!d.disk,
+          disabledByConfiguration: [...(!settings.files.root ? ["list_files", "read_file", "search_files", "write_file"] : !settings.files.allowWrite ? ["write_file"] : []),
+            ...(!settings.web ? ["web_search", "web_open", "wiki_search", "wiki_read"] : [])],
+          note: "Это проверка конфигурации; внешние сервисы и опасные инструменты не запускаются." };
+      } },
+    { name: "experience_review", risk: "read", description: "Проанализировать предоставленные проверенные результаты вызовов и предложить улучшения. Не изменяет инструменты автоматически.",
+      parameters: { type: "object", properties: { outcomes: { type: "array", description: "До 100 результатов {tool, status, reason?}, status: ok/error/denied" } }, required: ["outcomes"] },
+      run: (a) => {
+        if (!Array.isArray(a.outcomes) || a.outcomes.length > 100) return { error: "Нужен массив до 100 результатов" };
+        const stats = new Map<string, { ok: number; error: number; denied: number; reasons: Map<string, number> }>();
+        for (const entry of a.outcomes) {
+          if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+          const v = entry as Record<string, unknown>;
+          if (typeof v.tool !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(v.tool) || !["ok", "error", "denied"].includes(String(v.status))) continue;
+          const stat = stats.get(v.tool) ?? { ok: 0, error: 0, denied: 0, reasons: new Map<string, number>() };
+          if (v.status === "ok") stat.ok++;
+          else if (v.status === "error") stat.error++;
+          else stat.denied++;
+          if (typeof v.reason === "string" && v.reason.length <= 200 && v.status !== "ok")
+            stat.reasons.set(v.reason, (stat.reasons.get(v.reason) ?? 0) + 1);
+          stats.set(v.tool, stat);
+        }
+        return [...stats].map(([tool, stat]) => ({ tool, ok: stat.ok, errors: stat.error, denied: stat.denied,
+          recurringReasons: [...stat.reasons].filter(([, count]) => count >= 2).map(([reason, count]) => ({ reason, count })),
+          suggestion: stat.denied > 0 ? "Проверить разрешения; не обходить отказы" : stat.error > 0 ? "Проверить аргументы, доступность и журнал ошибок" : "Повторяющихся проблем не выявлено" }));
+      } },
     { name: "daily_brief", risk: "read", description: "Данные для сводки дня: напоминания, дела, планы, память на подтверждение, сбои модулей, обновления. Перескажи их коротко и по делу.",
       parameters: { type: "object", properties: {} }, run: () => d.brief() },
   ];
