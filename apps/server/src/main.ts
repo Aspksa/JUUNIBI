@@ -281,7 +281,8 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
         { module: "mobile", check: () => { const x = mobile.status(); return x.error ? { status: "FAIL", detail: x.error } : !x.running ? { status: "SKIPPED", detail: "Wi-Fi доступ выключен владельцем; включение не выполнялось" } : { detail: "Мобильный сервис активен, порт " + x.port }; } },
       ]);
       const isolatedChecks = await runIsolatedHealthChecks();
-      return { checkedAt: new Date().toISOString(), results, isolatedChecks, summary: { passed: results.filter(x=>x.status==="PASS").length, failed: results.filter(x=>x.status==="FAIL").length, skipped: results.filter(x=>x.status==="SKIPPED").length }, note: "PASS означает прохождение указанной безопасной проверки, а не полную исправность модуля. Изолированные тесты используют только временные объекты или синтетические сценарии, не проверяют реальный цикл разрешений, сеть Cloud.ru или установку обновлений." };
+      const capabilityAudit = { registered: assistant?.tools.capabilities().length ?? 0, potentialOverlaps: assistant?.tools.potentialOverlaps() ?? [] };
+      return { checkedAt: new Date().toISOString(), results, isolatedChecks, capabilityAudit, summary: { passed: results.filter(x=>x.status==="PASS").length, failed: results.filter(x=>x.status==="FAIL").length, skipped: results.filter(x=>x.status==="SKIPPED").length }, note: "PASS означает прохождение указанной безопасной проверки, а не полную исправность модуля. Изолированные тесты используют только временные объекты или синтетические сценарии, не проверяют реальный цикл разрешений, сеть Cloud.ru или установку обновлений." };
     },
   });
 

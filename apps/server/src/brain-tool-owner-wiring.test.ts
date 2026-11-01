@@ -9,6 +9,11 @@ describe("assistant tool ownership wiring", () => {
     expect(new Set(registrations.map(x => x[1])).size).toBe(registrations.length);
     expect((source.match(/assistant\.tools\.register\(\{\s*name: "brain_/g) ?? []).length).toBe(registrations.length);
   });
+  it("includes read-only capability overlap diagnostics in functional health checks", () => {
+    expect(source).toContain('const capabilityAudit = { registered: assistant?.tools.capabilities().length ?? 0');
+    expect(source).toContain('potentialOverlaps: assistant?.tools.potentialOverlaps() ?? []');
+    expect(source).toContain('results, isolatedChecks, capabilityAudit, summary:');
+  });
   it("assigns existing extra tools to the assistant module", () => {
     expect(source).toContain('assistant.tools.register(tool, "assistant")');
   });
