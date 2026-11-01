@@ -84,7 +84,7 @@ const normalizedWords = (value: string): string[] =>
 const patternLabel = (value: string): string => {
   const words = normalizedWords(value);
   const signature = words.length <= 2 ? words : [words[0]!, words[words.length - 1]!];
-  return signature.length ? signature.join(" ") : value.trim().toLocaleLowerCase("ru-RU").slice(0, 40) || "прочее";
+  return signature.length ? signature.join(" ").slice(0, 60) : value.trim().toLocaleLowerCase("ru-RU").slice(0, 40) || "прочее";
 };
 
 const bucketObservations = (bucket: TaskMemoryBucket): number =>
@@ -287,7 +287,10 @@ export class TaskMemoryService {
 
     const friction = weightedResolved ? weightedMoved / weightedResolved : 0;
     const onTimeRate = weightedDueOutcomes ? weightedOnTime / weightedDueOutcomes : undefined;
-    const learnedEstimateMinutes = estimateWeight >= 4 ? roundEstimate(estimateTotal / estimateWeight) : undefined;
+    const reliableEstimateSamples = entries.reduce((max, entry) => Math.max(max, entry.bucket.estimateSamples), 0);
+    const learnedEstimateMinutes = estimateWeight > 0 && reliableEstimateSamples >= 2
+      ? roundEstimate(estimateTotal / estimateWeight)
+      : undefined;
     const confidence = Math.min(100, Math.round(weightedObs / 12 * 100));
     const reasons: string[] = [];
     let riskBoost = 0;
