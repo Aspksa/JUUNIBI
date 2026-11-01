@@ -152,8 +152,8 @@ export class TaskService {
 
     if ("dueAt" in patch) {
       if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt;
-      else if (typeof patch.dueAt === "string" && Number.isFinite(Date.parse(patch.dueAt))) {
-        next.dueAt = new Date(patch.dueAt).toISOString();
+      else if (typeof patch.dueAt === "string") {
+        next.dueAt = taskDate(patch.dueAt, "Некорректный срок");
       } else {
         throw bad("Некорректный срок");
       }
@@ -211,8 +211,8 @@ export class TaskService {
 
     if ("followUpAt" in patch) {
       if (patch.followUpAt === null || patch.followUpAt === "") delete next.followUpAt;
-      else if (typeof patch.followUpAt === "string" && Number.isFinite(Date.parse(patch.followUpAt))) {
-        next.followUpAt = new Date(patch.followUpAt).toISOString();
+      else if (typeof patch.followUpAt === "string") {
+        next.followUpAt = taskDate(patch.followUpAt, "Когда спросить снова: дата и время с часовым поясом");
       } else {
         throw bad("Когда спросить снова: дата и время");
       }
