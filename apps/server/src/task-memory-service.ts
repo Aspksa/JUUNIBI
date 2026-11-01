@@ -82,8 +82,9 @@ const normalizedWords = (value: string): string[] =>
     .filter((word) => word.length >= 3 && !STOP.has(word) && !/^\d+$/.test(word));
 
 const patternLabel = (value: string): string => {
-  const words = normalizedWords(value).slice(0, 3);
-  return words.length ? words.join(" ") : value.trim().toLocaleLowerCase("ru-RU").slice(0, 40) || "прочее";
+  const words = normalizedWords(value);
+  const signature = words.length <= 2 ? words : [words[0]!, words[words.length - 1]!];
+  return signature.length ? signature.join(" ") : value.trim().toLocaleLowerCase("ru-RU").slice(0, 40) || "прочее";
 };
 
 const bucketObservations = (bucket: TaskMemoryBucket): number =>
