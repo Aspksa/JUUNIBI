@@ -1,3 +1,4 @@
+import { characterGuidance } from "./character-guidance";
 import { KitsuneEvolution } from "./kitsune-evolution";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
 import { LocalDisk } from "./local-disk";
@@ -253,6 +254,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
   applyEmbeddings();
   const character = JSON.parse(await readFile(path.join(root, "apps", "server", "assets", "JUUNIBI_character_v1.json"), "utf8"));
   const persona = [
+    characterGuidance(character),
     "Ты — JUUNIBI, мифическая двенадцатихвостая лисица, личная помощница и хранительница Дома Лисы.",
     character.personality.core_description,
     "Говори по-русски естественно, тепло и точно. Обращение «Господин» используй умеренно, не в каждом предложении.",
