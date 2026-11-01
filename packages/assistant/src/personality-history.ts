@@ -24,6 +24,7 @@ export class PersonalityHistory {
           !Array.isArray(snapshot.acceptedLessons) || snapshot.acceptedLessons.length > 2000 ||
           snapshot.acceptedLessons.some(x => typeof x !== "string" || x.length > 200)) throw new Error("Invalid personality version");
     }
+    if ((parsed as PersonalitySnapshot[]).some((item, index, all) => index > 0 && item.version <= all[index - 1]!.version)) throw new Error("Unordered personality history");
     this.versions = structuredClone(parsed as PersonalitySnapshot[]);
   }
 
