@@ -116,7 +116,7 @@ describe("качество и контрольные вопросы", () => {
     expect((await call("/api/assistant/eval", "POST", {})).status).toBe(409);
     await evals.idle();
     const s = await (await call("/api/assistant/eval")).json();
-    expect(s).toMatchObject({ running: false, last: { total: 12 } });
+    expect(s).toMatchObject({ running: false, last: { total: 16 } });
     expect(s.last.results.find((x: { id: string }) => x.id === "math-1").passed).toBe(true);
     expect(s.history).toHaveLength(1);
     expect(assistant.turnsSnapshot().length).toBe(turnsBefore);
