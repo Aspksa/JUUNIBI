@@ -7,7 +7,7 @@ import type { Brief, MemoryItem } from "../api";
 import type { IconName } from "../dom";
 import type { Route } from "../state";
 
-export type NavId = "chat" | "tasks" | "disk" | "brain" | "modules" | "mobile" | "fox-network" | "kitsune-tree" | "update" | "settings";
+export type NavId = "chat" | "tasks" | "disk" | "brain" | "modules" | "mobile" | "kitsune-tree" | "update" | "settings";
 export type NavGroup = "main" | "brain" | "system";
 export interface NavItem { id: NavId; label: string; icon: IconName; group: NavGroup; route?: Route }
 
@@ -19,7 +19,6 @@ export const NAV_ITEMS: NavItem[] = [
   { id: "brain", label: "Мозг", icon: "brain", group: "brain", route: "brain" },
   { id: "modules", label: "Модули", icon: "modules", group: "brain", route: "modules" },
   { id: "kitsune-tree", label: "Лисье древо", icon: "link", group: "brain", route: "kitsune-tree" },
-  { id: "fox-network", label: "Лисья сеть", icon: "link", group: "system", route: "fox-network" },
   { id: "mobile", label: "Телефон", icon: "phone", group: "system", route: "mobile" },
   { id: "update", label: "Обновление", icon: "update", group: "system", route: "update" },
   { id: "settings", label: "Настройки", icon: "settings", group: "system", route: "settings" },
