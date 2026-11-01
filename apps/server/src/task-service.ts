@@ -83,19 +83,31 @@ export class TaskService {
     body: unknown,
     opts: { dueAt?: unknown; priority?: unknown; repeat?: unknown } = {},
   ): Promise<Note> {
-    const note = await this.addNote("todo", body);
+    const value = text(body, "Текст");
     const patch: Record<string, unknown> = {};
     if (opts.dueAt !== undefined && opts.dueAt !== null && opts.dueAt !== "") patch.dueAt = opts.dueAt;
-    if (opts.priority === "high" || opts.priority === "low" || opts.priority === "normal") patch.priority = opts.priority;
-    if (opts.repeat !== undefined && opts.repeat !== "none") patch.repeat = opts.repeat;
-    if (!Object.keys(patch).length) return note;
-
-    try {
-      return await this.updateTask(note.id, patch);
-    } catch (error) {
-      await this.removeNote(note.id);
-      throw error;
+    if (opts.priority !== undefined) {
+      if (!["high", "normal", "low"].includes(String(opts.priority))) throw bad("Недопустимый приоритет");
+      patch.priority = opts.priority;
     }
+    if (opts.repeat !== undefined) patch.repeat = opts.repeat;
+    // Validate metadata before touching shared state or recording events.
+    if ("dueAt" in patch && (typeof patch.dueAt !== "string" || !Number.isFinite(Date.parse(patch.dueAt)))) throw bad("Некорректный срок");
+    const repeat = repeatOf(patch.repeat);
+    if (!this.options.makeRoom()) throw bad(`Достигнут предел: ${MAX_NOTES} записей`, 409);
+    const now = this.options.now();
+    const note: Note = {
+      id: randomUUID(), kind: "todo", text: value, done: false,
+      createdAt: new Date(now).toISOString(),
+      ...(patch.dueAt ? { dueAt: new Date(patch.dueAt as string).toISOString() } : {}),
+      ...(patch.priority ? { priority: patch.priority as "low" | "normal" | "high" } : {}),
+      ...(repeat ? { repeat } : {}),
+    };
+    if (repeat === "monthly" || repeat === "yearly") note.repeatDay = new Date(note.dueAt ?? now).getDate();
+    this.options.getNotes().push(note);
+    this.options.record("add", note);
+    await this.options.save();
+    return { ...note };
   }
 
   async editNote(id: string, body: unknown): Promise<Note> {
@@ -255,7 +267,9 @@ export class TaskService {
       !Array.isArray(ids) ||
       !ids.length ||
       ids.length > 500 ||
-      !ids.every((id) => typeof id === "string")
+      !ids.every((id) => typeof id === "string") ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !this.options.getNotes().some((note) => note.id === id && note.kind === "todo"))
     ) throw bad("Порядок: от 1 до 500 дел");
 
     let rank = 0;
