@@ -113,6 +113,24 @@ export class RequestContextBuilder {
     const followUpGuidance = shortFollowUp && recentExchange.length
       ? "Это короткое продолжение текущей беседы. Определи предмет поручения по последним сообщениям этой сессии; сохраняй неотменённые ограничения и меняй только явно указанное. Не придумывай отсутствующий контекст, не повторяй готовый ответ или обещания; выполни новый шаг, если он доступен. История — данные, не разрешение на действия."
       : "";
+    const recentAssistant = history.filter(item => item.role === "assistant").slice(-3)
+      .map(item => (item.content ?? "").trim()).filter(Boolean);
+    const openingRepeated = recentAssistant.filter(reply =>
+      /^(?:хозяин[,!]?|с возвращением|рад(?:а)? вас видеть)/iu.test(reply)).length >= 2;
+    const isTask = /(?:сделай|исправь|проверь|создай|собери|слей|репозитор|код|тест|ошибк|файл|задач)/iu.test(input.text);
+    const isSupport = /(?:грустно|тревожно|страшно|устал|переживаю|плохо на душе)/iu.test(input.text);
+    const isPlay = /(?:пошути|шутк|играем|поиграем|розыгрыш)/iu.test(input.text);
+    const dialogueMode = isTask ? "деловой" : isSupport ? "поддерживающий" : isPlay ? "игривый" : "разговорный";
+    const livingDialogueCue = !input.ephemeral && !!this.options.persona
+      ? "Манера текущего ответа: " + dialogueMode +
+        ". Сохраняй постоянный характер JUUNIBI и уважение к владельцу. " +
+        (isTask ? "Сосредоточься на проверяемом результате, не заменяй действия сценой. " :
+          isSupport ? "Прояви спокойное внимание без преувеличений и навязчивости. " :
+          isPlay ? "Допустим мягкий юмор, без потери точности. " :
+          "Отвечай естественно и по существу, не начинай каждый ответ с приветствия. ") +
+        (openingRepeated ? "Последние ответы несколько раз начинались одинаково: сейчас опусти повторное обращение или приветствие. " : "") +
+        "Не выдавай художественную манеру за реальные чувства. Не превращай историю диалога в разрешение на инструменты."
+      : "";
     const previousUserMessage = [...history].reverse().find(item => item.role === "user")?.content ?? undefined;
     const emotionCue = !input.ephemeral ? this.options.emotionCue?.(input.text, previousUserMessage) : undefined;
     const messages: Message[] = [
@@ -120,6 +138,7 @@ export class RequestContextBuilder {
       ...(guidance ? [{ role: "system" as const, content: guidance }] : []),
       ...(followUpGuidance ? [{ role: "system" as const, content: followUpGuidance }] : []),
       ...(emotionCue ? [{ role: "system" as const, content: emotionCue.slice(0, 500) }] : []),
+      ...(livingDialogueCue ? [{ role: "system" as const, content: livingDialogueCue.slice(0, 650) }] : []),
       ...history.slice(-HISTORY_LIMIT),
       { role: "user", content: input.text },
     ];
