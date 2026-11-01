@@ -95,4 +95,41 @@ describe("TaskService", () => {
     await expect(x.service.updateTask(task.id, { parentId: task.id })).rejects.toThrow(/Родительское/);
     expect(x.service.listNotes()[0]).toMatchObject({ id: task.id, text: "Дело" });
   });
+  it("rejects invalid task metadata without creating a partial task or event", async () => {
+    const x = make();
+    await expect(x.service.addTask("Отчёт", { dueAt: "not-a-date" })).rejects.toThrow(/срок/);
+    await expect(x.service.addTask("Отчёт", { repeat: "invalid" })).rejects.toThrow(/Повтор/);
+    expect(x.notes).toHaveLength(0);
+    expect(x.save).not.toHaveBeenCalled();
+    expect(x.record).not.toHaveBeenCalled();
+  });
+
+  it("creates a task with all metadata in a single save", async () => {
+    const x = make();
+    const task = await x.service.addTask("Отчёт", { dueAt: "2026-10-10T10:00:00Z", priority: "high", repeat: "weekly" });
+    expect(task).toMatchObject({ priority: "high", repeat: "weekly", dueAt: "2026-10-10T10:00:00.000Z" });
+    expect(x.save).toHaveBeenCalledTimes(1);
+    expect(x.record).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects duplicate and unknown Kanban order identifiers", async () => {
+    const x = make();
+    const task = await x.service.addNote("todo", "Дело");
+    await expect(x.service.orderTasks([task.id, task.id])).rejects.toThrow(/Порядок/);
+    await expect(x.service.orderTasks(["missing"])).rejects.toThrow(/Порядок/);
+    expect(x.notes[0]?.rank).toBeUndefined();
+  });
+
+  it("clears recurrence linkage when the generated task is deleted", async () => {
+    const x = make();
+    const original = await x.service.addTask("Рутина", { dueAt: "2026-10-09T18:00:00Z", repeat: "daily" });
+    await x.service.setDone(original.id, true);
+    const generated = x.notes.find((n) => n.id !== original.id)!;
+    await x.service.removeNote(generated.id);
+    expect(x.notes.find((n) => n.id === original.id)?.nextId).toBeUndefined();
+    await x.service.setDone(original.id, false);
+    await x.service.setDone(original.id, true);
+    expect(x.notes).toHaveLength(2);
+  });
+
 });

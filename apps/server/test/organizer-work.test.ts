@@ -26,7 +26,8 @@ describe("«Дела»: work to-dos", () => {
     const a = await o.addNote("todo", "А"), b = await o.addNote("todo", "Б");
     expect((await o.updateTask(a.id, { status: "waiting" })).statusAt).toBeTruthy();
     expect((await o.updateTask(a.id, { status: "todo" })).statusAt).toBeUndefined();
-    await o.orderTasks([b.id, a.id, "нет такого"]);
+    await expect(o.orderTasks([b.id, a.id, "нет такого"])).rejects.toThrow(/Порядок/);
+    await o.orderTasks([b.id, a.id]);
     expect(o.listNotes().map((n) => [n.text, n.rank])).toEqual([["А", 1], ["Б", 0]]);
     await expect(o.orderTasks([])).rejects.toThrow(/Порядок/);
     await o.flush();
