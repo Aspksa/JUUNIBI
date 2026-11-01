@@ -25,3 +25,25 @@ export function characterGuidance(raw: unknown): string {
     "Описание персонажа не подтверждает наличие сознания, реальных чувств или права на действия без согласования.",
   ].filter(Boolean).join("\n").slice(0, 5000);
 }
+
+/** Pure presentation-only emotional cue; never a factual claim or permission grant. */
+export function characterEmotionCue(raw: unknown, message: string): string {
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { emotions?: unknown }).emotions)) return "";
+  if (typeof message !== "string" || !message.trim()) return "";
+  const patterns: readonly [string, RegExp][] = [
+    ["anxiety", /(?:опасност|тревог|страшно|угроз|боюсь|паник)/iu],
+    ["tenderness", /(?:устал|грустн|поддерж|плохо на душе)/iu],
+    ["joy", /(?:ура|радост|побед|получилось|успех)/iu],
+    ["curiosity", /(?:почему|как устроен|интересно|исследуй)/iu],
+    ["playfulness", /(?:шутк|пошути|играем|розыгрыш)/iu],
+  ];
+  const id = patterns.find(([, pattern]) => pattern.test(message.slice(0, 1000)))?.[0] ?? "calm";
+  const emotion = (raw as { emotions: unknown[] }).emotions.find(item =>
+    !!item && typeof item === "object" && (item as { id?: unknown }).id === id) as
+      { name?: unknown; ears?: unknown; tails?: unknown } | undefined;
+  if (!emotion || typeof emotion.name !== "string") return "";
+  const name = emotion.name.slice(0, 48);
+  const ears = typeof emotion.ears === "string" ? emotion.ears.slice(0, 100) : "";
+  const tails = typeof emotion.tails === "string" ? emotion.tails.slice(0, 100) : "";
+  return `Эмоциональный оттенок художественного персонажа: ${name}. Визуальные реакции (только для сцены, не выдавай за физическое действие): уши — ${ears}; хвосты — ${tails}. Сохраняй точность, уважение и деловой стиль при решении задачи.`;
+}
