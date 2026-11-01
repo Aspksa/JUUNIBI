@@ -69,7 +69,9 @@ export class ConversationSummaryService {
 
   async get(session: string, older: Message[]): Promise<string | undefined> {
     await this.ready;
-    return this.summaries.get(this.key(session, older))?.text;
+    const saved = this.summaries.get(this.key(session, older));
+    if (!saved || saved.covered > older.length) return undefined;
+    return saved.fp === this.fingerprint(older, saved.covered) ? saved.text : undefined;
   }
 
   queue(session: string, older: Message[]): void {
