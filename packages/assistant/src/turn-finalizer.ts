@@ -15,7 +15,7 @@ export interface FinalizedTurn {
 
 export interface TurnFinalizerOptions {
   sessions: Pick<SessionHistory, "appendTurn">;
-  journal: Pick<TurnJournal, "record">;
+  journal: Pick<TurnJournal, "record" | "snapshot">;
   summaries: Pick<ConversationSummaryService, "queue">;
   memoryLearning: Pick<MemoryLearningService, "queue">;
 }
