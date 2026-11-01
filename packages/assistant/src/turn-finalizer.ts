@@ -71,7 +71,8 @@ export class TurnFinalizer {
     });
 
     if (input.background === "full") {
-      this.options.memoryLearning.queue(input.user, input.prefs.suggestions, previous?.reply);
+      if (previous?.reply) this.options.memoryLearning.queue(input.user, input.prefs.suggestions, previous.reply);
+      else this.options.memoryLearning.queue(input.user, input.prefs.suggestions);
     }
 
     return {
