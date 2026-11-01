@@ -46,7 +46,7 @@ export class RamoEvolution {
   constructor(private readonly store: StorageAdapter, private readonly readChats: () => readonly {
     id: string; messages: readonly { id?: string; role: string; content: string; at?: number }[];
   }[], private readonly now: () => number = Date.now) {
-    this.ready = this.load().catch(() => { this.state = defaults(); });
+    this.ready = this.load();
   }
   private async load() {
     const raw = await this.store.load();
@@ -78,8 +78,15 @@ export class RamoEvolution {
   private mutate<T>(fn: () => T | Promise<T>): Promise<T> {
     const task = this.pending.then(async () => {
       await this.ready;
-      const result = await fn();
-      await this.store.save(JSON.stringify(this.state));
+      const before = structuredClone(this.state);
+      let result: T;
+      try {
+        result = await fn();
+        await this.store.save(JSON.stringify(this.state));
+      } catch (error) {
+        this.state = before;
+        throw error;
+      }
       return result;
     });
     this.pending = task.then(() => undefined, () => undefined);
