@@ -26,6 +26,17 @@ export class DeliveryOutbox {
     item.state = "acknowledged"; item.acknowledgedAt = now; item.nextAttemptAt = Number.MAX_SAFE_INTEGER;
     return true;
   }
+  /** Remove old acknowledged/terminal records; never erase pending deliveries. */
+  prune(before: number): number {
+    let removed = 0;
+    for (const [id, entry] of this.records) {
+      if ((entry.state === "acknowledged" || entry.state === "failed") && (entry.acknowledgedAt ?? entry.createdAt) < before) {
+        this.records.delete(id);
+        removed++;
+      }
+    }
+    return removed;
+  }
   snapshot(userId?: string): DeliveryRecord[] {
     return [...this.records.values()].filter(x => !userId || x.userId === userId).map(x => ({ ...x }));
   }
