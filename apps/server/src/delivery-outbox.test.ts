@@ -26,4 +26,15 @@ describe("delivery outbox", () => {
     await q.dispatch(async () => { q.acknowledge("u", "r", 2); }, 1);
     expect(q.snapshot()[0]!.state).toBe("acknowledged");
   });
+  it("prunes only expired terminal records, retaining pending and recent acknowledgements", () => {
+    const outbox = new DeliveryOutbox();
+    outbox.enqueue("owner", "old", "old item", 100);
+    outbox.acknowledge("owner", "old", 200);
+    outbox.enqueue("owner", "pending", "still pending", 100);
+    outbox.enqueue("owner", "recent", "recent item", 900);
+    outbox.acknowledge("owner", "recent", 950);
+    expect(outbox.prune(500)).toBe(1);
+    expect(outbox.snapshot().map(x => x.reminderId).sort()).toEqual(["pending", "recent"]);
+  });
+
 });

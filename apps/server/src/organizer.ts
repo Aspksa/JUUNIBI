@@ -581,6 +581,12 @@ export class Organizer {
 
   // ---------- reminders ----------
   listReminders(): Reminder[] { return this.reminderService.list(); }
+  /** Reclaim only terminal delivery records older than retention; pending items survive. */
+  async pruneDelivery(now = this.now()): Promise<number> {
+    const removed = this.delivery.prune(now - 30 * 86_400_000);
+    if (removed) await this.save();
+    return removed;
+  }
   /** Persistent delivery queue. A UI display is not an acknowledgement. */
   deliverySnapshot(): DeliveryRecord[] { return this.delivery.snapshot("owner"); }
   async acknowledgeDelivery(reminderId: string): Promise<{ acknowledged: boolean }> {
