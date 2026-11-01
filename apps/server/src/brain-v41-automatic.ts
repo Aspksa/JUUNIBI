@@ -11,7 +11,7 @@ export function automaticBrainReview(input: CognitiveInput) {
   const cycle = runUnifiedBrainCycle(input);
   const diagnostics = evaluateBrainV5(input);
   const reviewV6 = evaluateBrainV6(input);
-  const reviewV7 = evaluateBrainV7(input);
+  const reviewV7 = evaluateBrainV7(input, reviewV6);
   const uniqueClaims = new Map<string, NonNullable<CognitiveInput["verifiedKnowledge"]>[number]>();
   for (const item of input.verifiedKnowledge ?? []) {
     if (item.status !== "verified") continue;
