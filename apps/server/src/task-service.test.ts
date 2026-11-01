@@ -120,4 +120,16 @@ describe("TaskService", () => {
     expect(x.notes[0]?.rank).toBeUndefined();
   });
 
+  it("clears recurrence linkage when the generated task is deleted", async () => {
+    const x = make();
+    const original = await x.service.addTask("Рутина", { dueAt: "2026-10-09T18:00:00Z", repeat: "daily" });
+    await x.service.setDone(original.id, true);
+    const generated = x.notes.find((n) => n.id !== original.id)!;
+    await x.service.removeNote(generated.id);
+    expect(x.notes.find((n) => n.id === original.id)?.nextId).toBeUndefined();
+    await x.service.setDone(original.id, false);
+    await x.service.setDone(original.id, true);
+    expect(x.notes).toHaveLength(2);
+  });
+
 });
