@@ -192,7 +192,7 @@ export class Assistant {
     // For explicit short continuation, inspect the authoritative persisted plan ledger.
     // Plans are global and have no chat-session ownership: never assume that a plan
     // belongs to this conversation or use this information as permission to execute.
-    if (!opts.ephemeral && /^(?:продолжай|дальше|делай|что дальше|следующий шаг)(?:[\\s.,!?]|$)/iu.test(text.trim()) && this.o.pendingWork) {
+    if (!opts.ephemeral && /^(?:продолжай|дальше|делай|что дальше|следующий шаг)(?:[\s.,!?]|$)/iu.test(text.trim()) && this.o.pendingWork) {
       try {
         const snapshot = this.o.pendingWork();
         if (Array.isArray(snapshot)) {
