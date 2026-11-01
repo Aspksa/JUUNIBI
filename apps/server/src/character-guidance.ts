@@ -26,10 +26,9 @@ export function characterGuidance(raw: unknown): string {
   ].filter(Boolean).join("\n").slice(0, 5000);
 }
 
-/** Pure presentation-only emotional cue; never a factual claim or permission grant. */
-export function characterEmotionCue(raw: unknown, message: string, previousMessage?: string): string {
-  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { emotions?: unknown }).emotions)) return "";
-  if (typeof message !== "string" || !message.trim()) return "";
+/** Shared, stateless emotional classification used by chat cues and scene selection. */
+export function characterEmotionId(message: string): string {
+  if (typeof message !== "string" || !message.trim()) return "calm";
   const patterns: readonly [string, RegExp][] = [
     ["anxiety", /(?:опасност|тревог|страшно|угроз|боюсь|паник)/iu],
     ["tenderness", /(?:устал|грустн|поддерж|плохо на душе)/iu],
@@ -38,7 +37,15 @@ export function characterEmotionCue(raw: unknown, message: string, previousMessa
     ["playfulness", /(?:шутк|пошути|играем|розыгрыш)/iu],
   ];
   const id = patterns.find(([, pattern]) => pattern.test(message.slice(0, 1000)))?.[0] ?? "calm";
-  const previous = typeof previousMessage === "string" ? patterns.find(([, pattern]) => pattern.test(previousMessage.slice(0, 1000)))?.[0] : undefined;
+  return id;
+}
+
+/** Pure presentation-only emotional cue; never a factual claim or permission grant. */
+export function characterEmotionCue(raw: unknown, message: string, previousMessage?: string): string {
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as { emotions?: unknown }).emotions)) return "";
+  if (typeof message !== "string" || !message.trim()) return "";
+  const id = characterEmotionId(message);
+  const previous = typeof previousMessage === "string" ? characterEmotionId(previousMessage) : undefined;
   const emotion = (raw as { emotions: unknown[] }).emotions.find(item =>
     !!item && typeof item === "object" && (item as { id?: unknown }).id === id) as
       { name?: unknown; ears?: unknown; tails?: unknown } | undefined;
