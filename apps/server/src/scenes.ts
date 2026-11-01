@@ -81,7 +81,8 @@ export class SceneEngine {
       this.state.used.push(action.id);
       if(phrase)this.state.phrasesUsed.push(phrase.id);
       await this.save();
-      return {action,phrase:phrase??null,stats:this.stats()};
+      const address = (text: string) => text.replace(/Господин(ом|а|у|е)?/gu, (_match, ending: string | undefined) => ({ om: "Хозяином", а: "Хозяина", у: "Хозяину", е: "Хозяине" } as Record<string, string>)[ending ?? ""] ?? "Хозяин");
+      return {action: { ...action, text: address(action.text) },phrase:phrase ? { ...phrase, text: address(phrase.text) } : null,stats:this.stats()};
     });
     this.current=task.then(()=>undefined,()=>undefined);
     return task;
