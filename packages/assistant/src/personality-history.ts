@@ -22,7 +22,10 @@ export class PersonalityHistory {
       if (!Number.isSafeInteger(snapshot.version) || (snapshot.version ?? 0) < 1 ||
           !snapshot.traits || traits.some(k => !Number.isFinite(snapshot.traits?.[k]) || snapshot.traits![k] < 0 || snapshot.traits![k] > 1) ||
           !Array.isArray(snapshot.acceptedLessons) || snapshot.acceptedLessons.length > 2000 ||
-          snapshot.acceptedLessons.some(x => typeof x !== "string" || x.length > 200)) throw new Error("Invalid personality version");
+          snapshot.acceptedLessons.some(x => typeof x !== "string" || x.length > 200) ||
+          (snapshot.lessonTexts !== undefined && (typeof snapshot.lessonTexts !== "object" || snapshot.lessonTexts === null || Array.isArray(snapshot.lessonTexts) ||
+            Object.keys(snapshot.lessonTexts).length > 2000 || Object.entries(snapshot.lessonTexts).some(([id, value]) =>
+              !snapshot.acceptedLessons!.includes(id) || typeof value !== "string" || value.length > 500)))) throw new Error("Invalid personality version");
     }
     if ((parsed as PersonalitySnapshot[]).some((item, index, all) => index > 0 && item.version <= all[index - 1]!.version)) throw new Error("Unordered personality history");
     this.versions = structuredClone(parsed as PersonalitySnapshot[]);

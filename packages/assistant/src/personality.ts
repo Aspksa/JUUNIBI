@@ -5,6 +5,7 @@ export interface PersonalitySnapshot {
   version: number;
   traits: TraitScores;
   acceptedLessons: string[];
+  lessonTexts?: Record<string, string>;
 }
 export interface LessonProposal {
   id: string;
@@ -14,7 +15,7 @@ export interface LessonProposal {
 }
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 export function initialPersonality(): PersonalitySnapshot {
-  return { version: 1, traits: { warmth: 0.7, curiosity: 0.6, brevity: 0.5, initiative: 0.4 }, acceptedLessons: [] };
+  return { version: 1, traits: { warmth: 0.7, curiosity: 0.6, brevity: 0.5, initiative: 0.4 }, acceptedLessons: [], lessonTexts: {} };
 }
 export function proposeLesson(id: string, lesson: string, evidence: string[], confidence: number): LessonProposal {
   if (!id.trim() || !lesson.trim() || evidence.length === 0 || !Number.isFinite(confidence)) throw new Error("Invalid lesson proposal");
@@ -22,7 +23,7 @@ export function proposeLesson(id: string, lesson: string, evidence: string[], co
 }
 export function acceptLesson(snapshot: PersonalitySnapshot, proposal: LessonProposal, approved: boolean): PersonalitySnapshot {
   if (!approved || proposal.confidence < 0.6 || snapshot.acceptedLessons.includes(proposal.id)) return snapshot;
-  return { ...snapshot, version: snapshot.version + 1, acceptedLessons: [...snapshot.acceptedLessons, proposal.id] };
+  return { ...snapshot, version: snapshot.version + 1, acceptedLessons: [...snapshot.acceptedLessons, proposal.id], lessonTexts: { ...snapshot.lessonTexts, [proposal.id]: proposal.lesson.trim().slice(0, 500) } };
 }
 export function evolveTrait(snapshot: PersonalitySnapshot, trait: Trait, delta: number, approved: boolean): PersonalitySnapshot {
   if (!approved || !Number.isFinite(delta)) return snapshot;

@@ -676,5 +676,5 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
 
   const health = () => sectionHealth({ status: s.status, cfg: s.assistantSettings, checks, chats: chats.store.get().items.length, lastBackup: readPagePrefs().lastBackup, now: Date.now() });
   return el("div", { cls: "page settings-page" }, pageHead("settings", "Настройки", "Подключение помощницы, внешний вид и ваши данные.", pill),
-    el("div", { cls: "set-layout" }, side(health), el("div", { cls: "set-main" }, conn, ...assistantCards(s), personalityPanel(), look, chat, data, about)));
+    el("div", { cls: "set-layout" }, side(health), el("div", { cls: "set-main" }, conn, ...assistantCards(s), personalityPanel(chats), look, chat, data, about)));
 }

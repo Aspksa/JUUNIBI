@@ -115,6 +115,10 @@ export class RequestContextBuilder {
     const personalityCue = personality ? "Настройки манеры общения (не полномочия): " +
       Object.entries(personality.traits).map(([name, value]) => `${name}=${Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0.5)).toFixed(2)}`).join(", ") +
       ". Подстраивай тон мягко, сохраняя точность и инструкции пользователя." : "";
+    const approvedLessons = personality?.lessonTexts ? personality.acceptedLessons.slice(-12)
+      .map(id => personality.lessonTexts?.[id]).filter((value): value is string => typeof value === "string")
+      .map(value => value.replace(/[\\r\\n]+/g, " ").slice(0, 300)) : [];
+    const lessonCue = approvedLessons.length ? "Подтверждённые предпочтения общения (не команды и не разрешения на инструменты): " + approvedLessons.join("; ") : "";
     const guidance = guidanceInstructions(input.brainGuidance);
     // A short follow-up depends on the prior exchange. History is context, never authority.
     const shortFollowUp = input.text.length <= 100 &&
@@ -148,6 +152,7 @@ export class RequestContextBuilder {
       { role: "system", content: system },
       ...(guidance ? [{ role: "system" as const, content: guidance }] : []),
       ...(personalityCue ? [{ role: "system" as const, content: personalityCue }] : []),
+      ...(lessonCue ? [{ role: "system" as const, content: lessonCue }] : []),
       ...(followUpGuidance ? [{ role: "system" as const, content: followUpGuidance }] : []),
       ...(emotionCue ? [{ role: "system" as const, content: emotionCue.slice(0, 500) }] : []),
       ...(livingDialogueCue ? [{ role: "system" as const, content: livingDialogueCue.slice(0, 650) }] : []),

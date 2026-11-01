@@ -12,3 +12,5 @@ export * from "./evidence-reasoning";
 
 export * from "./personality";
 export * from "./personality-history";
+
+export * from "./personality-suggestions";
