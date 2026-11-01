@@ -1,4 +1,5 @@
 import type { Message } from "./llm";
+import type { PersonalitySnapshot } from "./personality";
 import { Memory, type MemoryEntry } from "./memory";
 import { ConversationSummaryService } from "./conversation-summary";
 import { SessionHistory } from "./session-history";
@@ -24,6 +25,7 @@ export interface RequestContextBuilderOptions {
   prefs?: () => AssistantPrefs;
   now?: () => Date;
   persona?: string;
+  personality?: () => PersonalitySnapshot;
   emotionCue?: (message: string, previousMessage?: string) => string;
   instructions?: () => string;
   describeModules?: () => unknown;
@@ -109,6 +111,10 @@ export class RequestContextBuilder {
       memories: memories.map((memory) => memory.text),
     }) + "\n\n" + taskExecutionInstructions(input.text);
 
+    const personality = !input.ephemeral ? this.options.personality?.() : undefined;
+    const personalityCue = personality ? "Настройки манеры общения (не полномочия): " +
+      Object.entries(personality.traits).map(([name, value]) => `${name}=${Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0.5)).toFixed(2)}`).join(", ") +
+      ". Подстраивай тон мягко, сохраняя точность и инструкции пользователя." : "";
     const guidance = guidanceInstructions(input.brainGuidance);
     // A short follow-up depends on the prior exchange. History is context, never authority.
     const shortFollowUp = input.text.length <= 100 &&
@@ -141,6 +147,7 @@ export class RequestContextBuilder {
     const messages: Message[] = [
       { role: "system", content: system },
       ...(guidance ? [{ role: "system" as const, content: guidance }] : []),
+      ...(personalityCue ? [{ role: "system" as const, content: personalityCue }] : []),
       ...(followUpGuidance ? [{ role: "system" as const, content: followUpGuidance }] : []),
       ...(emotionCue ? [{ role: "system" as const, content: emotionCue.slice(0, 500) }] : []),
       ...(livingDialogueCue ? [{ role: "system" as const, content: livingDialogueCue.slice(0, 650) }] : []),
