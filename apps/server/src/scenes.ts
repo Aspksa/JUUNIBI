@@ -2,6 +2,12 @@ import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { randomInt, randomUUID } from "node:crypto";
 import type { LlmProvider } from "@juunibi/assistant";
+/** Keep the unused-scene bag intact; prefer matching emotions only when available. */
+export function matchingScenePool<T extends { emotion?: string }>(items: T[], emotion?: string): T[] {
+  if (!emotion) return items;
+  const aligned = items.filter(item => item.emotion?.toLocaleLowerCase("ru") === emotion.toLocaleLowerCase("ru"));
+  return aligned.length ? aligned : items;
+}
 interface Action { id: string; text: string; category: string; emotion?: string; duration_seconds?: number; animation_cues?: { ears?: string; tails?: number; gaze?: string; timing?: string }; tags?: string[] }
 interface Phrase { id: string; text: string; category: string; emotion?: string }
 interface History { used: string[]; created: Action[]; phrasesUsed: string[] }
@@ -54,13 +60,11 @@ export class SceneEngine {
       const all=[...this.actions,...this.state.created];
       const unused=all.filter(x=>!this.state.used.includes(x.id));
       const available=category?unused.filter(x=>x.category===category):unused;
-      const aligned = emotion ? available.filter(x => x.emotion?.toLocaleLowerCase("ru") === emotion.toLocaleLowerCase("ru")) : [];
-      const pool = aligned.length ? aligned : available;
+      const pool = matchingScenePool(available, emotion);
       const action=pool.length?pool[randomInt(pool.length)]!:await this.generate();
       let remainingPhrases=this.phrases.filter(x=>!this.state.phrasesUsed.includes(x.id));
       if (!remainingPhrases.length) { this.state.phrasesUsed=[];remainingPhrases=[...this.phrases]; }
-      const alignedPhrases = emotion ? remainingPhrases.filter(x => x.emotion?.toLocaleLowerCase("ru") === emotion.toLocaleLowerCase("ru")) : [];
-      const phrasePool = alignedPhrases.length ? alignedPhrases : remainingPhrases;
+      const phrasePool = matchingScenePool(remainingPhrases, emotion);
       const phrase=phrasePool.length?phrasePool[randomInt(phrasePool.length)]!:undefined;
       this.state.used.push(action.id);
       if(phrase)this.state.phrasesUsed.push(phrase.id);
