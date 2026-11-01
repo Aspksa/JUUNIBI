@@ -60,6 +60,8 @@ export interface AssistantOptions {
   toolPolicy?: (tool: string) => boolean;
   /** Optional queue used by the server to safely request user consent. */
   persona?: string;
+  /** Trusted optional presentation cue selected for each user turn. */
+  emotionCue?: (message: string) => string;
   /** The owner's own instructions (who they are, how to answer), added to every system prompt. Empty = none. */
   instructions?: () => string;
 }
@@ -119,6 +121,7 @@ export class Assistant {
       ...(o.prefs ? { prefs: o.prefs } : {}),
       ...(o.now ? { now: o.now } : {}),
       ...(o.persona ? { persona: o.persona } : {}),
+      ...(o.emotionCue ? { emotionCue: o.emotionCue } : {}),
       ...(o.instructions ? { instructions: o.instructions } : {}),
       ...(o.describeModules ? { describeModules: o.describeModules } : {}),
       ...(o.describeBrain ? { describeBrain: o.describeBrain } : {}),

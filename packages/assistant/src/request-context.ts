@@ -24,6 +24,7 @@ export interface RequestContextBuilderOptions {
   prefs?: () => AssistantPrefs;
   now?: () => Date;
   persona?: string;
+  emotionCue?: (message: string) => string;
   instructions?: () => string;
   describeModules?: () => unknown;
   describeBrain?: () => unknown;
@@ -108,6 +109,7 @@ export class RequestContextBuilder {
     const messages: Message[] = [
       { role: "system", content: system },
       ...(guidance ? [{ role: "system" as const, content: guidance }] : []),
+      ...(!input.ephemeral && this.options.emotionCue?.(input.text) ? [{ role: "system" as const, content: this.options.emotionCue(input.text).slice(0, 500) }] : []),
       ...history.slice(-HISTORY_LIMIT),
       { role: "user", content: input.text },
     ];
