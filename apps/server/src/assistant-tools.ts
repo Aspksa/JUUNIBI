@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { computerSnapshot, listWindowsProcesses } from "./windows-bridge";
 import type { Tool } from "@juunibi/assistant";
@@ -201,6 +202,64 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
         return [...stats].map(([tool, stat]) => ({ tool, ok: stat.ok, errors: stat.error, denied: stat.denied,
           recurringReasons: [...stat.reasons].filter(([, count]) => count >= 2).map(([reason, count]) => ({ reason, count })),
           suggestion: stat.denied > 0 ? "Проверить разрешения; не обходить отказы" : stat.error > 0 ? "Проверить аргументы, доступность и журнал ошибок" : "Повторяющихся проблем не выявлено" }));
+      } },
+    { name: "preview_file_change", risk: "read", description: "Безопасно сравнить текстовый файл с предложенным содержимым до записи. Возвращает контрольную сумму для проверки конфликта; ничего не записывает.",
+      parameters: { type: "object", properties: { path: str("Путь внутри разрешённой папки"), content: str("Предлагаемый новый текст", { maxLength: 200000 }) }, required: ["path", "content"] },
+      run: async (a) => {
+        const proposed = String(a.content);
+        if (Buffer.byteLength(proposed, "utf8") > 200000) return { error: "Превышен лимит 200 КБ" };
+        let previous = "";
+        try { const file = await readText(root(), a.path); if (file.truncated) return { error: "Файл превышает лимит безопасного сравнения" }; previous = file.text; }
+        catch (e) { if (!(e instanceof Error) || !e.message.includes("Не найдено")) throw e; }
+        const hash = (v: string) => createHash("sha256").update(v).digest("hex");
+        const before = previous.split("\\n"), after = proposed.split("\\n");
+        let prefix = 0; while (prefix < Math.min(before.length, after.length) && before[prefix] === after[prefix]) prefix++;
+        let suffix = 0; while (suffix < Math.min(before.length, after.length) - prefix && before[before.length - suffix - 1] === after[after.length - suffix - 1]) suffix++;
+        return { path: a.path, unchanged: previous === proposed, expectedSha256: hash(previous), proposedSha256: hash(proposed),
+          changedRange: { fromLine: prefix + 1, removed: before.length - prefix - suffix, added: after.length - prefix - suffix },
+          beforeExcerpt: before.slice(prefix, Math.min(before.length - suffix, prefix + 12)),
+          afterExcerpt: after.slice(prefix, Math.min(after.length - suffix, prefix + 12)),
+          warning: "Для записи используйте write_file с подтверждением владельца; повторно проверьте SHA256 непосредственно перед записью." };
+      } },
+    { name: "suggest_tool", risk: "read", description: "Подобрать подходящий инструмент по описанию задачи без его запуска.",
+      parameters: { type: "object", properties: { task: str("Задача", { minLength: 2, maxLength: 300 }) }, required: ["task"] },
+      run: (a) => {
+        const task = String(a.task).toLocaleLowerCase();
+        const candidates = [
+          { words: ["файл", "документ", "сравн", "изменени"], tool: "preview_file_change" },
+          { words: ["план", "зависим", "шаг"], tool: "plan_draft" },
+          { words: ["ошиб", "диагност", "недоступ"], tool: "tool_diagnostics" },
+          { words: ["замет", "найди", "поиск", "знан"], tool: "search_all_knowledge" },
+          { words: ["опыт", "повтор", "сбой"], tool: "experience_review" },
+          { words: ["интернет", "новост", "сайт"], tool: "web_search" },
+        ];
+        const ranked = candidates.map((c) => ({ tool: c.tool, matches: c.words.filter((w) => task.includes(w)).length }))
+          .filter((c) => c.matches > 0).sort((a, b) => b.matches - a.matches).slice(0, 3);
+        return { suggestions: ranked, note: "Эвристические рекомендации; разрешения и подтверждения остаются обязательными." };
+      } },
+    { name: "replan_draft", risk: "read", description: "Предложить порядок перепланирования на основании зависимостей и списка заблокированных шагов. Ничего не сохраняет.",
+      parameters: { type: "object", properties: { steps: { type: "array" }, blocked: { type: "array" } }, required: ["steps", "blocked"] },
+      run: (a) => {
+        if (!Array.isArray(a.steps) || !Array.isArray(a.blocked) || a.steps.length > 30 || a.blocked.length > 30) return { error: "Не более 30 шагов и блокировок" };
+        const steps = a.steps as unknown[];
+        const blocked = new Set(a.blocked.filter((x): x is string => typeof x === "string" && x.length <= 40));
+        const pending = new Map<string, string[]>();
+        for (const raw of steps) {
+          if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { error: "Некорректный шаг" };
+          const v = raw as Record<string, unknown>;
+          if (typeof v.id !== "string" || !/^[a-zA-Z0-9_-]{1,40}$/.test(v.id) || pending.has(v.id) ||
+            !Array.isArray(v.dependsOn) || v.dependsOn.length > 30 ||
+            !v.dependsOn.every((x: unknown) => typeof x === "string" && x.length <= 40)) return { error: "Некорректные или повторяющиеся шаги" };
+          pending.set(v.id, v.dependsOn as string[]);
+        }
+        if ([...pending.values()].some((deps) => deps.some((id) => !pending.has(id)))) return { error: "Зависимость ссылается на отсутствующий шаг" };
+        const order: string[] = [], deferred: string[] = [];
+        while (pending.size) {
+          const ready = [...pending].filter(([id, deps]) => !blocked.has(id) && deps.every((d) => order.includes(d)));
+          if (!ready.length) { deferred.push(...pending.keys()); break; }
+          for (const [id] of ready) { order.push(id); pending.delete(id); }
+        }
+        return { suggestedOrder: order, deferred, blocked: [...blocked], note: "Черновик: отложенные шаги требуют разблокировки, исправления цикла или уточнения зависимостей." };
       } },
     { name: "daily_brief", risk: "read", description: "Данные для сводки дня: напоминания, дела, планы, память на подтверждение, сбои модулей, обновления. Перескажи их коротко и по делу.",
       parameters: { type: "object", properties: {} }, run: () => d.brief() },
