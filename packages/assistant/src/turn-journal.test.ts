@@ -38,6 +38,26 @@ describe("TurnJournal", () => {
     expect(await journal.exportDataset({ redact: true })).not.toContain("a@example.com");
   });
 
+  it("measures rated outcomes without confusing repeated ratings or cross-session results", async () => {
+    const journal = new TurnJournal({
+      llm: { chat: async () => ({ content: "[]", toolCalls: [] }) },
+      memory: new Memory(),
+    });
+    const first = await journal.record({ session: "a", user: "u", reply: "r", tools: [], memoryIds: ["m1"] });
+    const second = await journal.record({ session: "a", user: "u", reply: "r", tools: [], memoryIds: [] });
+    const other = await journal.record({ session: "b", user: "u", reply: "r", tools: [], memoryIds: [] });
+    await journal.feedback(first.id, -1);
+    await journal.feedback(first.id, 1);
+    await journal.feedback(second.id, -1);
+    await journal.feedback(other.id, -1);
+    expect(await journal.learningOutcomes("a")).toEqual({
+      rated: 2, positive: 1, negative: 1,
+      withMemory: { rated: 1, positive: 1, negative: 0 },
+      withoutMemory: { rated: 1, positive: 0, negative: 1 },
+    });
+    expect((await journal.learningOutcomes()).rated).toBe(3);
+  });
+
   it("reflection proposes pending lessons and retries after provider failure", async () => {
     const memory = new Memory();
     const chat = vi.fn()

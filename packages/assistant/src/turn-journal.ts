@@ -92,6 +92,27 @@ export class TurnJournal {
       .map(x => ({ ...x.turn, tools: [...x.turn.tools], memoryIds: [...x.turn.memoryIds] }));
   }
 
+  /** Observed feedback only: no claim that memory caused an improvement. */
+  async learningOutcomes(session?: string): Promise<{
+    rated: number; positive: number; negative: number;
+    withMemory: { rated: number; positive: number; negative: number };
+    withoutMemory: { rated: number; positive: number; negative: number };
+  }> {
+    await this.ready;
+    const rated = this.turns.filter(turn => (session === undefined || turn.session === session) &&
+      (turn.rating === 1 || turn.rating === -1));
+    const count = (turns: Turn[]) => ({
+      rated: turns.length,
+      positive: turns.filter(turn => turn.rating === 1).length,
+      negative: turns.filter(turn => turn.rating === -1).length,
+    });
+    return {
+      ...count(rated),
+      withMemory: count(rated.filter(turn => turn.memoryIds.length > 0)),
+      withoutMemory: count(rated.filter(turn => turn.memoryIds.length === 0)),
+    };
+  }
+
   async feedback(turnId: string, rating: 1 | -1): Promise<boolean> {
     await this.ready;
     const turn = this.turns.find((item) => item.id === turnId);
