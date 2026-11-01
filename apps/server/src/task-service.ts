@@ -22,6 +22,14 @@ const repeatOf = (value: unknown): Repeat | undefined => {
   return value as Repeat;
 };
 
+/** Require an explicit timezone: otherwise Date.parse silently uses the server's timezone. */
+const taskDate = (value: unknown, label: string): string => {
+  if (typeof value !== "string" || !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:\\d{2})$/i.test(value)) throw bad(label);
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) throw bad(label);
+  return new Date(ms).toISOString();
+};
+
 const dayStart = (time: number): number => {
   const d = new Date(time);
   d.setHours(0, 0, 0, 0);
@@ -99,7 +107,7 @@ export class TaskService {
     const note: Note = {
       id: randomUUID(), kind: "todo", text: value, done: false,
       createdAt: new Date(now).toISOString(),
-      ...(patch.dueAt ? { dueAt: new Date(patch.dueAt as string).toISOString() } : {}),
+      ...(patch.dueAt ? { dueAt: taskDate(patch.dueAt, "Некорректный срок") } : {}),
       ...(patch.priority ? { priority: patch.priority as "low" | "normal" | "high" } : {}),
       ...(repeat ? { repeat } : {}),
     };
