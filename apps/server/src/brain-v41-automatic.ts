@@ -12,7 +12,13 @@ export function automaticBrainReview(input: CognitiveInput) {
   const diagnostics = evaluateBrainV5(input);
   const reviewV6 = evaluateBrainV6(input);
   const reviewV7 = evaluateBrainV7(input);
-  const retrieved = searchVerifiedKnowledge((input.verifiedKnowledge ?? []).map((x, index) => ({
+  const uniqueClaims = new Map<string, NonNullable<CognitiveInput["verifiedKnowledge"]>[number]>();
+  for (const item of input.verifiedKnowledge ?? []) {
+    if (item.status !== "verified") continue;
+    const key = (item.topic + "\u0000" + item.claim).normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+    if (!uniqueClaims.has(key)) uniqueClaims.set(key, item);
+  }
+  const retrieved = searchVerifiedKnowledge([...uniqueClaims.values()].map((x, index) => ({
     id: String(index), topic: x.topic, claim: x.claim, status: x.status,
     source: "Локальный реестр", verifiedAt: "", nextReviewAt: "", reviewCount: 0,
   })), input.message, 3);
