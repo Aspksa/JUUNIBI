@@ -25,6 +25,6 @@ describe("Brain 7.0 six tracks",()=>{
   const baseline=evaluateBrainV7(input);
   const shared=evaluateBrainV6(input);
   expect(evaluateBrainV7(input,shared)).toEqual(baseline);
-  expect(evaluateBrainV7(input, { ...shared, arithmetic: { ...shared.arithmetic, expected: 999 } }).repair.expected).toBe(999);
+  expect(evaluateBrainV7(input, { ...shared, arithmetic: { ...shared.arithmetic, expected: 999 } }).repair).toMatchObject({ expected: 999 });
  });
 });
