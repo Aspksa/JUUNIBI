@@ -20,10 +20,12 @@ export interface EvolutionState {
   lastError: string | null;
   runs: number;
   analyzedMessages: number;
+  qualitySignals: number;
+  memoryDigest: string[];
 }
 const defaults = (): EvolutionState => ({
   config: { enabled: false, intervalMinutes: 30, night: true, memory: true, personality: true, quality: true },
-  queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0,
+  queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0, qualitySignals: 0, memoryDigest: [],
 });
 const signature = (value: string): string => {
   let hash = 2166136261;
@@ -39,7 +41,7 @@ export class RamoEvolution {
   constructor(private readonly store: StorageAdapter, private readonly readChats: () => readonly {
     id: string; messages: readonly { id?: string; role: string; content: string; at?: number }[];
   }[], private readonly now: () => number = Date.now) {
-    this.ready = this.load();
+    this.ready = this.load().catch(() => { this.state = defaults(); });
   }
   private async load() {
     const raw = await this.store.load();
@@ -61,6 +63,8 @@ export class RamoEvolution {
         k.length <= 100 && typeof v === "number" && Number.isFinite(v)).slice(-10000)),
       lastRun: s.lastRun!, lastError: typeof s.lastError === "string" ? s.lastError.slice(0, 300) : null,
       runs: s.runs!, analyzedMessages: Number.isFinite(s.analyzedMessages) ? s.analyzedMessages! : 0,
+      qualitySignals: Number.isFinite(s.qualitySignals) ? s.qualitySignals! : 0,
+      memoryDigest: Array.isArray(s.memoryDigest) ? s.memoryDigest.filter(x => typeof x === "string").slice(-30) : [],
     };
   }
   private mutate<T>(fn: () => T | Promise<T>): Promise<T> {
@@ -117,6 +121,13 @@ export class RamoEvolution {
             s.analyzedMessages++;
             candidates.push({ role: "user", content: msg.content });
           }
+        }
+        if (s.config.quality) {
+          const normalized = candidates.map(x => x.content.trim().toLowerCase());
+          s.qualitySignals += normalized.length - new Set(normalized).size;
+        }
+        if (s.config.memory && (!s.config.night || new Date(now).getHours() < 7)) {
+          s.memoryDigest = candidates.slice(-30).map(x => x.content.replace(/\\s+/g, " ").slice(0, 160));
         }
         if (s.config.personality) {
           const existing = new Set(s.queue.map(x => x.lesson.toLocaleLowerCase("ru-RU")));
