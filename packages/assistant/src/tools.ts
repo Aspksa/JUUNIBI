@@ -17,12 +17,19 @@ export interface Tool {
 
 export class ToolRegistry {
   private readonly tools = new Map<string, Tool>();
+  private readonly owners = new Map<string, string>();
 
-  register(tool: Tool): () => void {
+  register(tool: Tool, owner = "runtime"): () => void {
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tool.name)) throw new Error(`Bad tool name "${tool.name}"`);
     if (this.tools.has(tool.name)) throw new Error(`Tool "${tool.name}" already registered`);
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(owner)) throw new Error(`Bad tool owner "${owner}"`);
     this.tools.set(tool.name, tool);
-    return () => void this.tools.delete(tool.name);
+    this.owners.set(tool.name, owner);
+    return () => { if (this.tools.get(tool.name) === tool) { this.tools.delete(tool.name); this.owners.delete(tool.name); } };
+  }
+  /** Read-only inventory for auditing existing capabilities before registering new ones. */
+  capabilities(): { name: string; owner: string; risk: Risk }[] {
+    return this.list().map(tool => ({ name: tool.name, owner: this.owners.get(tool.name) ?? "runtime", risk: tool.risk }));
   }
   get(name: string): Tool | undefined { return this.tools.get(name); }
   list(): Tool[] { return [...this.tools.values()]; }
