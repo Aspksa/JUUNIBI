@@ -262,7 +262,7 @@ export const api = {
   brainStatus: () => attemptAsync(() => call<BrainStatus>("/api/brain")),
   brainMode: (mode: BrainStatus["mode"]) => attemptAsync(() => call<BrainStatus>("/api/brain/mode", post({ mode }))),
   brainPlan: (goal:string, steps:string[]) => attemptAsync(() => call<BrainPlan>("/api/brain/plans", post({ goal, steps }))),
-  nextScene: () => attemptAsync(() => call<SceneReply>("/api/juunibi/scenes/next",post({}))),
+  nextScene: (message?: string) => attemptAsync(() => call<SceneReply>("/api/juunibi/scenes/next",post({ ...(message ? { message: message.slice(0, 1000) } : {}) }))),
   cloudStatus: () => attemptAsync(() => call<CloudStatus>("/api/cloudru")),
   cloudSave: (apiKey: string) => attemptAsync(() => call<CloudStatus>("/api/cloudru", post({ apiKey }))),
   cloudModels: () => attemptAsync(() => call<{ models: string[] }>("/api/cloudru/models")),
