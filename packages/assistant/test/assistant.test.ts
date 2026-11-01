@@ -13,18 +13,18 @@ const call = (name: string, args: object = {}): LlmResponse => ({ content: null,
 describe("Assistant", () => {
   it("reviews durable pending plans on continuation without assuming session ownership", async () => {
     const llm = scripted(say("ok"), say("ok"), say("ok"));
-    const a = new Assistant({ llm, log: quiet, pendingWork: () => [{
+    const a = new Assistant({ llm, log: quiet, pendingWork: (session) => [{\n      session,
       id: "p1", goal: "Собрать приложение", status: "paused",
       nextStep: { title: "Проверить сборку" }, requiresExplicitExecution: true,
     }] });
     await a.ask("Продолжай");
     const prompt = llm.seen[0]!.map(x => String(x.content)).join(" ");
     expect(prompt).toContain("Проверить сборку");
-    expect(prompt).toContain("могут относиться к другим беседам");
+    expect(prompt).toContain("привязанные к текущей беседе");
     await a.ask("Расскажи о проекте");
-    expect(llm.seen[1]!.map(x => String(x.content)).join(" ")).not.toContain("могут относиться к другим беседам");
+    expect(llm.seen[1]!.map(x => String(x.content)).join(" ")).not.toContain("привязанные к текущей беседе");
     await a.ask("Продолжай", "other", undefined, { ephemeral: true });
-    expect(llm.seen[2]!.map(x => String(x.content)).join(" ")).not.toContain("могут относиться к другим беседам");
+    expect(llm.seen[2]!.map(x => String(x.content)).join(" ")).not.toContain("привязанные к текущей беседе");
   });
 
   it("runs a tool loop and answers", async () => {
