@@ -360,6 +360,14 @@ export class TaskService {
       gone.kind === "todo" && gone.done ? { from: gone.completedAt ?? null } : {},
     );
 
+    // Remove stale recurrence pointers to a deleted generated occurrence.
+    for (const item of kept) {
+      if (item.nextId === id) {
+        delete item.nextId;
+        delete item.nextSnapshot;
+      }
+    }
+
     // Subtasks of a removed to-do become ordinary to-dos.
     for (const item of kept) {
       if (item.parentId === id) delete item.parentId;
