@@ -49,15 +49,19 @@ export class SceneEngine {
     }
     throw new Error("Не удалось создать достаточно непохожую сцену; повторы запрещены.");
   }
-  async next(category?:string) {
+  async next(category?:string, emotion?:string) {
     const task=this.current.then(async()=>{
       const all=[...this.actions,...this.state.created];
       const unused=all.filter(x=>!this.state.used.includes(x.id));
       const available=category?unused.filter(x=>x.category===category):unused;
-      const action=available.length?available[randomInt(available.length)]!:await this.generate();
+      const aligned = emotion ? available.filter(x => x.emotion?.toLocaleLowerCase("ru") === emotion.toLocaleLowerCase("ru")) : [];
+      const pool = aligned.length ? aligned : available;
+      const action=pool.length?pool[randomInt(pool.length)]!:await this.generate();
       let remainingPhrases=this.phrases.filter(x=>!this.state.phrasesUsed.includes(x.id));
       if (!remainingPhrases.length) { this.state.phrasesUsed=[];remainingPhrases=[...this.phrases]; }
-      const phrase=remainingPhrases.length?remainingPhrases[randomInt(remainingPhrases.length)]!:undefined;
+      const alignedPhrases = emotion ? remainingPhrases.filter(x => x.emotion?.toLocaleLowerCase("ru") === emotion.toLocaleLowerCase("ru")) : [];
+      const phrasePool = alignedPhrases.length ? alignedPhrases : remainingPhrases;
+      const phrase=phrasePool.length?phrasePool[randomInt(phrasePool.length)]!:undefined;
       this.state.used.push(action.id);
       if(phrase)this.state.phrasesUsed.push(phrase.id);
       await this.save();
