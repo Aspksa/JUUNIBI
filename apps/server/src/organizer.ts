@@ -1,3 +1,4 @@
+import { DeliveryOutbox, type DeliveryRecord } from "./delivery-outbox";
 import { isWorkday } from "@juunibi/core";
 import { OrganizerRepository } from "./organizer-repository";
 import { TaskService } from "./task-service";
@@ -283,6 +284,7 @@ export class Organizer {
   private notes: Note[] = [];
   private missions: Mission[] = [];
   private reminders: Reminder[] = [];
+  private delivery = new DeliveryOutbox();
   private readonly repository: OrganizerRepository;
   private readonly taskService: TaskService;
   private readonly reminderService: ReminderService;
@@ -443,10 +445,11 @@ export class Organizer {
 
   async load() {
     try {
-      const raw = await this.repository.load<{ notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown }>();
+      const raw = await this.repository.load<{ notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; delivery?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown }>();
       if (Array.isArray(raw.projects)) this.projects = raw.projects.map(cleanProject).filter((x): x is ProjectMeta => !!x).slice(0, MAX_PROJECTS);
       if (Array.isArray(raw.templates)) this.templates = raw.templates.filter((t): t is TaskTemplate => !!t && typeof t.id === "string" && typeof t.text === "string" && !!t.text.trim() && t.text.length <= MAX_TEXT).slice(0, MAX_TEMPLATES);
       if (Array.isArray(raw.daysOff)) this.daysOff = raw.daysOff.filter((d): d is DayOff => !!d && typeof d.id === "string" && DAY_RE.test(d.from) && DAY_RE.test(d.to) && d.from <= d.to && (d.kind === "vacation" || d.kind === "sick")).slice(-MAX_DAYS_OFF);
+      if (Array.isArray(raw.delivery)) this.delivery = new DeliveryOutbox(raw.delivery.filter((x): x is DeliveryRecord => !!x && typeof x.id === "string" && typeof x.userId === "string" && typeof x.reminderId === "string" && typeof x.text === "string" && Number.isFinite(x.nextAttemptAt) && Number.isFinite(x.attempts) && ["pending", "sent", "acknowledged", "failed"].includes(x.state)).slice(-2000));
       this.automation = cleanAutomation(raw.automation);
       if (raw.autoState && typeof raw.autoState === "object") {
         for (const k of ["briefDay", "rollDay", "eveningDay", "weekDay"] as const) if (typeof raw.autoState[k] === "string") this.autoState[k] = raw.autoState[k] as string;
@@ -467,6 +470,7 @@ export class Organizer {
     return this.repository.save({
       notes: this.notes,
       reminders: this.reminders,
+      delivery: this.delivery.snapshot(),
       missions: this.missions,
       automation: this.automation,
       autoState: this.autoState,
@@ -577,6 +581,13 @@ export class Organizer {
 
   // ---------- reminders ----------
   listReminders(): Reminder[] { return this.reminderService.list(); }
+  /** Persistent delivery queue. A UI display is not an acknowledgement. */
+  deliverySnapshot(): DeliveryRecord[] { return this.delivery.snapshot("owner"); }
+  async acknowledgeDelivery(reminderId: string): Promise<{ acknowledged: boolean }> {
+    const acknowledged = this.delivery.acknowledge("owner", reminderId, this.now());
+    if (acknowledged) await this.save();
+    return { acknowledged };
+  }
   addReminder(body: unknown, at: unknown, repeat?: unknown): Promise<Reminder> {
     return this.reminderService.add(body, at, repeat);
   }
@@ -613,6 +624,7 @@ export class Organizer {
 
     changed = this.automationEngine.run(now, fired) || changed;
     if (fired.length || changed) {
+      for (const reminder of fired) this.delivery.enqueue("owner", reminder.id, reminder.text, now);
       this.reminderService.pruneDone();
       await this.save();
     }
