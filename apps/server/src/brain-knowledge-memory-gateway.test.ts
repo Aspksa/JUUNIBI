@@ -37,4 +37,24 @@ describe("federated knowledge and memory gateway", () => {
     expect(await searchKnowledgeAndMemory("", [], async () => { called++; return []; })).toEqual([]);
     expect(called).toBe(0);
   });
+  it("reuses scoped Disk results, returns only document metadata and deduplicates by file id", async () => {
+    const result = await searchKnowledgeAndMemory("память", [], async () => [], 5, Date.now(), async () => ({
+      documents: [
+        { source: "disk", id: "file-1", name: "Память.md", folder: "notes", secret: "unread file content" },
+        { source: "disk", id: "file-1", name: "Память.md", folder: "notes" },
+        { source: "unknown", id: "file-2", name: "wrong source", folder: "" },
+      ],
+    }));
+    expect(result).toEqual([{ id: "file-1", text: "Память.md", source: "disk:notes", kind: "disk-document" }]);
+    expect(JSON.stringify(result)).not.toContain("unread file content");
+  });
+  it("fails closed on Disk search errors and oversized queries", async () => {
+    const result = await searchKnowledgeAndMemory("память", [knowledge("k1", "Память хранит факты")],
+      async () => [], 5, Date.now(), async () => { throw new Error("offline"); });
+    expect(result.map(x => x.id)).toEqual(["k1"]);
+    let called = false;
+    await searchKnowledgeAndMemory("x".repeat(170), [], async () => [], 5, Date.now(),
+      async () => { called = true; return {}; });
+    expect(called).toBe(false);
+  });
 });
