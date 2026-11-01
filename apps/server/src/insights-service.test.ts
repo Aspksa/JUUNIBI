@@ -39,12 +39,12 @@ describe("InsightsService", () => {
     const service = new InsightsService({
       getNotes: () => notes,
       getReminders: () => reminders,
-      planToday: () => ({
-        suggested: [{
+      smartPriority: () => ({
+        recommended: [{
           id: "overdue",
           text: "Просрочено",
           score: 80,
-          reason: "Просрочено",
+          primaryReason: "Просрочено",
         }],
       }),
       dayLoad,
@@ -63,7 +63,7 @@ describe("InsightsService", () => {
     expect(report.brainRecommendations[0]).toMatchObject({
       id: "overdue",
       reason: "Просрочено",
-      evidence: "Срок и приоритет задачи",
+      evidence: "Smart Priority: локальные факты и память",
       source: "local-task-metrics",
     });
     expect(report.advisoryOnly).toBe(true);
@@ -82,7 +82,7 @@ describe("InsightsService", () => {
     const service = new InsightsService({
       getNotes: () => notes,
       getReminders: () => [],
-      planToday: () => ({ suggested: [] }),
+      smartPriority: () => ({ recommended: [] }),
       dayLoad,
     });
 
@@ -95,12 +95,12 @@ describe("InsightsService", () => {
     const service = new InsightsService({
       getNotes: () => [],
       getReminders: () => [],
-      planToday: () => ({
-        suggested: Array.from({ length: 8 }, (_, index) => ({
+      smartPriority: () => ({
+        recommended: Array.from({ length: 8 }, (_, index) => ({
           id: String(index),
           text: "Task " + index,
           score: 10 - index,
-          reason: "Очередь задач",
+          primaryReason: "Очередь задач",
         })),
       }),
       dayLoad: () => ({ over: false }),
@@ -113,7 +113,7 @@ describe("InsightsService", () => {
     const service = new InsightsService({
       getNotes: () => [],
       getReminders: () => [],
-      planToday: () => ({ suggested: [] }),
+      smartPriority: () => ({ recommended: [] }),
       dayLoad: () => ({ over: false }),
     });
 

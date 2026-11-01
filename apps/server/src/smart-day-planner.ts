@@ -209,7 +209,7 @@ export class SmartDayPlannerService {
     };
 
     for (const { item, note } of candidates) {
-      const duration = note.estimateMinutes ?? 30;
+      const duration = item.estimateMinutes;
       const at = findSlot(duration);
       if (at === null) {
         unscheduled.push({ id: note.id, text: note.text, reason: "Не поместилось в свободные окна" });

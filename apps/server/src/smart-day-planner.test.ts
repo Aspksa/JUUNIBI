@@ -35,6 +35,8 @@ function make(start = new Date(2026, 9, 15, 8, 0).getTime()) {
         primaryReason: note.priority === "high" ? "Высокий приоритет" : "Доступное дело",
         reasons: [note.priority === "high" ? "Высокий приоритет" : "Доступное дело"],
         estimateMinutes: note.estimateMinutes ?? 30,
+        estimateSource: note.estimateMinutes ? "task" as const : "default" as const,
+        memoryConfidence: 0,
         area: note.area === "work" ? "work" as const : "personal" as const,
       }))
       .slice(0, limit);

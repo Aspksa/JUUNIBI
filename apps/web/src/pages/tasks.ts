@@ -1410,7 +1410,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
             return el("li", { title: why },
               el("span", { cls: "grow" },
                 el("span", { textContent: x.text }),
-                el("small", { cls: "muted", textContent: " " + x.estimateMinutes + " мин · " + why })),
+                el("small", { cls: "muted", textContent: " " + (x.estimateSource === "memory" ? "≈" + x.estimateMinutes + " мин по памяти" : x.estimateMinutes + " мин") + " · " + why })),
               el("span", { cls: "br-tag", textContent: x.primaryReason }),
               note ? btn("Фокус", () => startFocus(note), { small: true, icon: "clock", title: "Начать 25 минут фокуса на этом деле" }) : null);
           })),

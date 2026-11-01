@@ -20,7 +20,7 @@ export interface InsightRecommendation {
   text: string;
   score: number;
   reason: string;
-  evidence: "Срок и приоритет задачи";
+  evidence: "Smart Priority: локальные факты и память";
   source: "local-task-metrics";
 }
 
@@ -43,8 +43,8 @@ export interface InsightsReport {
 export interface InsightsServiceOptions {
   getNotes(): readonly Note[];
   getReminders(): readonly Reminder[];
-  planToday(now: number): {
-    suggested: Array<{ id: string; text: string; score: number; reason: string }>;
+  smartPriority(now: number): {
+    recommended: Array<{ id: string; text: string; score: number; primaryReason: string }>;
   };
   dayLoad(day: string, now: number): { over: boolean };
 }
@@ -105,7 +105,7 @@ export class InsightsService {
         Date.parse(note.completedAt) < end,
     ).length;
 
-    const plan = this.options.planToday(now);
+    const priority = this.options.smartPriority(now);
     const heavyDays = [
       ...new Set(
         items
@@ -128,9 +128,12 @@ export class InsightsService {
           ? Math.round(100 * finished.length / todos.length)
           : 0,
       },
-      brainRecommendations: plan.suggested.slice(0, 5).map((item) => ({
-        ...item,
-        evidence: "Срок и приоритет задачи",
+      brainRecommendations: priority.recommended.slice(0, 5).map((item) => ({
+        id: item.id,
+        text: item.text,
+        score: item.score,
+        reason: item.primaryReason,
+        evidence: "Smart Priority: локальные факты и память",
         source: "local-task-metrics",
       })),
       advisoryOnly: true,

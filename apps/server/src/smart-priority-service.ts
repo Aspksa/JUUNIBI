@@ -1,5 +1,6 @@
 import type { Automation, Note } from "./organizer";
 import type { MissionBoardItem } from "./mission-service";
+import type { TaskMemoryRecall } from "./task-memory-service";
 
 const minsOf = (hm: string): number => {
   const [h, m] = hm.split(":").map(Number);
@@ -28,6 +29,8 @@ export interface SmartPriorityItem {
   primaryReason: string;
   reasons: string[];
   estimateMinutes: number;
+  estimateSource: "task" | "memory" | "default";
+  memoryConfidence: number;
   area: "work" | "personal";
   dueAt?: string;
   project?: string;
@@ -55,6 +58,7 @@ export interface SmartPriorityServiceOptions {
   getAutomation(): Automation;
   getMissions(): MissionBoardItem[];
   isWork(note: Note): boolean;
+  recall(note: Note): TaskMemoryRecall;
   workDayFor(date: Date): boolean;
   now(): number;
 }
@@ -145,13 +149,24 @@ export class SmartPriorityService {
         add(Math.min(24, note.rolled * 8), `Переносилось ${note.rolled} раз`);
       }
 
-      const estimateMinutes = note.estimateMinutes ?? 30;
+      const isWork = this.options.isWork(note);
+      const memory = this.options.recall(note);
+      const estimateMinutes = note.estimateMinutes ?? memory.learnedEstimateMinutes ?? 30;
+      const estimateSource: SmartPriorityItem["estimateSource"] =
+        note.estimateMinutes ? "task" : memory.learnedEstimateMinutes ? "memory" : "default";
+
+      if (memory.riskBoost > 0) {
+        add(memory.riskBoost, memory.reasons.find((reason) => !reason.startsWith("Память:")) ?? "История похожих дел требует внимания");
+      }
+
+      const ageDays = Math.max(0, Math.floor((now - Date.parse(note.createdAt)) / 86_400_000));
+      if (ageDays >= 14) add(15, `Дело ждёт уже ${ageDays} дней`);
+      else if (ageDays >= 7) add(8, `Дело ждёт уже ${ageDays} дней`);
+
       if (estimateMinutes <= 15) add(12, "Можно закрыть за 15 минут");
       else if (estimateMinutes <= 30) add(8, "Короткое дело");
       else if (estimateMinutes <= 60) add(4, "Укладывается примерно в час");
       else if (estimateMinutes > 180) add(-8, "Потребует больше 3 часов");
-
-      const isWork = this.options.isWork(note);
       if (mode === "work") {
         add(isWork ? 14 : -4, isWork ? "Подходит для рабочего времени" : "Личное дело в рабочее время");
       } else if (mode === "personal") {
@@ -176,11 +191,12 @@ export class SmartPriorityService {
       const score = factors.reduce((sum, factor) => sum + factor.weight, 0);
       const orderedFactors = [...factors].sort((a, b) => b.weight - a.weight);
       const positive = orderedFactors.filter((factor) => factor.weight > 0);
-      const reasons = [
-        ...positive.slice(0, 3),
-        ...orderedFactors.filter((factor) => factor.weight <= 0).slice(0, 1),
-      ].map((factor) => factor.label);
-      const primaryReason = positive[0]?.label ?? orderedFactors[0]?.label ?? "Доступное дело";
+      const reasons = [...new Set([
+        ...positive.slice(0, 3).map((factor) => factor.label),
+        ...memory.reasons,
+        ...orderedFactors.filter((factor) => factor.weight <= 0).slice(0, 1).map((factor) => factor.label),
+      ])].slice(0, 5);
+      const primaryReason = positive[0]?.label ?? orderedFactors[0]?.label ?? memory.reasons[0] ?? "Доступное дело";
 
       ranked.push({
         id: note.id,
@@ -189,6 +205,8 @@ export class SmartPriorityService {
         primaryReason,
         reasons,
         estimateMinutes,
+        estimateSource,
+        memoryConfidence: memory.confidence,
         area: isWork ? "work" : "personal",
         ...(note.dueAt ? { dueAt: note.dueAt } : {}),
         ...(note.project ? { project: note.project } : {}),
