@@ -27,6 +27,12 @@ export class PersonalityHistory {
     this.versions = structuredClone(parsed as PersonalitySnapshot[]);
   }
 
+  async history(): Promise<PersonalitySnapshot[]> {
+    await this.ready;
+    await this.pending;
+    return structuredClone(this.versions);
+  }
+
   async current(): Promise<PersonalitySnapshot> {
     await this.ready;
     await this.pending;
