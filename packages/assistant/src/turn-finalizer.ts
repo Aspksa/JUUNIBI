@@ -15,7 +15,7 @@ export interface FinalizedTurn {
 
 export interface TurnFinalizerOptions {
   sessions: Pick<SessionHistory, "appendTurn">;
-  journal: Pick<TurnJournal, "record" | "snapshot">;
+  journal: Pick<TurnJournal, "record"> & Partial<Pick<TurnJournal, "snapshot">>;
   summaries: Pick<ConversationSummaryService, "queue">;
   memoryLearning: Pick<MemoryLearningService, "queue">;
 }
@@ -61,7 +61,7 @@ export class TurnFinalizer {
       this.options.sessions.appendTurn(input.session, input.user, input.reply);
     }
 
-    const previous = this.options.journal.snapshot().filter(turn => turn.session === input.session).at(-1);
+    const previous = (this.options.journal.snapshot?.() ?? []).filter(turn => turn.session === input.session).at(-1);
     const turn = await this.options.journal.record({
       session: input.session,
       user: input.user,
