@@ -32,7 +32,7 @@ describe("видимость инструментов зависит от нас
     expect(["read_file", "write_file"].map((n) => toolEnabled(n, withFolder))).toEqual([true, false]);
     expect(toolEnabled("write_file", { ...withFolder, files: { root: "/x", allowWrite: true } })).toBe(true);
     for (const n of ["web_search", "web_open", "wiki_read"]) expect(toolEnabled(n, { ...base, web: true })).toBe(true);
-    for (const n of ["list_notes", "add_note", "add_reminder", "daily_brief", "list_modules"]) expect(toolEnabled(n, base)).toBe(true);
+    for (const n of ["list_notes", "what_now", "task_memory", "add_note", "add_reminder", "daily_brief", "list_modules"]) expect(toolEnabled(n, base)).toBe(true);
   });
 });
 
@@ -40,7 +40,7 @@ describe("инструменты", () => {
   it("уровни риска: чтение без подтверждения, изменения — write, запись файлов — danger с планом", async () => {
     const { by, done } = await setup();
     try {
-      for (const n of ["list_files", "read_file", "search_files", "web_search", "web_open", "wiki_search", "wiki_read", "list_notes", "list_reminders", "daily_brief"]) expect(by[n]!.risk, n).toBe("read");
+      for (const n of ["list_files", "read_file", "search_files", "web_search", "web_open", "wiki_search", "wiki_read", "list_notes", "what_now", "task_memory", "list_reminders", "daily_brief"]) expect(by[n]!.risk, n).toBe("read");
       for (const n of ["add_note", "complete_todo", "add_reminder", "cancel_reminder"]) expect(by[n]!.risk, n).toBe("write");
       expect(by.write_file!.risk).toBe("danger");
       expect(by.write_file!.actionPlan!.checks.length).toBeGreaterThan(2);
@@ -88,6 +88,18 @@ describe("инструменты", () => {
       await expect(by.web_open!.run({ url: "https://evil.example/?secret=1" })).resolves.toMatchObject({ error: expect.any(String) });
     } finally { await done(); }
   });
+  it("Smart Priority и память дел доступны помощнице как read-only данные", async () => {
+    const { by, organizer, done } = await setup();
+    try {
+      const first = await organizer.addTask("Подготовить отчёт", { priority: "high" });
+      const now = await by.what_now!.run({ limit: 3 }) as { recommended: { id: string }[] };
+      expect(now.recommended[0]?.id).toBe(first.id);
+      const memory = await by.task_memory!.run({}) as { totals: { observations: number }; note: string };
+      expect(memory.totals.observations).toBeGreaterThan(0);
+      expect(memory.note).toMatch(/реальных действиях/);
+    } finally { await done(); }
+  });
+
   it("повторяющееся напоминание через инструмент", async () => {
     const { by, organizer, done } = await setup();
     try {
