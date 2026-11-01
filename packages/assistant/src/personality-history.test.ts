@@ -14,6 +14,15 @@ describe("PersonalityHistory", () => {
     expect((await new PersonalityHistory(storage).current()).acceptedLessons).toEqual(["lesson-1"]);
   });
 
+  it("returns isolated history copies", async () => {
+    const history = new PersonalityHistory(new MemoryAdapter());
+    await history.adjustTrait("curiosity", 0.1, true);
+    const versions = await history.history();
+    expect(versions.map(v => v.version)).toEqual([1, 2]);
+    versions[1]!.traits.curiosity = 0;
+    expect((await history.current()).traits.curiosity).toBeCloseTo(0.7);
+  });
+
   it("restores a prior snapshot as a new version", async () => {
     const history = new PersonalityHistory(new MemoryAdapter());
     await history.adjustTrait("warmth", 0.1, true);
