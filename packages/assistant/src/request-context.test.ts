@@ -107,7 +107,7 @@ describe("RequestContextBuilder", () => {
 
   it("adapts dialogue style and avoids repeated greetings without extra memory", async () => {
     const sessions = new SessionHistory(40);
-    const builder = new RequestContextBuilder({ memory: new Memory(), summaries: summaries(), sessions });
+    const builder = new RequestContextBuilder({ memory: new Memory(), summaries: summaries(), sessions, persona: "Ты — JUUNIBI." });
     const history = [
       { role: "assistant" as const, content: "Хозяин, привет!" },
       { role: "user" as const, content: "Привет" },
