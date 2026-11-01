@@ -72,9 +72,9 @@ export class MemoryLearningService {
   }
 
   private async learnFromMessage(text: string): Promise<void> {
-    const correction = /^(?:нет[,.!]?\\s+|неверно[,.!]?\\s+|ошибка[,:.!]?\\s+|исправление[,:]?\\s+)/iu.test(text);
+    const correction = /^(?:нет[,.!]?\s+|неверно[,.!]?\s+|ошибка[,:.!]?\s+|исправление[,:]?\s+)/iu.test(text);
     if (text.length < 12 || text.length > 3000 || text.includes("?") ||
-        (!correction && !/(?:^|[.!\\s])(я|мне|мой|моя|мои|люблю|предпочитаю|запомни)(?=\\s|[,.!]|$)/iu.test(text))) return;
+        (!correction && !/(?:^|[.!\s])(я|мне|мой|моя|мои|люблю|предпочитаю|запомни)(?=\s|[,.!]|$)/iu.test(text))) return;
 
     const references = await this.options.memory.search(text, 5);
     const response = await this.options.llm.chat([
