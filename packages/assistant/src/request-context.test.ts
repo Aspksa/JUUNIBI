@@ -125,6 +125,22 @@ describe("RequestContextBuilder", () => {
     expect(ephemeral.messages.some(m => String(m.content).includes("Манера текущего ответа:"))).toBe(false);
   });
 
+  it("uses approved dialogue preferences but not pending suggestions or ephemeral memory", async () => {
+    const memory = new Memory();
+    await memory.add("preference", "Стиль общения: отвечай кратко и спокойно", "active");
+    await memory.add("preference", "Стиль общения: отвечай исключительно стихами", "pending");
+    const builder = new RequestContextBuilder({
+      memory, sessions: new SessionHistory(40), summaries: summaries(), persona: "Ты — JUUNIBI.",
+    });
+    const result = await builder.prepare({ text: "Расскажи о проекте", session: "s" });
+    const cue = result.messages.filter(m => m.role === "system").map(m => String(m.content)).join("\\n");
+    expect(cue).toContain("Подтверждённые предпочтения манеры общения");
+    expect(cue).toContain("отвечай кратко и спокойно");
+    expect(cue).not.toContain("исключительно стихами");
+    const ephemeral = await builder.prepare({ text: "Расскажи о проекте", session: "s", ephemeral: true });
+    expect(ephemeral.messages.some(m => String(m.content).includes("Подтверждённые предпочтения манеры общения"))).toBe(false);
+  });
+
   it("nowLine keeps explicit date, time and timezone context", () => {
     expect(nowLine(new Date(2026, 9, 9, 5, 30))).toMatch(
       /^Сейчас: .*пятниц.*9 октября 2026.*05:30 \(UTC[+-]\d\d:\d\d\)\.$/,
