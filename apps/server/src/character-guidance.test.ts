@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characterGuidance, characterEmotionCue } from "./character-guidance";
+import { characterGuidance, characterEmotionCue, characterEmotionId } from "./character-guidance";
 import profile from "../assets/JUUNIBI_character_v1.json";
 
 describe("canonical character persona", () => {
@@ -18,6 +18,11 @@ describe("canonical character persona", () => {
 });
 
 describe("contextual character presentation", () => {
+  it("shares one emotion classifier with scene selection", () => {
+    expect(characterEmotionId("Мне страшно")).toBe("anxiety");
+    expect(characterEmotionId("Ура, получилось")).toBe("joy");
+    expect(characterEmotionId("Сделай отчёт")).toBe("calm");
+  });
   it("selects a defined emotion without creating an actual feeling", () => {
     const cue = characterEmotionCue(profile, "Мне страшно, помоги разобраться");
     expect(cue).toContain("тревога");
