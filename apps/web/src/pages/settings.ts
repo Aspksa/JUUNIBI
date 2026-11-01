@@ -1,3 +1,4 @@
+import { personalityPanel } from "./personality";
 import { ACCENTS, fgFor, isHexColor, swatchColor } from "../accents";
 import { api, type AssistantSettings, type SettingsPatch } from "../api";
 import type { Chats } from "../chat/chats";
@@ -675,5 +676,5 @@ export function settingsPage(s: AppState, chats: Chats): HTMLElement {
 
   const health = () => sectionHealth({ status: s.status, cfg: s.assistantSettings, checks, chats: chats.store.get().items.length, lastBackup: readPagePrefs().lastBackup, now: Date.now() });
   return el("div", { cls: "page settings-page" }, pageHead("settings", "Настройки", "Подключение помощницы, внешний вид и ваши данные.", pill),
-    el("div", { cls: "set-layout" }, side(health), el("div", { cls: "set-main" }, conn, ...assistantCards(s), look, chat, data, about)));
+    el("div", { cls: "set-layout" }, side(health), el("div", { cls: "set-main" }, conn, ...assistantCards(s), personalityPanel(), look, chat, data, about)));
 }
