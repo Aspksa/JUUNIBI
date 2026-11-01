@@ -359,6 +359,9 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
       typeof args.query === "string" ? args.query : "",
       knowledge.list(),
       (query, limit) => memory.search(query, limit),
+      5,
+      Date.now(),
+      async query => assistant.tools.get("search_all_knowledge")?.run({ query }) ?? null,
     ),
   }, "brain");
   assistant.tools.register({
