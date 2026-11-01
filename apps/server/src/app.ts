@@ -13,6 +13,7 @@ import type { Assistant, ApprovalGate } from "@juunibi/assistant";
 
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
+import { characterEmotionId } from "./character-guidance";
 import type { BrainCore } from "./brain";
 import type { automaticBrainReview } from "./brain-v41-automatic";
 import type { PlanOption, PlanLimits } from "./plan-evaluator";
@@ -494,7 +495,10 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         if (req.method === "GET" && p === "/api/juunibi/scenes/stats") return send(res, 200, deps.scenes?.stats() ?? { error: "Сцены не подключены" });
         if (req.method === "POST" && p === "/api/juunibi/scenes/next") {
           if (!deps.scenes) return send(res, 503, {error:"Сцены не подключены"});
-          return send(res, 200, mc ? await mc.track("scenes", () => deps.scenes!.next()) : await deps.scenes.next());
+          const body = await readJson(req, 4096);
+          const message = typeof body.message === "string" ? body.message.slice(0, 1000) : "";
+          const emotion = message ? characterEmotionId(message) : undefined;
+          return send(res, 200, mc ? await mc.track("scenes", () => deps.scenes!.next(undefined, emotion)) : await deps.scenes.next(undefined, emotion));
         }
         if (req.method === "GET" && p === "/api/modules") return send(res, 200, mc ? mc.list() : deps.modules());
         if (req.method === "GET" && p === "/api/memory/diagnostics") return send(res, 200, (deps.memory ?? a?.memory)?.embeddingDiagnostics() ?? { configured: false, mode: "unavailable" });
