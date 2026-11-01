@@ -30,6 +30,14 @@ const dayStart = (time: number): number => {
   return d.getTime();
 };
 
+/** Calendar arithmetic preserves local wall-clock time across DST transitions. */
+const tomorrowAt = (now: number, minutes: number): number => {
+  const day = new Date(now);
+  day.setDate(day.getDate() + 1);
+  day.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return day.getTime();
+};
+
 const minsOf = (hm: string): number => {
   const [h, m] = hm.split(":").map(Number);
   return h! * 60 + m!;
@@ -149,7 +157,7 @@ export class ReminderService {
     const briefTime = this.options.getAutomation().briefTime;
     reminder.at = new Date(
       minutes === "tomorrow"
-        ? dayStart(now) + 86_400_000 + minsOf(briefTime) * 60_000
+        ? tomorrowAt(now, minsOf(briefTime))
         : now + Number(minutes) * 60_000,
     ).toISOString();
     reminder.status = "scheduled";
@@ -228,8 +236,11 @@ export class ReminderService {
         firedAt,
         seriesId: reminder.id,
       };
-      this.options.getReminders().push(copy);
-      fired.push({ ...copy });
+      // Bound unacknowledged occurrences: a repeating series may have only one outstanding copy.
+      // A missed occurrence is not silently multiplied on subsequent ticks.
+      const outstanding = this.options.getReminders().some((item) => item.seriesId === reminder.id && item.status === "due");
+      if (!outstanding) this.options.getReminders().push(copy);
+      if (!outstanding) fired.push({ ...copy });
 
       reminder.at = new Date(this.options.nextOccurrence(
         Date.parse(reminder.at),
@@ -241,6 +252,7 @@ export class ReminderService {
       )).toISOString();
     }
 
+    if (fired.length) changed = true;
     return { fired, changed, releasedFromQuiet };
   }
 
