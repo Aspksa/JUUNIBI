@@ -72,6 +72,19 @@ export class TurnJournal {
     }));
   }
 
+  /** Restore only the latest bounded exchange in the same session after a restart. */
+  async recentSessionTurns(session: string, limit = 2): Promise<Turn[]> {
+    await this.ready;
+    if (!session || typeof session !== "string" || session.length > 200) return [];
+    const count = Number.isInteger(limit) ? Math.max(1, Math.min(limit, 4)) : 2;
+    return this.turns.filter(turn => turn.session === session &&
+      typeof turn.user === "string" && typeof turn.reply === "string")
+      .slice(-count).map(turn => ({
+        ...turn, user: turn.user.slice(0, 2000), reply: turn.reply.slice(0, 3000),
+        tools: [...turn.tools], memoryIds: [...turn.memoryIds],
+      }));
+  }
+
   /** Bounded, session-isolated search of persisted conversation turns. */
   async search(session: string, query: string, limit = 5): Promise<Turn[]> {
     await this.ready;

@@ -21,6 +21,20 @@ describe("TurnJournal", () => {
     expect(reloaded.snapshot()[0]).toMatchObject({ id: turn.id, rating: 1 });
   });
 
+  it("restores only bounded turns from the requested session after reloading the store", async () => {
+    const store = new MemoryAdapter();
+    const llm: LlmProvider = { chat: async () => ({ content: "[]", toolCalls: [] }) };
+    const journal = new TurnJournal({ llm, memory: new Memory(), store });
+    await journal.record({ session: "one", user: "Начни задачу", reply: "Проверено, следующий шаг открыт", tools: [], memoryIds: [] });
+    await journal.record({ session: "two", user: "Секрет другой беседы", reply: "Не показывать", tools: [], memoryIds: [] });
+    await journal.record({ session: "one", user: "Что дальше?", reply: "Нужно проверить CI", tools: [], memoryIds: [] });
+    const restored = new TurnJournal({ llm, memory: new Memory(), store });
+    const turns = await restored.recentSessionTurns("one");
+    expect(turns.map(t => t.user)).toEqual(["Начни задачу", "Что дальше?"]);
+    expect(turns.map(t => t.reply)).not.toContain("Не показывать");
+    expect(await restored.recentSessionTurns("absent")).toEqual([]);
+  });
+
   it("applies feedback to memories and exports only thumbs-up turns", async () => {
     const memory = new Memory();
     const entry = await memory.add("fact", "кофе без сахара", "active");
