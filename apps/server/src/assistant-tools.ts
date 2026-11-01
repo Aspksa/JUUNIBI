@@ -116,6 +116,46 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
       run: (a) => d.organizer.addReminder(a.text, a.at, a.repeat) },
     { name: "cancel_reminder", risk: "write", description: "Отменить напоминание (повторяющееся больше не сработает). Требует подтверждения.",
       parameters: { type: "object", properties: { id: str("Идентификатор из list_reminders") }, required: ["id"] }, run: (a) => d.organizer.dismissReminder(String(a.id)) },
+    { name: "plan_draft", risk: "read", description: "Проверить черновик плана: шаги, зависимости, пропущенные ссылки и циклы. Ничего не сохраняет и не выполняет.",
+      parameters: { type: "object", properties: {
+        goal: str("Цель плана", { minLength: 1, maxLength: 500 }),
+        steps: { type: "array", description: "Массив шагов: {id, title, dependsOn?: string[]}; максимум 30 шагов" },
+      }, required: ["goal", "steps"] },
+      run: (a) => {
+        const raw = a.steps;
+        if (!Array.isArray(raw) || raw.length < 1 || raw.length > 30) return { valid: false, errors: ["Нужно от 1 до 30 шагов"] };
+        const errors: string[] = [];
+        const steps: { id: string; title: string; dependsOn: string[] }[] = [];
+        for (const [index, value] of raw.entries()) {
+          if (!value || typeof value !== "object" || Array.isArray(value)) { errors.push(`Шаг ${index + 1}: нужен объект`); continue; }
+          const v = value as Record<string, unknown>;
+          if (typeof v.id !== "string" || !/^[a-zA-Z0-9_-]{1,40}$/.test(v.id) ||
+              typeof v.title !== "string" || !v.title.trim() || v.title.length > 300 ||
+              (v.dependsOn !== undefined && (!Array.isArray(v.dependsOn) || v.dependsOn.length > 30 ||
+                !v.dependsOn.every((d: unknown) => typeof d === "string")))) {
+            errors.push(`Шаг ${index + 1}: некорректные id, title или dependsOn`); continue;
+          }
+          steps.push({ id: v.id, title: v.title.trim(), dependsOn: (v.dependsOn as string[] | undefined) ?? [] });
+        }
+        const ids = new Set(steps.map((s) => s.id));
+        if (ids.size !== steps.length) errors.push("Повторяющиеся идентификаторы шагов");
+        for (const step of steps) for (const dep of step.dependsOn) {
+          if (!ids.has(dep)) errors.push(`Шаг ${step.id}: неизвестная зависимость ${dep}`);
+          if (dep === step.id) errors.push(`Шаг ${step.id}: зависит от самого себя`);
+        }
+        const visited = new Set<string>(), active = new Set<string>();
+        const byId = new Map(steps.map((step) => [step.id, step]));
+        const visit = (id: string): void => {
+          if (active.has(id)) { errors.push(`Циклическая зависимость: ${id}`); return; }
+          if (visited.has(id)) return;
+          active.add(id);
+          for (const dep of byId.get(id)?.dependsOn ?? []) if (byId.has(dep)) visit(dep);
+          active.delete(id); visited.add(id);
+        };
+        for (const step of steps) visit(step.id);
+        return { valid: errors.length === 0, goal: a.goal, steps, errors, ready: steps.filter((s) => !s.dependsOn.length).map((s) => s.id),
+          note: "Только анализ черновика. Для сохранения или выполнения плана требуется отдельное подтверждение." };
+      } },
     { name: "daily_brief", risk: "read", description: "Данные для сводки дня: напоминания, дела, планы, память на подтверждение, сбои модулей, обновления. Перескажи их коротко и по делу.",
       parameters: { type: "object", properties: {} }, run: () => d.brief() },
   ];
