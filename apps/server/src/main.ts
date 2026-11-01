@@ -553,6 +553,7 @@ const reminderTimer = setInterval(() => {
   void organizer.tick().catch((e) => log.warn("Напоминания не обновлены", e));
   // awards and records are given every few minutes, even while the «Дела» page is closed
   if (++reminderTicks % 15 === 0) void achievements.refresh().catch((e) => log.warn("Достижения не пересчитаны", e));
+  if (reminderTicks % 180 === 0) void organizer.pruneDelivery().catch((e) => log.warn("Не удалось очистить журнал доставки", e));
 }, 20_000);
 void organizer.tick().catch(() => {});
 const runLearning = () => {
