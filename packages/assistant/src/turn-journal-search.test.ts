@@ -9,7 +9,7 @@ describe("session-scoped history retrieval", () => {
     const journal = new TurnJournal({ llm, memory: new Memory(), store: new MemoryAdapter() });
     await journal.record({ session: "one", user: "Обсуждали архитектуру проекта", reply: "Используем единый реестр", tools: [], memoryIds: [] });
     await journal.record({ session: "two", user: "Обсуждали секретный проект", reply: "Другой пользователь", tools: [], memoryIds: [] });
-    const result = await journal.search("one", "проект", 5);
+    const result = await journal.search("one", "архитектуру", 5);
     expect(result).toHaveLength(1);
     expect(result[0]?.user).toContain("архитектуру");
     expect(result.some(turn => turn.session === "two")).toBe(false);
