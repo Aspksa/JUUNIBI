@@ -106,7 +106,7 @@ export class RequestContextBuilder {
     }) + "\n\n" + taskExecutionInstructions(input.text);
 
     const guidance = guidanceInstructions(input.brainGuidance);
-    const previousUserMessage = [...history].reverse().find(item => item.role === "user")?.content;
+    const previousUserMessage = [...history].reverse().find(item => item.role === "user")?.content ?? undefined;
     const emotionCue = !input.ephemeral ? this.options.emotionCue?.(input.text, previousUserMessage) : undefined;
     const messages: Message[] = [
       { role: "system", content: system },
