@@ -11,3 +11,4 @@ export type { PendingApproval, AuditEvent } from "./security";
 export * from "./evidence-reasoning";
 
 export * from "./personality";
+export * from "./personality-history";
