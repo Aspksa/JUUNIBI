@@ -511,6 +511,17 @@ const appDeps: AppDeps = {
     });
   },
   memory,
+  personality: {
+    current: () => personalityHistory.current(),
+    adjustTrait: async (trait, delta, approved) => {
+      approvedPersonality = await personalityHistory.adjustTrait(trait, delta, approved);
+      return approvedPersonality;
+    },
+    restore: async (version, approved) => {
+      approvedPersonality = await personalityHistory.restore(version, approved);
+      return approvedPersonality;
+    },
+  },
   approvals: approvalGate,
   updater,
   kitsuneEvolution: new KitsuneEvolution(root,updater),
