@@ -11,7 +11,9 @@ describe("PersonalityHistory", () => {
     await history.approveLesson(lesson, false);
     expect((await history.current()).version).toBe(1);
     await history.approveLesson(lesson, true);
-    expect((await new PersonalityHistory(storage).current()).acceptedLessons).toEqual(["lesson-1"]);
+    const reloaded = await new PersonalityHistory(storage).current();
+    expect(reloaded.acceptedLessons).toEqual(["lesson-1"]);
+    expect(reloaded.lessonTexts?.["lesson-1"]).toBe("Answer concisely");
   });
 
   it("returns isolated history copies", async () => {
