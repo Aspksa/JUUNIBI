@@ -42,6 +42,7 @@ import type { Vault } from "./vault";
 import type { ChatStore } from "./chat-store";
 import type { EvolutionConfig, EvolutionItem, EvolutionState } from "./ramo-evolution";
 import type { Experience } from "./ramo-experience";
+import type { CognitiveMemory } from "./ramo-cognitive";
 import type { ChatExtras } from "./chat-extras";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
@@ -67,6 +68,9 @@ export interface AppDeps {
   ramoEvolution?: {
     snapshot(): Promise<EvolutionState & { running: boolean }>;
     recall(query: string): Promise<Experience[]>;
+    cognitiveRecall(query: string): Promise<CognitiveMemory[]>;
+    reviewMemory(id: string, status: "approved" | "rejected"): Promise<void>;
+    pause(paused: boolean): Promise<void>;
     setGoal(id: string, status: "approved" | "done"): Promise<void>;
     configure(patch: Partial<EvolutionConfig>): Promise<void>;
     run(): Promise<void>;
@@ -288,6 +292,26 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
                 Object.entries(body).some(([k, v]) => k !== "intervalMinutes" && typeof v !== "boolean"))
               return send(res, 400, { error: "Неверные настройки" });
             await engine.configure(body as Partial<EvolutionConfig>);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/pause" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.paused !== "boolean") return send(res, 400, { error: "Неверный режим" });
+            await engine.pause(body.paused);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/memory/recall" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.query !== "string" || body.query.length > 200)
+              return send(res, 400, { error: "Неверный запрос" });
+            return send(res, 200, await engine.cognitiveRecall(body.query));
+          }
+          if (p === "/api/ramo/evolution/memory/review" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.id !== "string" || !/^[a-z0-9]{1,20}$/.test(body.id) ||
+                !["approved", "rejected"].includes(String(body.status)) || body.approved !== true)
+              return send(res, 400, { error: "Требуется подтверждение" });
+            await engine.reviewMemory(body.id, body.status as "approved" | "rejected");
             return send(res, 200, await engine.snapshot());
           }
           if (p === "/api/ramo/evolution/recall" && req.method === "POST") {

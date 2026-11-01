@@ -115,6 +115,9 @@ export function personalityPanel(chats?: Chats): HTMLElement {
   });
   suggestions.append(scan);
   type Evolution = { config: { enabled: boolean; intervalMinutes: number; night: boolean; memory: boolean; personality: boolean; quality: boolean };
+    cognitiveMemories?: { id: string; content: string; tier: string; status: string }[];
+    evaluation?: { score: number; cases: number; failures: { name: string; reason: string }[] };
+    paused?: boolean; lastConsolidation?: number;
     queue: { id: string; lesson: string; status: string }[]; experiences?: { kind: string; text: string }[];
     goals?: { id: string; title: string; status: string }[];
     metrics?: { corrections: number; repeatedReplies: number; negativeRatings: number }; runs: number; lastRun: number; lastError: string | null; analyzedMessages: number; running: boolean };
@@ -170,8 +173,33 @@ export function personalityPanel(chats?: Chats): HTMLElement {
         });
         return el("div", { cls: "set-row" }, el("span", { textContent: goal.title }), button);
       });
+      const pauseButton = el("button", { type: "button",
+        textContent: state.paused ? "Возобновить фоновую работу" : "Экстренно остановить фоновые задачи" });
+      pauseButton.addEventListener("click", () => {
+        void evolutionRequest("/api/ramo/evolution/pause", { paused: !state.paused })
+          .then(loadEvolution).catch(error => { status.textContent = String(error); });
+      });
+      const evaluation = el("p", { cls: "muted", textContent: "Регрессионные проверки диалога: " +
+        (state.evaluation?.cases ? Math.round((state.evaluation?.score ?? 0) * 100) + "%" : "нет данных") +
+        " · последняя консолидация: " +
+        (state.lastConsolidation ? new Date(state.lastConsolidation).toLocaleString("ru-RU") : "не проводилась") });
+      const memories = (state.cognitiveMemories ?? []).filter(x => x.status === "candidate").slice(-20);
+      const memoryRows = memories.map(item => {
+        const buttons = (decision: "approved" | "rejected", label: string) => {
+          const button = el("button", { type: "button", textContent: label });
+          button.addEventListener("click", () => {
+            if (decision === "approved" && !confirm("Сохранить как подтверждённое воспоминание: " + item.content + "?")) return;
+            void evolutionRequest("/api/ramo/evolution/memory/review", { id: item.id, status: decision, approved: true })
+              .then(loadEvolution).catch(error => { status.textContent = String(error); });
+          });
+          return button;
+        };
+        return el("div", { cls: "set-row" }, el("span", { textContent: "[" + item.tier + "] " + item.content }),
+          buttons("approved", "Подтвердить"), buttons("rejected", "Отклонить"));
+      });
       const pending = state.queue.filter(item => item.status === "pending");
-      background.replaceChildren(el("h3", { textContent: "Фоновое развитие RAMO" }), summary, insight,
+      background.replaceChildren(el("h3", { textContent: "Фоновое развитие RAMO" }), summary, insight, evaluation, pauseButton,
+        el("h4", { textContent: "Воспоминания на проверке: " + memories.length }), ...memoryRows,
         el("h4", { textContent: "Цели развития" }), ...goals, ...controls,
         el("div", { cls: "set-row" }, interval, run),
         el("h4", { textContent: "Ожидают подтверждения: " + pending.length }),

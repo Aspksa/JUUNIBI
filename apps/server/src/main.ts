@@ -518,6 +518,9 @@ const appDeps: AppDeps = {
   ramoEvolution: {
     snapshot: () => ramoEvolution.snapshot(),
     recall: (query) => ramoEvolution.recall(query),
+    cognitiveRecall: (query) => ramoEvolution.cognitiveRecall(query),
+    reviewMemory: (id, status) => ramoEvolution.reviewMemory(id, status),
+    pause: (paused) => ramoEvolution.pause(paused),
     setGoal: (id, status) => ramoEvolution.setGoal(id, status),
     configure: (patch) => ramoEvolution.configure(patch),
     run: () => ramoEvolution.run(true),

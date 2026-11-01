@@ -1,3 +1,4 @@
+import { classifyExperience, retrieveMemories, evaluateDialogue, type CognitiveMemory, type CognitiveEvaluation } from "./ramo-cognitive";
 import { analyzeDialogue, rankExperiences, type Experience, type DialogueMetrics } from "./ramo-experience";
 import { suggestConversationLessons, type LessonProposal, type StorageAdapter } from "@juunibi/assistant";
 
@@ -26,11 +27,16 @@ export interface EvolutionState {
   experiences: Experience[];
   metrics: DialogueMetrics;
   goals: { id: string; title: string; status: "proposed" | "approved" | "done"; createdAt: number }[];
+  cognitiveMemories: CognitiveMemory[];
+  evaluation: CognitiveEvaluation;
+  paused: boolean;
+  lastConsolidation: number;
 }
 const defaults = (): EvolutionState => ({
   config: { enabled: false, intervalMinutes: 30, night: true, memory: true, personality: true, quality: true },
   queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0, qualitySignals: 0, memoryDigest: [], experiences: [],
-  metrics: { userMessages: 0, assistantMessages: 0, corrections: 0, repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 }, goals: [],
+  metrics: { userMessages: 0, assistantMessages: 0, corrections: 0, repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 }, goals: [], cognitiveMemories: [],
+  evaluation: { cases: 0, passed: 0, score: 0, failures: [] }, paused: false, lastConsolidation: 0,
 });
 const signature = (value: string): string => {
   let hash = 2166136261;
@@ -73,6 +79,11 @@ export class RamoEvolution {
       experiences: Array.isArray(s.experiences) ? s.experiences.filter(x => x && typeof x.id === "string" && typeof x.text === "string" && x.text.length <= 350 && ["preference", "correction", "decision", "goal"].includes(x.kind)).slice(-500) : [],
       metrics: s.metrics && typeof s.metrics === "object" ? { ...defaults().metrics, ...s.metrics } : defaults().metrics,
       goals: Array.isArray(s.goals) ? s.goals.filter(x => x && typeof x.id === "string" && typeof x.title === "string" && ["proposed", "approved", "done"].includes(x.status)).slice(-50) : [],
+      cognitiveMemories: Array.isArray(s.cognitiveMemories) ? s.cognitiveMemories.filter(x => x && typeof x.id === "string" && typeof x.content === "string" && x.content.length <= 350 && ["candidate", "approved", "rejected"].includes(x.status)).slice(-500) : [],
+      evaluation: s.evaluation && typeof s.evaluation === "object" && Number.isFinite(s.evaluation.score) &&
+        Number.isFinite(s.evaluation.cases) && Array.isArray(s.evaluation.failures) ? s.evaluation : defaults().evaluation,
+      paused: s.paused === true,
+      lastConsolidation: Number.isFinite(s.lastConsolidation) ? s.lastConsolidation! : 0,
     };
   }
   private mutate<T>(fn: () => T | Promise<T>): Promise<T> {
@@ -96,13 +107,26 @@ export class RamoEvolution {
     await this.ready; await this.pending;
     return { ...structuredClone(this.state), running: this.running };
   }
+  cognitiveRecall(query: string): Promise<CognitiveMemory[]> {
+    return this.snapshot().then(s => retrieveMemories(s.cognitiveMemories, query, this.now()));
+  }
+  reviewMemory(id: string, status: "approved" | "rejected"): Promise<void> {
+    return this.mutate(() => {
+      const memory = this.state.cognitiveMemories.find(x => x.id === id && x.status === "candidate");
+      if (!memory) throw new Error("Unknown candidate memory");
+      memory.status = status;
+    });
+  }
+  pause(paused: boolean): Promise<void> {
+    return this.mutate(() => { this.state.paused = paused; });
+  }
   recall(query: string): Promise<Experience[]> {
     return this.snapshot().then(state => rankExperiences(state.experiences, query));
   }
   setGoal(id: string, status: "approved" | "done"): Promise<void> {
     return this.mutate(() => {
       const goal = this.state.goals.find(x => x.id === id);
-      if (!goal) throw new Error("Unknown evolution goal");
+      if (!goal || (status === "done" && goal.status !== "approved")) throw new Error("Invalid goal transition");
       goal.status = status;
     });
   }
@@ -135,11 +159,13 @@ export class RamoEvolution {
       await this.mutate(() => {
         const now = this.now();
         const s = this.state;
-        if (!s.config.enabled || (!force && now - s.lastRun < s.config.intervalMinutes * 60_000)) return;
+        if (!s.config.enabled || s.paused || (!force && now - s.lastRun < s.config.intervalMinutes * 60_000)) return;
         const candidates: { role: string; content: string }[] = [];
         const newExperiences: Experience[] = [];
+        const evaluationMessages: { role: string; content: string }[] = [];
         for (const chat of this.readChats().slice(-100)) {
           const analysis = analyzeDialogue(chat.messages, chat.id, now);
+          evaluationMessages.push(...chat.messages.slice(-300).filter(m => m && typeof m.content === "string").map(m => ({ role: m.role, content: m.content })));
           if (s.config.memory) newExperiences.push(...analysis.experiences);
 
           for (const msg of chat.messages.slice(-300)) {
@@ -162,6 +188,14 @@ export class RamoEvolution {
               s.goals.push({ id: item.id, title: item.text, status: "proposed", createdAt: now });
           }
           s.experiences = s.experiences.slice(-500);
+          const knownMemory = new Set(s.cognitiveMemories.map(x => x.id));
+          for (const item of newExperiences) {
+            if (!knownMemory.has(item.id)) {
+              s.cognitiveMemories.push(classifyExperience(item));
+              knownMemory.add(item.id);
+            }
+          }
+          s.cognitiveMemories = s.cognitiveMemories.slice(-500);
           s.goals = s.goals.slice(-50);
         }
         if (s.config.quality) {
@@ -171,6 +205,7 @@ export class RamoEvolution {
             for (const key of Object.keys(aggregate) as (keyof DialogueMetrics)[]) aggregate[key] += m[key];
           }
           s.metrics = aggregate;
+          s.evaluation = evaluateDialogue(evaluationMessages.slice(-300));
           const normalized = candidates.map(x => x.content.trim().toLowerCase());
           s.qualitySignals += normalized.length - new Set(normalized).size;
         }
@@ -184,6 +219,10 @@ export class RamoEvolution {
             s.queue.push({ ...suggestion, id: "ramo-" + signature(suggestion.lesson), createdAt: now, status: "pending" });
             existing.add(suggestion.lesson.toLocaleLowerCase("ru-RU"));
           }
+        }
+        if (s.config.night && new Date(now).getHours() < 7 && now - s.lastConsolidation > 20 * 60 * 60_000) {
+          s.cognitiveMemories = s.cognitiveMemories.filter(x => !x.expiresAt || x.expiresAt > now).slice(-500);
+          s.lastConsolidation = now;
         }
         s.queue = s.queue.slice(-200);
         s.processed = Object.fromEntries(Object.entries(s.processed).slice(-10000));
