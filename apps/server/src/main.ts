@@ -513,6 +513,7 @@ const appDeps: AppDeps = {
   memory,
   personality: {
     current: () => personalityHistory.current(),
+    history: () => personalityHistory.history(),
     adjustTrait: async (trait, delta, approved) => {
       approvedPersonality = await personalityHistory.adjustTrait(trait, delta, approved);
       return approvedPersonality;
