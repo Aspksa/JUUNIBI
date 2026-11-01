@@ -15,7 +15,7 @@ const tracks = {
 
 export function evaluateBrainV7(input: UnifiedCycleInput, precomputedV6?: ReturnType<typeof evaluateBrainV6>) {
  const base = precomputedV6 ?? evaluateBrainV6(input);
- const arithmetic = verifyIntegerEquation(input.message.slice(0,4000));
+ const arithmetic = precomputedV6?.arithmetic ?? verifyIntegerEquation(input.message.slice(0,4000));
  const txt=input.message.toLocaleLowerCase("ru");
  const facts=(input.verifiedKnowledge??[]).filter(x=>x.status==="verified");
  const warnings=input.recentToolWarnings??[];
