@@ -121,7 +121,7 @@ export class RequestContextBuilder {
     const isSupport = /(?:грустно|тревожно|страшно|устал|переживаю|плохо на душе)/iu.test(input.text);
     const isPlay = /(?:пошути|шутк|играем|поиграем|розыгрыш)/iu.test(input.text);
     const dialogueMode = isTask ? "деловой" : isSupport ? "поддерживающий" : isPlay ? "игривый" : "разговорный";
-    const livingDialogueCue = !input.ephemeral
+    const livingDialogueCue = !input.ephemeral && !!this.options.persona
       ? "Манера текущего ответа: " + dialogueMode +
         ". Сохраняй постоянный характер JUUNIBI и уважение к владельцу. " +
         (isTask ? "Сосредоточься на проверяемом результате, не заменяй действия сценой. " :
