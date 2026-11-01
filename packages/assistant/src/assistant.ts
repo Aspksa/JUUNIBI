@@ -81,6 +81,7 @@ export class Assistant {
   private readonly turnJournal: TurnJournal;
   private readonly turnFinalizer: TurnFinalizer;
   private readonly sessions = new SessionHistory(HISTORY_LIMIT * 2);
+  private feedbackLearning: Promise<void> = Promise.resolve();
   private activeAsks = 0;
   private askWaiters: (() => void)[] = [];
 
@@ -147,7 +148,7 @@ export class Assistant {
     });
   }
   /** Resolves when background work (conversation summaries) is finished. Mostly for tests. */
-  idle(): Promise<void> { return Promise.all([this.summaryService.idle(), this.memoryLearning.idle()]).then(() => {}); }
+  idle(): Promise<void> { return Promise.all([this.summaryService.idle(), this.memoryLearning.idle(), this.feedbackLearning]).then(() => {}); }
   /** Rated and unrated turns, newest last, as plain copies (for the quality report). */
   turnsSnapshot(): Turn[] { return this.turnJournal.snapshot(); }
 
@@ -254,8 +255,16 @@ export class Assistant {
   }
 
   /** Thumbs up/down: tunes the memories that were used and records the label for training data. */
-  feedback(turnId: string, rating: 1 | -1): Promise<boolean> {
-    return this.turnJournal.feedback(turnId, rating);
+  async feedback(turnId: string, rating: 1 | -1): Promise<boolean> {
+    const recorded = await this.turnJournal.feedback(turnId, rating);
+    if (recorded && rating === -1 && this.o.prefs?.().suggestions === "smart") {
+      // Only explicit negative feedback starts reflection. Owner approval still gates all lessons.
+      this.feedbackLearning = this.feedbackLearning.catch(() => {}).then(async () => {
+        await this.chatIdle();
+        await this.turnJournal.reflect(turnId);
+      }).catch(error => this.log.warn("feedback reflection unavailable", error));
+    }
+    return recorded;
   }
 
   /** Ask the model what is worth learning from a turn. Results are PENDING until the user approves. */
