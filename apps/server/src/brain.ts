@@ -36,7 +36,7 @@ import { evaluateOptions, type PlanLimits, type PlanOption } from "./plan-evalua
 export type BrainMode = "chat" | "analysis" | "agent" | "creative";
 export type StepState = "pending" | "active" | "done" | "failed";
 export interface BrainStep { id: string; title: string; status: StepState; retries?: number; lastError?: string }
-export interface BrainPlan { id: string; goal: string; createdAt: string; status: "planned" | "running" | "completed" | "failed"; steps: BrainStep[] }
+export interface BrainPlan { id: string; session?: string; goal: string; createdAt: string; status: "planned" | "running" | "completed" | "failed"; steps: BrainStep[] }
 
 /** Deliberately non-executing planner: operations still require the assistant's approval gate. */
 export interface BrainStorage { load(): Promise<string | null>; save(data: string): Promise<void> }
@@ -296,11 +296,11 @@ export class BrainCore {
     this.persist();
   }
   /** Incomplete work survives restart, but no external action is replayed automatically. */
-  pendingWork() {
-    return this.plans.filter(p => p.status !== "completed").map(p => {
+  pendingWork(session?: string) {
+    return this.plans.filter(p => p.status !== "completed" && (session === undefined || p.session === session)).map(p => {
       const next = p.steps.find(s => s.status !== "done");
       return {
-        id: p.id, goal: p.goal, status: p.status,
+        id: p.id, ...(p.session ? { session: p.session } : {}), goal: p.goal, status: p.status,
         completed: p.steps.filter(s => s.status === "done").length,
         total: p.steps.length,
         nextStep: next ? { id: next.id, title: next.title, status: next.status, lastError: next.lastError ?? null } : null,
@@ -380,7 +380,7 @@ export class BrainCore {
     const saved = state as { mode?: unknown; plans?: unknown; logs?: unknown };
     if (!Array.isArray(saved.plans) || !Array.isArray(saved.logs) || saved.plans.length > 30 || saved.logs.length > 200) throw new Error("Неверный формат мозга");
     this.mode = saved.mode === "agent" || saved.mode === "analysis" || saved.mode === "creative" ? saved.mode : "chat";
-    if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && ["planned", "running", "completed", "failed"].includes(p.status) && typeof p.createdAt === "string" && Number.isFinite(Date.parse(p.createdAt)) && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && s.id.length <= 100 && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2)) && (s.lastError === undefined || (typeof s.lastError === "string" && s.lastError.length <= 300))))) throw new Error("Некорректные планы");
+    if (!saved.plans.every(p => p && typeof p.id === "string" && typeof p.goal === "string" && p.goal.length <= 1000 && (p.session === undefined || (typeof p.session === "string" && p.session.length > 0 && p.session.length <= 200)) && ["planned", "running", "completed", "failed"].includes(p.status) && typeof p.createdAt === "string" && Number.isFinite(Date.parse(p.createdAt)) && Array.isArray(p.steps) && p.steps.length > 0 && p.steps.length <= 20 && p.steps.every((s: BrainStep) => s && typeof s.id === "string" && s.id.length <= 100 && typeof s.title === "string" && s.title.length <= 300 && ["pending", "active", "done", "failed"].includes(s.status) && (s.retries === undefined || (Number.isInteger(s.retries) && s.retries >= 0 && s.retries <= 2)) && (s.lastError === undefined || (typeof s.lastError === "string" && s.lastError.length <= 300))))) throw new Error("Некорректные планы");
     // Duplicate persisted identifiers could route a confirmation to the wrong step.
     const ids = new Set<string>();
     for (const plan of saved.plans as BrainPlan[]) {
@@ -478,11 +478,12 @@ export class BrainCore {
     this.persist();
     return this.status();
   }
-  plan(goal: unknown, tasks: unknown) {
+  plan(goal: unknown, tasks: unknown, session?: unknown) {
     if (typeof goal !== "string" || !goal.trim() || goal.length > 1000 || !Array.isArray(tasks) || !tasks.length || tasks.length > 20 ||
       !tasks.every(s => typeof s === "string" && s.trim().length > 0 && s.length <= 300))
       throw Object.assign(new Error("Укажите цель и от 1 до 20 коротких шагов"), { status: 400 });
-    const item: BrainPlan = { id: randomUUID(), goal: goal.trim(), createdAt: new Date().toISOString(), status: "planned",
+    if (session !== undefined && (typeof session !== "string" || !session.trim() || session.length > 200)) throw Object.assign(new Error("Некорректный идентификатор беседы"), { status: 400 });
+    const item: BrainPlan = { id: randomUUID(), ...(typeof session === "string" ? { session } : {}), goal: goal.trim(), createdAt: new Date().toISOString(), status: "planned",
       steps: tasks.map((title: string) => ({ id: randomUUID(), title: title.trim(), status: "pending" })) };
     this.plans.unshift(item);
     this.plans = this.plans.slice(0, 30);
