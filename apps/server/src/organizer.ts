@@ -9,6 +9,7 @@ import { MissionService } from "./mission-service";
 import { InsightsService } from "./insights-service";
 import { SmartPriorityService } from "./smart-priority-service";
 import { SmartDayPlannerService } from "./smart-day-planner";
+import { TaskMemoryService } from "./task-memory-service";
 import {
   WorkspaceService,
   areaOf,
@@ -292,6 +293,7 @@ export class Organizer {
   private readonly insightsService: InsightsService;
   private readonly smartPriorityService: SmartPriorityService;
   private readonly smartDayPlannerService: SmartDayPlannerService;
+  private readonly taskMemoryService: TaskMemoryService;
   private readonly planningService: PlanningService;
   private readonly workspaceService: WorkspaceService;
   private automation: Automation = { ...DEFAULT_AUTOMATION };
@@ -315,6 +317,7 @@ export class Organizer {
   composeBrief?: (facts: string) => Promise<string | null>;
   constructor(file: string, private readonly now: () => number = Date.now) {
     this.repository = new OrganizerRepository(file);
+    this.taskMemoryService = new TaskMemoryService();
     this.workspaceService = new WorkspaceService({
       getProjects: () => this.projects,
       replaceProjects: (projects) => { this.projects = projects; },
@@ -411,19 +414,20 @@ export class Organizer {
       save: () => this.save(),
     });
     this.planningService = planning;
-    this.insightsService = new InsightsService({
-      getNotes: () => this.notes,
-      getReminders: () => this.reminders,
-      planToday: (now) => this.planningService.planToday(now),
-      dayLoad: (day, now) => this.planningService.dayLoad(day, now),
-    });
     this.smartPriorityService = new SmartPriorityService({
       getNotes: () => this.notes,
       getAutomation: () => this.automation,
       getMissions: () => this.missionService.board(),
       isWork: (note) => this.isWork(note),
+      recall: (note) => this.taskMemoryService.recall(note, this.isWork(note) ? "work" : "personal"),
       workDayFor: (date) => this.workDayFor(date),
       now: this.now,
+    });
+    this.insightsService = new InsightsService({
+      getNotes: () => this.notes,
+      getReminders: () => this.reminders,
+      smartPriority: (now) => this.smartPriorityService.rank(5, now),
+      dayLoad: (day, now) => this.planningService.dayLoad(day, now),
     });
     this.smartDayPlannerService = new SmartDayPlannerService({
       getNotes: () => this.notes,
@@ -443,7 +447,7 @@ export class Organizer {
 
   async load() {
     try {
-      const raw = await this.repository.load<{ notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown }>();
+      const raw = await this.repository.load<{ notes?: unknown; reminders?: unknown; missions?: unknown; automation?: unknown; autoState?: Record<string, unknown>; log?: unknown; history?: unknown; autoCount?: unknown; moveRequests?: unknown; projects?: unknown; templates?: unknown; daysOff?: unknown; taskMemory?: unknown }>();
       if (Array.isArray(raw.projects)) this.projects = raw.projects.map(cleanProject).filter((x): x is ProjectMeta => !!x).slice(0, MAX_PROJECTS);
       if (Array.isArray(raw.templates)) this.templates = raw.templates.filter((t): t is TaskTemplate => !!t && typeof t.id === "string" && typeof t.text === "string" && !!t.text.trim() && t.text.length <= MAX_TEXT).slice(0, MAX_TEMPLATES);
       if (Array.isArray(raw.daysOff)) this.daysOff = raw.daysOff.filter((d): d is DayOff => !!d && typeof d.id === "string" && DAY_RE.test(d.from) && DAY_RE.test(d.to) && d.from <= d.to && (d.kind === "vacation" || d.kind === "sick")).slice(-MAX_DAYS_OFF);
@@ -457,6 +461,9 @@ export class Organizer {
       if (raw.autoCount && typeof raw.autoCount === "object") for (const [k, v] of Object.entries(raw.autoCount)) if (Number.isInteger(v) && (v as number) >= 0) this.autoCount[k as AutoLogEntry["kind"]] = v as number;
       if (Array.isArray(raw.missions)) this.missions = raw.missions.filter((m): m is Mission => !!m && typeof m.id === "string" && typeof m.title === "string" && typeof m.description === "string" && typeof m.createdAt === "string" && ["active","paused","complete"].includes(m.status)).slice(-100);
       if (Array.isArray(raw.notes)) this.notes = raw.notes.filter((n): n is Note => !!n && typeof n.id === "string" && (n.kind === "note" || n.kind === "todo") && typeof n.text === "string" && n.text.length <= (n.auto ? MAX_AUTO_TEXT : MAX_TEXT) && typeof n.done === "boolean" && typeof n.createdAt === "string" && Number.isFinite(Date.parse(n.createdAt))).slice(-MAX_NOTES).map(cleanNote);
+      if (!this.taskMemoryService.load(raw.taskMemory)) {
+        this.taskMemoryService.rebuild(this.history, this.notes, (note) => this.isWork(note) ? "work" : "personal");
+      }
       // a subtask whose parent is gone becomes an ordinary to-do
       const ids = new Set(this.notes.map((n) => n.id));
       for (const n of this.notes) if (n.parentId && !ids.has(n.parentId)) delete n.parentId;
@@ -477,6 +484,7 @@ export class Organizer {
       projects: this.projects,
       templates: this.templates,
       daysOff: this.daysOff,
+      taskMemory: this.taskMemoryService.snapshot(),
     });
   }
   flush() { return this.repository.flush(); }
@@ -487,7 +495,18 @@ export class Organizer {
   listMissions(): Mission[] { return this.missionService.list(); }
   private record(kind: TaskEvent["kind"], n: Note, extra: Partial<TaskEvent> = {}) {
     if (n.auto) return;
-    this.history.push({ at: new Date(this.now()).toISOString(), id: n.id, kind, text: n.text.slice(0, 120), todo: n.kind === "todo", ...extra });
+    const event: TaskEvent = {
+      at: new Date(this.now()).toISOString(),
+      id: n.id,
+      kind,
+      text: n.text.slice(0, 120),
+      todo: n.kind === "todo",
+      ...extra,
+    };
+    this.history.push(event);
+    if (n.kind === "todo") {
+      this.taskMemoryService.observe(event, n, this.isWork(n) ? "work" : "personal");
+    }
     if (this.history.length > MAX_HISTORY) this.history = this.history.slice(-MAX_HISTORY);
   }
   /**
@@ -558,6 +577,11 @@ export class Organizer {
   /** Explainable, read-only ranking for «Что делать сейчас». */
   smartPriority(limit = 5, now = this.now()) {
     return this.smartPriorityService.rank(Math.min(10, Math.max(1, limit)), now);
+  }
+
+  /** Durable behavioural memory behind Smart Priority; read-only summary. */
+  taskMemory() {
+    return this.taskMemoryService.summary();
   }
 
   /** Preview/apply Smart Day Planner. Apply requires the preview fingerprint. */
