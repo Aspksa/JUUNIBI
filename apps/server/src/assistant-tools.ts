@@ -221,6 +221,55 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
           afterExcerpt: after.slice(prefix, Math.min(after.length - suffix, prefix + 12)),
           warning: "Для записи используйте write_file с подтверждением владельца; повторно проверьте SHA256 непосредственно перед записью." };
       } },
+    { name: "unified_intelligence_preview", risk: "read", description: "Единый безопасный предварительный цикл assistant → memory → brain: выбор инструментов, источники, проверка качества и диагностика. Не запускает инструменты и не изменяет данные.",
+      parameters: { type: "object", properties: {
+        goal: str("Цель пользователя", { minLength: 2, maxLength: 500 }),
+        verifiedFacts: { type: "array", description: "Только подтверждённые факты с источником: {claim,source}" },
+        outcomes: { type: "array", description: "Наблюдаемые результаты: {tool,ok}" },
+        ratings: { type: "array", description: "Оценки: {tool,rating} от 1 до 5" }
+      }, required: ["goal"] },
+      run: (a) => {
+        const goal = String(a.goal ?? "").trim().slice(0, 500);
+        if (goal.length < 2) return { error: "Укажите цель" };
+        const facts = Array.isArray(a.verifiedFacts) ? a.verifiedFacts.slice(0, 50) : [];
+        const verified = facts.filter((x): x is { claim: string; source: string } =>
+          !!x && typeof x === "object" && typeof x.claim === "string" && !!x.claim.trim() &&
+          typeof x.source === "string" && !!x.source.trim()).map(x => ({ claim: x.claim.slice(0, 500), source: x.source.slice(0, 250) }));
+        const claims = verified.map(x => x.claim.toLocaleLowerCase("ru").trim());
+        const contradictions = verified.filter(x => {
+          const c = x.claim.toLocaleLowerCase("ru").trim();
+          return claims.includes(c.startsWith("не ") ? c.slice(3) : "не " + c);
+        });
+        const settings = d.settings();
+        const options = [
+          { tool: "search_memory", module: "memory", why: "Найти контекст в подтверждённой долгой памяти", enabled: true, available: "not-tested" },
+          { tool: "brain_search_verified_knowledge", module: "brain", why: "Проверить факты и источники до планирования", enabled: true, available: "not-tested" },
+          { tool: "brain_v4_unified_review", module: "brain", why: "Проверить риски, логику и альтернативы", enabled: true, available: "not-tested" },
+          { tool: "brain_review_six_skills", module: "brain", why: "Проверить причины и пробелы знаний", enabled: true, available: "not-tested" },
+          { tool: "brain_cognitive_cycle_preview", module: "brain", why: "Подготовить безопасный следующий шаг", enabled: true, available: "not-tested" },
+          { tool: "web_search", module: "assistant", why: "Проверить свежие внешние сведения при необходимости", enabled: settings.web, available: "not-tested" }
+        ];
+        const outcomes = Array.isArray(a.outcomes) ? a.outcomes.slice(0, 100) : [];
+        const validOutcomes = outcomes.filter((x): x is { tool: string; ok: boolean } =>
+          !!x && typeof x.tool === "string" && typeof x.ok === "boolean");
+        const ratings = Array.isArray(a.ratings) ? a.ratings.slice(0, 100).filter((x): x is {tool:string;rating:number} =>
+          !!x && typeof x.tool === "string" && typeof x.rating === "number" && Number.isFinite(x.rating) && x.rating >= 1 && x.rating <= 5) : [];
+        const tools = options.map(x => {
+          const history = validOutcomes.filter(o => o.tool === x.tool);
+          const success = history.filter(o => o.ok).length;
+          const scores = ratings.filter(o => o.tool === x.tool);
+          return { ...x, tested: history.length > 0, successfullyUsed: success > 0,
+            successfulCalls: success, failedCalls: history.length - success,
+            successRate: history.length ? success / history.length : null,
+            userRating: scores.length ? scores.reduce((n,o) => n + o.rating, 0) / scores.length : null,
+            approvalRequired: false };
+        });
+        return { goal, verifiedFacts: verified, possibleContradictions: contradictions,
+          recommendations: tools, quality: { observedCalls: validOutcomes.length, failures: validOutcomes.filter(x => !x.ok).length },
+          nextStep: "Начать с search_memory и brain_search_verified_knowledge, затем запустить безопасный обзор",
+          executesAutomatically: false, requiresApprovalForWrites: true,
+          note: "Это предварительный анализ. Статус not-tested не означает доступность; запуск инструментов и запись не выполняются." };
+      } },
     { name: "suggest_tool", risk: "read", description: "Подобрать подходящий инструмент по описанию задачи без его запуска.",
       parameters: { type: "object", properties: { task: str("Задача", { minLength: 2, maxLength: 300 }) }, required: ["task"] },
       run: (a) => {
