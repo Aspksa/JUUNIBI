@@ -105,6 +105,26 @@ describe("RequestContextBuilder", () => {
     expect(ephemeral.messages.some(m => m.role === "system" && String(m.content).includes("короткое продолжение"))).toBe(false);
   });
 
+  it("adapts dialogue style and avoids repeated greetings without extra memory", async () => {
+    const sessions = new SessionHistory(40);
+    const builder = new RequestContextBuilder({ memory: new Memory(), summaries: summaries(), sessions });
+    const history = [
+      { role: "assistant" as const, content: "Хозяин, привет!" },
+      { role: "user" as const, content: "Привет" },
+      { role: "assistant" as const, content: "Хозяин, я здесь." },
+    ];
+    const task = await builder.prepare({ text: "Проверь тесты", session: "s", history });
+    const system = task.messages.filter(m => m.role === "system").map(m => String(m.content)).join("\\n");
+    expect(system).toContain("Манера текущего ответа: деловой");
+    expect(system).toContain("опусти повторное обращение");
+    const supportive = await builder.prepare({ text: "Мне страшно", session: "s", history: [] });
+    expect(supportive.messages.some(m => String(m.content).includes("Манера текущего ответа: поддерживающий"))).toBe(true);
+    const playful = await builder.prepare({ text: "Пошути", session: "s", history: [] });
+    expect(playful.messages.some(m => String(m.content).includes("Манера текущего ответа: игривый"))).toBe(true);
+    const ephemeral = await builder.prepare({ text: "Проверь тесты", session: "s", history, ephemeral: true });
+    expect(ephemeral.messages.some(m => String(m.content).includes("Манера текущего ответа:"))).toBe(false);
+  });
+
   it("nowLine keeps explicit date, time and timezone context", () => {
     expect(nowLine(new Date(2026, 9, 9, 5, 30))).toMatch(
       /^Сейчас: .*пятниц.*9 октября 2026.*05:30 \(UTC[+-]\d\d:\d\d\)\.$/,
