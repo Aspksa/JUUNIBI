@@ -1,4 +1,5 @@
 import { Logger } from "@juunibi/core";
+import type { PersonalitySnapshot } from "./personality";
 import { DiagnosticCoordinator, type DiagnosticBatch } from "./diagnostic-coordinator";
 import { AgentLoop, type AgentLoopEvent } from "./agent-loop";
 import type { LlmProvider } from "./llm";
@@ -62,6 +63,8 @@ export interface AssistantOptions {
   toolPolicy?: (tool: string) => boolean;
   /** Optional queue used by the server to safely request user consent. */
   persona?: string;
+  /** Approved, trusted personality snapshot; never inferred from raw chat. */
+  personality?: () => PersonalitySnapshot;
   /** Trusted optional presentation cue selected for each user turn. */
   emotionCue?: (message: string, previousMessage?: string) => string;
   /** The owner's own instructions (who they are, how to answer), added to every system prompt. Empty = none. */
@@ -123,6 +126,7 @@ export class Assistant {
       ...(o.prefs ? { prefs: o.prefs } : {}),
       ...(o.now ? { now: o.now } : {}),
       ...(o.persona ? { persona: o.persona } : {}),
+      ...(o.personality ? { personality: o.personality } : {}),
       ...(o.emotionCue ? { emotionCue: o.emotionCue } : {}),
       ...(o.instructions ? { instructions: o.instructions } : {}),
       ...(o.describeModules ? { describeModules: o.describeModules } : {}),
