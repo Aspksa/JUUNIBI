@@ -61,7 +61,7 @@ export interface AssistantOptions {
   /** Optional queue used by the server to safely request user consent. */
   persona?: string;
   /** Trusted optional presentation cue selected for each user turn. */
-  emotionCue?: (message: string) => string;
+  emotionCue?: (message: string, previousMessage?: string) => string;
   /** The owner's own instructions (who they are, how to answer), added to every system prompt. Empty = none. */
   instructions?: () => string;
 }

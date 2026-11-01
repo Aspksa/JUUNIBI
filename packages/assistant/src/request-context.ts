@@ -24,7 +24,7 @@ export interface RequestContextBuilderOptions {
   prefs?: () => AssistantPrefs;
   now?: () => Date;
   persona?: string;
-  emotionCue?: (message: string) => string;
+  emotionCue?: (message: string, previousMessage?: string) => string;
   instructions?: () => string;
   describeModules?: () => unknown;
   describeBrain?: () => unknown;
@@ -106,10 +106,12 @@ export class RequestContextBuilder {
     }) + "\n\n" + taskExecutionInstructions(input.text);
 
     const guidance = guidanceInstructions(input.brainGuidance);
+    const previousUserMessage = [...history].reverse().find(item => item.role === "user")?.content ?? undefined;
+    const emotionCue = !input.ephemeral ? this.options.emotionCue?.(input.text, previousUserMessage) : undefined;
     const messages: Message[] = [
       { role: "system", content: system },
       ...(guidance ? [{ role: "system" as const, content: guidance }] : []),
-      ...(!input.ephemeral && this.options.emotionCue?.(input.text) ? [{ role: "system" as const, content: this.options.emotionCue(input.text).slice(0, 500) }] : []),
+      ...(emotionCue ? [{ role: "system" as const, content: emotionCue.slice(0, 500) }] : []),
       ...history.slice(-HISTORY_LIMIT),
       { role: "user", content: input.text },
     ];

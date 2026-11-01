@@ -27,7 +27,7 @@ export function characterGuidance(raw: unknown): string {
 }
 
 /** Pure presentation-only emotional cue; never a factual claim or permission grant. */
-export function characterEmotionCue(raw: unknown, message: string): string {
+export function characterEmotionCue(raw: unknown, message: string, previousMessage?: string): string {
   if (!raw || typeof raw !== "object" || !Array.isArray((raw as { emotions?: unknown }).emotions)) return "";
   if (typeof message !== "string" || !message.trim()) return "";
   const patterns: readonly [string, RegExp][] = [
@@ -38,6 +38,7 @@ export function characterEmotionCue(raw: unknown, message: string): string {
     ["playfulness", /(?:шутк|пошути|играем|розыгрыш)/iu],
   ];
   const id = patterns.find(([, pattern]) => pattern.test(message.slice(0, 1000)))?.[0] ?? "calm";
+  const previous = typeof previousMessage === "string" ? patterns.find(([, pattern]) => pattern.test(previousMessage.slice(0, 1000)))?.[0] : undefined;
   const emotion = (raw as { emotions: unknown[] }).emotions.find(item =>
     !!item && typeof item === "object" && (item as { id?: unknown }).id === id) as
       { name?: unknown; ears?: unknown; tails?: unknown } | undefined;
@@ -45,5 +46,6 @@ export function characterEmotionCue(raw: unknown, message: string): string {
   const name = emotion.name.slice(0, 48);
   const ears = typeof emotion.ears === "string" ? emotion.ears.slice(0, 100) : "";
   const tails = typeof emotion.tails === "string" ? emotion.tails.slice(0, 100) : "";
-  return `Эмоциональный оттенок художественного персонажа: ${name}. Визуальные реакции (только для сцены, не выдавай за физическое действие): уши — ${ears}; хвосты — ${tails}. Сохраняй точность, уважение и деловой стиль при решении задачи.`;
+  const transition = previous && previous !== id ? " Переход от предыдущего эмоционального оттенка к текущему должен быть мягким, без резкой смены манеры и без сохранения эмоционального состояния как факта." : "";
+  return `Эмоциональный оттенок художественного персонажа: ${name}.${transition} Визуальные реакции (только для сцены, не выдавай за физическое действие): уши — ${ears}; хвосты — ${tails}. Сохраняй точность, уважение и деловой стиль при решении задачи.`;
 }

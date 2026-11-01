@@ -24,6 +24,13 @@ describe("contextual character presentation", () => {
     expect(cue).toContain("только для сцены");
     expect(cue).not.toContain("Я испытываю");
   });
+  it("smooths a changed mood only when a preceding user turn is available", () => {
+    const changed = characterEmotionCue(profile, "Сделай отчёт", "Мне страшно");
+    expect(changed).toContain("спокойствие");
+    expect(changed).toContain("Переход от предыдущего");
+    expect(characterEmotionCue(profile, "Сделай отчёт", "Подготовь таблицу")).not.toContain("Переход от предыдущего");
+    expect(characterEmotionCue(profile, "Мне страшно", "Боюсь")).not.toContain("Переход от предыдущего");
+  });
   it("uses calm for ordinary requests and no cues for invalid input", () => {
     expect(characterEmotionCue(profile, "Сделай отчёт")).toContain("спокойствие");
     expect(characterEmotionCue({}, "Ура!")).toBe("");
