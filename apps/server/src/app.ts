@@ -9,7 +9,7 @@ import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import path from "node:path";
-import type { Assistant, ApprovalGate } from "@juunibi/assistant";
+import type { Assistant, ApprovalGate, PersonalitySnapshot, Trait } from "@juunibi/assistant";
 
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
@@ -62,6 +62,11 @@ export interface ModuleControl {
   };
 }
 export interface AppDeps {
+  personality?: {
+    current(): Promise<PersonalitySnapshot>;
+    adjustTrait(trait: Trait, delta: number, approved: boolean): Promise<PersonalitySnapshot>;
+    restore(version: number, approved: boolean): Promise<PersonalitySnapshot>;
+  };
   moduleControl?: ModuleControl;
   /** Owner preferences for the assistant (embeddings, memory proposals, summaries, files, web, quick commands). */
   settings?: AssistantSettingsStore;
@@ -257,6 +262,28 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           return send(res, 200, {...wifi, router});
         }
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
+        if (p === "/api/personality" && req.method === "GET") {
+          if (lan) return send(res, 403, { error: "Только локальный доступ" });
+          if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
+          return send(res, 200, await deps.personality.current());
+        }
+        if (p === "/api/personality/trait" && req.method === "POST") {
+          if (lan) return send(res, 403, { error: "Только локальный доступ" });
+          if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
+          const b = await readJson(req);
+          if (b.approved !== true || !["warmth", "curiosity", "brevity", "initiative"].includes(String(b.trait)) ||
+              typeof b.delta !== "number" || !Number.isFinite(b.delta) || Math.abs(b.delta) > 0.1)
+            return send(res, 400, { error: "Неверные параметры или отсутствует подтверждение" });
+          return send(res, 200, await deps.personality.adjustTrait(b.trait as Trait, b.delta, true));
+        }
+        if (p === "/api/personality/restore" && req.method === "POST") {
+          if (lan) return send(res, 403, { error: "Только локальный доступ" });
+          if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
+          const b = await readJson(req);
+          if (b.approved !== true || !Number.isSafeInteger(b.version) || (b.version as number) < 1)
+            return send(res, 400, { error: "Неверная версия или отсутствует подтверждение" });
+          return send(res, 200, await deps.personality.restore(b.version as number, true));
+        }
         const a = deps.getAssistant?.() ?? deps.assistant;
         if (p === "/api/vault" || p.startsWith("/api/vault/")) {
           if (lan) return send(res, 403, { error: "Пароли открываются только на компьютере" });
