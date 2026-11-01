@@ -55,7 +55,7 @@ describe("menu prefs", () => {
     expect(itemForDigit(p, "Digit8")?.id).toBe("update");
     expect(itemForDigit(p, "Digit0")).toBeNull();
     expect(itemForDigit(p, "KeyA")).toBeNull();
-    expect(hotkeyLabel(p, "settings")).toBeNull();
+    expect(hotkeyLabel(p, "settings")).toBe("Alt+9");
   });
 });
 
