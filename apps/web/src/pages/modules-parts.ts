@@ -122,13 +122,35 @@ export function toolsView(): HTMLElement {
   void api.moduleTools().then((r) => {
     if (!r.ok) { box.replaceChildren(el("p", { cls: "flash bad", textContent: r.error.message })); return; }
     if (!r.value.length) { box.replaceChildren(el("p", { cls: "br-empty muted", textContent: "Инструментов нет: помощница не подключена." })); return; }
-    const groups = new Map<string, ModuleToolInfo[]>();
-    for (const t of r.value) groups.set(t.module, [...(groups.get(t.module) ?? []), t]);
+    const all = r.value;
+    const search = el("input", { type: "search", placeholder: "Найти инструмент, модуль или назначение", attrs: { "aria-label": "Поиск инструментов" } }) as HTMLInputElement;
+    const filter = el("select", { attrs: { "aria-label": "Фильтр инструментов" } },
+      ...([["all", "Все"], ["allowed", "Разрешены"], ["blocked", "Отключены"], ["errors", "С ошибками"], ["denied", "С отказами"]] as const)
+        .map(([value, label]) => el("option", { value, textContent: label }))) as HTMLSelectElement;
+    const count = el("p", { cls: "muted small", attrs: { role: "status", "aria-live": "polite" } });
+    const results = el("div");
+    const draw = () => {
+      const q = search.value.trim().toLocaleLowerCase("ru-RU");
+      const visible = all.filter((t) =>
+        (!q || [t.name, t.description, t.module].some((v) => v.toLocaleLowerCase("ru-RU").includes(q))) &&
+        (filter.value === "all" || (filter.value === "allowed" && t.allowed) ||
+          (filter.value === "blocked" && !t.allowed) ||
+          (filter.value === "errors" && t.errors24h > 0) ||
+          (filter.value === "denied" && t.denied24h > 0)));
+      count.textContent = `Показано ${visible.length} из ${all.length}. Разрешено: ${all.filter((t) => t.allowed).length}; отключено: ${all.filter((t) => !t.allowed).length}; с ошибками: ${all.filter((t) => t.errors24h > 0).length}.`;
+      const groups = new Map<string, ModuleToolInfo[]>();
+      for (const t of visible) groups.set(t.module, [...(groups.get(t.module) ?? []), t]);
+      results.replaceChildren(...(visible.length ? [...groups].map(([name, tools]) => sub(name, toolRows(tools))) :
+        [el("p", { cls: "br-empty muted", textContent: "По заданным условиям инструменты не найдены." })]));
+    };
+    search.addEventListener("input", draw);
+    filter.addEventListener("change", draw);
     box.replaceChildren(
       el("header", { cls: "br-block-head" }, el("h2", { textContent: "Инструменты помощницы" }),
-        el("p", { cls: "muted", textContent: "Выключатель закрывает инструмент для помощницы. Открыть больше, чем разрешено, он не может: инструменты записи по-прежнему требуют вашего подтверждения. Счётчики — по последним 100 вызовам." })),
-      ...[...groups].map(([name, tools]) => sub(name, toolRows(tools))));
-  });
+        el("p", { cls: "muted", textContent: "Выключатель ограничивает доступ, но не отменяет подтверждение записи и опасных действий. Статистика — по последним 100 вызовам." })),
+      el("div", { cls: "br-row" }, search, filter), count, results);
+    draw();
+  }).catch(() => { box.replaceChildren(el("p", { cls: "flash bad", textContent: "Не удалось загрузить инструменты. Попробуйте открыть раздел повторно." })); });
   return box;
 }
 
