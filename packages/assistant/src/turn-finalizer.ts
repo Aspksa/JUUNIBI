@@ -61,6 +61,7 @@ export class TurnFinalizer {
       this.options.sessions.appendTurn(input.session, input.user, input.reply);
     }
 
+    const previous = this.options.journal.snapshot().filter(turn => turn.session === input.session).at(-1);
     const turn = await this.options.journal.record({
       session: input.session,
       user: input.user,
@@ -70,7 +71,7 @@ export class TurnFinalizer {
     });
 
     if (input.background === "full") {
-      this.options.memoryLearning.queue(input.user, input.prefs.suggestions);
+      this.options.memoryLearning.queue(input.user, input.prefs.suggestions, previous?.reply);
     }
 
     return {
