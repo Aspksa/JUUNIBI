@@ -116,6 +116,21 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
       run: (a) => d.organizer.addReminder(a.text, a.at, a.repeat) },
     { name: "cancel_reminder", risk: "write", description: "Отменить напоминание (повторяющееся больше не сработает). Требует подтверждения.",
       parameters: { type: "object", properties: { id: str("Идентификатор из list_reminders") }, required: ["id"] }, run: (a) => d.organizer.dismissReminder(String(a.id)) },
+    { name: "search_all_knowledge", risk: "read", description: "Единый поиск по заметкам и документам на Диске владельца с указанием источника. Подтверждённую долгую память ищи отдельным search_memory; неподтверждённые записи не включаются." + DATA,
+      parameters: { type: "object", properties: { query: str("Поисковая фраза", { minLength: 2, maxLength: 160 }) }, required: ["query"] },
+      run: async (a) => {
+        const q = String(a.query).trim().toLocaleLowerCase();
+        if (q.length < 2) return { error: "Укажите минимум два символа" };
+        const words = q.split(/\\s+/).filter(Boolean);
+        const notes = d.organizer.listNotes().filter((n) => words.every((w) => JSON.stringify(n).toLocaleLowerCase().includes(w))).slice(0, 20)
+          .map((n) => ({ source: "organizer", id: n.id, text: n.text }));
+        if (!d.disk) return { notes, documents: [], note: "Диск не подключён. Долгую память можно искать инструментом search_memory." };
+        const files = d.disk.list().files;
+        const inside = new Set(await d.disk.searchContent(q).catch(() => [] as string[]));
+        const documents = files.filter((f) => inside.has(f.id) || words.every((w) => [f.name, f.note ?? "", f.folder, ...(f.tags ?? [])].join(" ").toLocaleLowerCase().includes(w)))
+          .slice(0, 20).map((f) => ({ source: "disk", id: f.id, name: f.name, folder: f.folder, matchInText: inside.has(f.id) }));
+        return { notes, documents, note: "Для поиска по подтверждённой долгой памяти используйте search_memory." };
+      } },
     { name: "daily_brief", risk: "read", description: "Данные для сводки дня: напоминания, дела, планы, память на подтверждение, сбои модулей, обновления. Перескажи их коротко и по делу.",
       parameters: { type: "object", properties: {} }, run: () => d.brief() },
   ];
