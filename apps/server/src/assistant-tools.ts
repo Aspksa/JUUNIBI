@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { buildRagContext } from "./rag-context";
+import type { VerifiedKnowledge } from "./knowledge-ledger";
 import path from "node:path";
 import { computerSnapshot, listWindowsProcesses } from "./windows-bridge";
 import type { Tool } from "@juunibi/assistant";
@@ -220,6 +222,20 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
           beforeExcerpt: before.slice(prefix, Math.min(before.length - suffix, prefix + 12)),
           afterExcerpt: after.slice(prefix, Math.min(after.length - suffix, prefix + 12)),
           warning: "Для записи используйте write_file с подтверждением владельца; повторно проверьте SHA256 непосредственно перед записью." };
+      } },
+    { name: "rag_grounded_context", risk: "read", description: "Подготовить контекст RAG только из переданных проверенных знаний с источниками и контролем актуальности. Не выполняет поиск самостоятельно и не записывает память.",
+      parameters: { type: "object", properties: {
+        query: str("Поисковый запрос", { minLength: 2, maxLength: 300 }),
+        knowledge: { type: "array", description: "Подтверждённые записи из реестра знаний" }
+      }, required: ["query", "knowledge"] },
+      run: (a) => {
+        if (!Array.isArray(a.knowledge) || a.knowledge.length > 100) return { error: "Допускается до 100 записей" };
+        const knowledge = a.knowledge.filter((x): x is VerifiedKnowledge =>
+          !!x && typeof x === "object" && typeof x.id === "string" && typeof x.topic === "string" &&
+          typeof x.claim === "string" && typeof x.source === "string" &&
+          typeof x.verifiedAt === "string" && typeof x.nextReviewAt === "string" &&
+          (x.status === "verified" || x.status === "needs-review") && typeof x.reviewCount === "number");
+        return buildRagContext(knowledge, String(a.query ?? ""));
       } },
     { name: "unified_intelligence_preview", risk: "read", description: "Единый безопасный предварительный цикл assistant → memory → brain: выбор инструментов, источники, проверка качества и диагностика. Не запускает инструменты и не изменяет данные.",
       parameters: { type: "object", properties: {
