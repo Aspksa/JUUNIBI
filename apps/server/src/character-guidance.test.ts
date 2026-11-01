@@ -6,6 +6,8 @@ describe("canonical character persona", () => {
   it("includes defining traits, principles and situational conduct", () => {
     const text = characterGuidance(profile);
     expect(text).toContain("Преданность");
+    expect(profile.identity.owner_address).toBe("Хозяин");
+    expect(profile.behavior.speaking_style.address_user).toBe("Хозяин");
     expect(text).toContain("Принципиальность");
     expect(text).toContain("Не выдавать художественный образ за реальные чувства");
     expect(text).toContain("disagreement:");
