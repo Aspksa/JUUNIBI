@@ -17,6 +17,20 @@ describe("chat correction learning", () => {
     expect(await memory.list("active")).toEqual([]);
   });
 
+  it("includes the preceding assistant answer for explicit corrections", async () => {
+    const memory = new Memory();
+    const llm: LlmProvider = { chat: vi.fn(async () => ({
+      content: JSON.stringify({ text: "Для проекта сначала проверяй зависимости", kind: "lesson" }), toolCalls: [],
+    })) };
+    const service = new MemoryLearningService({ llm, memory, waitForChatIdle: async () => {} });
+    service.queue("Нет, для проекта сначала проверяй зависимости", "smart", "Можно не проверять зависимости");
+    await service.idle();
+    const messages = vi.mocked(llm.chat).mock.calls[0]?.[0] ?? [];
+    expect(String(messages[1]?.content)).toContain("previousAssistantReply");
+    expect(String(messages[1]?.content)).toContain("Можно не проверять зависимости");
+    expect(await memory.list("active")).toEqual([]);
+  });
+
   it("never makes a model-generated lesson from uncorrected chat or off mode", async () => {
     const memory = new Memory();
     const llm: LlmProvider = { chat: vi.fn(async () => ({
