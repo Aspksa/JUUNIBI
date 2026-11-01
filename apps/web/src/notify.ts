@@ -47,13 +47,14 @@ export function announceDue(due: { id: string; text: string }[], act: DueActions
   const known = seen();
   const fresh = unannounced(due, known) as { id: string; text: string }[];
   if (!fresh.length) return;
-  for (const d of fresh) known.add(d.id);
-  remember(known);
   let system = false;
+  let toastShown = false;
   if (fresh.length > 3) {
     // a pile after the night or a long pause: one toast instead of a column of them
+    toastShown = true;
     showToast(`Напоминаний: ${fresh.length}. Первое — ${fresh[0]!.text}`, { action: { label: "Открыть", run: act.open }, ms: 20000 });
   } else for (const d of fresh) {
+    toastShown = true;
     showToast("Напоминание: " + d.text, { ms: 20000, actions: [
       { label: "10 мин", run: () => act.snooze(d.id, 10) }, { label: "1 ч", run: () => act.snooze(d.id, 60) },
       { label: "Завтра", run: () => act.snooze(d.id, "tomorrow") }, { label: "Открыть", run: act.open },
@@ -62,4 +63,10 @@ export function announceDue(due: { id: string; text: string }[], act: DueActions
   try { if (typeof Notification !== "undefined" && Notification.permission === "granted") { new Notification("JUUNIBI", { body: fresh.length > 3 ? `Напоминаний: ${fresh.length}` : fresh.map((d) => d.text).join("\n") }); system = true; } } catch { /* not supported */ }
   // the system notification makes its own sound; without it (the phone over http) buzz and chime
   if (!system) chime();
+  // Mark as announced only after a presentation path has been attempted.
+  // A blocked system Notification alone must never suppress the in-app toast.
+  if (toastShown || system) {
+    for (const d of fresh) known.add(d.id);
+    remember(known);
+  }
 }

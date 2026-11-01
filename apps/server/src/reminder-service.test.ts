@@ -109,6 +109,16 @@ describe("ReminderService", () => {
     expect(released.releasedFromQuiet).toBe(1);
   });
 
+  it("does not accumulate repeated due copies while an earlier occurrence is outstanding", async () => {
+    const x = make();
+    const series = await x.service.add("Вода", "2026-10-09T09:00:00Z", "daily");
+    x.setNow(Date.parse("2026-10-09T10:00:00Z"));
+    expect(x.service.processDue().fired).toHaveLength(1);
+    x.setNow(Date.parse("2026-10-10T10:00:00Z"));
+    expect(x.service.processDue().fired).toHaveLength(0);
+    expect(x.reminders.filter((item) => item.seriesId === series.id && item.status === "due")).toHaveLength(1);
+  });
+
   it("drops obsolete rule reminders for completed source tasks", async () => {
     const x = make();
     x.notes.push({
