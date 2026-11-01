@@ -1,4 +1,5 @@
 import { el } from "../dom";
+import type { Chats } from "../chat/chats";
 
 type Trait = "warmth" | "curiosity" | "brevity" | "initiative";
 type Snapshot = { version: number; traits: Record<Trait, number>; acceptedLessons: string[] };
@@ -17,16 +18,17 @@ async function apiRequest<T>(url: string, body?: object): Promise<T> {
   return data as T;
 }
 
-export function personalityPanel(): HTMLElement {
+export function personalityPanel(chats?: Chats): HTMLElement {
   const status = el("p", { cls: "muted", textContent: "Загрузка профиля…" });
   const controls = el("div");
   const versions = el("div");
   const lessonForm = el("form");
+  const suggestions = el("div");
   const panel = el("section", { cls: "pg-card set-card", id: "personality-panel" },
     el("header", { cls: "set-card-head" },
       el("div", {}, el("h2", { textContent: "Личность JUUNIBI" }),
         el("p", { cls: "muted", textContent: "Характер, уроки общения и история изменений. Все изменения подтверждаются." }))),
-    el("div", { cls: "set-card-body" }, status, controls, versions, lessonForm));
+    el("div", { cls: "set-card-body" }, status, controls, versions, lessonForm, suggestions));
   let busy = false;
   async function change(url: string, body: object) {
     if (busy) return;
@@ -89,6 +91,28 @@ export function personalityPanel(): HTMLElement {
       id, lesson: lesson.value.trim(), evidence: [evidence.value.trim()], confidence: Number(confidence.value),
     });
   });
+  const scan = el("button", { type: "button", textContent: "Анализировать историю чатов" });
+  scan.addEventListener("click", async () => {
+    if (!chats) return;
+    const messages = chats.store.get().items.flatMap(chat => chat.messages)
+      .filter(message => message.role === "user").sort((a, b) => a.at - b.at)
+      .slice(-100).map(message => ({ role: "user", content: message.content.slice(0, 2000) }));
+    try {
+      const proposals = await apiRequest<{ lesson: string; evidence: string[]; confidence: number }[]>(
+        "/api/personality/suggestions", { messages });
+      suggestions.replaceChildren(scan, el("p", { textContent: proposals.length ?
+        "Предложения требуют вашего подтверждения." : "Явных пожеланий по стилю не найдено." }),
+        ...proposals.map(proposal => {
+          const approve = el("button", { type: "button", textContent: "Принять" });
+          approve.addEventListener("click", () => {
+            if (confirm("Принять урок: " + proposal.lesson + "?"))
+              void change("/api/personality/lesson", { ...proposal, id: "lesson-" + crypto.randomUUID() });
+          });
+          return el("div", { cls: "set-row" }, el("span", { textContent: proposal.lesson }), approve);
+        }));
+    } catch (error) { status.textContent = (error as Error).message; }
+  });
+  suggestions.append(scan);
   void load();
   return panel;
 }
