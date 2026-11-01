@@ -134,10 +134,7 @@ export class RamoEvolution {
         for (const chat of this.readChats().slice(-100)) {
           const analysis = analyzeDialogue(chat.messages, chat.id, now);
           if (s.config.memory) newExperiences.push(...analysis.experiences);
-          if (s.config.quality) {
-            s.metrics.repeatedReplies += analysis.metrics.repeatedReplies;
-            s.metrics.negativeRatings += analysis.metrics.negativeRatings;
-          }
+
           for (const msg of chat.messages.slice(-300)) {
             if (msg.role !== "user" || typeof msg.content !== "string") continue;
             const key = signature(chat.id + ":" + (msg.id ?? "") + ":" + msg.content);
@@ -161,6 +158,12 @@ export class RamoEvolution {
           s.goals = s.goals.slice(-50);
         }
         if (s.config.quality) {
+          const aggregate = { ...defaults().metrics };
+          for (const chat of this.readChats().slice(-100)) {
+            const m = analyzeDialogue(chat.messages, chat.id, now).metrics;
+            for (const key of Object.keys(aggregate) as (keyof DialogueMetrics)[]) aggregate[key] += m[key];
+          }
+          s.metrics = aggregate;
           const normalized = candidates.map(x => x.content.trim().toLowerCase());
           s.qualitySignals += normalized.length - new Set(normalized).size;
         }
