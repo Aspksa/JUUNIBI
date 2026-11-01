@@ -56,6 +56,7 @@ function make(
     getAutomation: () => automation,
     getMissions: () => options.missions ?? [],
     isWork: (note) => workIds.has(note.id),
+    recall: () => ({ confidence: 0, observations: 0, friction: 0, riskBoost: 0, reasons: [] }),
     workDayFor: () => options.workDay ?? true,
     now: () => now,
   });
@@ -142,6 +143,33 @@ describe("SmartPriorityService", () => {
     expect(result.mode).toBe("personal");
     expect(result.recommended[0]?.id).toBe("home");
     expect(result.recommended[0]?.reasons).toContain("Подходит для личного времени");
+  });
+
+  it("uses behavioural memory as an explainable ranking signal", () => {
+    const notes = [
+      todo("memory", "Подготовить отчёт"),
+      todo("plain", "Обычная задача"),
+    ];
+    const service = new SmartPriorityService({
+      getNotes: () => notes,
+      getAutomation: () => ({ ...DEFAULT_AUTOMATION, rules: [] }),
+      getMissions: () => [],
+      isWork: () => true,
+      recall: (note) => note.id === "memory"
+        ? { confidence: 80, observations: 8, friction: 0.7, learnedEstimateMinutes: 75, riskBoost: 18, reasons: ["Похожие дела часто переносились", "Память: похожие дела обычно оцениваются примерно в 75 мин"] }
+        : { confidence: 0, observations: 0, friction: 0, riskBoost: 0, reasons: [] },
+      workDayFor: () => true,
+      now: () => new Date(2026, 9, 15, 10, 0).getTime(),
+    });
+
+    const result = service.rank();
+    expect(result.recommended[0]).toMatchObject({
+      id: "memory",
+      estimateMinutes: 75,
+      estimateSource: "memory",
+      memoryConfidence: 80,
+    });
+    expect(result.recommended[0]?.reasons).toContain("Похожие дела часто переносились");
   });
 
   it("rewards quick wins but urgency remains stronger", () => {
