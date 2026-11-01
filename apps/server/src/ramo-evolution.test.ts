@@ -15,6 +15,8 @@ describe("RamoEvolution", () => {
     expect(state.queue).toHaveLength(1);
     expect(state.queue[0]!.status).toBe("pending");
     expect(state.analyzedMessages).toBe(1);
+    expect(state.memoryDigest).toHaveLength(1);
+    expect(state.qualitySignals).toBe(0);
     await engine.run(true);
     expect((await engine.snapshot()).queue).toHaveLength(1);
     const restored = new RamoEvolution(store, () => chats, () => 200000);
