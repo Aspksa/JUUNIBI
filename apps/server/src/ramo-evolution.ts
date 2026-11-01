@@ -80,7 +80,8 @@ export class RamoEvolution {
       metrics: s.metrics && typeof s.metrics === "object" ? { ...defaults().metrics, ...s.metrics } : defaults().metrics,
       goals: Array.isArray(s.goals) ? s.goals.filter(x => x && typeof x.id === "string" && typeof x.title === "string" && ["proposed", "approved", "done"].includes(x.status)).slice(-50) : [],
       cognitiveMemories: Array.isArray(s.cognitiveMemories) ? s.cognitiveMemories.filter(x => x && typeof x.id === "string" && typeof x.content === "string" && x.content.length <= 350 && ["candidate", "approved", "rejected"].includes(x.status)).slice(-500) : [],
-      evaluation: s.evaluation && typeof s.evaluation === "object" ? s.evaluation : defaults().evaluation,
+      evaluation: s.evaluation && typeof s.evaluation === "object" && Number.isFinite(s.evaluation.score) &&
+        Number.isFinite(s.evaluation.cases) && Array.isArray(s.evaluation.failures) ? s.evaluation : defaults().evaluation,
       paused: s.paused === true,
       lastConsolidation: Number.isFinite(s.lastConsolidation) ? s.lastConsolidation! : 0,
     };
@@ -125,7 +126,7 @@ export class RamoEvolution {
   setGoal(id: string, status: "approved" | "done"): Promise<void> {
     return this.mutate(() => {
       const goal = this.state.goals.find(x => x.id === id);
-      if (!goal) throw new Error("Unknown evolution goal");
+      if (!goal || (status === "done" && goal.status !== "approved")) throw new Error("Invalid goal transition");
       goal.status = status;
     });
   }
