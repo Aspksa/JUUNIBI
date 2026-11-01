@@ -1,3 +1,4 @@
+import { RamoEvolution } from "./ramo-evolution";
 import { characterGuidance, characterEmotionCue } from "./character-guidance";
 import { KitsuneEvolution } from "./kitsune-evolution";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
@@ -228,6 +229,9 @@ await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.jso
 const chatStore = new ChatStore(path.join(dataDir, "chats.json"));
 await loadOrQuarantine("чаты", path.join(dataDir, "chats.json"), () => chatStore.load());
 /** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
+const ramoEvolution = new RamoEvolution(fileStore(path.join(dataDir, "ramo-evolution.json")),
+  () => chatStore.get().items.map(chat => ({ id: chat.id, messages: chat.messages as { id?: string; role: string; content: string; at?: number }[] })));
+await loadOrQuarantine("фоновое развитие Рамо", path.join(dataDir, "ramo-evolution.json"), () => ramoEvolution.snapshot());
 const achievements = new Achievements(path.join(dataDir, "achievements.json"), () => ({ now: Date.now(), notes: organizer.listNotes(), reminders: organizer.listReminders(), missions: organizer.listMissions(), history: organizer.listHistory(), autoCount: organizer.autoCounts() }));
 await loadOrQuarantine("достижения", path.join(dataDir, "achievements.json"), () => achievements.load());
 /** Start-of-day data, shared by the assistant tool and the Home page. */
@@ -511,6 +515,12 @@ const appDeps: AppDeps = {
     });
   },
   memory,
+  ramoEvolution: {
+    snapshot: () => ramoEvolution.snapshot(),
+    configure: (patch) => ramoEvolution.configure(patch),
+    run: () => ramoEvolution.run(true),
+    decide: (id, decision) => ramoEvolution.decide(id, decision),
+  },
   personality: {
     current: () => personalityHistory.current(),
     history: () => personalityHistory.history(),
@@ -577,6 +587,9 @@ const appDeps: AppDeps = {
   configured: { model: MODEL, hint },
   mobile,
 };
+const ramoTimer = setInterval(() => { void ramoEvolution.run().catch(error => log.warn("Фоновое развитие Рамо", error)); }, 60_000);
+ramoTimer.unref();
+void ramoEvolution.run().catch(error => log.warn("Фоновое развитие Рамо", error));
 const server = createApp(appDeps);
 checkUpdates();
 // Record a versioned evolution snapshot on each startup, without waiting for the UI to open.
@@ -617,9 +630,9 @@ let stopping = false;
 const shutdown = async (exitCode = 0) => {
   if (stopping) return;
   stopping = true;
-  clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); approvalGate.denyAll(); server.close(); void mobile.pause();
+  clearTimeout(initialLearningTimer); clearTimeout(learningDeferred); clearInterval(learningTimer); clearInterval(updateTimer); clearInterval(reminderTimer); clearInterval(ramoTimer); approvalGate.denyAll(); server.close(); void mobile.pause();
   // Let pending state writes finish so a stop never loses data.
-  await Promise.allSettled([brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), achievements.flush(), evalHistory.flush(), mobile.flush(), auditQueue,
+  await Promise.allSettled([ramoEvolution.flush(), brain.flush(), knowledge.flush(), learning.flush(), modules.flush(), manifests.flush(), settings.flush(), organizer.flush(), achievements.flush(), evalHistory.flush(), mobile.flush(), auditQueue,
     // Queued memory suggestions get a short grace period; a stuck model call must not block the stop.
     Promise.race([assistant?.idle(), new Promise((resolve) => setTimeout(resolve, 5000).unref())])]);
   await kernel.stop();

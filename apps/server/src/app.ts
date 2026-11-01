@@ -40,6 +40,7 @@ import { repeatedRequests } from "./suggestions";
 import { qrSvg, type MobileAccess } from "./mobile-access";
 import type { Vault } from "./vault";
 import type { ChatStore } from "./chat-store";
+import type { EvolutionConfig, EvolutionItem, EvolutionState } from "./ramo-evolution";
 import type { ChatExtras } from "./chat-extras";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
@@ -62,6 +63,12 @@ export interface ModuleControl {
   };
 }
 export interface AppDeps {
+  ramoEvolution?: {
+    snapshot(): Promise<EvolutionState & { running: boolean }>;
+    configure(patch: Partial<EvolutionConfig>): Promise<void>;
+    run(): Promise<void>;
+    decide(id: string, decision: "accepted" | "rejected"): Promise<EvolutionItem>;
+  };
   personality?: {
     current(): Promise<PersonalitySnapshot>;
     history(): Promise<PersonalitySnapshot[]>;
@@ -264,6 +271,43 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           return send(res, 200, {...wifi, router});
         }
         if (req.method !== "GET" && !originAllowed(req.headers.origin, req.headers.host)) return send(res, 403, { error: "Чужой origin" });
+        if (p.startsWith("/api/ramo/evolution")) {
+          if (lan) return send(res, 403, { error: "Только локальный доступ" });
+          const engine = deps.ramoEvolution;
+          if (!engine) return send(res, 503, { error: "Фоновое развитие недоступно" });
+          if (p === "/api/ramo/evolution" && req.method === "GET")
+            return send(res, 200, await engine.snapshot());
+          if (p === "/api/ramo/evolution/config" && req.method === "POST") {
+            const body = await readJson(req);
+            if (!body || typeof body !== "object" || Array.isArray(body) ||
+                Object.keys(body).some(k => !["enabled", "intervalMinutes", "night", "memory", "personality", "quality"].includes(k)) ||
+                (body.intervalMinutes !== undefined && ![15, 30, 60].includes(body.intervalMinutes as number)) ||
+                Object.entries(body).some(([k, v]) => k !== "intervalMinutes" && typeof v !== "boolean"))
+              return send(res, 400, { error: "Неверные настройки" });
+            await engine.configure(body as Partial<EvolutionConfig>);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/run" && req.method === "POST") {
+            await engine.run();
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/decision" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.id !== "string" || !/^ramo-[a-z0-9]{1,20}$/.test(body.id) ||
+                !["accepted", "rejected"].includes(String(body.decision)) || body.approved !== true)
+              return send(res, 400, { error: "Неверное решение" });
+            const snapshot = await engine.snapshot();
+            const item = snapshot.queue.find(x => x.id === body.id && x.status === "pending");
+            if (!item) return send(res, 404, { error: "Предложение не найдено" });
+            if (body.decision === "accepted") {
+              if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
+              await deps.personality.approveLesson(item, true);
+            }
+            await engine.decide(item.id, body.decision as "accepted" | "rejected");
+            return send(res, 200, await engine.snapshot());
+          }
+          return send(res, 404, { error: "Неизвестная операция" });
+        }
         if (p === "/api/personality" && req.method === "GET") {
           if (lan) return send(res, 403, { error: "Только локальный доступ" });
           if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
