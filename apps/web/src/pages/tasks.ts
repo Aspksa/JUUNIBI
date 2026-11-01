@@ -16,6 +16,7 @@ import { pickDiskFile } from "./disk-dialogs";
 import { isWorkday, nextHoliday, nextLongRest, nextWorkday, prodDay, prodStats, type DayKind } from "@juunibi/core";
 import kitsuneUrl from "../assets/kitsune.webp";
 import { taskBoard } from "./tasks-board";
+import { taskInsights } from "./tasks-insights";
 import { endOfDay, parseQuick, type QuickKind, type QuickParsed } from "./quick-entry";
 import { REPEAT_LABEL, REPEAT_OPTIONS, STATUS_LABEL, areaOf, dropDismissed, awayOn, buildTasks, dayLoadOf, daySummary, heroFallback, isDateOnly, localDay, markParts, meetingSpan, memoryDates, monthItems, moveTargets, planWeek, preferredArea, projectList, recognizedSpans, toLocalInput, weekProgress, workWeek, type AreaFilter, type ProjectInfo, type TaskFilter, type TimedItem } from "./tasks-model";
 
@@ -118,6 +119,9 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
   let editing: string | null = null;
   const listHost = el("div", { cls: "tasks-list", attrs: { "aria-live": "polite" } });
   const attHost = el("div", { cls: "tasks-attn" });
+  const insightsHost = el("details", { cls: "pg-card tasks-insights", attrs: { "aria-label": "Подсказки по делам" } });
+  const insightSummary = el("summary", { textContent: "Подсказки по делам" });
+  insightsHost.append(insightSummary);
   const calHost = el("section", { cls: "pg-card tasks-side-card tasks-cal", attrs: { "aria-label": "Календарь" } });
   const dayHost = el("section", { cls: "pg-card tasks-side-card", attrs: { "aria-label": "План дня" } });
   const goalsHost = el("section", { cls: "pg-card tasks-side-card tasks-goals-card", attrs: { "aria-label": "Цели" } });
@@ -645,6 +649,13 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
     if (!data) { listHost.replaceChildren(loadError ? emptyState("alert", "Не удалось загрузить", loadError, btn("Повторить", () => void load(), { small: true })) : el("p", { cls: "muted", textContent: "Загрузка…" })); return; }
     renderTop();
     renderList();
+    const insights = taskInsights(data.notes).slice(0, 8);
+    insightsHost.hidden = !insights.length;
+    insightSummary.textContent = `Подсказки по делам · ${insights.length}${insights.length === 8 ? "+" : ""}`;
+    insightsHost.replaceChildren(insightSummary, el("ul", { cls: "tasks-insights-list" }, ...insights.map((insight) => {
+      const note = data!.notes.find((n) => n.id === insight.taskId);
+      return el("li", {}, el("span", { cls: "grow", textContent: `${note?.text ?? "Дело"} — ${insight.message}` }));
+    })));
   }
   let doneOpen = false;
   const projectsMeta = () => data?.projects ?? [];
@@ -1793,6 +1804,7 @@ export function tasksPage(deps: TasksDeps): HTMLElement {
       el("div", { cls: "tasks-main" },
         el("section", { cls: "pg-card tasks-quick" }, form),
         eveHost,
+        insightsHost,
         listHead,
         bulkHost,
         listHost,
