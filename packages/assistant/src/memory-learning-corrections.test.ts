@@ -23,7 +23,7 @@ describe("chat correction learning", () => {
       content: JSON.stringify({ text: "Я предпочитаю писать аккуратно", kind: "lesson" }), toolCalls: [],
     })) };
     const service = new MemoryLearningService({ llm, memory, waitForChatIdle: async () => {} });
-    service.queue("Я предпочитаю писать аккуратно", "smart");
+    service.queue("Сегодня хорошая погода во дворе", "smart");
     service.queue("Нет, я предпочитаю писать аккуратно", "off");
     await service.idle();
     expect(await memory.list("pending")).toEqual([]);
