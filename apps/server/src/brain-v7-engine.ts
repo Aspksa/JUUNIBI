@@ -13,8 +13,8 @@ const tracks = {
  quality: ["stage_count","evidence","risk","warnings","sample_size","answer_accuracy","before_after","no_actions","unverified_gaps","report_complete"],
 } as const;
 
-export function evaluateBrainV7(input: UnifiedCycleInput) {
- const base = evaluateBrainV6(input);
+export function evaluateBrainV7(input: UnifiedCycleInput, precomputedV6?: ReturnType<typeof evaluateBrainV6>) {
+ const base = precomputedV6 ?? evaluateBrainV6(input);
  const arithmetic = verifyIntegerEquation(input.message.slice(0,4000));
  const txt=input.message.toLocaleLowerCase("ru");
  const facts=(input.verifiedKnowledge??[]).filter(x=>x.status==="verified");
