@@ -15,6 +15,7 @@ import { ProjectUpdater } from "./updater";
 import { KitsuneGithub } from "./kitsune-github";
 import { SceneEngine } from "./scenes";
 import { BrainCore } from "./brain";
+import { prepareBrainGoal } from "./brain-goal-preparation";
 import { AutonomousLearning } from "./autonomous-learning";
 import { KnowledgeLedger } from "./knowledge-ledger";
 import { ProjectStats, recordStartup, type RuntimeFigures } from "./project-stats";
@@ -358,6 +359,25 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     name: "brain_get_plans", risk: "read", description: "Прочитать планы задач.",
     parameters: { type: "object", properties: {} },
     run: () => brain.status().plans,
+  });
+  assistant.tools.register({
+    name: "brain_prepare_goal",
+    risk: "read",
+    description: "Подготовить обоснованный план цели по реальным проверенным знаниям и ограничениям. Возвращает риски, пробелы и этапы; ничего не исполняет. Для сохранения плана используй brain_create_plan с подтверждением, для разрешённых шагов чтения — brain_run_safe_plan.",
+    parameters: { type: "object", properties: {
+      goal: { type: "string", minLength: 1, maxLength: 2000 },
+      context: { type: "string", maxLength: 4000 },
+      constraints: { type: "array", items: { type: "string" } },
+    }, required: ["goal"] },
+    run: (args) => {
+      const goal = typeof args.goal === "string" ? args.goal : "";
+      const context = typeof args.context === "string" ? args.context.slice(0, 4000) : undefined;
+      const constraints = Array.isArray(args.constraints) ?
+        args.constraints.filter((x): x is string => typeof x === "string").slice(0, 20).map(x => x.slice(0, 200)) : [];
+      const evidence = knowledge.list().filter(x => x.status === "verified" && !!x.source).slice(0, 100)
+        .map(x => ({ claim: x.claim, source: x.source, verified: true, reviewedAt: x.verifiedAt }));
+      return prepareBrainGoal({ goal, ...(context ? { context } : {}), constraints, evidence });
+    },
   });
   assistant.tools.register({
     name: "brain_create_plan", risk: "write", description: "Создать план после разрешения пользователя. Создание плана не исполняет шаги.",
