@@ -11,6 +11,22 @@ const say = (content: string): LlmResponse => ({ content, toolCalls: [] });
 const call = (name: string, args: object = {}): LlmResponse => ({ content: null, toolCalls: [{ id: "c1", name, arguments: JSON.stringify(args) }] });
 
 describe("Assistant", () => {
+  it("reviews durable pending plans on continuation without assuming session ownership", async () => {
+    const llm = scripted(say("ok"), say("ok"), say("ok"));
+    const a = new Assistant({ llm, log: quiet, pendingWork: () => [{
+      id: "p1", goal: "Собрать приложение", status: "paused",
+      nextStep: { title: "Проверить сборку" }, requiresExplicitExecution: true,
+    }] });
+    await a.ask("Продолжай");
+    const prompt = llm.seen[0]!.map(x => String(x.content)).join(" ");
+    expect(prompt).toContain("Проверить сборку");
+    expect(prompt).toContain("могут относиться к другим беседам");
+    await a.ask("Расскажи о проекте");
+    expect(llm.seen[1]!.map(x => String(x.content)).join(" ")).not.toContain("могут относиться к другим беседам");
+    await a.ask("Продолжай", "other", undefined, { ephemeral: true });
+    expect(llm.seen[2]!.map(x => String(x.content)).join(" ")).not.toContain("могут относиться к другим беседам");
+  });
+
   it("runs a tool loop and answers", async () => {
     const llm = scripted(call("list_modules"), say("Модулей: 1"));
     const a = new Assistant({ llm, log: quiet, describeModules: () => [{ name: "x" }] });
