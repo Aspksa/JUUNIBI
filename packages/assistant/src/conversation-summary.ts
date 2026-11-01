@@ -63,9 +63,15 @@ export class ConversationSummaryService {
     return session + ":" + hash(older[0]?.content ?? "");
   }
 
+  private fingerprint(older: Message[], count: number): string {
+    return hash(older.slice(0, count).map(m => m.role + (m.content ?? "")).join("\u0001"));
+  }
+
   async get(session: string, older: Message[]): Promise<string | undefined> {
     await this.ready;
-    return this.summaries.get(this.key(session, older))?.text;
+    const saved = this.summaries.get(this.key(session, older));
+    if (!saved || saved.covered > older.length) return undefined;
+    return saved.fp === this.fingerprint(older, saved.covered) ? saved.text : undefined;
   }
 
   queue(session: string, older: Message[]): void {
@@ -74,7 +80,7 @@ export class ConversationSummaryService {
     if ((this.retryAfter.get(key) ?? 0) > Date.now()) return;
 
     const have = this.summaries.get(key);
-    const fpOf = (n: number) => hash(older.slice(0, n).map((m) => m.role + (m.content ?? "")).join("\u0001"));
+    const fpOf = (n: number) => this.fingerprint(older, n);
     const sameBase = !!have && have.covered <= older.length && have.fp === fpOf(have.covered);
     const fresh = sameBase ? older.length - have!.covered : older.length;
     if (fresh < SUMMARY_MIN_NEW) return;
@@ -84,7 +90,8 @@ export class ConversationSummaryService {
         await this.options.waitForChatIdle();
         const base = sameBase ? have!.text : "";
         const covered = sameBase ? have!.covered : 0;
-        const slice = older.slice(covered).slice(-60);
+        // Process oldest uncovered messages first; never mark skipped turns as summarized.
+        const slice = older.slice(covered, covered + 60);
         const response = await this.options.llm.chat([
           {
             role: "system",
@@ -102,7 +109,8 @@ export class ConversationSummaryService {
         const text = (response.content ?? "").trim().slice(0, SUMMARY_MAX_CHARS);
         if (!text) return;
         this.retryAfter.delete(key);
-        this.summaries.set(key, { covered: older.length, fp: fpOf(older.length), text });
+        const nextCovered = covered + slice.length;
+        this.summaries.set(key, { covered: nextCovered, fp: fpOf(nextCovered), text });
 
         for (const oldKey of [...this.summaries.keys()].slice(0, Math.max(0, this.summaries.size - SUMMARY_SESSIONS))) {
           this.summaries.delete(oldKey);
