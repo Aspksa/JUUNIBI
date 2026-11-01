@@ -1,9 +1,8 @@
 import {describe,expect,it} from "vitest";
 import {foxMetrics} from "./kitsune-fox-metrics";
-import {TREE_NODES} from "./kitsune-tree";
 import {RING_LENGTH,TIER_STEPS,difficultyScore,filterMedals,medalItems,medalState,newShelfState,nextMedal,ringDash,tierOf,type MedalItem} from "./kitsune-medals";
 
-const metrics=foxMetrics({nodes:TREE_NODES,snapshot:null,growth:[]});
+const metrics=foxMetrics({nodes:[],snapshot:null,growth:[]});
 const item=(o:Partial<MedalItem>):MedalItem=>({difficulty:1,id:"x",emoji:"🦊",title:"t",kind:"keeper",tier:"bronze",world:"w",earned:false,progress:0,ready:false,requirement:"r",...o});
 
 describe("полка наград",()=>{
