@@ -9,10 +9,12 @@ export function chooseLearningTopic(fallback: string, gaps: LearningGap[], turn:
   if (turn % 5 === 0) return fallback;
   // Give high-priority gaps twice the curriculum weight; rotate to avoid monopolies.
   const unique = new Map<string, LearningGap>();
+  const canonical = (name: string) => name.normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
   for (const item of valid) {
     const name = item.topic.trim();
-    const old = unique.get(name.toLocaleLowerCase("ru"));
-    if (!old || old.priority < item.priority) unique.set(name.toLocaleLowerCase("ru"), {topic:name, priority:item.priority});
+    const key = canonical(name);
+    const old = unique.get(key);
+    if (!old || old.priority < item.priority) unique.set(key, {topic:name, priority:item.priority});
   }
   const weighted = [...unique.values()].sort((a,b)=>b.priority-a.priority || a.topic.localeCompare(b.topic,"ru"))
     .flatMap(g => Array.from({length:g.priority},()=>g.topic));
