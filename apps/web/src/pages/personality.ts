@@ -115,7 +115,9 @@ export function personalityPanel(chats?: Chats): HTMLElement {
   });
   suggestions.append(scan);
   type Evolution = { config: { enabled: boolean; intervalMinutes: number; night: boolean; memory: boolean; personality: boolean; quality: boolean };
-    queue: { id: string; lesson: string; status: string }[]; runs: number; lastRun: number; lastError: string | null; analyzedMessages: number; running: boolean };
+    queue: { id: string; lesson: string; status: string }[]; experiences?: { kind: string; text: string }[];
+    goals?: { id: string; title: string; status: string }[];
+    metrics?: { corrections: number; repeatedReplies: number; negativeRatings: number }; runs: number; lastRun: number; lastError: string | null; analyzedMessages: number; running: boolean };
   async function evolutionRequest(url: string, body?: object): Promise<Evolution> {
     const response = await fetch(url, body ? { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(body) } : undefined);
@@ -153,8 +155,24 @@ export function personalityPanel(chats?: Chats): HTMLElement {
         void evolutionRequest("/api/ramo/evolution/run", {}).then(loadEvolution)
           .catch(error => { status.textContent = String(error); run.disabled = false; });
       });
+      const insight = el("p", { cls: "muted", textContent: "Опыт: " + (state.experiences?.length ?? 0) +
+        " · исправления: " + (state.metrics?.corrections ?? 0) +
+        " · повторы: " + (state.metrics?.repeatedReplies ?? 0) +
+        " · отрицательные оценки: " + (state.metrics?.negativeRatings ?? 0) });
+      const goals = (state.goals ?? []).map(goal => {
+        const button = el("button", { type: "button", textContent: goal.status === "proposed" ? "Подтвердить" : "Завершить",
+          disabled: goal.status === "done" });
+        button.addEventListener("click", () => {
+          if (!confirm("Изменить статус цели: " + goal.title + "?")) return;
+          void evolutionRequest("/api/ramo/evolution/goal", { id: goal.id,
+            status: goal.status === "proposed" ? "approved" : "done", approved: true })
+            .then(loadEvolution).catch(error => { status.textContent = String(error); });
+        });
+        return el("div", { cls: "set-row" }, el("span", { textContent: goal.title }), button);
+      });
       const pending = state.queue.filter(item => item.status === "pending");
-      background.replaceChildren(el("h3", { textContent: "Фоновое развитие RAMO" }), summary, ...controls,
+      background.replaceChildren(el("h3", { textContent: "Фоновое развитие RAMO" }), summary, insight,
+        el("h4", { textContent: "Цели развития" }), ...goals, ...controls,
         el("div", { cls: "set-row" }, interval, run),
         el("h4", { textContent: "Ожидают подтверждения: " + pending.length }),
         ...pending.map(item => {

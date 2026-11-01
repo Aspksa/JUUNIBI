@@ -41,6 +41,7 @@ import { qrSvg, type MobileAccess } from "./mobile-access";
 import type { Vault } from "./vault";
 import type { ChatStore } from "./chat-store";
 import type { EvolutionConfig, EvolutionItem, EvolutionState } from "./ramo-evolution";
+import type { Experience } from "./ramo-experience";
 import type { ChatExtras } from "./chat-extras";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
@@ -65,6 +66,8 @@ export interface ModuleControl {
 export interface AppDeps {
   ramoEvolution?: {
     snapshot(): Promise<EvolutionState & { running: boolean }>;
+    recall(query: string): Promise<Experience[]>;
+    setGoal(id: string, status: "approved" | "done"): Promise<void>;
     configure(patch: Partial<EvolutionConfig>): Promise<void>;
     run(): Promise<void>;
     decide(id: string, decision: "accepted" | "rejected"): Promise<EvolutionItem>;
@@ -285,6 +288,20 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
                 Object.entries(body).some(([k, v]) => k !== "intervalMinutes" && typeof v !== "boolean"))
               return send(res, 400, { error: "Неверные настройки" });
             await engine.configure(body as Partial<EvolutionConfig>);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/recall" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.query !== "string" || body.query.length > 200)
+              return send(res, 400, { error: "Неверный запрос" });
+            return send(res, 200, await engine.recall(body.query));
+          }
+          if (p === "/api/ramo/evolution/goal" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.id !== "string" || body.id.length > 80 ||
+                !["approved", "done"].includes(String(body.status)) || body.approved !== true)
+              return send(res, 400, { error: "Неверное решение" });
+            await engine.setGoal(body.id, body.status as "approved" | "done");
             return send(res, 200, await engine.snapshot());
           }
           if (p === "/api/ramo/evolution/run" && req.method === "POST") {

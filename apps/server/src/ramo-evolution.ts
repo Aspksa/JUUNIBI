@@ -1,3 +1,4 @@
+import { analyzeDialogue, rankExperiences, type Experience, type DialogueMetrics } from "./ramo-experience";
 import { suggestConversationLessons, type LessonProposal, type StorageAdapter } from "@juunibi/assistant";
 
 export interface EvolutionConfig {
@@ -22,10 +23,14 @@ export interface EvolutionState {
   analyzedMessages: number;
   qualitySignals: number;
   memoryDigest: string[];
+  experiences: Experience[];
+  metrics: DialogueMetrics;
+  goals: { id: string; title: string; status: "proposed" | "approved" | "done"; createdAt: number }[];
 }
 const defaults = (): EvolutionState => ({
   config: { enabled: false, intervalMinutes: 30, night: true, memory: true, personality: true, quality: true },
-  queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0, qualitySignals: 0, memoryDigest: [],
+  queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0, qualitySignals: 0, memoryDigest: [], experiences: [],
+  metrics: { userMessages: 0, assistantMessages: 0, corrections: 0, repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 }, goals: [],
 });
 const signature = (value: string): string => {
   let hash = 2166136261;
@@ -41,7 +46,7 @@ export class RamoEvolution {
   constructor(private readonly store: StorageAdapter, private readonly readChats: () => readonly {
     id: string; messages: readonly { id?: string; role: string; content: string; at?: number }[];
   }[], private readonly now: () => number = Date.now) {
-    this.ready = this.load().catch(() => { this.state = defaults(); });
+    this.ready = this.load();
   }
   private async load() {
     const raw = await this.store.load();
@@ -65,13 +70,23 @@ export class RamoEvolution {
       runs: s.runs!, analyzedMessages: Number.isFinite(s.analyzedMessages) ? s.analyzedMessages! : 0,
       qualitySignals: Number.isFinite(s.qualitySignals) ? s.qualitySignals! : 0,
       memoryDigest: Array.isArray(s.memoryDigest) ? s.memoryDigest.filter(x => typeof x === "string").slice(-30) : [],
+      experiences: Array.isArray(s.experiences) ? s.experiences.filter(x => x && typeof x.id === "string" && typeof x.text === "string" && x.text.length <= 350 && ["preference", "correction", "decision", "goal"].includes(x.kind)).slice(-500) : [],
+      metrics: s.metrics && typeof s.metrics === "object" ? { ...defaults().metrics, ...s.metrics } : defaults().metrics,
+      goals: Array.isArray(s.goals) ? s.goals.filter(x => x && typeof x.id === "string" && typeof x.title === "string" && ["proposed", "approved", "done"].includes(x.status)).slice(-50) : [],
     };
   }
   private mutate<T>(fn: () => T | Promise<T>): Promise<T> {
     const task = this.pending.then(async () => {
       await this.ready;
-      const result = await fn();
-      await this.store.save(JSON.stringify(this.state));
+      const before = structuredClone(this.state);
+      let result: T;
+      try {
+        result = await fn();
+        await this.store.save(JSON.stringify(this.state));
+      } catch (error) {
+        this.state = before;
+        throw error;
+      }
       return result;
     });
     this.pending = task.then(() => undefined, () => undefined);
@@ -80,6 +95,16 @@ export class RamoEvolution {
   async snapshot(): Promise<EvolutionState & { running: boolean }> {
     await this.ready; await this.pending;
     return { ...structuredClone(this.state), running: this.running };
+  }
+  recall(query: string): Promise<Experience[]> {
+    return this.snapshot().then(state => rankExperiences(state.experiences, query));
+  }
+  setGoal(id: string, status: "approved" | "done"): Promise<void> {
+    return this.mutate(() => {
+      const goal = this.state.goals.find(x => x.id === id);
+      if (!goal) throw new Error("Unknown evolution goal");
+      goal.status = status;
+    });
   }
   configure(patch: Partial<EvolutionConfig>): Promise<void> {
     return this.mutate(() => {
@@ -112,7 +137,11 @@ export class RamoEvolution {
         const s = this.state;
         if (!s.config.enabled || (!force && now - s.lastRun < s.config.intervalMinutes * 60_000)) return;
         const candidates: { role: string; content: string }[] = [];
+        const newExperiences: Experience[] = [];
         for (const chat of this.readChats().slice(-100)) {
+          const analysis = analyzeDialogue(chat.messages, chat.id, now);
+          if (s.config.memory) newExperiences.push(...analysis.experiences);
+
           for (const msg of chat.messages.slice(-300)) {
             if (msg.role !== "user" || typeof msg.content !== "string") continue;
             const key = signature(chat.id + ":" + (msg.id ?? "") + ":" + msg.content);
@@ -122,7 +151,26 @@ export class RamoEvolution {
             candidates.push({ role: "user", content: msg.content });
           }
         }
+        if (s.config.memory) {
+          const known = new Set(s.experiences.map(x => x.id));
+          for (const item of newExperiences) {
+            if (known.has(item.id)) continue;
+            known.add(item.id);
+            s.experiences.push(item);
+            if (item.kind === "correction") s.metrics.corrections++;
+            if (item.kind === "goal" && !s.goals.some(goal => goal.id === item.id))
+              s.goals.push({ id: item.id, title: item.text, status: "proposed", createdAt: now });
+          }
+          s.experiences = s.experiences.slice(-500);
+          s.goals = s.goals.slice(-50);
+        }
         if (s.config.quality) {
+          const aggregate = { ...defaults().metrics };
+          for (const chat of this.readChats().slice(-100)) {
+            const m = analyzeDialogue(chat.messages, chat.id, now).metrics;
+            for (const key of Object.keys(aggregate) as (keyof DialogueMetrics)[]) aggregate[key] += m[key];
+          }
+          s.metrics = aggregate;
           const normalized = candidates.map(x => x.content.trim().toLowerCase());
           s.qualitySignals += normalized.length - new Set(normalized).size;
         }
