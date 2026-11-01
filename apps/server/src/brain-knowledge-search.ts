@@ -6,7 +6,14 @@ export function searchVerifiedKnowledge(items: readonly VerifiedKnowledge[], que
   const words = (s: string) => new Set((s.toLocaleLowerCase("ru").replace(/ё/g, "е").match(/[\p{L}\p{N}]{3,}/gu) ?? []));
   const terms = words(query);
   if (!terms.size) return [];
-  return items.filter(x => x.status === "verified" && typeof x.claim === "string")
+  const seen = new Set<string>();
+  return items.filter(x => {
+    if (x.status !== "verified" || typeof x.claim !== "string") return false;
+    const key = (x.topic + "\u0000" + x.claim).normalize("NFKC").toLocaleLowerCase("ru").replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  })
     .map(x => {
       const field = words(x.topic + " " + x.claim);
       const score = [...terms].filter(t => field.has(t)).length;
