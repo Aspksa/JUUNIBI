@@ -72,14 +72,15 @@ export class MemoryLearningService {
   }
 
   private async learnFromMessage(text: string): Promise<void> {
+    const correction = /^(?:нет[,.!]?\s+|неверно[,.!]?\s+|ошибка[,:.!]?\s+|исправление[,:]?\s+)/iu.test(text);
     if (text.length < 12 || text.length > 3000 || text.includes("?") ||
-        !/(?:^|[.!\s])(я|мне|мой|моя|мои|люблю|предпочитаю|запомни)(?=\s|[,.!]|$)/iu.test(text)) return;
+        (!correction && !/(?:^|[.!\s])(я|мне|мой|моя|мои|люблю|предпочитаю|запомни)(?=\s|[,.!]|$)/iu.test(text))) return;
 
     const references = await this.options.memory.search(text, 5);
     const response = await this.options.llm.chat([
       {
         role: "system",
-        content: "Из сообщения пользователя извлеки максимум один явно утверждённый долгосрочный факт или устойчивое предпочтение. Не извлекай пароли, ключи, токены, адреса, данные здоровья и финансов. Не угадывай. Верни только JSON-объект с полями text, kind (fact либо preference), revisesId (ID противоречащего факта либо null). Если нет факта, верни {}. Любая запись лишь предложение и требует одобрения.",
+        content: "Из сообщения пользователя извлеки максимум один явно утверждённый долгосрочный факт, устойчивое предпочтение или конкретное исправление ошибки помощницы (kind=lesson). Не извлекай общие эмоции или предположения. Не извлекай пароли, ключи, токены, адреса, данные здоровья и финансов. Не угадывай. Верни только JSON-объект с полями text, kind (fact, preference либо lesson), revisesId (ID противоречащего факта либо null). Если нет факта, верни {}. Любая запись лишь предложение и требует одобрения.",
       },
       {
         role: "user",
@@ -99,7 +100,11 @@ export class MemoryLearningService {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
     const data = parsed as { text?: unknown; kind?: unknown; revisesId?: unknown };
     if (typeof data.text !== "string" || data.text.trim().length < 8 || data.text.length > 250 ||
-        (data.kind !== "fact" && data.kind !== "preference")) return;
+        (data.kind !== "fact" && data.kind !== "preference" && data.kind !== "lesson")) return;
+
+    // Lessons require an explicit correction; never learn instructions or skills from ordinary chatter.
+    if (data.kind === "lesson" && !correction) return;
+    if (correction && data.kind !== "lesson") return;
 
     const sensitive = /(?:api[_ -]?key|парол[ья]|password|токен|secret|bearer|ключ доступа|паспорт|снилс|банковск|карт[аы]\s*\d|диагноз|болезн|адрес проживания|телефон|e-?mail)/iu;
     const longNumber = /\d(?:[ -]?\d){9,}/u;
