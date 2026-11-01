@@ -136,7 +136,7 @@ export class ChatController {
 
     // The character "scene" is optional flavour; it must never delay or break the real answer.
     if (app.get().showScenes && !o.into) {
-      void api.nextScene().then((r) => {
+      void api.nextScene(o.question ?? userText).then((r) => {
         if (r.ok) this.chats.patch(convId, reply.id, { scene: { action: r.value.action.text, ...(r.value.phrase ? { phrase: r.value.phrase.text } : {}) } });
       }).catch(() => { /* Character scene is optional: never interrupt the answer. */ });
     }
