@@ -149,6 +149,8 @@ describe("правка и повторы", () => {
       expect(fired[0]!.repeat).toBeUndefined();
       const series = o.listReminders().find((x) => x.id === r.id)!;
       expect(series).toMatchObject({ status: "scheduled", repeat: "daily", at: new Date(local(10, 9)).toISOString() });
+      // Confirm the previous occurrence before the next one; outstanding copies are bounded.
+      await o.dismissReminder(fired[0]!.id);
       advance(3 * 86_400_000); // JUUNIBI был закрыт три дня
       expect(await o.tick()).toHaveLength(1);
       expect(o.listReminders().find((x) => x.id === r.id)!.at).toBe(new Date(local(13, 9)).toISOString());
