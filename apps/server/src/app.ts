@@ -9,7 +9,7 @@ import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import path from "node:path";
-import type { Assistant, ApprovalGate, PersonalitySnapshot, Trait } from "@juunibi/assistant";
+import type { Assistant, ApprovalGate, PersonalitySnapshot, Trait, LessonProposal } from "@juunibi/assistant";
 
 import type { ProjectUpdater } from "./updater";
 import type { SceneEngine } from "./scenes";
@@ -64,6 +64,8 @@ export interface ModuleControl {
 export interface AppDeps {
   personality?: {
     current(): Promise<PersonalitySnapshot>;
+    history(): Promise<PersonalitySnapshot[]>;
+    approveLesson(proposal: LessonProposal, approved: boolean): Promise<PersonalitySnapshot>;
     adjustTrait(trait: Trait, delta: number, approved: boolean): Promise<PersonalitySnapshot>;
     restore(version: number, approved: boolean): Promise<PersonalitySnapshot>;
   };
@@ -266,6 +268,25 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
           if (lan) return send(res, 403, { error: "Только локальный доступ" });
           if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
           return send(res, 200, await deps.personality.current());
+        }
+        if (p === "/api/personality/history" && req.method === "GET") {
+          if (lan) return send(res, 403, { error: "Только локальный доступ" });
+          if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
+          return send(res, 200, await deps.personality.history());
+        }
+        if (p === "/api/personality/lesson" && req.method === "POST") {
+          if (lan) return send(res, 403, { error: "Только локальный доступ" });
+          if (!deps.personality) return send(res, 503, { error: "Профиль недоступен" });
+          const b = await readJson(req);
+          if (b.approved !== true || typeof b.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(b.id) ||
+              typeof b.lesson !== "string" || !b.lesson.trim() || b.lesson.length > 500 ||
+              !Array.isArray(b.evidence) || b.evidence.length < 1 || b.evidence.length > 10 ||
+              b.evidence.some(x => typeof x !== "string" || !x.trim() || x.length > 300) ||
+              typeof b.confidence !== "number" || !Number.isFinite(b.confidence) || b.confidence < 0.6 || b.confidence > 1)
+            return send(res, 400, { error: "Некорректный урок или отсутствует подтверждение" });
+          return send(res, 200, await deps.personality.approveLesson({
+            id: b.id, lesson: b.lesson, evidence: b.evidence as string[], confidence: b.confidence,
+          }, true));
         }
         if (p === "/api/personality/trait" && req.method === "POST") {
           if (lan) return send(res, 403, { error: "Только локальный доступ" });
