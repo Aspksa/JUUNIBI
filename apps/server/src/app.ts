@@ -848,6 +848,9 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
         }
         if (deps.organizer && p.startsWith("/api/organizer")) {
           const o = deps.organizer;
+          if (req.method === "GET" && p === "/api/organizer/delivery") return send(res, 200, o.deliverySnapshot());
+          const ack = /^\/api\/organizer\/delivery\/([0-9a-f-]{36})\/ack$/.exec(p);
+          if (req.method === "POST" && ack) return send(res, 200, await o.acknowledgeDelivery(ack[1]!));
           if (req.method === "GET" && p === "/api/organizer") return send(res, 200, { notes: o.listNotes(), reminders: o.listReminders(), projects: o.listProjects(), templates: o.listTemplates(), daysOff: o.listDaysOff() });
           if (req.method === "POST" && p === "/api/organizer/projects") { const b = await readJson(req); const { name, ...patch } = b; return send(res, 200, await o.setProject(name, patch)); }
           if (req.method === "POST" && p === "/api/organizer/templates") { const b = await readJson(req); return send(res, 201, await o.addTemplate(b.text)); }
