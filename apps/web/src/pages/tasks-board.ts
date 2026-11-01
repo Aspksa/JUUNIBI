@@ -87,7 +87,18 @@ export function taskBoard(d: BoardDeps): () => HTMLElement {
     void d.act(async () => {
       if (from === "done") { const r = await api.setTodoDone(n.id, false); if (!r.ok) return r; }
       if (from !== col || laneChanged) { const r = await api.updateTask(n.id, { ...(from !== col ? { status: col } : {}), ...(laneChanged ? laneField : {}) } as Parameters<typeof api.updateTask>[1]); if (!r.ok) return r; }
-      return o.order ? api.orderTasks(o.order) : { ok: true };
+      if (!o.order) return { ok: true };
+      const ordered = await api.orderTasks(o.order);
+      if (!ordered.ok && (from !== col || laneChanged)) {
+        // Ordering failed after the status/lane update: compensate the first mutation.
+        await api.updateTask(n.id, {
+          status: prev.status ?? "todo",
+          waitingFor: prev.waitingFor ?? null,
+          followUpAt: prev.followUpAt ?? null,
+          ...(laneChanged ? (B.lanes === "project" ? { project: prev.project ?? null } : { area: prev.area ?? null }) : {}),
+        });
+      }
+      return ordered;
     }, from !== col ? STATUS_LABEL[col] + ": " + n.text : laneChanged ? "Перенесено" : undefined, from !== col || laneChanged ? undo : undefined);
   };
 
