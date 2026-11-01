@@ -132,4 +132,14 @@ describe("TaskService", () => {
     expect(x.notes).toHaveLength(2);
   });
 
+  it("requires timezone offsets and normalizes valid boundary dates", async () => {
+    const x = make();
+    await expect(x.service.addTask("Без зоны", { dueAt: "2026-10-10T10:00:00" })).rejects.toThrow(/срок/);
+    await expect(x.service.addTask("Не дата", { dueAt: "2026-13-40T10:00:00Z" })).rejects.toThrow(/срок/);
+    expect(x.notes).toHaveLength(0);
+    const task = await x.service.addTask("В зоне", { dueAt: "2026-10-10T10:00:00+03:00" });
+    expect(task.dueAt).toBe("2026-10-10T07:00:00.000Z");
+    await expect(x.service.updateTask(task.id, { followUpAt: "2026-10-10T10:00:00" })).rejects.toThrow(/поясом/);
+  });
+
 });

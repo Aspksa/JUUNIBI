@@ -60,9 +60,9 @@ export function todoBuckets(list: Note[], now = new Date()): { key: TodoBucket; 
   const of = (n: Note): TodoBucket => {
     if (!n.dueAt) return "later";
     const t = Date.parse(n.dueAt), key = localDay(n.dueAt);
-    if (t < now.getTime() && key < today) return "late";
+    if (key < today) return "late";
     if (key === today) return t < now.getTime() && !isDateOnly(n.dueAt) ? "late" : "today";
-    return t <= end ? "week" : "later";
+    return key < today ? "late" : t <= end ? "week" : "later";
   };
   const out: Record<TodoBucket, Note[]> = { late: [], today: [], week: [], later: [] };
   for (const n of list) out[of(n)].push(n);
@@ -72,8 +72,8 @@ export function todoBuckets(list: Note[], now = new Date()): { key: TodoBucket; 
 export function statusDays(n: Pick<Note, "statusAt">, now = new Date()): number | null {
   if (!n.statusAt || !Number.isFinite(Date.parse(n.statusAt))) return null;
   const d = new Date(n.statusAt);
-  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(), b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  return Math.max(0, Math.round((b - a) / 86_400_000));
+  
+  return Math.max(0, Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / 86_400_000));
 }
 /** «3 дня», «1 день», «5 дней». */
 export function daysWord(n: number): string {
@@ -223,14 +223,14 @@ export function buildTasks(org: { notes: Note[]; reminders: Reminder[] }, filter
   for (const it of timed) {
     const key = localDay(it.at);
     // a to-do is overdue once its moment has passed; a planned reminder fires by itself, so it stays in its day
-    if (it.type === "todo" && it.at < now.getTime()) view.overdue.push(it);
+    if (it.type === "todo" && (key < todayKey || (it.at < now.getTime() && !isDateOnly(it.note.dueAt!)))) view.overdue.push(it);
     else if (key <= todayKey) view.today.push(it);
     else if (key === tomorrowKey) view.tomorrow.push(it);
     else view.later.push(it);
   }
   const allOpen = org.notes.filter((n) => n.kind === "todo" && !n.done && n.dueAt);
-  view.summary.overdue = allOpen.filter((n) => Date.parse(n.dueAt!) < now.getTime()).length;
-  view.summary.today = allOpen.filter((n) => Date.parse(n.dueAt!) >= now.getTime() && localDay(n.dueAt!) === todayKey).length
+  view.summary.overdue = allOpen.filter((n) => (localDay(n.dueAt!) < todayKey || (Date.parse(n.dueAt!) < now.getTime() && !isDateOnly(n.dueAt!)))).length;
+  view.summary.today = allOpen.filter((n) => localDay(n.dueAt!) === todayKey && (Date.parse(n.dueAt!) >= now.getTime() || isDateOnly(n.dueAt!))).length
     + org.reminders.filter((r) => r.status === "scheduled" && localDay(r.at) === todayKey).length;
   return view;
 }

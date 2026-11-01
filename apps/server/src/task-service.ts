@@ -22,6 +22,14 @@ const repeatOf = (value: unknown): Repeat | undefined => {
   return value as Repeat;
 };
 
+/** Require an explicit timezone: otherwise Date.parse silently uses the server's timezone. */
+const taskDate = (value: unknown, label: string): string => {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) throw bad(label);
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) throw bad(label);
+  return new Date(ms).toISOString();
+};
+
 const dayStart = (time: number): number => {
   const d = new Date(time);
   d.setHours(0, 0, 0, 0);
@@ -92,14 +100,14 @@ export class TaskService {
     }
     if (opts.repeat !== undefined) patch.repeat = opts.repeat;
     // Validate metadata before touching shared state or recording events.
-    if ("dueAt" in patch && (typeof patch.dueAt !== "string" || !Number.isFinite(Date.parse(patch.dueAt)))) throw bad("Некорректный срок");
+    if ("dueAt" in patch) patch.dueAt = taskDate(patch.dueAt, "Некорректный срок");
     const repeat = repeatOf(patch.repeat);
     if (!this.options.makeRoom()) throw bad(`Достигнут предел: ${MAX_NOTES} записей`, 409);
     const now = this.options.now();
     const note: Note = {
       id: randomUUID(), kind: "todo", text: value, done: false,
       createdAt: new Date(now).toISOString(),
-      ...(patch.dueAt ? { dueAt: new Date(patch.dueAt as string).toISOString() } : {}),
+      ...(patch.dueAt ? { dueAt: taskDate(patch.dueAt, "Некорректный срок") } : {}),
       ...(patch.priority ? { priority: patch.priority as "low" | "normal" | "high" } : {}),
       ...(repeat ? { repeat } : {}),
     };
@@ -144,8 +152,8 @@ export class TaskService {
 
     if ("dueAt" in patch) {
       if (patch.dueAt === null || patch.dueAt === "") delete next.dueAt;
-      else if (typeof patch.dueAt === "string" && Number.isFinite(Date.parse(patch.dueAt))) {
-        next.dueAt = new Date(patch.dueAt).toISOString();
+      else if (typeof patch.dueAt === "string") {
+        next.dueAt = taskDate(patch.dueAt, "Некорректный срок");
       } else {
         throw bad("Некорректный срок");
       }
@@ -203,8 +211,8 @@ export class TaskService {
 
     if ("followUpAt" in patch) {
       if (patch.followUpAt === null || patch.followUpAt === "") delete next.followUpAt;
-      else if (typeof patch.followUpAt === "string" && Number.isFinite(Date.parse(patch.followUpAt))) {
-        next.followUpAt = new Date(patch.followUpAt).toISOString();
+      else if (typeof patch.followUpAt === "string") {
+        next.followUpAt = taskDate(patch.followUpAt, "Когда спросить снова: дата и время с часовым поясом");
       } else {
         throw bad("Когда спросить снова: дата и время");
       }
