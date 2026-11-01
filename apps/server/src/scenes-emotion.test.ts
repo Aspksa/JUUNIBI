@@ -2,12 +2,24 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { SceneEngine } from "./scenes";
+import { SceneEngine, matchingScenePool } from "./scenes";
 
 const dirs: string[] = [];
 afterEach(async () => { await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))); });
 
 describe("emotion-aligned scenes", () => {
+  it("matches real Russian scene and English phrase emotion labels", () => {
+    const actions = [{ emotion: "защита" }, { emotion: "нежность" }, { emotion: "игривость" }];
+    const phrases = [{ emotion: "protective" }, { emotion: "warm" }, { emotion: "playful" }];
+    expect(matchingScenePool(actions, "anxiety")).toEqual([actions[0]]);
+    expect(matchingScenePool(phrases, "anxiety")).toEqual([phrases[0]]);
+    expect(matchingScenePool(actions, "tenderness")).toEqual([actions[1]]);
+    expect(matchingScenePool(phrases, "tenderness")).toEqual([phrases[1]]);
+    expect(matchingScenePool(actions, "playfulness")).toEqual([actions[2]]);
+    expect(matchingScenePool(phrases, "playfulness")).toEqual([phrases[2]]);
+    expect(matchingScenePool(actions, "unknown")).toEqual(actions);
+  });
+
   it("prefers unused matching action and phrase then falls back without repeats", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "juunibi-scenes-"));
     dirs.push(root);
