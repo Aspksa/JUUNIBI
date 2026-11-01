@@ -6,7 +6,7 @@ export class ToolAuditJournal {
   record(entry: ToolAudit): void {
     if (!entry.id || !entry.name || !Number.isFinite(entry.startedAt) || !Number.isFinite(entry.finishedAt)) throw Error("Invalid audit entry");
     if (this.entries.some(x => x.id === entry.id)) return;
-    this.entries.push({ ...entry, error: entry.error?.slice(0, 300) });
+    this.entries.push({ ...entry, ...(entry.error !== undefined ? { error: entry.error.slice(0, 300) } : {}) });
     if (this.entries.length > this.capacity) this.entries.splice(0, this.entries.length - this.capacity);
   }
   list(): ToolAudit[] { return this.entries.map(x => ({ ...x })); }
