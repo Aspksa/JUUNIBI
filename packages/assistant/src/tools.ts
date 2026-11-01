@@ -31,6 +31,26 @@ export class ToolRegistry {
   capabilities(): { name: string; owner: string; risk: Risk }[] {
     return this.list().map(tool => ({ name: tool.name, owner: this.owners.get(tool.name) ?? "runtime", risk: tool.risk }));
   }
+  /** Advisory inventory of identical read-only tool schemas; never merges permissions or executions. */
+  potentialOverlaps(): { names: string[]; owners: string[] }[] {
+    const groups = new Map<string, Tool[]>();
+    const stable = (value: unknown): string => {
+      if (Array.isArray(value)) return "[" + value.map(stable).join(",") + "]";
+      if (value && typeof value === "object") return "{" + Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => JSON.stringify(k) + ":" + stable(v)).join(",") + "}";
+      return JSON.stringify(value);
+    };
+    for (const tool of this.tools.values()) {
+      if (tool.risk !== "read") continue;
+      const key = stable({ description: tool.description.trim().normalize("NFKC").toLocaleLowerCase("ru"),
+        parameters: tool.parameters });
+      groups.set(key, [...(groups.get(key) ?? []), tool]);
+    }
+    return [...groups.values()].filter(group => group.length > 1)
+      .map(group => ({ names: group.map(x => x.name).sort(),
+        owners: [...new Set(group.map(x => this.owners.get(x.name) ?? "runtime"))].sort() }))
+      .sort((a, b) => a.names[0]!.localeCompare(b.names[0]!));
+  }
   get(name: string): Tool | undefined { return this.tools.get(name); }
   list(): Tool[] { return [...this.tools.values()]; }
   specs(): ToolSpec[] {
