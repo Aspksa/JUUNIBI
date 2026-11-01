@@ -90,6 +90,21 @@ describe("RequestContextBuilder", () => {
     ]);
   });
 
+  it("grounds brief continuations in the existing session but not a fresh chat", async () => {
+    const sessions = new SessionHistory(40);
+    sessions.appendTurn("s", "Исправь тесты и слей PR", "Тесты исправлены, PR ещё открыт");
+    const builder = new RequestContextBuilder({ memory: new Memory(), sessions, summaries: summaries() });
+    const continued = await builder.prepare({ text: "Продолжай", session: "s" });
+    expect(continued.messages.some(m => m.role === "system" && String(m.content).includes("короткое продолжение"))).toBe(true);
+    expect(continued.messages.some(m => String(m.content).includes("Тесты исправлены"))).toBe(true);
+    const fresh = await builder.prepare({ text: "Продолжай", session: "fresh" });
+    expect(fresh.messages.some(m => m.role === "system" && String(m.content).includes("короткое продолжение"))).toBe(false);
+    const clear = await builder.prepare({ text: "Объясни устройство памяти JUUNIBI", session: "s" });
+    expect(clear.messages.some(m => m.role === "system" && String(m.content).includes("короткое продолжение"))).toBe(false);
+    const ephemeral = await builder.prepare({ text: "Продолжай", session: "s", ephemeral: true });
+    expect(ephemeral.messages.some(m => m.role === "system" && String(m.content).includes("короткое продолжение"))).toBe(false);
+  });
+
   it("nowLine keeps explicit date, time and timezone context", () => {
     expect(nowLine(new Date(2026, 9, 9, 5, 30))).toMatch(
       /^Сейчас: .*пятниц.*9 октября 2026.*05:30 \(UTC[+-]\d\d:\d\d\)\.$/,
