@@ -29,4 +29,18 @@ describe("tool capability registry", () => {
     expect(() => registry.register(tool("a"), "../unsafe")).toThrow("Bad tool owner");
     expect(registry.capabilities()).toEqual([]);
   });
+  it("reports identical read-only contracts across different owners without merging them", () => {
+    const registry = new ToolRegistry();
+    registry.register(tool("read_a"), "brain");
+    registry.register(tool("read_b"), "assistant");
+    expect(registry.potentialOverlaps()).toEqual([{ names: ["read_a", "read_b"], owners: ["assistant", "brain"] }]);
+    expect(registry.get("read_a")).toBeDefined();
+    expect(registry.get("read_b")).toBeDefined();
+  });
+  it("does not report matching write contracts as safely interchangeable", () => {
+    const registry = new ToolRegistry();
+    registry.register({ ...tool("write_a"), risk: "write" }, "brain");
+    registry.register({ ...tool("write_b"), risk: "write" }, "assistant");
+    expect(registry.potentialOverlaps()).toEqual([]);
+  });
 });
