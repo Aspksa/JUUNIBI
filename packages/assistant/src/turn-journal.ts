@@ -78,7 +78,8 @@ export class TurnJournal {
     if (!session || typeof query !== "string" || query.length > 300 || !query.trim()) return [];
     const tokens = (value: string) => new Set((value.normalize("NFKC").toLocaleLowerCase("ru")
       .replace(/ё/g, "е").match(/[\p{L}\p{N}]{3,}/gu) ?? []));
-    const words = tokens(query);
+    const stopwords = new Set(["что", "как", "когда", "где", "раньше", "ранее", "помнишь", "говорил", "писал", "обсуждали", "этом", "чате", "вчера", "сегодня", "про", "это", "what", "when", "previously", "earlier"]);
+    const words = new Set([...tokens(query)].filter(word => !stopwords.has(word)));
     if (!words.size) return [];
     const max = Number.isInteger(limit) ? Math.max(1, Math.min(limit, 10)) : 5;
     return this.turns.filter(turn => turn.session === session)
