@@ -80,4 +80,14 @@ describe("ввод, неделя и план недели", () => {
     expect(p.find((x) => x.id === "x")?.day).toBe("2026-10-13");
     expect(planWeek([note("big", "todo", { estimateMinutes: 600 })], ["2026-10-12"], 480)).toEqual([{ id: "big", text: "big", day: "2026-10-12" }]);
   });
+  it("keeps date-only deadlines on today until local midnight", () => {
+    const late = new Date(2026, 9, 10, 23, 59, 30);
+    const allDay = note("all-day", "todo", { dueAt: iso(10, 23, 59) });
+    const timed = note("timed", "todo", { dueAt: iso(10, 20) });
+    const result = buildTasks({ notes: [allDay, timed], reminders: [] }, "all", "", late);
+    expect(result.today.map((x) => x.note?.id)).toEqual(["all-day"]);
+    expect(result.overdue.map((x) => x.note?.id)).toEqual(["timed"]);
+    expect(result.summary).toEqual({ today: 1, overdue: 1, doneToday: 0 });
+  });
+
 });
