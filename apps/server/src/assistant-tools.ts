@@ -81,6 +81,11 @@ export function buildExtraTools(d: ExtraToolDeps): Tool[] {
     { name: "list_notes", risk: "read", description: "Показать дела и заметки владельца: сроки (dueAt, ISO), важность, повтор, выполнено ли. Для вопросов «что у меня на сегодня/на неделе/что просрочено» выбери period. Время показывай владельцу по его часовому поясу из системного сообщения." + DATA,
       parameters: { type: "object", properties: { period: { type: "string", enum: ["all", "today", "week", "overdue", "open", "notes"], description: "all — всё; today — срок сегодня; week — срок в ближайшие 7 дней; overdue — просроченные; open — все невыполненные дела; notes — только заметки" } } },
       run: (a) => listTasks(d.organizer, typeof a.period === "string" ? a.period : "all") },
+    { name: "what_now", risk: "read", description: "Получить объяснимый список «Что делать сейчас» из Smart Priority. Используй вместо самостоятельного угадывания по list_notes, когда владелец спрашивает, за что взяться, что важнее или что делать первым." + DATA,
+      parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 10, description: "Сколько лучших дел вернуть; по умолчанию 5" } } },
+      run: (a) => d.organizer.smartPriority(typeof a.limit === "number" ? a.limit : 5) },
+    { name: "task_memory", risk: "read", description: "Показать накопленную поведенческую память «Дел»: какие типы задач и проекты чаще переносились, завершались и какие оценки времени накоплены. Это статистика реальных действий, не догадки." + DATA,
+      parameters: { type: "object", properties: {} }, run: () => d.organizer.taskMemory() },
     { name: "add_note", risk: "write", description: "Добавить дело или заметку. Если владелец в разговоре упоминает, что ему нужно что-то сделать («надо завтра…», «не забыть в пятницу…»), один раз коротко предложи записать это в дела и после согласия вызови add_note с kind=todo и сроком. Требует подтверждения.",
       parameters: { type: "object", properties: {
         text: str("Текст, до 500 символов", { maxLength: 500 }),
