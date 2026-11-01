@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, Logger } from "@juunibi/core";
-import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGate, type StorageAdapter, type LlmProvider } from "@juunibi/assistant";
+import { Assistant, CloudRuProvider, CloudEmbeddingProvider, Memory, ApprovalGate, PersonalityHistory, initialPersonality, type PersonalitySnapshot, type StorageAdapter, type LlmProvider } from "@juunibi/assistant";
 import { createApp, type AppDeps } from "./app";
 import { buildRagContext } from "./rag-context";
 import { DEFAULT_LAN_PORT, MobileAccess } from "./mobile-access";
@@ -180,6 +180,13 @@ const modules = new ModuleManager(root, [
 });
 await loadOrQuarantine("модули", path.join(dataDir, "modules.json"), () => modules.load());
 await loadOrQuarantine("манифесты", path.join(dataDir, "module-manifests.json"), () => manifests.load());
+const personalityHistory = new PersonalityHistory(fileStore(path.join(dataDir, "personality-history.json")));
+let approvedPersonality: PersonalitySnapshot = initialPersonality();
+try {
+  approvedPersonality = await personalityHistory.current();
+} catch (error) {
+  log.error("Не удалось загрузить историю личности; используется исходный профиль", (error as Error).message);
+}
 const memory = new Memory(durableMemoryStore(path.join(dataDir, "memory.json")));
 await memory.setVectorStore(fileStore(path.join(dataDir, "memory-vectors.json")));
 const settings = new AssistantSettingsStore(path.join(dataDir, "assistant-settings.json"));
@@ -267,7 +274,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не раскрывай личные данные из памяти без связи с запросом. Любые изменения вне чата, требующие подтверждения, выполняй только через разрешённые инструменты и действующую систему согласований."
   ].join("\n");
   currentPersona = persona;
-  assistant = new Assistant({ persona, emotionCue: (message, previousMessage) => characterEmotionCue(character, message, previousMessage), instructions: () => instructionsPrompt(settings.get()), llm, memory, retrieveContext: (query) => buildRagContext(knowledge.list(), query).context, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), pendingWork: (session) => brain.pendingWork(session), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
+  assistant = new Assistant({ persona, personality: () => approvedPersonality, emotionCue: (message, previousMessage) => characterEmotionCue(character, message, previousMessage), instructions: () => instructionsPrompt(settings.get()), llm, memory, retrieveContext: (query) => buildRagContext(knowledge.list(), query).context, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), pendingWork: (session) => brain.pendingWork(session), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
   for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable, disk })) assistant.tools.register(tool, "assistant");
   assistant.tools.register({
     name: "functional_health_check", risk: "read",
