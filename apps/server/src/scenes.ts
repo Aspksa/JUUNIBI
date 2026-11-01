@@ -2,10 +2,22 @@ import { readFile, mkdir, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
 import { randomInt, randomUUID } from "node:crypto";
 import type { LlmProvider } from "@juunibi/assistant";
-/** Keep the unused-scene bag intact; prefer matching emotions only when available. */
+/** Canonical persona tones map to labels in the original scene and phrase catalogs. */
+const EMOTION_LABELS: Record<string, readonly string[]> = {
+  anxiety: ["anxiety", "защита", "protective"],
+  tenderness: ["tenderness", "нежность", "забота", "домашний уют", "warm", "affectionate"],
+  joy: ["joy", "радость встречи", "proud", "золотое появление"],
+  curiosity: ["curiosity", "тайна", "magical", "лунное сияние"],
+  playfulness: ["playfulness", "игривость", "playful", "playful_affection"],
+  calm: ["calm", "работа", "вечер", "сонное утро", "поклон", "warm"],
+};
+/** Keep the unused-scene bag intact; prefer catalog aliases only when available. */
 export function matchingScenePool<T extends { emotion?: string }>(items: T[], emotion?: string): T[] {
   if (!emotion) return items;
-  const aligned = items.filter(item => item.emotion?.toLocaleLowerCase("ru") === emotion.toLocaleLowerCase("ru"));
+  const normalized = emotion.normalize("NFKC").toLocaleLowerCase("ru").trim();
+  const labels = new Set(EMOTION_LABELS[normalized] ?? [normalized]);
+  const aligned = items.filter(item => typeof item.emotion === "string" &&
+    labels.has(item.emotion.normalize("NFKC").toLocaleLowerCase("ru").trim()));
   return aligned.length ? aligned : items;
 }
 interface Action { id: string; text: string; category: string; emotion?: string; duration_seconds?: number; animation_cues?: { ears?: string; tails?: number; gaze?: string; timing?: string }; tags?: string[] }
