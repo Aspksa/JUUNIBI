@@ -43,6 +43,7 @@ import type { ChatStore } from "./chat-store";
 import type { EvolutionConfig, EvolutionItem, EvolutionState } from "./ramo-evolution";
 import type { Experience } from "./ramo-experience";
 import type { CognitiveMemory } from "./ramo-cognitive";
+import type { PlanStep, LabCase, LabResult } from "./ramo-v6-core";
 import type { ChatExtras } from "./chat-extras";
 /** Module supervision (restart, permissions, manifests). Optional: the app also runs without it. */
 export interface ModuleControl {
@@ -73,6 +74,9 @@ export interface AppDeps {
     pause(paused: boolean): Promise<void>;
     forgetMemory(id: string): Promise<void>;
     queueReview(goalId: string, kind: "memory-review" | "quality-review"): Promise<void>;
+    createPlan(goalId: string, steps: PlanStep[]): Promise<void>;
+    completeStep(planId: string, stepId: string): Promise<void>;
+    evaluateLab(label: string, cases: LabCase[]): Promise<LabResult>;
     setGoal(id: string, status: "approved" | "done"): Promise<void>;
     configure(patch: Partial<EvolutionConfig>): Promise<void>;
     run(): Promise<void>;
@@ -302,6 +306,35 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
               return send(res, 400, { error: "Неверный идентификатор или нет подтверждения" });
             await engine.forgetMemory(body.id);
             return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/plan" && req.method === "POST") {
+            const body = await readJson(req);
+            if (body.approved !== true || typeof body.goalId !== "string" || body.goalId.length > 80 ||
+                !Array.isArray(body.steps) || body.steps.length > 50 ||
+                body.steps.some((x: unknown) => !x || typeof x !== "object" ||
+                  typeof (x as PlanStep).id !== "string" || typeof (x as PlanStep).title !== "string" ||
+                  !Array.isArray((x as PlanStep).dependsOn) || (x as PlanStep).dependsOn.some((v: unknown) => typeof v !== "string")))
+              return send(res, 400, { error: "Некорректный план" });
+            await engine.createPlan(body.goalId, body.steps as PlanStep[]);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/step" && req.method === "POST") {
+            const body = await readJson(req);
+            if (body.approved !== true || typeof body.planId !== "string" || typeof body.stepId !== "string" ||
+                body.planId.length > 100 || body.stepId.length > 100)
+              return send(res, 400, { error: "Некорректный этап" });
+            await engine.completeStep(body.planId, body.stepId);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/lab" && req.method === "POST") {
+            const body = await readJson(req);
+            if (body.approved !== true || typeof body.label !== "string" || body.label.length > 100 ||
+                !Array.isArray(body.cases) || body.cases.length > 50 ||
+                body.cases.some((x: unknown) => !x || typeof x !== "object" ||
+                  typeof (x as LabCase).name !== "string" || typeof (x as LabCase).input !== "string" ||
+                  typeof (x as LabCase).expected !== "string"))
+              return send(res, 400, { error: "Некорректный эксперимент" });
+            return send(res, 200, await engine.evaluateLab(body.label, body.cases as LabCase[]));
           }
           if (p === "/api/ramo/evolution/job" && req.method === "POST") {
             const body = await readJson(req);
