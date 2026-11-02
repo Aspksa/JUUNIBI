@@ -232,7 +232,7 @@ await loadOrQuarantine("чаты", path.join(dataDir, "chats.json"), () => chatS
 /** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
 const ramoEvolution = new RamoEvolution(fileStore(path.join(dataDir, "ramo-evolution.json")),
   () => chatStore.get().items.map(chat => ({ id: chat.id, messages: chat.messages as { id?: string; role: string; content: string; at?: number }[] })));
-await loadOrQuarantine("фоновое развитие Рамо", path.join(dataDir, "ramo-evolution.json"), () => ramoEvolution.snapshot());
+await loadOrQuarantine("фоновое развитие Рамо", path.join(dataDir, "ramo-evolution.json"), async () => { await ramoEvolution.snapshot(); });
 const achievements = new Achievements(path.join(dataDir, "achievements.json"), () => ({ now: Date.now(), notes: organizer.listNotes(), reminders: organizer.listReminders(), missions: organizer.listMissions(), history: organizer.listHistory(), autoCount: organizer.autoCounts() }));
 await loadOrQuarantine("достижения", path.join(dataDir, "achievements.json"), () => achievements.load());
 /** Start-of-day data, shared by the assistant tool and the Home page. */
