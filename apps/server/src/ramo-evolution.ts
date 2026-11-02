@@ -1,7 +1,7 @@
-import { memoryGraph, checkMemoryConflicts, runLab, validatePlan, nextPlanSteps, type PlanStep, type LabCase, type LabResult } from "./ramo-v6-core";
+import { memoryGraph, checkMemoryConflicts, runLab, validatePlan, nextPlanSteps, semanticRecall, type PlanStep, type LabCase, type LabResult } from "./ramo-v6-core";
 import { classifyExperience, retrieveMemories, evaluateDialogue, type CognitiveMemory, type CognitiveEvaluation } from "./ramo-cognitive";
 import { analyzeDialogue, rankExperiences, type Experience, type DialogueMetrics } from "./ramo-experience";
-import { suggestConversationLessons, type LessonProposal, type StorageAdapter } from "@juunibi/assistant";
+import { suggestConversationLessons, type LessonProposal, type StorageAdapter, type EmbeddingProvider } from "@juunibi/assistant";
 
 export interface EvolutionConfig {
   enabled: boolean;
@@ -47,6 +47,14 @@ const defaults = (): EvolutionState => ({
   metrics: { userMessages: 0, assistantMessages: 0, corrections: 0, repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 }, goals: [], cognitiveMemories: [],
   evaluation: { cases: 0, passed: 0, score: 0, failures: [] }, paused: false, lastConsolidation: 0, schemaVersion: 6, plans: [], labHistory: [], memoryConflicts: [], graphEdges: [], forgottenIds: [], audit: [], jobs: [],
 });
+/** Keep approved knowledge ahead of unreviewed proposals when storage is bounded. */
+export const retainMemories = (items: CognitiveMemory[], limit = 500): CognitiveMemory[] => {
+  const approved = items.filter(x => x.status === "approved");
+  const others = items.filter(x => x.status !== "approved");
+  const capacity = Math.max(0, limit - Math.min(approved.length, limit));
+  const kept = new Set([...approved.slice(-limit), ...(capacity ? others.slice(-capacity) : [])]);
+  return items.filter(x => kept.has(x));
+};
 const signature = (value: string): string => {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++) hash = Math.imul(hash ^ value.charCodeAt(i), 16777619);
@@ -60,7 +68,7 @@ export class RamoEvolution {
   private running = false;
   constructor(private readonly store: StorageAdapter, private readonly readChats: () => readonly {
     id: string; messages: readonly { id?: string; role: string; content: string; at?: number }[];
-  }[], private readonly now: () => number = Date.now) {
+  }[], private readonly now: () => number = Date.now, private readonly embeddings?: EmbeddingProvider) {
     this.ready = this.load();
   }
   private async load() {
@@ -88,7 +96,7 @@ export class RamoEvolution {
       experiences: Array.isArray(s.experiences) ? s.experiences.filter(x => x && typeof x.id === "string" && typeof x.text === "string" && x.text.length <= 350 && ["preference", "correction", "decision", "goal"].includes(x.kind)).slice(-500) : [],
       metrics: s.metrics && typeof s.metrics === "object" ? { ...defaults().metrics, ...s.metrics } : defaults().metrics,
       goals: Array.isArray(s.goals) ? s.goals.filter(x => x && typeof x.id === "string" && typeof x.title === "string" && ["proposed", "approved", "done"].includes(x.status)).slice(-50) : [],
-      cognitiveMemories: Array.isArray(s.cognitiveMemories) ? s.cognitiveMemories.filter(x => x && typeof x.id === "string" && typeof x.content === "string" && x.content.length <= 350 && ["candidate", "approved", "rejected"].includes(x.status)).slice(-500) : [],
+      cognitiveMemories: Array.isArray(s.cognitiveMemories) ? retainMemories(s.cognitiveMemories.filter(x => x && typeof x.id === "string" && typeof x.content === "string" && x.content.length <= 350 && ["candidate", "approved", "rejected"].includes(x.status))) : [],
       evaluation: s.evaluation && typeof s.evaluation === "object" && Number.isFinite(s.evaluation.score) &&
         Number.isFinite(s.evaluation.cases) && Array.isArray(s.evaluation.failures) ? s.evaluation : defaults().evaluation,
       paused: s.paused === true,
@@ -125,7 +133,7 @@ export class RamoEvolution {
     return { ...structuredClone(this.state), running: this.running };
   }
   cognitiveRecall(query: string): Promise<CognitiveMemory[]> {
-    return this.snapshot().then(s => retrieveMemories(s.cognitiveMemories, query, this.now()));
+    return this.snapshot().then(s => semanticRecall(s.cognitiveMemories, query, this.now(), this.embeddings));
   }
   reviewMemory(id: string, status: "approved" | "rejected"): Promise<void> {
     return this.mutate(() => {
@@ -248,9 +256,9 @@ export class RamoEvolution {
         const candidates: { role: string; content: string }[] = [];
         const newExperiences: Experience[] = [];
         const evaluationMessages: { role: string; content: string }[] = [];
-        for (const chat of this.readChats().slice(-100)) {
+        for (const chat of this.readChats().slice(-1000)) {
           const analysis = analyzeDialogue(chat.messages, chat.id, now);
-          evaluationMessages.push(...chat.messages.slice(-300).filter(m => m && typeof m.content === "string").map(m => ({ role: m.role, content: m.content })));
+          evaluationMessages.push(...chat.messages.slice(-1000).filter(m => m && typeof m.content === "string").map(m => ({ role: m.role, content: m.content })));
           if (s.config.memory) newExperiences.push(...analysis.experiences);
 
           for (const msg of chat.messages.slice(-300)) {
@@ -280,13 +288,13 @@ export class RamoEvolution {
               knownMemory.add(item.id);
             }
           }
-          s.cognitiveMemories = s.cognitiveMemories.slice(-500);
+          s.cognitiveMemories = retainMemories(s.cognitiveMemories);
           this.refreshGraph();
           s.goals = s.goals.slice(-50);
         }
         if (s.config.quality) {
           const aggregate = { ...defaults().metrics };
-          for (const chat of this.readChats().slice(-100)) {
+          for (const chat of this.readChats().slice(-1000)) {
             const m = analyzeDialogue(chat.messages, chat.id, now).metrics;
             for (const key of Object.keys(aggregate) as (keyof DialogueMetrics)[]) aggregate[key] += m[key];
           }
@@ -307,7 +315,7 @@ export class RamoEvolution {
           }
         }
         if (s.config.night && new Date(now).getHours() < 7 && now - s.lastConsolidation > 20 * 60 * 60_000) {
-          s.cognitiveMemories = s.cognitiveMemories.filter(x => !x.expiresAt || x.expiresAt > now).slice(-500);
+          s.cognitiveMemories = retainMemories(s.cognitiveMemories.filter(x => !x.expiresAt || x.expiresAt > now));
           s.lastConsolidation = now;
           this.refreshGraph();
         }
@@ -316,7 +324,7 @@ export class RamoEvolution {
             // Safe background work only: review existing state; never execute external tools.
             if (job.kind === "quality-review") s.evaluation = evaluateDialogue(evaluationMessages.slice(-300));
             if (job.kind === "memory-review") {
-              s.cognitiveMemories = s.cognitiveMemories.slice(-500);
+              s.cognitiveMemories = retainMemories(s.cognitiveMemories);
               this.refreshGraph();
             }
             job.status = "done";

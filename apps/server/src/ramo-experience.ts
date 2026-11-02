@@ -19,7 +19,7 @@ export function analyzeDialogue(messages: readonly DialogueMessage[], chatId: st
   const metrics: DialogueMetrics = { userMessages: 0, assistantMessages: 0, corrections: 0,
     repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 };
   let lastAssistant = "";
-  for (const message of messages.slice(-300)) {
+  for (const message of messages.slice(-1000)) {
     if (!message || typeof message.content !== "string") continue;
     const text = clean(message.content);
     if (!text) continue;

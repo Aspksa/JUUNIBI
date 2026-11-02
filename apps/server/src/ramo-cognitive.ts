@@ -38,6 +38,8 @@ export function evaluateDialogue(messages: readonly DialogueMessage[]): Cognitiv
       reason: "Слишком длинное сообщение" },
     { name: "roles", pass: messages.every(m => ["user", "assistant", "system", "tool"].includes(m.role)),
       reason: "Неизвестная роль" },
+    { name: "empty-assistant", pass: !messages.some(m => m.role === "assistant" && !m.content.trim()),
+      reason: "Пустой ответ ассистента" },
     { name: "repetition", pass: !messages.some((m, i) => i > 0 && m.role === "assistant" &&
       messages[i - 1]?.role === "assistant" && m.content === messages[i - 1]?.content && m.content.trim().length > 0),
       reason: "Два одинаковых ответа подряд" },
