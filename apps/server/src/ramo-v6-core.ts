@@ -22,7 +22,7 @@ export function memoryGraph(memories: readonly CognitiveMemory[], limit = 100): 
 }
 export function checkMemoryConflicts(memories: readonly CognitiveMemory[]) {
   const approved = memories.filter(m => m.status === "approved");
-  const neg = (s: string) => /\b(?:не|никогда|never|not)\b/iu.test(s);
+  const neg = (s: string) => /(?:^|[^\p{L}])(?:не|никогда|never|not)(?=$|[^\p{L}])/iu.test(s);
   const warnings: { first: string; second: string }[] = [];
   for (let i = 0; i < approved.length; i++) for (let j = i + 1; j < approved.length; j++) {
     const a = approved[i]!, b = approved[j]!;
@@ -50,7 +50,7 @@ export function runLab(cases: readonly LabCase[], candidate: (input: string) => 
 export function validatePlan(steps: readonly PlanStep[]): boolean {
   if (steps.length > 50) return false;
   const nodes = new Map(steps.map(x => [x.id, x]));
-  if (nodes.size !== steps.length || steps.some(x => !x.id || !x.title || x.title.length > 300 || !["pending","done"].includes(x.status))) return false;
+  if (nodes.size !== steps.length || steps.some(x => !x || typeof x.id !== "string" || !x.id || typeof x.title !== "string" || !x.title || x.title.length > 300 || !Array.isArray(x.dependsOn) || x.dependsOn.some(d => typeof d !== "string") || !["pending","done"].includes(x.status))) return false;
   const visiting = new Set<string>(), visited = new Set<string>();
   const visit = (id: string): boolean => {
     if (visiting.has(id)) return false;
@@ -76,7 +76,7 @@ const cosine = (a: number[], b: number[]) => {
 /** Optional real vector similarity. No embedding credentials or vectors persisted here. */
 export async function semanticRecall(items: readonly CognitiveMemory[], query: string, now: number,
   provider?: EmbeddingProvider, limit = 6): Promise<CognitiveMemory[]> {
-  const approved = items.filter(x => x.status === "approved" && (!x.expiresAt || x.expiresAt > now)).slice(-20);
+  const approved = items.filter(x => x.status === "approved" && (!x.expiresAt || x.expiresAt > now)).slice(-100);
   const lexical = retrieveMemories(approved, query, now, limit);
   if (!provider || !query.trim()) return lexical;
   try {
@@ -87,7 +87,7 @@ export async function semanticRecall(items: readonly CognitiveMemory[], query: s
       const score = cosine(q, v);
       if (score > 0.15) ranked.push({ memory: item, score });
     }
-    const selected = ranked.sort((a,b) => b.score - a.score).slice(0, limit).map(x => x.memory);
+    const selected = ranked.sort((a,b) => b.score - a.score).slice(0, Math.max(0, Math.min(limit, 10))).map(x => x.memory);
     return selected.length ? selected : lexical;
   } catch { return lexical; }
 }
