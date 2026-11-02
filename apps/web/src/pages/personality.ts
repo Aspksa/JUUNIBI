@@ -118,6 +118,8 @@ export function personalityPanel(chats?: Chats): HTMLElement {
     cognitiveMemories?: { id: string; content: string; tier: string; status: string }[];
     evaluation?: { score: number; cases: number; failures: { name: string; reason: string }[] };
     paused?: boolean; lastConsolidation?: number;
+    schemaVersion?: number; audit?: { at: number; action: string; id?: string }[];
+    jobs?: { id: string; kind: string; status: string }[];
     queue: { id: string; lesson: string; status: string }[]; experiences?: { kind: string; text: string }[];
     goals?: { id: string; title: string; status: string }[];
     metrics?: { corrections: number; repeatedReplies: number; negativeRatings: number }; runs: number; lastRun: number; lastError: string | null; analyzedMessages: number; running: boolean };
@@ -183,6 +185,28 @@ export function personalityPanel(chats?: Chats): HTMLElement {
         (state.evaluation?.cases ? Math.round((state.evaluation?.score ?? 0) * 100) + "%" : "нет данных") +
         " · последняя консолидация: " +
         (state.lastConsolidation ? new Date(state.lastConsolidation).toLocaleString("ru-RU") : "не проводилась") });
+      const approvedMemories = (state.cognitiveMemories ?? []).filter(x => x.status === "approved").slice(-20);
+      const memorySearch = el("input", { type: "search", placeholder: "Поиск в подтверждённой памяти" });
+      const memoryResults = el("div");
+      const searchButton = el("button", { type: "button", textContent: "Найти" });
+      searchButton.addEventListener("click", () => {
+        void fetch("/api/ramo/evolution/memory/recall", { method: "POST",
+          headers: { "content-type": "application/json" }, body: JSON.stringify({ query: memorySearch.value }) })
+          .then(async response => { if (!response.ok) throw new Error("Поиск недоступен"); return response.json(); })
+          .then((items: { content: string }[]) => memoryResults.replaceChildren(...items.map(x => el("p", { textContent: x.content }))))
+          .catch(error => { status.textContent = String(error); });
+      });
+      const approvedRows = approvedMemories.map(item => {
+        const forget = el("button", { type: "button", textContent: "Забыть" });
+        forget.addEventListener("click", () => {
+          if (!confirm("Удалить воспоминание без восстановления: " + item.content + "?")) return;
+          void evolutionRequest("/api/ramo/evolution/memory/forget", { id: item.id, approved: true })
+            .then(loadEvolution).catch(error => { status.textContent = String(error); });
+        });
+        return el("div", { cls: "set-row" }, el("span", { textContent: item.content }), forget);
+      });
+      const auditRows = (state.audit ?? []).slice(-8).reverse().map(x =>
+        el("p", { cls: "muted", textContent: new Date(x.at).toLocaleString("ru-RU") + " · " + x.action }));
       const memories = (state.cognitiveMemories ?? []).filter(x => x.status === "candidate").slice(-20);
       const memoryRows = memories.map(item => {
         const buttons = (decision: "approved" | "rejected", label: string) => {
@@ -200,6 +224,9 @@ export function personalityPanel(chats?: Chats): HTMLElement {
       const pending = state.queue.filter(item => item.status === "pending");
       background.replaceChildren(el("h3", { textContent: "Фоновое развитие RAMO" }), summary, insight, evaluation, pauseButton,
         el("h4", { textContent: "Воспоминания на проверке: " + memories.length }), ...memoryRows,
+        el("h4", { textContent: "Подтверждённая память" }), memorySearch, searchButton, memoryResults, ...approvedRows,
+        el("h4", { textContent: "Журнал изменений · схема " + (state.schemaVersion ?? 4) }), ...auditRows,
+        el("h4", { textContent: "Фоновые задания: " + (state.jobs?.length ?? 0) }),
         el("h4", { textContent: "Цели развития" }), ...goals, ...controls,
         el("div", { cls: "set-row" }, interval, run),
         el("h4", { textContent: "Ожидают подтверждения: " + pending.length }),

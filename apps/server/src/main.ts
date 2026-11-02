@@ -1,4 +1,5 @@
 import { RamoEvolution } from "./ramo-evolution";
+import { conversationCue } from "./ramo-cognitive";
 import { characterGuidance, characterEmotionCue } from "./character-guidance";
 import { KitsuneEvolution } from "./kitsune-evolution";
 import { BrainGraphSQLite } from "./brain-graph-sqlite";
@@ -231,7 +232,7 @@ await loadOrQuarantine("чаты", path.join(dataDir, "chats.json"), () => chatS
 /** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
 const ramoEvolution = new RamoEvolution(fileStore(path.join(dataDir, "ramo-evolution.json")),
   () => chatStore.get().items.map(chat => ({ id: chat.id, messages: chat.messages as { id?: string; role: string; content: string; at?: number }[] })));
-await loadOrQuarantine("фоновое развитие Рамо", path.join(dataDir, "ramo-evolution.json"), () => ramoEvolution.snapshot());
+await loadOrQuarantine("фоновое развитие Рамо", path.join(dataDir, "ramo-evolution.json"), async () => { await ramoEvolution.snapshot(); });
 const achievements = new Achievements(path.join(dataDir, "achievements.json"), () => ({ now: Date.now(), notes: organizer.listNotes(), reminders: organizer.listReminders(), missions: organizer.listMissions(), history: organizer.listHistory(), autoCount: organizer.autoCounts() }));
 await loadOrQuarantine("достижения", path.join(dataDir, "achievements.json"), () => achievements.load());
 /** Start-of-day data, shared by the assistant tool and the Home page. */
@@ -278,7 +279,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не раскрывай личные данные из памяти без связи с запросом. Любые изменения вне чата, требующие подтверждения, выполняй только через разрешённые инструменты и действующую систему согласований."
   ].join("\n");
   currentPersona = persona;
-  assistant = new Assistant({ persona, personality: () => approvedPersonality, emotionCue: (message, previousMessage) => characterEmotionCue(character, message, previousMessage), instructions: () => instructionsPrompt(settings.get()), llm, memory, retrieveContext: (query) => buildRagContext(knowledge.list(), query).context, turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), pendingWork: (session) => brain.pendingWork(session), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
+  assistant = new Assistant({ persona, personality: () => approvedPersonality, emotionCue: (message, previousMessage) => characterEmotionCue(character, message, previousMessage), instructions: () => instructionsPrompt(settings.get()), llm, memory, retrieveContext: (query) => buildRagContext(knowledge.list(), query).context, retrieveRamoMemory: async (query) => conversationCue(await ramoEvolution.cognitiveRecall(query)), turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), pendingWork: (session) => brain.pendingWork(session), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
   for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable, disk })) assistant.tools.register(tool, "assistant");
   assistant.tools.register({
     name: "functional_health_check", risk: "read",
@@ -521,6 +522,8 @@ const appDeps: AppDeps = {
     cognitiveRecall: (query) => ramoEvolution.cognitiveRecall(query),
     reviewMemory: (id, status) => ramoEvolution.reviewMemory(id, status),
     pause: (paused) => ramoEvolution.pause(paused),
+    forgetMemory: (id) => ramoEvolution.forgetMemory(id),
+    queueReview: (goalId, kind) => ramoEvolution.queueReview(goalId, kind),
     setGoal: (id, status) => ramoEvolution.setGoal(id, status),
     configure: (patch) => ramoEvolution.configure(patch),
     run: () => ramoEvolution.run(true),
