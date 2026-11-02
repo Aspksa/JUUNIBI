@@ -1,4 +1,6 @@
 import { RamoEvolution } from "./ramo-evolution";
+import { encryptedEvolutionStore } from "./ramo-v6-crypto";
+import { semanticRecall } from "./ramo-v6-core";
 import { conversationCue } from "./ramo-cognitive";
 import { characterGuidance, characterEmotionCue } from "./character-guidance";
 import { KitsuneEvolution } from "./kitsune-evolution";
@@ -194,13 +196,14 @@ await memory.setVectorStore(fileStore(path.join(dataDir, "memory-vectors.json"))
 const settings = new AssistantSettingsStore(path.join(dataDir, "assistant-settings.json"));
 await loadOrQuarantine("настройки помощницы", path.join(dataDir, "assistant-settings.json"), () => settings.load());
 let embeddingKey: { apiKey: string; baseUrl?: string } | undefined;
+let ramoEmbedding: CloudEmbeddingProvider | undefined;
 /** Reuse the chat credential; embeddings use their own model (never the chat model). Any problem leaves word search in place. */
 function applyEmbeddings() {
   const e = settings.get().embeddings;
-  if (!embeddingKey || !e.enabled) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); knowledge.setEmbeddingProvider(undefined); return; }
+  if (!embeddingKey || !e.enabled) { ramoEmbedding = undefined; memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); knowledge.setEmbeddingProvider(undefined); return; }
   const base = process.env.CLOUDRU_EMBEDDING_BASE_URL ?? embeddingKey.baseUrl;
-  try { const embedding = new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) }); memory.setEmbeddingProvider(embedding); brainGraph.setEmbeddingProvider(embedding); knowledge.setEmbeddingProvider(embedding); }
-  catch (error) { memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); knowledge.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
+  try { const embedding = new CloudEmbeddingProvider({ apiKey: embeddingKey.apiKey, model: e.model, ...(base ? { baseUrl: base } : {}) }); ramoEmbedding = embedding; memory.setEmbeddingProvider(embedding); brainGraph.setEmbeddingProvider(embedding); knowledge.setEmbeddingProvider(embedding); }
+  catch (error) { ramoEmbedding = undefined; memory.setEmbeddingProvider(undefined); brainGraph.setEmbeddingProvider(undefined); knowledge.setEmbeddingProvider(undefined); log.warn("Поиск по смыслу не включён", (error as Error).message); }
 }
 settings.onChange((s) => { applyEmbeddings(); learningProvider?.setModels(s.chat); });
 let currentPersona = "";
@@ -230,7 +233,7 @@ await loadOrQuarantine("органайзер", path.join(dataDir, "organizer.jso
 const chatStore = new ChatStore(path.join(dataDir, "chats.json"));
 await loadOrQuarantine("чаты", path.join(dataDir, "chats.json"), () => chatStore.load());
 /** «Дела и достижения»: figures and awards from the organizer; what was won is kept apart, in achievements.json. */
-const ramoEvolution = new RamoEvolution(fileStore(path.join(dataDir, "ramo-evolution.json")),
+const ramoEvolution = new RamoEvolution(encryptedEvolutionStore(fileStore(path.join(dataDir, "ramo-evolution.json")), process.env.RAMO_EVOLUTION_KEY),
   () => chatStore.get().items.map(chat => ({ id: chat.id, messages: chat.messages as { id?: string; role: string; content: string; at?: number }[] })));
 await loadOrQuarantine("фоновое развитие Рамо", path.join(dataDir, "ramo-evolution.json"), async () => { await ramoEvolution.snapshot(); });
 const achievements = new Achievements(path.join(dataDir, "achievements.json"), () => ({ now: Date.now(), notes: organizer.listNotes(), reminders: organizer.listReminders(), missions: organizer.listMissions(), history: organizer.listHistory(), autoCount: organizer.autoCounts() }));
@@ -279,7 +282,7 @@ async function configureCloud(apiKey: string, baseUrl?: string) {
     "Не раскрывай личные данные из памяти без связи с запросом. Любые изменения вне чата, требующие подтверждения, выполняй только через разрешённые инструменты и действующую систему согласований."
   ].join("\n");
   currentPersona = persona;
-  assistant = new Assistant({ persona, personality: () => approvedPersonality, emotionCue: (message, previousMessage) => characterEmotionCue(character, message, previousMessage), instructions: () => instructionsPrompt(settings.get()), llm, memory, retrieveContext: (query) => buildRagContext(knowledge.list(), query).context, retrieveRamoMemory: async (query) => conversationCue(await ramoEvolution.cognitiveRecall(query)), turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), pendingWork: (session) => brain.pendingWork(session), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
+  assistant = new Assistant({ persona, personality: () => approvedPersonality, emotionCue: (message, previousMessage) => characterEmotionCue(character, message, previousMessage), instructions: () => instructionsPrompt(settings.get()), llm, memory, retrieveContext: (query) => buildRagContext(knowledge.list(), query).context, retrieveRamoMemory: async (query) => conversationCue(await semanticRecall((await ramoEvolution.snapshot()).cognitiveMemories, query, Date.now(), ramoEmbedding)), turnsStore: fileStore(path.join(dataDir, "turns.json")), summariesStore: fileStore(path.join(dataDir, "summaries.json")), prefs: () => { const c = settings.get(); return { suggestions: c.suggestions, summaries: c.summaries }; }, onToolOutcome: event => brain.observeToolOutcome(event), approve: (req) => approvalGate.request(req, req.signal), toolPolicy: (name) => modules.toolAllowed(name) && toolEnabled(name, settings.get()), describeModules: () => moduleList(), pendingWork: (session) => brain.pendingWork(session), describeBrain: () => ({ mode: brain.status().mode, attention: brain.attentionFeed(5), pendingWork: brain.pendingWork().slice(0, 5), plans: brain.status().plans.slice(0, 5), toolWarnings: brain.toolReliabilityGuidance(), toolConfidenceWarnings: brain.toolConfidenceWarnings(5), experience: summarizeChatExperience(brain.experienceLearningReport()) }) });
   for (const tool of buildExtraTools({ settings: () => settings.get(), organizer, backupDir: defaultBackupDir(dataDir), brief: briefData, openable, disk })) assistant.tools.register(tool, "assistant");
   assistant.tools.register({
     name: "functional_health_check", risk: "read",
