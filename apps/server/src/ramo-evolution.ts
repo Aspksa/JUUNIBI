@@ -32,6 +32,7 @@ export interface EvolutionState {
   paused: boolean;
   lastConsolidation: number;
   schemaVersion: number;
+  forgottenIds: string[];
   audit: { at: number; action: string; id?: string }[];
   jobs: { id: string; goalId: string; kind: "memory-review" | "quality-review"; status: "pending" | "done"; createdAt: number }[];
 }
@@ -39,7 +40,7 @@ const defaults = (): EvolutionState => ({
   config: { enabled: false, intervalMinutes: 30, night: true, memory: true, personality: true, quality: true },
   queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0, qualitySignals: 0, memoryDigest: [], experiences: [],
   metrics: { userMessages: 0, assistantMessages: 0, corrections: 0, repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 }, goals: [], cognitiveMemories: [],
-  evaluation: { cases: 0, passed: 0, score: 0, failures: [] }, paused: false, lastConsolidation: 0, schemaVersion: 5, audit: [], jobs: [],
+  evaluation: { cases: 0, passed: 0, score: 0, failures: [] }, paused: false, lastConsolidation: 0, schemaVersion: 5, forgottenIds: [], audit: [], jobs: [],
 });
 const signature = (value: string): string => {
   let hash = 2166136261;
@@ -88,6 +89,7 @@ export class RamoEvolution {
       paused: s.paused === true,
       lastConsolidation: Number.isFinite(s.lastConsolidation) ? s.lastConsolidation! : 0,
       schemaVersion: 5,
+      forgottenIds: Array.isArray(s.forgottenIds) ? s.forgottenIds.filter(x => typeof x === "string").slice(-5000) : [],
       audit: Array.isArray(s.audit) ? s.audit.filter(x => x && typeof x.at === "number" && typeof x.action === "string").slice(-100) : [],
       jobs: Array.isArray(s.jobs) ? s.jobs.filter(x => x && typeof x.id === "string" && typeof x.goalId === "string" && ["memory-review", "quality-review"].includes(x.kind) && ["pending", "done"].includes(x.status)).slice(-50) : [],
     };
@@ -135,6 +137,7 @@ export class RamoEvolution {
       this.state.experiences = this.state.experiences.filter(x => x.id !== id);
       this.state.goals = this.state.goals.filter(x => x.id !== id);
       if (before === this.state.cognitiveMemories.length) throw new Error("Unknown memory");
+      this.state.forgottenIds = [...new Set([...this.state.forgottenIds, id])].slice(-5000);
       this.record("memory-forgotten", id);
     });
   }
@@ -214,7 +217,7 @@ export class RamoEvolution {
         if (s.config.memory) {
           const known = new Set(s.experiences.map(x => x.id));
           for (const item of newExperiences) {
-            if (known.has(item.id)) continue;
+            if (known.has(item.id) || s.forgottenIds.includes(item.id)) continue;
             known.add(item.id);
             s.experiences.push(item);
             if (item.kind === "correction") s.metrics.corrections++;
@@ -224,7 +227,7 @@ export class RamoEvolution {
           s.experiences = s.experiences.slice(-500);
           const knownMemory = new Set(s.cognitiveMemories.map(x => x.id));
           for (const item of newExperiences) {
-            if (!knownMemory.has(item.id)) {
+            if (!knownMemory.has(item.id) && !s.forgottenIds.includes(item.id)) {
               s.cognitiveMemories.push(classifyExperience(item));
               knownMemory.add(item.id);
             }
