@@ -309,12 +309,16 @@ export class RamoEvolution {
         if (s.config.night && new Date(now).getHours() < 7 && now - s.lastConsolidation > 20 * 60 * 60_000) {
           s.cognitiveMemories = s.cognitiveMemories.filter(x => !x.expiresAt || x.expiresAt > now).slice(-500);
           s.lastConsolidation = now;
+          this.refreshGraph();
         }
         if (!s.paused) {
           for (const job of s.jobs.filter(x => x.status === "pending").slice(0, 3)) {
             // Safe background work only: review existing state; never execute external tools.
             if (job.kind === "quality-review") s.evaluation = evaluateDialogue(evaluationMessages.slice(-300));
-            if (job.kind === "memory-review") s.cognitiveMemories = s.cognitiveMemories.slice(-500);
+            if (job.kind === "memory-review") {
+              s.cognitiveMemories = s.cognitiveMemories.slice(-500);
+              this.refreshGraph();
+            }
             job.status = "done";
             this.record("job-done", job.id);
           }
