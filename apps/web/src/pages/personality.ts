@@ -120,6 +120,10 @@ export function personalityPanel(chats?: Chats): HTMLElement {
     paused?: boolean; lastConsolidation?: number;
     schemaVersion?: number; audit?: { at: number; action: string; id?: string }[];
     jobs?: { id: string; kind: string; status: string }[];
+    graphEdges?: { from: string; to: string; strength: number }[];
+    memoryConflicts?: { first: string; second: string }[];
+    labHistory?: { at: number; label: string; result: { score: number } }[];
+    plans?: { id: string; goalId: string; steps: { id: string; title: string; status: string }[] }[];
     queue: { id: string; lesson: string; status: string }[]; experiences?: { kind: string; text: string }[];
     goals?: { id: string; title: string; status: string }[];
     metrics?: { corrections: number; repeatedReplies: number; negativeRatings: number }; runs: number; lastRun: number; lastError: string | null; analyzedMessages: number; running: boolean };
@@ -221,12 +225,36 @@ export function personalityPanel(chats?: Chats): HTMLElement {
         return el("div", { cls: "set-row" }, el("span", { textContent: "[" + item.tier + "] " + item.content }),
           buttons("approved", "Подтвердить"), buttons("rejected", "Отклонить"));
       });
+      const planRows = (state.plans ?? []).flatMap(plan => plan.steps.map(step => {
+        const done = el("button", { type: "button", textContent: "Завершить этап", disabled: step.status === "done" });
+        done.addEventListener("click", () => {
+          if (!confirm("Подтвердить завершение: " + step.title + "?")) return;
+          void evolutionRequest("/api/ramo/evolution/step", { planId: plan.id, stepId: step.id, approved: true })
+            .then(loadEvolution).catch(error => { status.textContent = String(error); });
+        });
+        return el("div", { cls: "set-row" }, el("span", { textContent: step.title + " · " + step.status }), done);
+      }));
+      const labRun = el("button", { type: "button", textContent: "Проверить поиск памяти (лаборатория)" });
+      labRun.addEventListener("click", () => {
+        const examples = approvedMemories.slice(0, 5).map(m => ({
+          name: m.id, input: m.content.split(" ").slice(0, 4).join(" "), expected: m.content.slice(0, 20),
+        }));
+        if (!examples.length) { status.textContent = "Сначала подтвердите хотя бы одно воспоминание"; return; }
+        if (!confirm("Запустить безопасную проверку поиска по " + examples.length + " примерам?")) return;
+        void evolutionRequest("/api/ramo/evolution/lab", { label: "Проверка памяти", cases: examples, approved: true })
+          .then(loadEvolution).catch(error => { status.textContent = String(error); });
+      });
+      const labRows = (state.labHistory ?? []).slice(-5).reverse().map(x =>
+        el("p", { cls: "muted", textContent: x.label + " · " + Math.round(x.result.score * 100) + "%" }));
       const pending = state.queue.filter(item => item.status === "pending");
       background.replaceChildren(el("h3", { textContent: "Фоновое развитие RAMO" }), summary, insight, evaluation, pauseButton,
         el("h4", { textContent: "Воспоминания на проверке: " + memories.length }), ...memoryRows,
         el("h4", { textContent: "Подтверждённая память" }), memorySearch, searchButton, memoryResults, ...approvedRows,
         el("h4", { textContent: "Журнал изменений · схема " + (state.schemaVersion ?? 4) }), ...auditRows,
         el("h4", { textContent: "Фоновые задания: " + (state.jobs?.length ?? 0) }),
+        el("h4", { textContent: "Граф памяти: " + (state.graphEdges?.length ?? 0) + " связей · предупреждений о противоречиях: " + (state.memoryConflicts?.length ?? 0) }),
+        el("h4", { textContent: "Планы и этапы" }), ...planRows,
+        el("h4", { textContent: "Лаборатория" }), labRun, ...labRows,
         el("h4", { textContent: "Цели развития" }), ...goals, ...controls,
         el("div", { cls: "set-row" }, interval, run),
         el("h4", { textContent: "Ожидают подтверждения: " + pending.length }),
