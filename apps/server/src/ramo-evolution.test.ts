@@ -43,7 +43,7 @@ describe("RamoEvolution", () => {
     state.graphEdges = [{ from: "old", to: "live", strength: 1 }];
     state.memoryConflicts = [{ first: "old", second: "live" }];
     await store.save(JSON.stringify(state));
-    const engine = new RamoEvolution(store, () => [], () => 100_000);
+    const engine = new RamoEvolution(store, () => [], () => 100_000_000);
     await engine.run(true);
     const after = await engine.snapshot();
     expect(after.cognitiveMemories.map(x => x.id)).toEqual(["live"]);
