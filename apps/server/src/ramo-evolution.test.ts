@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryAdapter } from "@juunibi/assistant";
 import { RamoEvolution } from "./ramo-evolution";
 
@@ -31,4 +31,29 @@ describe("RamoEvolution", () => {
     await expect(engine.configure({ intervalMinutes: 17 as 15 })).rejects.toThrow();
     await expect(engine.decide("missing", "accepted")).rejects.toThrow();
   });
+  it("removes stale graph edges and conflicts after nightly memory expiry", async () => {
+    const store = new MemoryAdapter();
+    const seed = new RamoEvolution(store, () => [], () => 100_000);
+    const state = await seed.snapshot();
+    state.config = { ...state.config, enabled: true, night: true };
+    state.cognitiveMemories = [
+      { id: "old", tier: "personal", content: "always prefer short answers", source: "chat", confidence: 1, observedAt: 1, expiresAt: 10, status: "approved" },
+      { id: "live", tier: "personal", content: "always prefer short answers", source: "chat", confidence: 1, observedAt: 1, status: "approved" },
+    ];
+    state.graphEdges = [{ from: "old", to: "live", strength: 1 }];
+    state.memoryConflicts = [{ first: "old", second: "live" }];
+    await store.save(JSON.stringify(state));
+    const localHour = vi.spyOn(Date.prototype, "getHours").mockReturnValue(2);
+    const engine = new RamoEvolution(store, () => [], () => 100_000_000);
+    try {
+      await engine.run(true);
+    } finally {
+      localHour.mockRestore();
+    }
+    const after = await engine.snapshot();
+    expect(after.cognitiveMemories.map(x => x.id)).toEqual(["live"]);
+    expect(after.graphEdges).toEqual([]);
+    expect(after.memoryConflicts).toEqual([]);
+  });
+
 });
