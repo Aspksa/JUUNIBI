@@ -1,3 +1,4 @@
+import { memoryGraph, checkMemoryConflicts, runLab, validatePlan, nextPlanSteps, type PlanStep, type LabCase, type LabResult } from "./ramo-v6-core";
 import { classifyExperience, retrieveMemories, evaluateDialogue, type CognitiveMemory, type CognitiveEvaluation } from "./ramo-cognitive";
 import { analyzeDialogue, rankExperiences, type Experience, type DialogueMetrics } from "./ramo-experience";
 import { suggestConversationLessons, type LessonProposal, type StorageAdapter } from "@juunibi/assistant";
@@ -32,6 +33,10 @@ export interface EvolutionState {
   paused: boolean;
   lastConsolidation: number;
   schemaVersion: number;
+  plans: { id: string; goalId: string; steps: PlanStep[]; createdAt: number }[];
+  labHistory: { at: number; result: LabResult; label: string }[];
+  memoryConflicts: { first: string; second: string }[];
+  graphEdges: { from: string; to: string; strength: number }[];
   forgottenIds: string[];
   audit: { at: number; action: string; id?: string }[];
   jobs: { id: string; goalId: string; kind: "memory-review" | "quality-review"; status: "pending" | "done"; createdAt: number }[];
@@ -40,7 +45,7 @@ const defaults = (): EvolutionState => ({
   config: { enabled: false, intervalMinutes: 30, night: true, memory: true, personality: true, quality: true },
   queue: [], processed: {}, lastRun: 0, lastError: null, runs: 0, analyzedMessages: 0, qualitySignals: 0, memoryDigest: [], experiences: [],
   metrics: { userMessages: 0, assistantMessages: 0, corrections: 0, repeatedReplies: 0, negativeRatings: 0, unresolvedGoals: 0 }, goals: [], cognitiveMemories: [],
-  evaluation: { cases: 0, passed: 0, score: 0, failures: [] }, paused: false, lastConsolidation: 0, schemaVersion: 5, forgottenIds: [], audit: [], jobs: [],
+  evaluation: { cases: 0, passed: 0, score: 0, failures: [] }, paused: false, lastConsolidation: 0, schemaVersion: 6, plans: [], labHistory: [], memoryConflicts: [], graphEdges: [], forgottenIds: [], audit: [], jobs: [],
 });
 const signature = (value: string): string => {
   let hash = 2166136261;
@@ -88,7 +93,11 @@ export class RamoEvolution {
         Number.isFinite(s.evaluation.cases) && Array.isArray(s.evaluation.failures) ? s.evaluation : defaults().evaluation,
       paused: s.paused === true,
       lastConsolidation: Number.isFinite(s.lastConsolidation) ? s.lastConsolidation! : 0,
-      schemaVersion: 5,
+      schemaVersion: 6,
+      plans: Array.isArray(s.plans) ? s.plans.filter(p => p && typeof p.id === "string" && typeof p.goalId === "string" && Array.isArray(p.steps) && validatePlan(p.steps)).slice(-30) : [],
+      labHistory: Array.isArray(s.labHistory) ? s.labHistory.filter(x => x && typeof x.at === "number" && typeof x.label === "string" && x.result && typeof x.result.score === "number").slice(-30) : [],
+      memoryConflicts: Array.isArray(s.memoryConflicts) ? s.memoryConflicts.filter(x => x && typeof x.first === "string" && typeof x.second === "string").slice(-30) : [],
+      graphEdges: Array.isArray(s.graphEdges) ? s.graphEdges.filter(x => x && typeof x.from === "string" && typeof x.to === "string" && typeof x.strength === "number").slice(-150) : [],
       forgottenIds: Array.isArray(s.forgottenIds) ? s.forgottenIds.filter(x => typeof x === "string").slice(-5000) : [],
       audit: Array.isArray(s.audit) ? s.audit.filter(x => x && typeof x.at === "number" && typeof x.action === "string").slice(-100) : [],
       jobs: Array.isArray(s.jobs) ? s.jobs.filter(x => x && typeof x.id === "string" && typeof x.goalId === "string" && ["memory-review", "quality-review"].includes(x.kind) && ["pending", "done"].includes(x.status)).slice(-50) : [],
@@ -124,7 +133,12 @@ export class RamoEvolution {
       if (!memory) throw new Error("Unknown candidate memory");
       memory.status = status;
       this.record("memory-" + status, id);
+      this.refreshGraph();
     });
+  }
+  private refreshGraph() {
+    this.state.graphEdges = memoryGraph(this.state.cognitiveMemories);
+    this.state.memoryConflicts = checkMemoryConflicts(this.state.cognitiveMemories);
   }
   private record(action: string, id?: string) {
     this.state.audit.push({ at: this.now(), action, ...(id ? { id } : {}) });
@@ -139,6 +153,40 @@ export class RamoEvolution {
       if (before === this.state.cognitiveMemories.length) throw new Error("Unknown memory");
       this.state.forgottenIds = [...new Set([...this.state.forgottenIds, id])].slice(-5000);
       this.record("memory-forgotten", id);
+      this.refreshGraph();
+    });
+  }
+  createPlan(goalId: string, steps: PlanStep[]): Promise<void> {
+    return this.mutate(() => {
+      if (!validatePlan(steps) || !steps.length || this.state.plans.some(x => x.goalId === goalId))
+        throw new Error("Invalid or duplicate plan");
+      if (!this.state.goals.some(x => x.id === goalId && x.status === "approved"))
+        throw new Error("Goal must be approved");
+      this.state.plans.push({ id: "plan-" + signature(goalId), goalId, steps: structuredClone(steps), createdAt: this.now() });
+      this.state.plans = this.state.plans.slice(-30);
+      this.record("plan-created", goalId);
+    });
+  }
+  completeStep(planId: string, stepId: string): Promise<void> {
+    return this.mutate(() => {
+      const plan = this.state.plans.find(x => x.id === planId);
+      if (!plan) throw new Error("Unknown plan");
+      const step = nextPlanSteps(plan.steps).find(x => x.id === stepId);
+      if (!step) throw new Error("Blocked or unknown step");
+      step.status = "done";
+      this.record("step-done", stepId);
+    });
+  }
+  evaluateLab(label: string, cases: LabCase[]): Promise<LabResult> {
+    return this.mutate(() => {
+      if (!label || label.length > 100 || !Array.isArray(cases) || cases.length > 50) throw new Error("Invalid lab");
+      // Deterministic retrieval smoke experiment. This is not an LLM evaluation.
+      const result = runLab(cases, query => retrieveMemories(this.state.cognitiveMemories, query, this.now())
+        .map(x => x.content).join(" "));
+      this.state.labHistory.push({ at: this.now(), result, label });
+      this.state.labHistory = this.state.labHistory.slice(-30);
+      this.record("lab-evaluated");
+      return result;
     });
   }
   queueReview(goalId: string, kind: "memory-review" | "quality-review"): Promise<void> {
@@ -233,6 +281,7 @@ export class RamoEvolution {
             }
           }
           s.cognitiveMemories = s.cognitiveMemories.slice(-500);
+          this.refreshGraph();
           s.goals = s.goals.slice(-50);
         }
         if (s.config.quality) {

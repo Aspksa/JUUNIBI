@@ -14,7 +14,7 @@ describe("RAMO Evolution 5 integration", () => {
     await engine.configure({ enabled: true, night: false });
     await engine.run(true);
     const state = await engine.snapshot();
-    expect(state.schemaVersion).toBe(5);
+    expect(state.schemaVersion).toBe(6);
     const item = state.cognitiveMemories.find(x => x.tier === "personal")!;
     expect(await engine.cognitiveRecall("отвечай коротко")).toEqual([]);
     await engine.reviewMemory(item.id, "approved");
