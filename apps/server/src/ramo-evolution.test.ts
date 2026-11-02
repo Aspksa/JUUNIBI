@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryAdapter } from "@juunibi/assistant";
 import { RamoEvolution } from "./ramo-evolution";
 
@@ -43,8 +43,13 @@ describe("RamoEvolution", () => {
     state.graphEdges = [{ from: "old", to: "live", strength: 1 }];
     state.memoryConflicts = [{ first: "old", second: "live" }];
     await store.save(JSON.stringify(state));
+    const localHour = vi.spyOn(Date.prototype, "getHours").mockReturnValue(2);
     const engine = new RamoEvolution(store, () => [], () => 100_000_000);
-    await engine.run(true);
+    try {
+      await engine.run(true);
+    } finally {
+      localHour.mockRestore();
+    }
     const after = await engine.snapshot();
     expect(after.cognitiveMemories.map(x => x.id)).toEqual(["live"]);
     expect(after.graphEdges).toEqual([]);
