@@ -76,7 +76,7 @@ const cosine = (a: number[], b: number[]) => {
 /** Optional real vector similarity. No embedding credentials or vectors persisted here. */
 export async function semanticRecall(items: readonly CognitiveMemory[], query: string, now: number,
   provider?: EmbeddingProvider, limit = 6): Promise<CognitiveMemory[]> {
-  const approved = items.filter(x => x.status === "approved" && (!x.expiresAt || x.expiresAt > now)).slice(-100);
+  const approved = items.filter(x => x.status === "approved" && (!x.expiresAt || x.expiresAt > now)).slice(-20);
   const lexical = retrieveMemories(approved, query, now, limit);
   if (!provider || !query.trim()) return lexical;
   try {
