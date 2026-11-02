@@ -71,6 +71,8 @@ export interface AppDeps {
     cognitiveRecall(query: string): Promise<CognitiveMemory[]>;
     reviewMemory(id: string, status: "approved" | "rejected"): Promise<void>;
     pause(paused: boolean): Promise<void>;
+    forgetMemory(id: string): Promise<void>;
+    queueReview(goalId: string, kind: "memory-review" | "quality-review"): Promise<void>;
     setGoal(id: string, status: "approved" | "done"): Promise<void>;
     configure(patch: Partial<EvolutionConfig>): Promise<void>;
     run(): Promise<void>;
@@ -292,6 +294,21 @@ export function createApp(deps: AppDeps, lan?: LanGate): http.Server {
                 Object.entries(body).some(([k, v]) => k !== "intervalMinutes" && typeof v !== "boolean"))
               return send(res, 400, { error: "Неверные настройки" });
             await engine.configure(body as Partial<EvolutionConfig>);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/memory/forget" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.id !== "string" || !/^[a-z0-9]{1,20}$/.test(body.id) || body.approved !== true)
+              return send(res, 400, { error: "Неверный идентификатор или нет подтверждения" });
+            await engine.forgetMemory(body.id);
+            return send(res, 200, await engine.snapshot());
+          }
+          if (p === "/api/ramo/evolution/job" && req.method === "POST") {
+            const body = await readJson(req);
+            if (typeof body.goalId !== "string" || body.goalId.length > 80 ||
+                !["memory-review", "quality-review"].includes(String(body.kind)) || body.approved !== true)
+              return send(res, 400, { error: "Неверное задание" });
+            await engine.queueReview(body.goalId, body.kind as "memory-review" | "quality-review");
             return send(res, 200, await engine.snapshot());
           }
           if (p === "/api/ramo/evolution/pause" && req.method === "POST") {
