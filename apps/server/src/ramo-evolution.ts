@@ -52,7 +52,7 @@ export const retainMemories = (items: CognitiveMemory[], limit = 500): Cognitive
   const approved = items.filter(x => x.status === "approved");
   const others = items.filter(x => x.status !== "approved");
   const capacity = Math.max(0, limit - Math.min(approved.length, limit));
-  const kept = new Set([...approved.slice(-limit), ...others.slice(-capacity)]);
+  const kept = new Set([...approved.slice(-limit), ...(capacity ? others.slice(-capacity) : [])]);
   return items.filter(x => kept.has(x));
 };
 const signature = (value: string): string => {
