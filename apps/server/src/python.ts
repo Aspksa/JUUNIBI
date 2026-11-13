@@ -14,7 +14,12 @@ export async function runPythonJson<T>(script: string, database: string, payload
     child.stderr.setEncoding("utf8").on("data", (s: string) => { error += s; if (error.length > 4000) child.kill(); });
     child.once("error", reject);
     child.once("close", (code) => {
-      if (code !== 0) { reject(new Error(error.slice(0, 200) || "Python-скрипт завершился с ошибкой")); return; }
+      if (code !== 0) {
+        // Скрипты печатают причину JSON-ом в stdout ({"error": "..."}), а stderr часто пуст.
+        let reason = "";
+        try { const parsed = JSON.parse(output) as { error?: unknown }; if (typeof parsed.error === "string") reason = parsed.error; } catch { /* stdout не JSON */ }
+        reject(new Error((error.trim() || reason).slice(0, 200) || "Python-скрипт завершился с ошибкой")); return;
+      }
       try { resolve(JSON.parse(output) as T); } catch { reject(new Error("Некорректный ответ Python-скрипта")); }
     });
     child.stdin.on("error", () => {});
